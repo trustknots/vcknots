@@ -470,38 +470,38 @@ curl -X POST http://localhost:8080/issue/credentials \
 
 Issuerの識別子を表す型です。URI形式の文字列で、Issuerの一意な識別に使用されます。
 
-定義は[issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-issuer.types.ts)を参照してください。
+定義は[issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts)を参照してください。
 
 ### CredentialIssuerMetadata {#CredentialIssuerMetadata}
 
 Issuerのメタデータを定義する型です。クライアント名、サポートするクレデンシャル形式、エンドポイントなどの情報を含みます。
 
-定義は[issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-issuer.types.ts)を参照してください。
+定義は[issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts)を参照してください。
 
 
 ### CredentialResponse {#CredentialResponse}
 
 発行されたクレデンシャルのレスポンスを表す型です。JWT形式のクレデンシャルやメタデータなどの情報を含みます。
 
-定義は[issuer+verifier/src/credential-response.types.ts](https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-response.types.ts)を参照してください。
+定義は[issuer+verifier/src/credential-response.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-response.types.ts)を参照してください。
 
 ### AuthorizationServerIssuer {#AuthorizationServerIssuer}
 
 認可サーバーの識別子を表す型です。URI形式の文字列で、認可サーバーの一意な識別に使用されます。
 
-定義は[issuer+verifier/src/authorization-server.types.ts](https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/authorization-server.types.ts)を参照してください。
+定義は[issuer+verifier/src/authorization-server.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-server.types.ts)を参照してください。
 
 ### AuthorizationServerMetadata {#AuthorizationServerMetadata}
 
 認可サーバーのメタデータを定義する型です。Issuer情報、サポートする形式、エンドポイントなどの情報を含みます。
 
-定義は[issuer+verifier/src/authorization-server.types.ts](https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/authorization-server.types.ts)を参照してください。
+定義は[issuer+verifier/src/authorization-server.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-server.types.ts)を参照してください。
 
 ### AuthzTokenRequest：
 
 アクセストークンリクエストを表す型です。タイプが認可コード、事前認可コードかなどの情報を含みます。
 
-定義は[issuer+verifier/src/token-request.types.ts](https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/token-request.types.ts)を参照してください。
+定義は[issuer+verifier/src/token-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/token-request.types.ts)を参照してください。
 
 ## 5. IssuerFlowの各メソッド
 
@@ -553,7 +553,7 @@ offerCredential(
 
 **戻り値**: クレデンシャルオファーを返します。
 
-クレデンシャルオファーの型定義は[issuer+verifier/src/credential-offer.types.ts](https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-offer.types.ts)を参照してください。
+クレデンシャルオファーの型定義は[issuer+verifier/src/credential-offer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-offer.types.ts)を参照してください。
 
 
 **エラーケース**:
@@ -563,7 +563,7 @@ offerCredential(
 #### CredentialConfigurationId{#CredentialConfigurationId}
 クレデンシャル構成IDを定義する型です。
 
-定義は[issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-issuer.types.ts)を参照してください。
+定義は[issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts)を参照してください。
 
 #### OfferOptions{#OfferOptions}
 クレデンシャルオファー作成時のオプションを定義する型です。事前認可フローを使用するかを設定できます。
@@ -603,7 +603,7 @@ issueCredential(
 
 **戻り値**: クレデンシャルレスポンスを返します。
 
-クレデンシャルレスポンスの型定義は[issuer+verifier/src/credential-response.types.ts](https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-response.types.ts)を参照してください。
+クレデンシャルレスポンスの型定義は[issuer+verifier/src/credential-response.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-response.types.ts)を参照してください。
 
 **エラーケース**:
 - `ISSUER_NOT_FOUND`: 未登録のIssuerが設定された
@@ -619,7 +619,7 @@ issueCredential(
 #### CredentialRequest{#CredentialRequest}
 クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。
 
-定義は[issuer+verifier/src/credential-request.types.ts](https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-request.types.ts)を参照してください。
+定義は[issuer+verifier/src/credential-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-request.types.ts)を参照してください。
 
 #### IssueOptions{#IssueOptions}
 クレデンシャル発行オプションを定義する型です。アルゴリズムやクレームなどを設定できます。
@@ -653,7 +653,7 @@ findAuthzServerMetadata(issuer: AuthorizationServerIssuer): Promise<Authorizatio
 #### AuthorizationServerIssuer{#AuthorizationServerIssuer}
 認可サーバーのIssuerを定義する型です。
 
-定義は[issuer+verifier/src/authorization-server.types.ts](https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/authorization-server.types.ts)を参照してください。
+定義は[issuer+verifier/src/authorization-server.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-server.types.ts)を参照してください。
 
 
 ### createAuthzServerMetadata
@@ -723,7 +723,7 @@ createAccessToken<T extends GrantType>(
 #### TokenRequest{#TokenRequest}
 クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。
 
-定義は[issuer+verifier/src/token-request.types.ts](https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/token-request.types.ts)を参照してください。
+定義は[issuer+verifier/src/token-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/token-request.types.ts)を参照してください。
 
 #### TokenRequestOptions{#TokenRequestOptions}
 トークンリクエスト時のオプションを定義する型です。使用するフローなどを設定できます。（認可コードフローは未対応です）
