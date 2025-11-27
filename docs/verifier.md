@@ -518,7 +518,7 @@ createVerifierMetadata(
 Verifierメタデータ作成時のオプションを定義する型です。証明書または公開鍵の設定が可能です。
 
 
-詳細な型定義については、[verifi.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts#L25-L40)を参照してください。
+詳細な型定義については、[verifi.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts)を参照してください。
 
 
 ### createAuthzRequest
@@ -583,7 +583,7 @@ createAuthzRequest(
 #### CreateAuthzRequestOptions {#CreateAuthzRequestOptions}
 認証リクエスト作成時のオプションを定義する型です。
 
-詳細な型定義については、[verifi.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts#L41-L46)を参照してください。
+詳細な型定義については、[verifi.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts)を参照してください。
 
 
 **注意事項**:
@@ -641,7 +641,7 @@ Request Object（認可リクエストJAR）の一意識別子です。
 #### FindRequestObjectOptions{#FindRequestObjectOptions}
 リクエストオブジェクト取得時のオプションを定義する型です。
 
-詳細な型定義については、[verifi.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts#L48-L53)を参照してください。
+詳細な型定義については、[verifi.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts)を参照してください。
 
 
 
@@ -691,7 +691,7 @@ findVerifierCertificate(id: ClientId): Promise<Certificate | null>
 #### Certificate{#Certificate}
 Verifierが保持する証明書チェーンを表す型です（PEM形式の文字列配列）。各要素はPEMフォーマット検証を通過したものに限られます。
 
-詳細な型定義については、[signature-key.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/signature-key.types.ts#L34-L35)を参照してください。
+詳細な型定義については、[signature-key.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/signature-key.types.ts)を参照してください。
 
 
 注意:
