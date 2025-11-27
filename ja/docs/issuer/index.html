@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.1">
 <title data-rh="true">Issuer機能のセットアップと使用方法 | trustknots/vcknots</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://trustknots.github.io/vcknots/ja/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://trustknots.github.io/vcknots/ja/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://trustknots.github.io/vcknots/ja/docs/issuer"><meta data-rh="true" property="og:locale" content="ja"><meta data-rh="true" property="og:locale:alternate" content="en"><meta data-rh="true" name="docusaurus_locale" content="ja"><meta data-rh="true" name="docsearch:language" content="ja"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Issuer機能のセットアップと使用方法 | trustknots/vcknots"><meta data-rh="true" name="description" content="このガイドでは、VCKnotsのIssuer機能のセットアップと使用方法について説明します。"><meta data-rh="true" property="og:description" content="このガイドでは、VCKnotsのIssuer機能のセットアップと使用方法について説明します。"><link data-rh="true" rel="icon" href="/vcknots/ja/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://trustknots.github.io/vcknots/ja/docs/issuer"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/docs/issuer" hreflang="en"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/ja/docs/issuer" hreflang="ja"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/docs/issuer" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Issuer機能のセットアップと使用方法","item":"https://trustknots.github.io/vcknots/ja/docs/issuer"}]}</script><link rel="stylesheet" href="/vcknots/ja/assets/css/styles.0fbc07c4.css">
-<script src="/vcknots/ja/assets/js/runtime~main.2fa59888.js" defer="defer"></script>
+<script src="/vcknots/ja/assets/js/runtime~main.e0a65a70.js" defer="defer"></script>
 <script src="/vcknots/ja/assets/js/main.c08e770f.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -93,22 +93,22 @@
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="4-型定義の説明">4. 型定義の説明<a href="#4-型定義の説明" class="hash-link" aria-label="4. 型定義の説明 への直接リンク" title="4. 型定義の説明 への直接リンク" translate="no">​</a></h2>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="CredentialIssuer">CredentialIssuer<a href="#CredentialIssuer" class="hash-link" aria-label="CredentialIssuer への直接リンク" title="CredentialIssuer への直接リンク" translate="no">​</a></h3>
 <p>Issuerの識別子を表す型です。URI形式の文字列で、Issuerの一意な識別に使用されます。</p>
-<p>定義は<a href="https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-issuer.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-issuer.types.ts</a>を参照してください。</p>
+<p>定義は<a href="https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-issuer.types.ts</a>を参照してください。</p>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="CredentialIssuerMetadata">CredentialIssuerMetadata<a href="#CredentialIssuerMetadata" class="hash-link" aria-label="CredentialIssuerMetadata への直接リンク" title="CredentialIssuerMetadata への直接リンク" translate="no">​</a></h3>
 <p>Issuerのメタデータを定義する型です。クライアント名、サポートするクレデンシャル形式、エンドポイントなどの情報を含みます。</p>
-<p>定義は<a href="https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-issuer.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-issuer.types.ts</a>を参照してください。</p>
+<p>定義は<a href="https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-issuer.types.ts</a>を参照してください。</p>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="CredentialResponse">CredentialResponse<a href="#CredentialResponse" class="hash-link" aria-label="CredentialResponse への直接リンク" title="CredentialResponse への直接リンク" translate="no">​</a></h3>
 <p>発行されたクレデンシャルのレスポンスを表す型です。JWT形式のクレデンシャルやメタデータなどの情報を含みます。</p>
-<p>定義は<a href="https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-response.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-response.types.ts</a>を参照してください。</p>
+<p>定義は<a href="https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-response.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-response.types.ts</a>を参照してください。</p>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="AuthorizationServerIssuer">AuthorizationServerIssuer<a href="#AuthorizationServerIssuer" class="hash-link" aria-label="AuthorizationServerIssuer への直接リンク" title="AuthorizationServerIssuer への直接リンク" translate="no">​</a></h3>
 <p>認可サーバーの識別子を表す型です。URI形式の文字列で、認可サーバーの一意な識別に使用されます。</p>
-<p>定義は<a href="https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/authorization-server.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/authorization-server.types.ts</a>を参照してください。</p>
+<p>定義は<a href="https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-server.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/authorization-server.types.ts</a>を参照してください。</p>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="AuthorizationServerMetadata">AuthorizationServerMetadata<a href="#AuthorizationServerMetadata" class="hash-link" aria-label="AuthorizationServerMetadata への直接リンク" title="AuthorizationServerMetadata への直接リンク" translate="no">​</a></h3>
 <p>認可サーバーのメタデータを定義する型です。Issuer情報、サポートする形式、エンドポイントなどの情報を含みます。</p>
-<p>定義は<a href="https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/authorization-server.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/authorization-server.types.ts</a>を参照してください。</p>
+<p>定義は<a href="https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-server.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/authorization-server.types.ts</a>を参照してください。</p>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="authztokenrequest">AuthzTokenRequest：<a href="#authztokenrequest" class="hash-link" aria-label="AuthzTokenRequest： への直接リンク" title="AuthzTokenRequest： への直接リンク" translate="no">​</a></h3>
 <p>アクセストークンリクエストを表す型です。タイプが認可コード、事前認可コードかなどの情報を含みます。</p>
-<p>定義は<a href="https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/token-request.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/token-request.types.ts</a>を参照してください。</p>
+<p>定義は<a href="https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/token-request.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/token-request.types.ts</a>を参照してください。</p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="5-issuerflowの各メソッド">5. IssuerFlowの各メソッド<a href="#5-issuerflowの各メソッド" class="hash-link" aria-label="5. IssuerFlowの各メソッド への直接リンク" title="5. IssuerFlowの各メソッド への直接リンク" translate="no">​</a></h2>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="findissuermetadata">findIssuerMetadata<a href="#findissuermetadata" class="hash-link" aria-label="findIssuerMetadata への直接リンク" title="findIssuerMetadata への直接リンク" translate="no">​</a></h3>
 <p>Issuerのメタデータを取得します。</p>
@@ -140,7 +140,7 @@
 <li><code>options</code>: オファー作成のオプション（<a href="#OfferOptions">OfferOptions</a>）</li>
 </ul>
 <p><strong>戻り値</strong>: クレデンシャルオファーを返します。</p>
-<p>クレデンシャルオファーの型定義は<a href="https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-offer.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-offer.types.ts</a>を参照してください。</p>
+<p>クレデンシャルオファーの型定義は<a href="https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-offer.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-offer.types.ts</a>を参照してください。</p>
 <p><strong>エラーケース</strong>:</p>
 <ul>
 <li><code>FEATURE_NOT_IMPLEMENTED_YET</code>: 未対応のフローが設定された（認可コードフローには未対応です）</li>
@@ -148,7 +148,7 @@
 </ul>
 <h4 class="anchor anchorWithStickyNavbar_LWe7" id="CredentialConfigurationId">CredentialConfigurationId<a href="#CredentialConfigurationId" class="hash-link" aria-label="CredentialConfigurationId への直接リンク" title="CredentialConfigurationId への直接リンク" translate="no">​</a></h4>
 <p>クレデンシャル構成IDを定義する型です。</p>
-<p>定義は<a href="https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-issuer.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-issuer.types.ts</a>を参照してください。</p>
+<p>定義は<a href="https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-issuer.types.ts</a>を参照してください。</p>
 <h4 class="anchor anchorWithStickyNavbar_LWe7" id="OfferOptions">OfferOptions<a href="#OfferOptions" class="hash-link" aria-label="OfferOptions への直接リンク" title="OfferOptions への直接リンク" translate="no">​</a></h4>
 <p>クレデンシャルオファー作成時のオプションを定義する型です。事前認可フローを使用するかを設定できます。
 定義は下記のとおりです。</p>
@@ -163,7 +163,7 @@
 <li><code>options</code>: 発行オプション（<a href="#IssueOptions">IssueOptions</a>）</li>
 </ul>
 <p><strong>戻り値</strong>: クレデンシャルレスポンスを返します。</p>
-<p>クレデンシャルレスポンスの型定義は<a href="https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-response.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-response.types.ts</a>を参照してください。</p>
+<p>クレデンシャルレスポンスの型定義は<a href="https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-response.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-response.types.ts</a>を参照してください。</p>
 <p><strong>エラーケース</strong>:</p>
 <ul>
 <li><code>ISSUER_NOT_FOUND</code>: 未登録のIssuerが設定された</li>
@@ -178,7 +178,7 @@
 </ul>
 <h4 class="anchor anchorWithStickyNavbar_LWe7" id="CredentialRequest">CredentialRequest<a href="#CredentialRequest" class="hash-link" aria-label="CredentialRequest への直接リンク" title="CredentialRequest への直接リンク" translate="no">​</a></h4>
 <p>クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。</p>
-<p>定義は<a href="https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/credential-request.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-request.types.ts</a>を参照してください。</p>
+<p>定義は<a href="https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-request.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/credential-request.types.ts</a>を参照してください。</p>
 <h4 class="anchor anchorWithStickyNavbar_LWe7" id="IssueOptions">IssueOptions<a href="#IssueOptions" class="hash-link" aria-label="IssueOptions への直接リンク" title="IssueOptions への直接リンク" translate="no">​</a></h4>
 <p>クレデンシャル発行オプションを定義する型です。アルゴリズムやクレームなどを設定できます。
 定義は下記のとおりです。</p>
@@ -194,7 +194,7 @@
 <p><strong>戻り値</strong>: メタデータオブジェクト（<a href="#AuthorizationServerMetadata">AuthorizationServerMetadata</a>）またはnullを返します。</p>
 <h4 class="anchor anchorWithStickyNavbar_LWe7" id="AuthorizationServerIssuer">AuthorizationServerIssuer<a href="#AuthorizationServerIssuer" class="hash-link" aria-label="AuthorizationServerIssuer への直接リンク" title="AuthorizationServerIssuer への直接リンク" translate="no">​</a></h4>
 <p>認可サーバーのIssuerを定義する型です。</p>
-<p>定義は<a href="https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/authorization-server.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/authorization-server.types.ts</a>を参照してください。</p>
+<p>定義は<a href="https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-server.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/authorization-server.types.ts</a>を参照してください。</p>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="createauthzservermetadata">createAuthzServerMetadata<a href="#createauthzservermetadata" class="hash-link" aria-label="createAuthzServerMetadata への直接リンク" title="createAuthzServerMetadata への直接リンク" translate="no">​</a></h3>
 <p>認可サーバーのメタデータを作成・保存します。</p>
 <div class="language-typescript codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-typescript codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token function" style="color:#d73a49">createAuthzServerMetadata</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  metadata</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> AuthorizationServerMetadata</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  options</span><span class="token operator" style="color:#393A34">?</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"> alg</span><span class="token operator" style="color:#393A34">?</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">&#x27;ES256&#x27;</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token punctuation" style="color:#393A34">)</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token builtin">Promise</span><span class="token operator" style="color:#393A34">&lt;</span><span class="token keyword" style="color:#00009f">void</span><span class="token operator" style="color:#393A34">&gt;</span><br></span></code></pre></div></div>
@@ -232,7 +232,7 @@
 </ul>
 <h4 class="anchor anchorWithStickyNavbar_LWe7" id="TokenRequest">TokenRequest<a href="#TokenRequest" class="hash-link" aria-label="TokenRequest への直接リンク" title="TokenRequest への直接リンク" translate="no">​</a></h4>
 <p>クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。</p>
-<p>定義は<a href="https://github.com/trustknots/vcknots-internal/blob/next/issuer%2Bverifier/src/token-request.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/token-request.types.ts</a>を参照してください。</p>
+<p>定義は<a href="https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/token-request.types.ts" target="_blank" rel="noopener noreferrer">issuer+verifier/src/token-request.types.ts</a>を参照してください。</p>
 <h4 class="anchor anchorWithStickyNavbar_LWe7" id="TokenRequestOptions">TokenRequestOptions<a href="#TokenRequestOptions" class="hash-link" aria-label="TokenRequestOptions への直接リンク" title="TokenRequestOptions への直接リンク" translate="no">​</a></h4>
 <p>トークンリクエスト時のオプションを定義する型です。使用するフローなどを設定できます。（認可コードフローは未対応です）
 定義は下記のとおりです。</p>
