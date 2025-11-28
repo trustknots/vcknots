@@ -2,29 +2,29 @@
 sidebar_position: 2
 ---
 
-# How to Set Up and Use the Issuer Feature
+# Issuer機能のセットアップと使用方法
 
-This guide explains how to set up and use the Issuer feature of VCKnots.
+このガイドでは、VCKnotsのIssuer機能のセットアップと使用方法について説明します。
 
-## 1. Prerequisites
+## 1. 前提条件
 
-- Supports OpenID for Verifiable Credential Issuance - draft 13 ([OpenID for Verifiable Credential Issuance - draft 13](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html))
-- Node.js v14 or later is installed
-- TypeScript is configured
-- This document is based on the sample implementation of the server
-- The Hono web framework is used, but other frameworks can also be used
-- The currently supported flow is the Pre-Authorized Code Flow
+- OpenID for Verifiable Credential Issuance - draft 13 に対応([OpenID for Verifiable Credential Issuance - draft 13](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html))
+- Node.js v14以降がインストールされていること
+- TypeScriptが設定されていること
+- 本ドキュメントはserverのサンプル実装に基づいて説明します
+- HonoのWebフレームワークを使用していますが、他のフレームワークでも利用可能です
+- 現在対応しているフローは事前認可コードフローです
 
-## 2. Initial Setup
+## 2. 初期設定
 
-### Installing Required Dependencies
+### 必要な依存関係のインストール
 
 ```bash
 npm install @trustknots/vcknots
 npm install hono @hono/node-server
 ```
 
-### Preparing to Use the Library
+### ライブラリを使うための準備
 
 ```typescript
 import { Hono } from 'hono'
@@ -34,46 +34,46 @@ import { initializeAuthzFlow, AuthorizationServerIssuer, AuthorizationServerMeta
 
 const app = new Hono();
 
-// Creates VcknotsContext
+// VcknotsContextを作成
 const context = initializeContext({
   debug: process.env.NODE_ENV !== "production",
 });
 
-// Creates IssuerFlow and AuthzFlow instances
+// IssuerFlowとAuthzFlowインスタンスを作成
 const issuerFlow = initializeIssuerFlow(context);
 const authzFlow = initializeAuthzFlow(context);
 ```
 
-## 3. Sample Implementation of the Issuer Feature
+## 3. Issuer機能のサンプル実装
 
-### Parameters
+### パラメータ
 
-#### `:issuer` Parameter
+#### `:issuer` パラメータ
 
-The `:issuer` parameter used in Issuer endpoints represents the identifier of the Issuer.
+Issuerのエンドポイントで使用される`:issuer`パラメータは、Issuerの識別子を表します。
 
-**Type**: URI string of type `CredentialIssuer`
+**形式**: `CredentialIssuer`型のURI文字列
 
-**Example**:
+**例**:
 ```typescript
-// HTTPS URI format
+// HTTPS URI形式
 const issuerId = "https://issuer.example.com"
 ```
 
-**Usage**:
-- Managing issuer metadata
-- Creating credential offers
-- Issuing credentials
-- Managing the authorization server
+**用途**:
+- Issuerのメタデータの管理
+- クレデンシャルオファーの作成
+- クレデンシャルの発行
+- 認可サーバーの管理
 
-**Notes**:
-- Must be in URL format (validated with z.string().url())
-- It is recommended to use the HTTPS scheme
-- If it contains special characters, make sure they are properly encoded
+**注意事項**:
+- URL形式である必要がある（z.string().url()でバリデーション）
+- HTTPSスキームを使用することを推奨
+- 特殊文字を含む場合は適切にエンコードする
 
-### 1. Initializing Default Metadata
+### 1. デフォルトメタデータの初期化
 
-Example of initializing the default Issuer and authorization server metadata when the server starts:
+サーバー起動時にデフォルトのIssuer, 認可サーバーのメタデータを初期化する例：
 
 ```typescript
 import issuerMetadataConfigRaw from '../samples/issuer_metadata.json' with { type: 'json' }
@@ -87,7 +87,7 @@ const authorizationMetadataConfig = AuthorizationServerMetadata(authorizationMet
 serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, async (info) => {
   console.log(`Server is running on http://localhost:${info.port}`)
 
-  // Run initialization (using default settings)
+  // 初期化実行（デフォルト設定を使用）
   const issuerMetadata = CredentialIssuerMetadata({
     ...issuerMetadataConfig,
     credential_issuer: CredentialIssuer(baseUrl),
@@ -128,9 +128,9 @@ async function initializeAuthzMetadata(authzMetadata: AuthorizationServerMetadat
 
 ```
 
-### 2. Retrieving Issuer Metadata
+### 2. Issuerメタデータの取得
 
-Endpoint to retrieve Issuer metadata:
+Issuerのメタデータを取得するエンドポイント：
 
 ```typescript
 app.get('.well-known/openid-credential-issuer', async (c) => {
@@ -149,15 +149,15 @@ app.get('.well-known/openid-credential-issuer', async (c) => {
   })
 ```
 
-**Example**:
+**例**:
 
-**Request**
+**リクエスト**
 
 ```bash
 curl http://localhost:8080/.well-known/openid-credential-issuer
 ```
 
-**Response**
+**レスポンス**
 
 ```json
 {
@@ -246,9 +246,9 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
 }
 ```
 
-### 3. Creating a Credential Offer
+### 3. クレデンシャルオファーの作成
 
-Endpoint to create a credential offer:
+クレデンシャルオファーを作成するエンドポイント：
 
 ```typescript
 app.post('issue/configurations/:configuration/offer', async (c) => {
@@ -272,15 +272,15 @@ app.post('issue/configurations/:configuration/offer', async (c) => {
 
 ```
 
-**Example**:
+**例**:
 
-**Request**
+**リクエスト**
 
 ```bash
 curl -X POST http://localhost:8080/issue/configurations/UniversityDegreeCredential/offer
 ```
 
-**Response**
+**レスポンス**
 
 ```raw
 openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%3A8080%22%2C%22credential_configuration_ids%22%3A%5B%22UniversityDegreeCredential%22%5D%2C%22grants%22%3A%7B%22urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code%22%3A%7B%22pre-authorized_code%22%3A%22343ce17f1d274aa8bb3d19c140484889%22%7D%7D%7D
@@ -288,9 +288,9 @@ openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http
 
 
 
-### 4. Retrieving Authorization Server Metadata
+### 4. 認可サーバーメタデータの取得
 
-Endpoint to retrieve authorization server metadata:
+認可サーバーのメタデータを取得するエンドポイント：
 
 ```typescript
 app.get("/.well-known/oauth-authorization-server", async (c) => {
@@ -309,15 +309,15 @@ app.get("/.well-known/oauth-authorization-server", async (c) => {
   })
 ```
 
-**Example**:
+**例**:
 
-**Request**
+**リクエスト**
 
 ```bash
 curl  http://localhost:8080/.well-known/oauth-authorization-server
 ```
 
-**Response**
+**レスポンス**
 
 ```json
 {
@@ -334,9 +334,9 @@ curl  http://localhost:8080/.well-known/oauth-authorization-server
 }
 ```
 
-### 5. Issuing an Access Token
+### 5. アクセストークンの発行
 
-Endpoint to issue an access token:
+アクセストークンを発行するエンドポイント：
 
 ```typescript
 app.post("authz/token", async (c) => {
@@ -352,9 +352,9 @@ app.post("authz/token", async (c) => {
 
 ```
 
-**Example**:
+**例**:
 
-**Request**
+**リクエスト**
 
 ```bash
 curl -X POST http://localhost:8080/authz/token \
@@ -365,7 +365,7 @@ curl -X POST http://localhost:8080/authz/token \
   }'
 ```
 
-**Response**
+**レスポンス**
 
 ```json
 {
@@ -377,9 +377,9 @@ curl -X POST http://localhost:8080/authz/token \
 }
 ```
 
-### 6. Issuing a Credential
+### 6. クレデンシャルの発行
 
-Endpoint to issue a credential:
+クレデンシャルを発行するエンドポイント：
 
 ```typescript
 app.post('issue/credentials', async (c) => {
@@ -388,8 +388,8 @@ app.post('issue/credentials', async (c) => {
 
     const request = await c.req.json()
     const parsedReq = CredentialRequest(request)
-
-    // Access token validation
+  
+    // AccessToken 検証
     const accessToken = c.req.header('Authorization')?.replace('Bearer ', '')
     if (!accessToken) {
       return c.json(
@@ -411,7 +411,7 @@ app.post('issue/credentials', async (c) => {
         401
       )
     }
-    // Issues Credential
+    // Credential 発行
     const credential = await issuerFlow.issueCredential(CredentialIssuer(baseUrl), parse, {
       alg: 'ES256',
       cnonce: {
@@ -434,9 +434,9 @@ app.post('issue/credentials', async (c) => {
 })
 ```
 
-**Example**:
+**例**:
 
-**Request**
+**リクエスト**
 
 ```bash
 curl -X POST http://localhost:8080/issue/credentials \
@@ -454,7 +454,7 @@ curl -X POST http://localhost:8080/issue/credentials \
 }'
 ```
 
-**Response**
+**レスポンス**
 
 ```json
 {
@@ -464,78 +464,79 @@ curl -X POST http://localhost:8080/issue/credentials \
 ```
 
 
-## 4. Explanation of Type Definitions
+## 4. 型定義の説明
 
 ### CredentialIssuer {#CredentialIssuer}
 
-Represents the identifier of an Issuer. It is a URI-formatted string used to uniquely identify an Issuer.
+Issuerの識別子を表す型です。URI形式の文字列で、Issuerの一意な識別に使用されます。
 
-For the definition, see [issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts).
+定義は[issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts)を参照してください。
 
 ### CredentialIssuerMetadata {#CredentialIssuerMetadata}
 
-Defines the metadata of an Issuer. It contains information such as the client name, supported credential formats, endpoints, and so on.
+Issuerのメタデータを定義する型です。クライアント名、サポートするクレデンシャル形式、エンドポイントなどの情報を含みます。
 
-For the definition, see [issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts).
+定義は[issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts)を参照してください。
+
 
 ### CredentialResponse {#CredentialResponse}
 
-Represents the response for an issued credential. It contains information such as the credential in JWT format and related metadata.
+発行されたクレデンシャルのレスポンスを表す型です。JWT形式のクレデンシャルやメタデータなどの情報を含みます。
 
-For the definition, see [issuer+verifier/src/credential-response.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-response.types.ts).
+定義は[issuer+verifier/src/credential-response.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-response.types.ts)を参照してください。
 
 ### AuthorizationServerIssuer {#AuthorizationServerIssuer}
 
-Represents the identifier of the authorization server. It is a URI-formatted string used to uniquely identify the authorization server.
+認可サーバーの識別子を表す型です。URI形式の文字列で、認可サーバーの一意な識別に使用されます。
 
-For the definition, see [issuer+verifier/src/authorization-server.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-server.types.ts).
+定義は[issuer+verifier/src/authorization-server.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-server.types.ts)を参照してください。
 
 ### AuthorizationServerMetadata {#AuthorizationServerMetadata}
 
-Defines the metadata of the authorization server. It contains information such as issuer information, supported formats, endpoints, and so on.
+認可サーバーのメタデータを定義する型です。Issuer情報、サポートする形式、エンドポイントなどの情報を含みます。
 
-For the definition, see [issuer+verifier/src/authorization-server.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-server.types.ts).
+定義は[issuer+verifier/src/authorization-server.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-server.types.ts)を参照してください。
 
 ### AuthzTokenRequest
 
-Represents an access token request. It contains information such as whether the type is an authorization code, a pre-authorized code, and so on.
+アクセストークンリクエストを表す型です。タイプが認可コード、事前認可コードかなどの情報を含みます。
 
-For the definition, see [issuer+verifier/src/token-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/token-request.types.ts).
+定義は[issuer+verifier/src/token-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/token-request.types.ts)を参照してください。
 
-## 5. Methods of IssuerFlow
+## 5. IssuerFlowの各メソッド
 
 ### findIssuerMetadata
 
-Retrieves the metadata of an Issuer.
+Issuerのメタデータを取得します。
 
 ```typescript
 findIssuerMetadata(id: CredentialIssuer): Promise<CredentialIssuerMetadata | null>
 ```
 
-**Parameters**:
-- `id`: Identifier of the Issuer ([CredentialIssuer](#CredentialIssuer))
+**パラメータ**:
+- `id`: Issuerの識別子（[CredentialIssuer](#CredentialIssuer)）
 
-**Return value**: Returns the metadata object ([CredentialIssuerMetadata](#CredentialIssuerMetadata)) or `null`.
+**戻り値**: メタデータオブジェクト（[CredentialIssuerMetadata](#CredentialIssuerMetadata)）またはnullを返します。
 
 
 ### createIssuerMetadata
-Creates and stores the Issuer metadata.
+Issuerのメタデータを作成・保存します。
 
 ```typescript
 createIssuerMetadata(issuer: CredentialIssuerMetadata): Promise<void>
 ```
 
-**Parameters**:
-- `issuer`: Issuer metadata ([CredentialIssuerMetadata](#CredentialIssuerMetadata))
+**パラメータ**:
+- `issuer`: Issuerのメタデータ（[CredentialIssuerMetadata](#CredentialIssuerMetadata)）
 
-**Return value**: None
+**戻り値**: なし
 
-**Error cases**:
-- `PROVIDER_NOT_FOUND`: An unsupported `alg` is configured
+**エラーケース**:
+- `PROVIDER_NOT_FOUND`: 未対応の`alg`が設定された
 
 
 ### offerCredential
-Creates a credential offer.
+クレデンシャルオファーを作成します。
 
 ```typescript
 offerCredential(
@@ -545,28 +546,28 @@ offerCredential(
 ): Promise<CredentialOffer>
 ```
 
-**Parameters**:
-- `issuer`: Identifier of the Issuer ([CredentialIssuer](#CredentialIssuer))
-- `configurations`: Array of credential configuration IDs ([CredentialConfigurationId](#CredentialConfigurationId))
-- `options`: Options for creating the offer ([OfferOptions](#OfferOptions))
+**パラメータ**:
+- `issuer`: Issuerの識別子（[CredentialIssuer](#CredentialIssuer)）
+- `configurations`: クレデンシャル構成IDの配列（[CredentialConfigurationId](#CredentialConfigurationId)）
+- `options`: オファー作成のオプション（[OfferOptions](#OfferOptions)）
 
-**Return value**: Returns a credential offer.
+**戻り値**: クレデンシャルオファーを返します。
 
-For the type definition of the credential offer, see [issuer+verifier/src/credential-offer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-offer.types.ts).
+クレデンシャルオファーの型定義は[issuer+verifier/src/credential-offer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-offer.types.ts)を参照してください。
 
 
-**Error cases**:
-- `FEATURE_NOT_IMPLEMENTED_YET`: An unsupported flow is configured (the authorization code flow is not supported)
-- `ISSUER_NOT_FOUND`: An unregistered Issuer is configured
+**エラーケース**:
+- `FEATURE_NOT_IMPLEMENTED_YET`: 未対応のフローが設定された（認可コードフローには未対応です）
+- `ISSUER_NOT_FOUND`: 未登録のIssuerが設定された
 
 #### CredentialConfigurationId{#CredentialConfigurationId}
-Defines the type for credential configuration IDs.
+クレデンシャル構成IDを定義する型です。
 
-For the definition, see [issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts).
+定義は[issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts)を参照してください。
 
-#### OfferOptions {#OfferOptions}
-Defines the options used when creating a credential offer. You can configure whether to use the pre-authorized code flow.
-The definition is as follows.
+#### OfferOptions{#OfferOptions}
+クレデンシャルオファー作成時のオプションを定義する型です。事前認可フローを使用するかを設定できます。
+定義は下記のとおりです。
 
 ```typescript
 type OfferOptions =
@@ -585,7 +586,7 @@ type OfferOptions =
 ```
 
 ### issueCredential
-Issues a credential.
+クレデンシャルを発行します。
 
 ```typescript
 issueCredential(
@@ -595,34 +596,34 @@ issueCredential(
 ): Promise<CredentialResponse>
 ```
 
-**Parameters**:
-- `issuer`: Identifier of the Issuer ([CredentialIssuer](#CredentialIssuer))
-- `credentialRequest`: Credential request ([CredentialRequest](#CredentialRequest))
-- `options`: Issuance options ([IssueOptions](#IssueOptions))
+**パラメータ**:
+- `issuer`: Issuerの識別子（[CredentialIssuer](#CredentialIssuer)）
+- `credentialRequest`: クレデンシャルリクエスト（[CredentialRequest](#CredentialRequest)）
+- `options`: 発行オプション（[IssueOptions](#IssueOptions)）
 
-**Return value**: Returns a credential response.
+**戻り値**: クレデンシャルレスポンスを返します。
 
-For the type definition of the credential response, see [issuer+verifier/src/credential-response.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-response.types.ts).
+クレデンシャルレスポンスの型定義は[issuer+verifier/src/credential-response.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-response.types.ts)を参照してください。
 
-**Error cases**:
-- `ISSUER_NOT_FOUND`: An unregistered Issuer is configured
-- `PROVIDER_NOT_FOUND`: An unsupported `format` is configured
-- `INVALID_REQUEST`: `format` is not set
-- `UNSUPPORTED_CREDENTIAL_TYPE`: The specified `credential_definition` or `proof_type` is not supported
-- `INVALID_CREDENTIAL_REQUES`: The `proof` is missing or not supported
-- `INVALID_PROOF`: The `proof` cannot be verified, an unsupported header is set, or a `nonce` is missing
-- `UNSUPPORTED_ISSUER_KEY_ALG`: The Issuer’s signing algorithm is not supported
-- `AUTHZ_ISSUER_KEY_NOT_FOUND`: The Issuer’s key cannot be found
-- `INTERNAL_SERVER_ERROR`: Signing failed
+**エラーケース**:
+- `ISSUER_NOT_FOUND`: 未登録のIssuerが設定された
+- `PROVIDER_NOT_FOUND`:  未対応の`format`が設定された
+- `INVALID_REQUEST`: `format`が未設定
+- `UNSUPPORTED_CREDENTIAL_TYPE`: 指定された`credential_definition`もしくは`proof_type`がサポートされていない
+- `INVALID_CREDENTIAL_REQUES`: `proof`が見つからないかサポートされていない
+- `INVALID_PROOF`: `proof`が検証できない、未サポートのheaderが設定された、`nonce`が見つからない
+- `UNSUPPORTED_ISSUER_KEY_ALG`: Issuerの署名アルゴリズムがサポートされていない
+- `AUTHZ_ISSUER_KEY_NOT_FOUND`: Issuerの鍵が見つからない
+- `INTERNAL_SERVER_ERROR`: 署名に失敗した
 
 #### CredentialRequest{#CredentialRequest}
-Defines the type for a credential issuance request. You can configure items such as the credential identifier.
+クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。
 
-For the definition, see [issuer+verifier/src/credential-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-request.types.ts).
+定義は[issuer+verifier/src/credential-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-request.types.ts)を参照してください。
 
 #### IssueOptions{#IssueOptions}
-Defines the type for credential issuance options. You can configure items such as algorithms and claims.
-The definition is as follows.
+クレデンシャル発行オプションを定義する型です。アルゴリズムやクレームなどを設定できます。
+定義は下記のとおりです。
 
 ```typescript
 type IssueOptions = {
@@ -634,29 +635,29 @@ type IssueOptions = {
 }
 ```
 
-## 6. Methods of AuthzFlow
+## 6. AuthzFlowの各メソッド
 
 ### findAuthzServerMetadata
-Retrieves the metadata of the authorization server.
+認可サーバーのメタデータを取得します。
 
 ```typescript
 findAuthzServerMetadata(issuer: AuthorizationServerIssuer): Promise<AuthorizationServerMetadata | null>
 ```
 
-**Parameters**:
-- `issuer`: Identifier of the authorization server ([AuthorizationServerIssuer](#AuthorizationServerIssuer))
+**パラメータ**:
+- `issuer`: 認可サーバーの識別子（[AuthorizationServerIssuer](#AuthorizationServerIssuer)）
 
-**Return value**: Returns the metadata object ([AuthorizationServerMetadata](#AuthorizationServerMetadata)) or `null`.
+**戻り値**: メタデータオブジェクト（[AuthorizationServerMetadata](#AuthorizationServerMetadata)）またはnullを返します。
 
 
 #### AuthorizationServerIssuer{#AuthorizationServerIssuer}
-Defines the type for the issuer of the authorization server.
+認可サーバーのIssuerを定義する型です。
 
-For the definition, see [issuer+verifier/src/authorization-server.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-server.types.ts).
+定義は[issuer+verifier/src/authorization-server.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-server.types.ts)を参照してください。
 
 
 ### createAuthzServerMetadata
-Creates and stores the metadata of the authorization server.
+認可サーバーのメタデータを作成・保存します。
 
 ```typescript
 createAuthzServerMetadata(
@@ -665,15 +666,15 @@ createAuthzServerMetadata(
 ): Promise<void>
 ```
 
-**Parameters**:
-- `metadata`: Metadata of the authorization server ([AuthorizationServerMetadata](#AuthorizationServerMetadata))
-- `options`: Signing algorithm
+**パラメータ**:
+- `metadata`: 認可サーバーのメタデータ（[AuthorizationServerMetadata](#AuthorizationServerMetadata)）
+- `options`: 署名アルゴリズム
 
-**Return value**: None
+**戻り値**: なし
 
 
 ### createAccessToken
-Issues an access token.
+アクセストークンを発行します。
 
 ```typescript
 createAccessToken<T extends GrantType>(
@@ -683,15 +684,15 @@ createAccessToken<T extends GrantType>(
 ): Promise<Object>
 ```
 
-**Parameters**:
-- `authz`: Identifier of the authorization server ([AuthorizationServerIssuer](#AuthorizationServerIssuer))
-- `tokenRequest`: Token request ([TokenRequest](#TokenRequest))
-- `options`: Options for the token request
+**パラメータ**:
+- `authz`: 認可サーバーの識別子（[AuthorizationServerIssuer](#AuthorizationServerIssuer)）
+- `tokenRequest`: トークンリクエスト（[TokenRequest](#TokenRequest)）
+- `options`: トークンリクエストのオプション
 
   ```typescript
   type TokenRequestOptions = {
     [GrantType.AuthorizationCode]: {
-      // The authorization code flow is not supported yet
+      // 認可コードフローは未対応
     }
     [GrantType.PreAuthorizedCode]: {
       ttlSec?: number
@@ -700,9 +701,9 @@ createAccessToken<T extends GrantType>(
   }
   ```
 
-**Return value**: The access token is returned in the following format:
+**戻り値**: アクセストークンは下記のような形式で戻されます：
 ```typescript
-// When the pre-authorized code is selected as grant_type
+// grant_typeで事前認可コードが選択された場合
 {
   access_token: `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`,
   token_type: 'bearer',
@@ -712,21 +713,21 @@ createAccessToken<T extends GrantType>(
 }
 ```
 
-**Error cases**:
-- `PROVIDER_NOT_FOUND`: An unsupported algorithm is configured for the private key
-- `PRE_AUTHORIZED_CODE_NOT_FOUND`: An invalid pre-authorized code is provided
-- `INVALID_REQUEST`: The authorization server key is not registered, the algorithm is not set, or the grant type is not supported
-- `INTERNAL_SERVER_ERROR`: Signing failed
-- `FEATURE_NOT_IMPLEMENTED_YET`: The authorization code flow is configured (currently not supported)
+**エラーケース**:
+- `PROVIDER_NOT_FOUND`:  秘密鍵で未対応のアルゴリズムが設定された
+- `PRE_AUTHORIZED_CODE_NOT_FOUND`: 有効でない事前認可コードが設定された
+- `INVALID_REQUEST`: 認可サーバーの鍵が未登録、アルゴリズムが未設定、グラントタイプがサポートされていない
+- `INTERNAL_SERVER_ERROR`: 署名に失敗した
+- `FEATURE_NOT_IMPLEMENTED_YET`: 認可コードフローを設定（現在未対応）
 
 #### TokenRequest{#TokenRequest}
-Defines the type for a credential issuance request. You can configure items such as the credential identifier.
+クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。
 
-For the definition, see [issuer+verifier/src/token-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/token-request.types.ts).
+定義は[issuer+verifier/src/token-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/token-request.types.ts)を参照してください。
 
-#### TokenRequestOptions {#TokenRequestOptions}
-Defines the type for options used when making a token request. You can configure items such as the flow to use (the authorization code flow is not supported).
-The definition is as follows.
+#### TokenRequestOptions{#TokenRequestOptions}
+トークンリクエスト時のオプションを定義する型です。使用するフローなどを設定できます。（認可コードフローは未対応です）
+定義は下記のとおりです。
 
 ```typescript
 type TokenRequestOptions = {
@@ -742,46 +743,45 @@ type TokenRequestOptions = {
 
 
 ### verifyAccessToken
-Verifies the access token.
+アクセストークンを検証します。
 
 ```typescript
 verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promise<boolean>
 ```
 
-**Parameters**:
-- `authz`: Identifier of the authorization server ([AuthorizationServerIssuer](#AuthorizationServerIssuer))
+**パラメータ**:
+- `authz`: 認可サーバーの識別子（[AuthorizationServerIssuer](#AuthorizationServerIssuer)）
 
-**Return value**: Returns a boolean indicating whether the access token is valid.
+**戻り値**: アクセストークンが有効をbooleanで返します。
 
-**Error cases**:
-- `INVALID_ACCESS_TOKEN`: The access token is not a valid JWT, or the `authz` claim is not as expected
-- `AUTHZ_ISSUER_KEY_NOT_FOUND`: The authorization server’s key cannot be found
-- `PROVIDER_NOT_FOUND`: The signing algorithm is not supported
-
-
-## 7. Notes
-
-1. **Access token validation**: Always validate the access token when issuing credentials.
-
-2. **Security**: In production environments, be sure to implement proper authentication and authorization.
-   - Pay particular attention to managing private keys.
-   - Use HTTPS to encrypt communications.
-
-3. **URL encoding**: If the issuer ID contains characters that require URL encoding (for example, `:` or `/`), make sure they are properly encoded.
+**エラーケース**:
+- `INVALID_ACCESS_TOKEN`:  アクセストークンが有効なjwtでないか、`authz`が期待されたものでない
+- `AUTHZ_ISSUER_KEY_NOT_FOUND`: 認可サーバーの鍵が見つからない
+- `PROVIDER_NOT_FOUND`: 署名アルゴリズムが未サポート
 
 
-## 8. Troubleshooting
+## 7. 注意事項
 
-### Common issues
+1. **アクセストークンの検証**: クレデンシャル発行時には必ずアクセストークンを検証してください。
 
-- **Q: Metadata validation error**  
-  - **A:** Check that the provided metadata conforms to the `CredentialIssuerMetadata` schema and the `AuthorizationServerMetadata` schema.
+2. **セキュリティ**: 本番環境では、適切な認証・認可の仕組みを実装してください。
+   - 秘密鍵の管理には特に注意を払ってください
+   - HTTPSを使用して通信を暗号化してください
 
-- **Q: Error when creating credential offer**: `FEATURE_NOT_IMPLEMENTED_YET`  
-  - **A:** Make sure you are not calling an unimplemented flow. Currently, only the pre-authorized code flow is supported.
+3. **URLエンコード**: issuer IDにURLエンコードが必要な文字（例：`:`、`/`）が含まれる場合は、適切にエンコードしてください。
 
-- **Q: Error when issuing credential**: `INVALID_PROOF`  
-  - **A:** Check that the header of `prooj.jwt` in the credential request includes a `kid`.
 
+## 8. トラブルシューティング
+
+### よくある問題
+
+- **Q:メタデータのバリデーションエラー**:
+    - **A：** 提供されたメタデータがCredentialIssuerMetadataスキーマ、AuthorizationServerMetadataスキーマに適合しているかを確認してください。
+
+- **Q:クレデンシャルオファーの作成エラー**:`FEATURE_NOT_IMPLEMENTED_YET`
+    - **A：**  未実装のフローを呼び出していないか確認してください。現在対応しているのは事前認可コードフローです。
+
+- **Q:クレデンシャル発行エラー**:`INVALID_PROOF`
+    - **A：**  クレデンシャルリクエストのprooj.jwtのheaderがkidを含んでいるかを確認してください。
 
 

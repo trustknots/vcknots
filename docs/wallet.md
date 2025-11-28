@@ -2,29 +2,29 @@
 sidebar_position: 4
 ---
 
-# Wallet機能のセットアップと使用方法
+# How to Set Up and Use the Wallet Feature
 
-このチュートリアルは、VCKnotsのwallet ライブラリのセットアップ、主要機能のサンプル実装、および本番環境での利用に向けた重要な考慮事項について解説します。
+This tutorial explains how to set up the VCKnots wallet library, provides sample implementations of its main features, and describes important considerations for using it in production environments.
 
-## 1. 前提条件
+## 1. Prerequisites
 
-このセクションでは、vcknots/wallet ライブラリのビルドと、チュートリアルサンプルの実行に必要なすべての技術的要件を概説します。
+This section outlines all the technical requirements needed to build the `vcknots/wallet` library and run the tutorial samples.
 
-### 1-1. Go環境の要件
+### 1-1. Go Environment Requirements
 
-* **Goのバージョン:** vcknots/wallet ライブラリは、Go 1.24.5 を要求します。  
-* **開発環境管理 (mise):** 
-    - プロジェクトでは、開発環境の管理に mise ([https://mise.jdx.dev/](https://mise.jdx.dev/)) の使用を強く推奨しています。
-    - 例えば、以下のような手順で `mise install` を実行すると、必要なGoバージョンが自動的にインストールされ、環境変数が設定されます。  
+* **Go version:** The `vcknots/wallet` library requires Go 1.24.5.
+* **Development environment management (mise):**
+    - For this project, we strongly recommend using mise ([https://mise.jdx.dev/](https://mise.jdx.dev/)) to manage the development environment.
+    - For example, by running `mise install` as shown below, the required Go version will be installed automatically and environment variables will be configured.
 
 ```bash
 # macOS
 brew install mise
 
-# curl経由でのインストール
+# Install via curl
 curl https://mise.jdx.dev/install.sh | sh
 
-# (vcknotsリポジトリのルートから)
+# (From the root of the vcknots repository)
 cd wallet
 mise install
 ```
@@ -37,50 +37,52 @@ mise install
 export GOPRIVATE="github.com/trustknots/vcknots/wallet"
 ```
 
-### 1-2. サンプル実行環境の要件 (Verifier/Issuerサーバー)
+### 1-2. Requirements for the Sample Execution Environment (Verifier/Issuer Server)
 
-本ライブラリのWalletのチュートリアルのサンプルコード（特にCredentialの受領と提示）は、対話する相手（IssuerおよびVerifier）が存在することを前提としています。
+The sample code in this tutorial for the Wallet library (especially for receiving and presenting Credentials) assumes that counterpart services (an Issuer and a Verifier) are available.
 
-* **Node.jsサーバー:** チュートリアルのサンプルコード は、`README.md` および `package.json` で参照されているNode.jsベースのサンプルサーバー（`vcknots/server`）が http://localhost:8080 で動作している必要があります。  
+* **Node.js server:** The sample code in this tutorial requires that the Node.js-based sample server (`vcknots/server`), referenced in `README.md` and `package.json`, is running at http://localhost:8080.  
 
-* **サーバーのセットアップ:** このサーバーは Hono フレームワーク と `@trustknots/vcknots` を使用し、`example.ts` に定義されたIssuerおよびVerifierのエンドポイント（例: `/issue/credentials`, `/verifiers/:verifier/callback`）を提供します。  
+* **Server setup:** This server uses the Hono framework and `@trustknots/vcknots`, and provides Issuer and Verifier endpoints defined in `example.ts` (for example: `/issue/credentials`, `/verifiers/:verifier/callback`).  
 
-* **サーバーの起動手順:** 
-    - このNode.jsサーバーのセットアップはオプションではなく、**必須**です。
-    - `server_integration.go` 内の `receiveMockCredential` や `presentation` 関数は、localhost:8080 への暗黙的なHTTPリクエストをトリガーします。このサーバーが稼働していない場合、「3. サンプル実装」のコードは `connection refused` エラーで失敗します。
+* **Server startup steps:**
+    - Setting up this Node.js server is not optional; it is **required**.
+    - The `receiveMockCredential` and `presentation` functions in `server_integration.go` implicitly trigger HTTP requests to localhost:8080. If this server is not running, the code in “3. Sample Implementation” will fail with a `connection refused` error.
 
-wallet のGoコードを実行する **前に**、必ず以下のコマンドを実行してサーバーを起動してください 
+Before running the Wallet Go code, **be sure** to start the server by executing the commands below.
+
+
 
 ```bash
-# walletディレクトリから、serverディレクトリへ移動
+# From the wallet directory, move to the server directory
 cd ../server
 pnpm install
 pnpm -F server start
 ```
 
-## 2. 初期設定 
+## 2. Initial Setup
 
-このセクションでは、ライブラリの依存関係をインストールし、wallet のコア機能を集約する Controller インスタンスを初期化する手順を説明します。
+This section explains how to install the library dependencies and initialize the Controller instance, which aggregates the core Wallet features.
 
-### 2-1. 依存関係のインストール
+### 2-1. Installing Dependencies
 
-前提条件で GOPRIVATE を設定した後、プロジェクトのルート（wallet ディレクトリ）で以下のコマンドを実行し、`go.mod` にリストされている依存ライブラリ（`github.com/go-jose/go-jose/v4`, `go.etcd.io/bbolt`, `golang.org/x/crypto` など）をダウンロードします。
+After setting `GOPRIVATE` as a prerequisite, run the following command at the project root (the `wallet` directory) to download the dependencies listed in `go.mod` (such as `github.com/go-jose/go-jose/v4`, `go.etcd.io/bbolt`, `golang.org/x/crypto`, etc.).
 
 
 ```bash
 go mod download
 ```
 
-### 2-2. Walletコントローラの初期化
+### 2-2. Initializing the Wallet Controller
 
-- vcknots/wallet ライブラリは、モジュール性の高いディスパッチャベースのアーキテクチャを採用しています。
-- コアロジック（`controller.go`）は、credstore (永続化), receiver (受領), presenter (提示), verifier (検証) といった特定のタスクを処理するインターフェースに依存しています。
+- The `vcknots/wallet` library uses a highly modular, dispatcher-based architecture.
+- The core logic (`controller.go`) depends on interfaces that handle specific tasks such as credstore (persistence), receiver (receiving), presenter (presentation), and verifier (verification).
 
-- `server_integration.go` の `main` 関数は、Controller をインスタンス化するための標準的なレシピを提供します。
-- これは、ライブラリがデフォルト設定 (`WithDefaultConfig()`) とプラグイン （`WithPlugin(presenter.Oid4vp,...)`）の組み合わせによる依存性注入（DI）パターンに大きく依存していることを示しています。
+- The `main` function in `server_integration.go` provides a standard recipe for instantiating the Controller.
+- This shows that the library heavily relies on a dependency injection (DI) pattern using a combination of default settings (`WithDefaultConfig()`) and plugins (`WithPlugin(presenter.Oid4vp, ...)`).
 
-以下のコードは、`server_integration.go` に基づく Controller の標準的な初期化プロセスです。
-チュートリアルのサンプルコードを実行するために、この controller インスタンスが必要になります。
+The following code represents the standard Controller initialization process based on `server_integration.go`.
+This controller instance is required to run the tutorial sample code.
 
 ```go
 package main
@@ -89,7 +91,7 @@ import (
 	"log"
 	"net/url"
 	
-	// vcknots/wallet 内の各ディスパッチャパッケージ
+	// Dispatcher packages inside vcknots/wallet
 	vcknots_wallet "github.com/trustknots/vcknots/wallet/pkg/controller"
 	"github.com/trustknots/vcknots/wallet/pkg/credstore"
 	"github.com/trustknots/vcknots/wallet/pkg/dispatcher/idprof"
@@ -97,10 +99,10 @@ import (
 	"github.com/trustknots/vcknots/wallet/pkg/dispatcher/serializer"
 	"github.com/trustknots/vcknots/wallet/pkg/dispatcher/verifier"
 	"github.com/trustknots/vcknots/wallet/pkg/presenter"
-	oid4vp "github.com/trustknots/vcknots/wallet/pkg/presenter/oid4vp" // OID4VPプラグイン
+	oid4vp "github.com/trustknots/vcknots/wallet/pkg/presenter/oid4vp" // OID4VP plugin
 	"github.com/trustknots/vcknots/wallet/pkg/util"
 	
-	// 鍵生成と署名のための標準ライブラリ
+	// Standard library for key generation and signing
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -108,26 +110,26 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/google/uuid"
 
-	// サンプル実装で使用するライブラリ
+	// Libraries used in the sample implementation
 	"io"
 	"net/http"
 	"github.com/trustknots/vcknots/wallet/pkg/types"
 )
 
-// NewController は、すべてのディスパッチャを初期化し、
-// 統合されたWalletコントローラを返します。
+// NewController initializes all dispatchers
+// and returns the integrated Wallet controller.
 func NewController() *vcknots_wallet.Controller {
     logger := util.NewLogger()
 
-    // 1. 各ディスパッチャをデフォルト設定で初期化
+    // 1. Initialize each dispatcher with default settings
     credStoreDispatcher := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
     receiverDispatcher := receiverTypes.NewReceivingDispatcher(receiverTypes.WithDefaultConfig())
     serializationDispatcher := serializer.NewSerializationDispatcher(serializer.WithDefaultConfig())
     verificationDispatcher := verifier.NewVerificationDispatcher(verifier.WithDefaultConfig())
     idProfileDispatcher := idprof.NewIdentityProfileDispatcher(idprof.WithDefaultConfig())
 
-    // 2. OID4VPプラグインの初期化
-    // (プレゼンテーションのロジックはプラグイン化されている)
+    // 2. Initialize the OID4VP plugin
+    // (the presentation logic is implemented as a plugin)
     oid4vpPlugin, err := oid4vp.New(
         oid4vp.WithLogger(logger),
         oid4vp.WithVerificationDispatcher(verificationDispatcher),
@@ -136,12 +138,12 @@ func NewController() *vcknots_wallet.Controller {
         panic(err)
     }
 
-    // 3. 提示ディスパッチャにOID4VPプラグインを登録
+    // 3. Register the OID4VP plugin with the presentation dispatcher
     presentationDispatcher := presenter.NewPresentationDispatcher(
         presenter.WithPlugin(presenter.Oid4vp, oid4vpPlugin),
     )
 
-    // 4. すべてのディスパッチャをコントローラ設定に集約
+    // 4. Aggregate all dispatchers into the controller configuration
     config := vcknots_wallet.ControllerConfig{
         CredStore:  credStoreDispatcher,
         IdProf:     idProfileDispatcher,
@@ -152,30 +154,30 @@ func NewController() *vcknots_wallet.Controller {
         Logger:     logger,
     }
 
-    // 5. コントローラのインスタンス化
+    // 5. Instantiate the controller
     return vcknots_wallet.NewController(config)
 }
 
 var (
-    // このコントローラをチュートリアルの後半で使用します
+    // This controller will be used later in the tutorial
     controller = NewController()
 )
 ```
 
-## 3. Wallet機能のサンプル実装
+## 3. Sample Implementation of Wallet Features
 
-Controller インスタンスを使用して、Walletの主要な機能（鍵の準備、Credentialの受領、Credentialの提示）を実行する具体的なGoコードサンプルを示します。
-これらのサンプルは `server_integration.go` のロジックに基づいています。
+Using the Controller instance, this section provides concrete Go code samples that perform the main Wallet functions (key preparation, receiving Credentials, and presenting Credentials).
+These samples are based on the logic in `server_integration.go`.
 
-### 3-1. テスト用の鍵の準備 (IKeyEntryインターフェース)
+### 3-1. Preparing Test Keys (IKeyEntry Interface)
 
-`controller.go` の主要なメソッド（`ReceiveCredential`, `PresentCredential`）は、署名操作のために `IKeyEntry`インターフェースを要求します。
-これにより、ライブラリ利用者は鍵管理の実装（例: メモリ、HSM、セキュアエンクレーブ）を自由に差し替えることができます。
+The main methods in `controller.go` (`ReceiveCredential`, `PresentCredential`) require the `IKeyEntry` interface for signing operations.
+This allows library users to freely swap out key management implementations (for example: in-memory, HSM, secure enclave).
 
-`IKeyEntry` インターフェースは以下のように定義されています:
+The `IKeyEntry` interface is defined as follows:
 
 ```go
-// IKeyEntry は、鍵とその操作をカプセル化するインターフェースです。
+// IKeyEntry is an interface that encapsulates a key and its operations.
 type IKeyEntry interface {
     ID() string
     PublicKey() jose.JSONWebKey
@@ -183,14 +185,14 @@ type IKeyEntry interface {
 }
 ```
 
-チュートリアル用に、`server_integration.go` で提供されているインメモリのモック実装（`MockKeyEntry`）を使用します。
+For this tutorial, we use the in-memory mock implementation (`MockKeyEntry`) provided in `server_integration.go`.
 
-この `MockKeyEntry` の `Sign` メソッド は、単なる `ecdsa.Sign` のラッパーではありません。
-これは、OID4VPで一般的に要求される ES256 署名（SHA-256ハッシュ）と、その結果をIEEE P1363形式（r と s を連結した64バイトのバイト列）にシリアライズするロジックを含んでいます。
+The `Sign` method of this `MockKeyEntry` is not just a simple wrapper around `ecdsa.Sign`.
+It includes the logic to generate ES256 signatures (SHA-256 hash) commonly required in OID4VP, and to serialize the result into IEEE P1363 format (a 64-byte byte string consisting of the concatenation of r and s).
 
 
 ```go
-// MockKeyEntry は IKeyEntry のテスト用実装です
+// MockKeyEntry is a test implementation of IKeyEntry
 type MockKeyEntry struct {
     id         string
     privateKey *ecdsa.PrivateKey
@@ -201,12 +203,12 @@ func (m *MockKeyEntry) ID() string { return m.id }
 func (m *MockKeyEntry) PublicKey() jose.JSONWebKey {
     return jose.JSONWebKey{
         Key:       m.privateKey.PublicKey,
-        Algorithm: "ES256", // P-256曲線
+        Algorithm: "ES256", // P-256 curve
         Use:       "sig",
     }
 }
 
-// Sign は SHA-256 ハッシュ -> ECDSA署名 -> IEEE P1363 形式への変換 を行います
+// Sign performs SHA-256 hashing -> ECDSA signing -> conversion to IEEE P1363 format
 func (m *MockKeyEntry) Sign(payloadbyte) (byte, error) {
     hash := sha256.Sum256(payload)
     r, s, err := ecdsa.Sign(rand.Reader, m.privateKey, hash[:])
@@ -216,63 +218,62 @@ func (m *MockKeyEntry) Sign(payloadbyte) (byte, error) {
 
     // P-256 (256 bits / 8 = 32 bytes)
     const keySize = 32
-    // r と s を 64-byte (IEEE P1363) 形式にシリアライズ
+    // Serialize r and s into 64-byte (IEEE P1363) format
     signature := make(byte, 2*keySize)
     r.FillBytes(signature)
     s.FillBytes(signature)
     return signature, nil
 }
 
-// NewMockKeyEntry は新しいテスト鍵を生成します
+// NewMockKeyEntry generates a new test key
 func NewMockKeyEntry() (*MockKeyEntry, error) {
-    // P-256曲線で新しい鍵を生成します
+    // Generate a new key on the P-256 curve
     privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
     if err!= nil {
         return nil, err
     }
     
     return &MockKeyEntry{
-        id:         "test-key-id-" + uuid.NewString(), // 実行ごとに一意のID
+        id:         "test-key-id-" + uuid.NewString(), // A unique ID for each execution
         privateKey: privKey,
     }, nil
 }
 
-// チュートリアルの後半で使用する鍵を準備します
+// Prepare the key that will be used later in the tutorial
 var testKey, _ = NewMockKeyEntry()
 ```
 
-### 3-2. Credentialの受領
+### 3-2. Receiving a Credential
 
-- この機能は、Issuer (Node.jsサーバー) からの `CredentialOffer` に基づき、Controller の `ReceiveCredential` メソッドを呼び出します。
-- `ReceiveCredential` メソッド は、`ReceiveCredentialRequest` 構造体を引数に取ります。
-- `server_integration.go` の `receiveMockCredential` 関数を参考に、Mock タイプのCredential（テスト用Issuerから発行される）を受領するプロセスを示します。
-
+- This feature calls the Controller’s `ReceiveCredential` method based on a `CredentialOffer` from the Issuer (Node.js server).
+- The `ReceiveCredential` method takes a `ReceiveCredentialRequest` struct as its argument.
+- Referring to the `receiveMockCredential` function in `server_integration.go`, the following shows the process for receiving a mock Credential (issued by a test Issuer).
 
 ```go
 func receiveTestCredential(key *MockKeyEntry) (*vcknots_wallet.SavedCredential, error) {
-    // 1. Credential Offer をシミュレート (Mock)
-    // 実際のオファーURLは QRコードやディープリンクから取得されます
+    // 1. Simulate a Credential Offer (Mock)
+    // In a real scenario, the offer URL would be obtained from a QR code or deep link
     issuerURL, _ := url.Parse("http://localhost:8080/issuers/test_issuer/configurations/test_config")
 
     offer := &vcknots_wallet.CredentialOffer{
         CredentialIssuer:         issuerURL,
-        CredentialConfigurationIDs:string{"UniversityDegree_jwt_vc_json-ld"}, // サーバー側 と一致
+        CredentialConfigurationIDs:string{"UniversityDegree_jwt_vc_json-ld"}, // Match with the server side
         Grants: map[string]*vcknots_wallet.CredentialOfferGrant{
             "pre-authorized_code": {
-                PreAuthorizedCode: "test_code", // モック用の固定コード
+                PreAuthorizedCode: "test_code", // Fixed code for mock use
             },
         },
     }
 
-    // 2. 受領リクエストを作成
+    // 2. Create the receive request
     receiveReq := vcknots_wallet.ReceiveCredentialRequest{
-        CredentialOffer:    offer,
-        Type:               receiverTypes.Mock, // サーバー側と通信しないモックタイプ
-        Key:                key,                // 署名に使用する鍵 (PoPなど)
-        CachedIssuerMetadata: nil,              // メタデータがない場合は nil を指定
+        CredentialOffer:      offer,
+        Type:                 receiverTypes.Mock, // Mock type that does not communicate with the server side
+        Key:                  key,                // Key used for signing (e.g. PoP)
+        CachedIssuerMetadata: nil,                // Specify nil when there is no metadata
     }
 
-    // 3. Controller の ReceiveCredential を呼び出す
+    // 3. Call the Controller's ReceiveCredential
     log.Println("Attempting to receive credential...")
     savedCred, err := controller.ReceiveCredential(receiveReq)
     if err!= nil {
@@ -285,18 +286,18 @@ func receiveTestCredential(key *MockKeyEntry) (*vcknots_wallet.SavedCredential, 
 }
 ```
 
-### 3-3. Credentialの提示 (OID4VP)
+### 3-3. Presenting a Credential (OID4VP)
 
-- Verifier (Node.jsサーバー) から `openid4vp://authorize?...` 形式のリクエストURIを受け取った後、Controller の `PresentCredential` メソッドを呼び出します。
-- このメソッド は、`uriString`（OID4VPリクエスト）をパースし、リクエスト内容（`presentation_definition`）を解析し、`credstore` から適合するCredentialを検索し、`IKeyEntry` を使ってVerifiable Presentation (VP) に署名し、Verifierの`callback` エンドポイント に`HTTP POST`します。
-- `server_integration.go` の `presentation` 関数に基づき、Node.jsサーバー（`/verifiers/test_verifier/request` エンドポイント）から取得したリクエストURIを処理します。
+- After receiving a request URI in the form `openid4vp://authorize?...` from the Verifier (Node.js server), the Controller’s `PresentCredential` method is called.
+- This method parses the `uriString` (OID4VP request), analyzes the request content (`presentation_definition`), searches the `credstore` for matching Credentials, uses `IKeyEntry` to sign a Verifiable Presentation (VP), and sends it to the Verifier’s `callback` endpoint via `HTTP POST`.
+- Based on the `presentation` function in `server_integration.go`, it processes the request URI obtained from the Node.js server (`/verifiers/test_verifier/request` endpoint).
 
 
 ```go
 func presentTestCredential(key *MockKeyEntry) error {
-    // 1. Verifier (Node.js サーバー) から OID4VP リクエストURIを取得
-    // このURIは通常、QRコードのスキャンによって取得されます
-    // ここでは の /verifiers/test_verifier/request を直接呼び出します
+    // 1. Obtain the OID4VP request URI from the Verifier (Node.js server)
+    // This URI is usually obtained by scanning a QR code
+    // Here, we directly call /verifiers/test_verifier/request
     resp, err := http.Get("http://localhost:8080/verifiers/test_verifier/request")
     if err!= nil {
         log.Printf("Failed to get OID4VP request URI from server: %v\n", err)
@@ -312,8 +313,8 @@ func presentTestCredential(key *MockKeyEntry) error {
     oid4vpRequestURI := string(body)
     log.Printf("Received OID4VP Request URI: %s\n", oid4vpRequestURI)
 
-    // 2. Controller の PresentCredential を呼び出す
-    // 内部でパース、検索、署名、HTTP POST が実行されます
+    // 2. Call the Controller's PresentCredential
+    // Parsing, searching, signing, and HTTP POST are all performed internally
     log.Println("Attempting to present credential...")
     err = controller.PresentCredential(oid4vpRequestURI, key)
     if err!= nil {
@@ -326,10 +327,10 @@ func presentTestCredential(key *MockKeyEntry) error {
 }
 ```
 
-### 3-4. 保存されたCredentialの参照
+### 3-4. Referencing Saved Credentials
 
-- `ReceiveCredential` で保存されたCredentialは、Controller の `GetCredentialEntries` メソッドで検索・一覧取得できます。
-- このリクエスト により、ページネーション（`Offset`, `Limit`）や、`Filter` 関数による高度な絞り込みが可能です。
+- Credentials saved via `ReceiveCredential` can be searched and listed using the Controller’s `GetCredentialEntries` method.
+- This request allows pagination (`Offset`, `Limit`) and advanced filtering using a `Filter` function.
 
 
 ```go
@@ -339,9 +340,9 @@ func listSavedCredentials() (*vcknots_wallet.SavedCredential, error) {
         Offset: 0,
         Limit:  &limit,
         Filter: func(sc *vcknots_wallet.SavedCredential) bool {
-            // (例: 'UniversityDegree' のみフィルタリング)
+            // Example: filter only 'UniversityDegree'
             // return sc.Credential.HasType("UniversityDegree")
-            return true // この例ではすべて取得
+            return true // In this example, retrieve all
         },
     }
 
@@ -360,30 +361,30 @@ func listSavedCredentials() (*vcknots_wallet.SavedCredential, error) {
 }
 ```
 
-## 4. Walletメタデータの登録
+## 4. Registering Wallet Metadata
 
-- このセクションは、Walletが **自身の** メタデータを登録する機能ではなく、Walletが対話する **Issuer** のメタデータを **取得・処理** する機能について説明します。
+- This section does **not** describe a feature for the Wallet to register its **own** metadata, but rather explains the capability to **retrieve and process** the metadata of the **Issuer** with which the Wallet interacts.
 
-- Credentialを受領する際、WalletはまずIssuerの `.well-known/openid-credential-issuer` エンドポイント にアクセスし、そのIssuerの設定（公開鍵、サポートするCredentialタイプ、エンドポイントなど）を取得する必要があります。
+- When receiving a Credential, the Wallet must first access the Issuer’s `.well-known/openid-credential-issuer` endpoint and obtain that Issuer’s configuration (such as public keys, supported Credential types, endpoints, etc.).
 
-- Controller は、このタスク専用の `FetchCredentialIssuerMetadata` メソッドを提供します。
-- これは `ReceiveCredential` の内部フローで暗黙的に呼び出されるか、`ReceiveCredentialRequest` の `CachedIssuerMetadata` フィールド に設定するために事前に明示的に呼び出すことができます。
+- The Controller provides the `FetchCredentialIssuerMetadata` method specifically for this task.
+- This can either be called implicitly within the internal flow of `ReceiveCredential`, or explicitly in advance in order to set the `CachedIssuerMetadata` field of `ReceiveCredentialRequest`.
 
-- `ReceiveCredential` を呼び出す際に `CachedIssuerMetadata` を提供することで、`ReceiveCredential` が実行されるたびにメタデータを再フェッチするネットワークオーバーヘッドを回避できます。
+- By providing `CachedIssuerMetadata` when calling `ReceiveCredential`, you can avoid the network overhead of re-fetching the metadata every time `ReceiveCredential` is executed.
 
 
 ```go
 func fetchIssuerMetadata() (*receiverTypes.CredentialIssuerMetadata, error) {
-    // 注意: このURLはIssuerのベースURLであり、/.well-known/... パス自体を含みません
-    // FetchCredentialIssuerMetadata が内部でパスを解決します
-    issuerURL, _ := url.Parse("http://localhost:8080") // IssuerのベースURL
+    // Note: This URL is the Issuer's base URL and does not include the /.well-known/... path
+    // FetchCredentialIssuerMetadata resolves the path internally
+    issuerURL, _ := url.Parse("http://localhost:8080") // Issuer base URL
 
     log.Println("Fetching issuer metadata from:", issuerURL.String())
     
-    // で定義されたメソッドを呼び出す
+    // Call the method defined in the controller
     metadata, err := controller.FetchCredentialIssuerMetadata(
         issuerURL,
-        receiverTypes.OpenID4VCI, // プロトコルタイプを指定
+        receiverTypes.OpenID4VCI, // Specify the protocol type
     )
 
     if err!= nil {
@@ -397,50 +398,50 @@ func fetchIssuerMetadata() (*receiverTypes.CredentialIssuerMetadata, error) {
 }
 ```
 
-## 5. 型定義の説明
+## 5. Explanation of Type Definitions
 
-vcknots/wallet ライブラリの Controller とのインタラクションに使用される主要なGoの型定義について説明します。
+This section explains the main Go type definitions used when interacting with the Controller in the `vcknots/wallet` library.
 
-| 型 / インターフェース | 説明 |
+| Type / Interface | Description |
 | :---- | :---- |
-| **IKeyEntry** | 鍵管理のコア・インターフェース。`ID()`, `PublicKey()`, `Sign()` の3つのメソッドを定義します。ライブラリ利用者は、HSMやセキュアエンクレーブと連携するためにこれを実装する必要があります。 |
-| **DIDCreateOptions** | `GenerateDID` メソッドに渡すオプション。生成するDIDのタイプ (`TypeID`) と、関連付ける公開鍵 (`PublicKey`) を指定します。 |
-| **ReceiveCredentialRequest** | `ReceiveCredential` メソッドの主要な入力。`CredentialOffer`、署名に使用する Key (`IKeyEntry`)、およびオプションの `CachedIssuerMetadata` をカプセル化します。 |
-| **CredentialOffer** | Issuerから受け取るオファーの詳細。IssuerのURL (`CredentialIssuer`)、要求するCredentialのID (`CredentialConfigurationIDs`)、および認可グラント (`Grants`) を含みます。 |
-| **SavedCredential** | `credstore` に保存されたCredentialの実体。`\*credential.Credential`（VCの生データ）と `\*types.CredentialEntry`（メタデータ）をラップします。`GetCredentialEntries` の戻り値です。 |
-| **GetCredentialEntriesRequest** | `GetCredentialEntries` メソッドでの検索条件。ページネーション (`Offset`, `Limit`) と、動的なGo関数によるフィルタリング (`Filter`) をサポートします。 |
+| **IKeyEntry** | Core interface for key management. Defines three methods: `ID()`, `PublicKey()`, and `Sign()`. Library users must implement this to integrate with HSMs, secure enclaves, and similar systems. |
+| **DIDCreateOptions** | Options passed to the `GenerateDID` method. Specifies the type of DID to generate (`TypeID`) and the associated public key (`PublicKey`). |
+| **ReceiveCredentialRequest** | Main input for the `ReceiveCredential` method. Encapsulates the `CredentialOffer`, the key (`IKeyEntry`) used for signing, and the optional `CachedIssuerMetadata`. |
+| **CredentialOffer** | Details of the offer received from the Issuer. Includes the Issuer URL (`CredentialIssuer`), the IDs of the requested Credentials (`CredentialConfigurationIDs`), and the authorization grants (`Grants`). |
+| **SavedCredential** | The actual Credential stored in the `credstore`. Wraps `*credential.Credential` (VC raw data) and `*types.CredentialEntry` (metadata). Returned by `GetCredentialEntries`. |
+| **GetCredentialEntriesRequest** | Search conditions for the `GetCredentialEntries` method. Supports pagination (`Offset`, `Limit`) and dynamic filtering via a Go function (`Filter`). |
 
-## 6. 注意事項
+## 6. Notes
 
-1. **MockKeyEntry は本番環境で使用禁止 (CRITICAL):**  
-    - `server_integration.go` で提供されている `MockKeyEntry` は、テストとデモンストレーションのみを目的としています。
-    - **理由:** これは秘密鍵（`*ecdsa.PrivateKey`）をGoのヒープメモリ上に平文で保持します。
-    - **本番実装:** 本番環境では、`IKeyEntry` インターフェースを独自に実装する必要があります。この実装は、`Sign` オペレーションをOSのキーストア（`iOS Secure Enclave`, `Android Keystore`）やHSM（`Hardware Security Module`）に委譲し、秘密鍵自体がアプリケーションのメモリ空間にロードされないように（`Non-exportable`）設計する必要があります。  
+1. **MockKeyEntry must not be used in production (CRITICAL):**  
+    - `MockKeyEntry` provided in `server_integration.go` is intended only for testing and demonstration.
+    - **Reason:** It keeps the private key (`*ecdsa.PrivateKey`) in plaintext on the Go heap memory.
+    - **Production implementation:** In a production environment, you must implement the `IKeyEntry` interface yourself. This implementation should delegate the `Sign` operation to an OS keystore (`iOS Secure Enclave`, `Android Keystore`) or an HSM (`Hardware Security Module`), and be designed so that the private key itself is never loaded into the application’s memory space (i.e., it is *non-exportable*).  
 
-2. **GOPRIVATE の設定:**  
-    - `go mod download` または `go build` が失敗する場合、GOPRIVATE 環境変数の設定 が欠落している可能性が最も高いです。 
+2. **GOPRIVATE configuration:**  
+    - If `go mod download` or `go build` fails, the most likely cause is a missing GOPRIVATE environment variable configuration. 
 
-3. **署名フォーマットの互換性:**  
-    - 独自の `IKeyEntry` を実装する場合、`Sign` メソッド が生成する署名フォーマットに注意してください。
-    - `MockKeygit Entry` は、ES256（SHA-256 with P-256）署名を **IEEE P1363** 形式（64バイト固定長）でシリアライズします。
-    - Verifier が異なる形式（例: ASN.1 DER）を期待している場合、`PresentCredential` は署名検証エラーで失敗します。  
+3. **Signature format compatibility:**  
+    - When implementing your own `IKeyEntry`, pay close attention to the signature format produced by the `Sign` method.
+    - `MockKeyEntry` serializes ES256 (SHA-256 with P-256) signatures in **IEEE P1363** format (fixed 64-byte length).
+    - If the Verifier expects a different format (for example, ASN.1 DER), `PresentCredential` will fail with a signature verification error.  
 
-4. **永続化ストレージ (bbolt):**  
-    - `credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())` は、デフォルトで `go.etcd.io/bbolt` （組み込みKVS）を `wallet.db` のようなローカルファイルに永続化しようと試みます。
-    - 実行ディレクトリに書き込み権限があることを確認してください。
+4. **Persistent storage (bbolt):**  
+    - `credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())` uses `go.etcd.io/bbolt` (an embedded KVS) by default and attempts to persist data to a local file such as `wallet.db`.
+    - Make sure the execution directory has write permissions.
 
-## 7. トラブルシューティング
+## 7. Troubleshooting
 
-* **Q: `go mod download` が `package... is private` または `404 Not Found` で失敗する。**  
-  * **A:** GOPRIVATE 環境変数が正しく設定されていません。「1. 前提条件」 に戻り、`export GOPRIVATE="github.com/trustknots/vcknots/wallet"` が実行されていることを確認してください。  
+* **Q: `go mod download` fails with `package... is private` or `404 Not Found`.**  
+  * **A:** The GOPRIVATE environment variable is not configured correctly. Go back to “1. Prerequisites” and make sure `export GOPRIVATE="github.com/trustknots/vcknots/wallet"` has been executed.  
 
-* **Q: `ReceiveCredential` または `PresentCredential` が `connection refused` または `timeout` で失敗する。**  
-  * **A:** vcknots/wallet のGoコードが通信しようとしているIssuer/Verifierサーバーが起動していません。「1. 前提条件」 に従い、`packages/server` ディレクトリで `pnpm start` を実行し、http://localhost:8080 が応答することを確認してください。  
+* **Q: `ReceiveCredential` or `PresentCredential` fails with `connection refused` or `timeout`.**  
+  * **A:** The Issuer/Verifier server that the `vcknots/wallet` Go code is trying to communicate with is not running. Follow “1. Prerequisites”, run `pnpm start` in the `packages/server` directory, and confirm that http://localhost:8080 responds.  
 
-* **Q: `PresentCredential` は成功するが、Verifier側（Node.jsサーバーのログ）で `Invalid signature` や `Presentation verification failed` と表示される。**  
-  * **A:** これは、Walletが使用した `IKeyEntry` と Verifier の間で署名アルゴリズムまたはフォーマットの不一致があることを示します。  
-    1. `MockKeyEntry` を使用しているか確認してください。  
-    2. 独自の `IKeyEntry` を使用している場合、`Sign` メソッドが `MockKeyEntry` と同様に、SHA-256ハッシュとIEEE P1363シリアライゼーションを使用しているか確認してください。  
+* **Q: `PresentCredential` succeeds, but the Verifier (Node.js server logs) shows `Invalid signature` or `Presentation verification failed`.**  
+  * **A:** This indicates a mismatch in the signature algorithm or format between the `IKeyEntry` used by the Wallet and the Verifier.  
+    1. Check whether you are using `MockKeyEntry`.  
+    2. If you are using a custom `IKeyEntry`, make sure the `Sign` method, like `MockKeyEntry`, uses a SHA-256 hash and IEEE P1363 serialization.  
 
-* **Q: `controller.ReceiveCredential` が `issuer metadata not found` で失敗する。**  
-  * **A:** Node.jsサーバー は起動しているかもしれませんが、`/.well-known/openid-credential-issuer` エンドポイントが正しく機能していない可能性があります。`curl http://localhost:8080/.well-known/openid-credential-issuer` （または「4. Walletメタデータの登録」で指定されたIssuerのベースURL）を実行して、JSONメタデータが返されることを確認してください。
+* **Q: `controller.ReceiveCredential` fails with `issuer metadata not found`.**  
+  * **A:** The Node.js server may be running, but the `/.well-known/openid-credential-issuer` endpoint might not be functioning correctly. Run `curl http://localhost:8080/.well-known/openid-credential-issuer` (or the Issuer base URL specified in “4. Registering Wallet Metadata”) and confirm that JSON metadata is returned.
