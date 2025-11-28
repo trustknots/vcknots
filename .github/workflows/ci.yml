@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [ "next" ]
+    branches: [ "main" ]
 
 jobs:
   core:
@@ -54,7 +54,7 @@ jobs:
 
       - name: Run lint
         working-directory: ./wallet
-        run: make lint        
+        run: make lint
 
       # slack
       - name: Notify Slack (failure)
