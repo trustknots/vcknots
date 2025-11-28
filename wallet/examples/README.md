@@ -1,98 +1,133 @@
-# vcknots-wallet サーバー統合サンプル
+# vcknots-wallet Server Integration Sample
 
-このディレクトリには、vcknots-walletとverifierサーバーとの統合を実演するサンプルコードが含まれています。
+This directory contains sample code that demonstrates how to integrate vcknots-wallet with the verifier server.
 
-## 前提条件
+## Prerequisites
 
-### 1. mise のインストール
+### 1. Install mise
 
-Walletのパッケージは開発環境管理に[mise](https://mise.jdx.dev/)を使用しています．
-miseがインストールされていない場合はまずインストールしてください．
+The wallet package uses [mise](https://mise.jdx.dev/) for development environment management.
+If mise is not installed, please install it first.
 
-例えば:
+Example:
 ```bash
 # macOS
 brew install mise
 
-# curl経由でのインストール
+# Install via curl
 curl https://mise.jdx.dev/install.sh | sh
 ```
 
-### 2. 環境のセットアップ
+### 2. Set up the environment
 
-プロジェクトディレクトリに移動して環境をセットアップします：
+Move to the project directory and set up the environment:
 
 ```bash
 cd /path/to/vcknots/wallet
 mise install
 ```
 
-これにより，`mise.toml`に基づいてGo 1.24.5が自動的にインストールされ，必要な環境変数が設定されます．
-miseを利用しない場合は，Go 1.24.5を手動でインストールし，`GOPRIVATE`環境変数を設定してください：
+This automatically installs Go 1.24.5 and configures the necessary environment variables based on `mise.toml`.
+If you prefer not to use mise, install Go 1.24.5 manually and set the `GOPRIVATE` environment variable:
 
 ```bash
 export GOPRIVATE="github.com/trustknots/vcknots/wallet"
 ```
 
-### 3. 依存関係のインストール
+### 3. Install dependencies
 
-Goモジュールの依存関係をインストールします：
+Install Go module dependencies:
 
 ```bash
 go mod download
 ```
 
-## サンプルの実行方法
+## How to Run the Sample
 
-### ステップ1: Verifierサーバーの起動
+### Step 1: Start the Issuer and Verifier servers
 
-サンプルを実行するためには，verifierサーバーが動作している必要があります．サーバーディレクトリに移動してサーバーを起動します：
+The verifier server must be running to execute the sample. Move to the server directory and start the server:
 
 ```bash
-# walletディレクトリから、serverディレクトリへ移動
-cd ../../packages/server
+# From the wallet directory, move to the vcknots root (/path/to/vcknots)
+cd ../
 
-# サーバーの依存関係をインストール（まだの場合）
+# Install dependencies (if not done yet)
 pnpm install
 
-# サーバーを起動
-pnpm start
+# Build the issuer+verifier module
+pnpm -F @trustknots/vcknots build
+
+# Build the server module
+pnpm -F @trustknots/server build
+
+# Start the server
+pnpm -F @trustknots/server start
 ```
 
-サーバーはデフォルトで`http://localhost:8080`で起動します．
-テスト用スクリプトも上記のURLを使用します．
+### Confirm the server is running
 
-### ステップ2: 統合テスト用のスクリプト実行
+When the server starts, you should see output similar to:
 
-新しいターミナルで，walletディレクトリに戻ってサーバー統合テスト用のスクリプトを実行します：
+```
+> @trustknots/server@0.1.0 start /path/to/vcknots/server/single
+> tsx src/example.ts
+
+POST  /configurations/:configuration/offer
+        [handler]
+POST  /credentials
+        [handler]
+GET   /.well-known/openid-credential-issuer
+        [handler]
+GET   /.well-known/jwt-vc-issuer
+        [handler]
+POST  /token
+        [handler]
+GET   /.well-known/oauth-authorization-server
+        [handler]
+POST  /request
+        [handler]
+POST  /callback
+        [handler]
+POST  /request-object
+        [handler]
+GET   /request.jwt/:request-object-Id
+        [handler]
+Server is running on http://localhost:8080
+Verifier metadata initialized for http://localhost:8080
+Issuer metadata initialized
+Authz metadata initialized
+```
+
+By default the server listens on `http://localhost:8080`.
+The test script below also uses this URL.
+
+### Step 2: Run the integration test script
+
+Open a new terminal, return to the wallet directory, and run the server integration script:
 
 ```bash
-cd /path/to/vcknots/wallet/examples
-go run .
+cd /path/to/vcknots/wallet
+go run examples/server_integration.go
 ```
 
-### ステップ3: 結果の確認
+### Step 3: Check the results
 
-うまくいけば、以下のような出力が表示されます：
+If everything works, you should see output similar to:
 
 ```
-time=2025-09-10T15:23:40.851+09:00 level=INFO msg="Importing demo credential..."
-time=2025-09-10T15:23:40.863+09:00 level=INFO msg="Successfully imported demo credential via controller.ReceiveCredential" entry_id=66a56284-9591-4b69-9dc9-29d0e493fe5c raw_length=1342
-time=2025-09-10T15:23:40.865+09:00 level=INFO msg="Stored credentials" count=33 total=36
-time=2025-09-10T15:23:40.865+09:00 level=INFO msg="Starting server integration check..."
-time=2025-09-10T15:23:40.865+09:00 level=INFO msg="Verifier Details" URL=http://localhost:8080 ID=https://verifier.example.com
-time=2025-09-10T15:23:40.871+09:00 level=INFO msg="Authorization RequestURI" status="200 OK" body="openid4vp://authorize?client_id=redirect_uri%3Ahttp%3A%2F%2Flocalhost%3A8080%2Fverifiers%2Fhttps%253A%252F%252Fverifier.example.com%2Fcallback&request_uri=http%3A%2F%2Flocalhost%3A8080%2Fverifiers%2Fhttps%253A%252F%252Fverifier.example.com%2Frequest.jwt%2F4e3a5afb84364b40b4840a3fc72411c2"
-time=2025-09-10T15:23:40.871+09:00 level=INFO msg="Request URI is valid" scheme=openid4vp
-time=2025-09-10T15:23:41.410+09:00 level=INFO msg="Credential presented successfully"
+time=2025-11-27T14:03:25.066+09:00 level=INFO msg="Starting server integration check..."
+...
+time=2025-11-27T14:03:25.174+09:00 level=INFO msg="Credential presented successfully"
 ```
 
-`Credential presented successfully`と表示されれば，成功です．
+If `Credential presented successfully` appears, the sample succeeded.
 
-## ファイル構成
+## File Layout
 
 ```
 examples/
-├── server_integration.go    # メインのソースコード
-├── example_vc_jwt.txt      # サンプルVC
-└── README.md               # このファイル
+├── server_integration.go    # Main source code
+├── example_vc_jwt.txt       # Sample VC
+└── README.md                # This file
 ```
