@@ -330,7 +330,7 @@ describe('IssuerFlow', () => {
     })
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
     mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
-    mock.method(mockPreAuthCodeStoreProvider, 'save', async () => { })
+    mock.method(mockPreAuthCodeStoreProvider, 'save', async () => {})
     mock.method(mockCredentialOfferProvider, 'create', async () => offer)
 
     const result = await issuerFlow.offerCredential(issuer, configurations, options)
@@ -528,7 +528,8 @@ describe('IssuerFlow', () => {
       // 3. Assert
       assert.ok(response)
       assert.equal(mockIssueCredentialProvider.createCredential.mock.callCount(), 1)
-      const createCredentialArgs = mockIssueCredentialProvider.createCredential.mock.calls[0].arguments
+      const createCredentialArgs =
+        mockIssueCredentialProvider.createCredential.mock.calls[0].arguments
       assert.deepStrictEqual(createCredentialArgs[3], claims)
     })
 
@@ -855,9 +856,9 @@ describe('IssuerFlow', () => {
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(mockCnonceStoreProvider, 'validate', async () => true) // Nonce is valid
-      mock.method(mockCnonceStoreProvider, 'revoke', async () => { })
+      mock.method(mockCnonceStoreProvider, 'revoke', async () => {})
       mock.method(mockCnonceProvider, 'generate', async () => newNonce)
-      mock.method(mockCnonceStoreProvider, 'save', async () => { })
+      mock.method(mockCnonceStoreProvider, 'save', async () => {})
       mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
       mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
       mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signed.credential.jwt')

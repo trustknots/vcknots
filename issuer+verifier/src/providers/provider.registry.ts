@@ -23,6 +23,7 @@ import { Provider } from './provider.types'
 import { requestObjectId } from './request-object-id.provider'
 import { verifierSignatureKey } from './verifier-signature-key.provider'
 import { certificate } from './certificate.provider'
+import { transactionData } from './transaction-data.provider'
 
 type ArrayUnless<P extends Provider> = P['single'] extends true ? P : P[]
 
@@ -73,6 +74,7 @@ const initializeDefaultProviders = (
   authzRequestJARKid(),
   authzRequestJARX5c(),
   certificate(),
+  transactionData(),
 ]
 
 export const initializeProviderRegistry = (

@@ -87,7 +87,7 @@ describe('verifierSignatureKey Provider', () => {
         'test-verifier' as ClientId,
         'ES256',
         jwtPayload,
-        jwtHeader,
+        jwtHeader
       )
       assert.ok(signature)
       assert.equal(typeof signature, 'string')
@@ -109,7 +109,7 @@ describe('verifierSignatureKey Provider', () => {
         (err: Error) => {
           assert.match(err.message, /sign error/)
           return true
-        },
+        }
       )
     })
   })

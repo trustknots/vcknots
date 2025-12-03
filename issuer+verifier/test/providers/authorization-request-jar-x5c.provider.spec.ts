@@ -18,9 +18,11 @@ describe('AuthzRequestJARProvider', () => {
       if (id === verifierId) {
         return x5c
       }
-      return Promise.reject(raise('CERTIFICATE_NOT_FOUND', { message: 'Verifier certificate not found.' }))
+      return Promise.reject(
+        raise('CERTIFICATE_NOT_FOUND', { message: 'Verifier certificate not found.' })
+      )
     }),
-    save: mock.fn(async () => { }),
+    save: mock.fn(async () => {}),
   }
 
   const provider = authzRequestJARX5c()
@@ -122,9 +124,12 @@ describe('AuthzRequestJARProvider', () => {
     const alg = 'ES256'
     const nonce = 'test-nonce'
 
-    await assert.rejects(provider.generate('unknown-verifier' as ClientId, requestObject, alg, nonce), {
-      name: 'CERTIFICATE_NOT_FOUND',
-      message: 'Verifier certificate not found.',
-    })
+    await assert.rejects(
+      provider.generate('unknown-verifier' as ClientId, requestObject, alg, nonce),
+      {
+        name: 'CERTIFICATE_NOT_FOUND',
+        message: 'Verifier certificate not found.',
+      }
+    )
   })
 })

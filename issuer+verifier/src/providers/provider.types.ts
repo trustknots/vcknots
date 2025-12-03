@@ -374,6 +374,14 @@ export type CertificateProvider = {
   getPublicKey(cert: string): string
 }
 
+export type TransactionDataProvider = {
+  kind: 'transaction-data-provider'
+  name: string
+  single: true
+
+  generate(type: string, credential_ids: string[], transaction_data_hashes_alg?: string[]): string
+}
+
 export type Provider =
   | IssuerMetadataStoreProvider
   | IssuerSignatureKeyStoreProvider
@@ -408,3 +416,4 @@ export type Provider =
   | AuthzRequestJARProvider
   | VerifierCertificateStoreProvider
   | CertificateProvider
+  | TransactionDataProvider

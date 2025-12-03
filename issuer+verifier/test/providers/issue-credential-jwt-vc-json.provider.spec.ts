@@ -2,10 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { issueCredentialJwt } from '../../src/providers/issue-credential-jwt-vc-json.provider'
 import { IssueCredentialProvider } from '../../src/providers/provider.types'
-import {
-  CredentialConfiguration,
-  CredentialIssuer,
-} from '../../src/credential-issuer.types'
+import { CredentialConfiguration, CredentialIssuer } from '../../src/credential-issuer.types'
 import { ProofJwt } from '../../src/credential.types'
 import { VcknotsError } from '../../src/errors/vcknots.error'
 import { CredentialFormats } from '../../src/credential-request.types'

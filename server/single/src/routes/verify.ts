@@ -212,6 +212,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           base_url: baseUrl,
           response_uri: `${baseUrl}/callback`,
           request_uri: `${baseUrl}/request.jwt`,
+          transaction_data: { type: 'sample_type' },
         }
       )
       const encoded = Object.entries(request)

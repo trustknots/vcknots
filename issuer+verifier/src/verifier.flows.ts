@@ -41,6 +41,7 @@ export type CreateAuthzRequestOptions = {
   response_uri?: string
   base_url?: string
   request_uri?: string
+  transaction_data?: { type: string; transaction_data_hashes_alg?: string[] }
 }
 
 export type FindRequestObjectOptions = {
@@ -96,6 +97,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   const authzRequestJAR$ = context.providers.get('authz-request-jar-provider')
   const certificateStore$ = context.providers.get('verifier-certificate-store-provider')
   const certificate$ = context.providers.get('certificate-provider')
+  const transactionData$ = context.providers.get('transaction-data-provider')
 
   return {
     async findVerifierCertificate(id) {
@@ -216,6 +218,76 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       const parsedQuery = await selectProvider(query$, args.kind).generate(args)
 
+      let transaction_data: string[] = []
+      let credentialIds: string[] = []
+      let isDcSDJwtRequested = false
+      // Validate: Metadata supports format
+      const vpFormats = Object.keys(metadata.vp_formats)
+      if (isPresentationExchange(parsedQuery)) {
+        if (parsedQuery.presentation_definition) {
+          const input_descriptors = parsedQuery.presentation_definition.input_descriptors
+          if (input_descriptors) {
+            for (const descriptor of input_descriptors) {
+              if (descriptor.format) {
+                for (const format of Object.keys(descriptor.format)) {
+                  if (!vpFormats.includes(format)) {
+                    throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
+                      message: `The vp_format ${format} is not supported by the verifier.`,
+                    })
+                  }
+                  if (format === 'dc+sd-jwt') {
+                    if (
+                      descriptor.constraints &&
+                      descriptor.constraints.limit_disclosure !== 'required'
+                    ) {
+                      throw err('SD_JWT_DISCLOSURE_REQUIRED', {
+                        message: `The input_descriptor ${descriptor.id} must require "limit_disclosure" when "dc+sd-jwt" is requested.`,
+                      })
+                    }
+                    credentialIds.push(descriptor.id)
+                    isDcSDJwtRequested = true
+                  }
+                }
+              }
+            }
+            if (isDcSDJwtRequested) {
+              transaction_data.push(
+                transactionData$.generate(
+                  options?.transaction_data?.type ?? 'example_type',
+                  credentialIds
+                )
+              )
+            }
+          }
+        }
+      } else if (parsedQuery.dcql_query) {
+        const credentials = parsedQuery.dcql_query.credentials
+        console.log('credentials:', credentials)
+        if (credentials) {
+          for (const credential of credentials) {
+            if (credential.format) {
+              if (!vpFormats.includes(credential.format)) {
+                throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
+                  message: `The vp_format ${credential.format} is not supported by the verifier.`,
+                })
+              }
+              if (credential.format === 'dc+sd-jwt') {
+                isDcSDJwtRequested = true
+                credentialIds.push(credential.id)
+              }
+            }
+          }
+          if (isDcSDJwtRequested) {
+            transaction_data.push(
+              transactionData$.generate(
+                options?.transaction_data?.type ?? 'example_type',
+                credentialIds
+              )
+            )
+          }
+        }
+      }
+
       const responseUri = options.response_uri ?? `${verifierId}/post`
 
       // when using request_uri
@@ -240,6 +312,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           client_metadata: metadata,
           response_mode: response_mode || 'direct_post',
           ...parsedQuery,
+          ...(transaction_data.length > 0 ? { transaction_data } : {}),
         })
         await requestObjectStore$.save(requestObjectId, requestObject)
 
@@ -262,6 +335,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         client_metadata: metadata,
         nonce,
         ...parsedQuery,
+        ...(transaction_data.length > 0 ? { transaction_data } : {}),
       })
     },
     async findRequestObject(verifierId, objectId) {

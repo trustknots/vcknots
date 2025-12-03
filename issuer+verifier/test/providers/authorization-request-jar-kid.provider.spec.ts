@@ -29,7 +29,7 @@ describe('AuthzRequestJARProvider', () => {
       }
       return null
     }),
-    save: mock.fn(async () => { }),
+    save: mock.fn(async () => {}),
     fetchPrivate: mock.fn(async () => null),
   }
 
@@ -127,9 +127,12 @@ describe('AuthzRequestJARProvider', () => {
     }
     const nonce = 'test-nonce'
 
-    await assert.rejects(provider.generate('unknown-verifier' as ClientId, requestObject, alg, nonce), {
-      name: 'AUTHZ_VERIFIER_KEY_NOT_FOUND',
-      message: 'Verifier key not found.',
-    })
+    await assert.rejects(
+      provider.generate('unknown-verifier' as ClientId, requestObject, alg, nonce),
+      {
+        name: 'AUTHZ_VERIFIER_KEY_NOT_FOUND',
+        message: 'Verifier key not found.',
+      }
+    )
   })
 })

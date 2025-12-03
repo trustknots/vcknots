@@ -152,8 +152,8 @@ describe('AuthzFlows', () => {
       // Arrange: Mock the methods that will be called in the flow
       mock.method(mockAuthzSignatureKeyProvider, 'canHandle', async () => true)
       mock.method(mockAuthzSignatureKeyProvider, 'generate', async () => sampleKeyPair)
-      mock.method(mockAuthzKeyProvider, 'save', async () => { })
-      mock.method(mockAuthzMetadataProvider, 'save', async () => { })
+      mock.method(mockAuthzKeyProvider, 'save', async () => {})
+      mock.method(mockAuthzMetadataProvider, 'save', async () => {})
 
       // Act: Run the function to be tested
       await flow.createAuthzServerMetadata(sampleMetadata)
@@ -188,7 +188,7 @@ describe('AuthzFlows', () => {
     const preAuthCode = PreAuthorizedCode('test-pre-auth-code')
     const tokenRequest: TokenRequest = {
       grant_type: GrantType.PreAuthorizedCode,
-      "pre-authorized_code": preAuthCode,
+      'pre-authorized_code': preAuthCode,
     }
     const privateKey = { kty: 'EC', crv: 'P-256', alg: 'ES256', d: 'private-d-value' }
     const samplePayload = { iss: sampleIssuer, sub: preAuthCode }
