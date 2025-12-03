@@ -368,7 +368,7 @@ func listSavedCredentials() (*vcknots_wallet.SavedCredential, error) {
 - When receiving a Credential, the Wallet must first access the Issuer’s `.well-known/openid-credential-issuer` endpoint and obtain that Issuer’s configuration (such as public keys, supported Credential types, endpoints, etc.).
 
 - The Controller provides the `FetchCredentialIssuerMetadata` method specifically for this task.
-- This can either be called implicitly within the internal flow of `ReceiveCredential`, or explicitly in advance in order to set the `CachedIssuerMetadata` field of `ReceiveCredentialRequest`.
+- This method is implicitly called within the internal flow of `ReceiveCredential`, or can be explicitly called beforehand to set the `CachedIssuerMetadata` field of `ReceiveCredentialRequest`.
 
 - By providing `CachedIssuerMetadata` when calling `ReceiveCredential`, you can avoid the network overhead of re-fetching the metadata every time `ReceiveCredential` is executed.
 
@@ -428,7 +428,7 @@ This section explains the main Go type definitions used when interacting with th
 
 4. **Persistent storage (bbolt):**  
     - `credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())` uses `go.etcd.io/bbolt` (an embedded KVS) by default and attempts to persist data to a local file such as `wallet.db`.
-    - Make sure the execution directory has write permissions.
+    - Make sure that you have write permissions for the execution directory.
 
 ## 7. Troubleshooting
 

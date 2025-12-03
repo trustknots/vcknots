@@ -13,7 +13,7 @@ This guide explains how to set up and use the Issuer feature of VCKnots.
 - TypeScript is configured
 - This document is based on the sample implementation of the server
 - The Hono web framework is used, but other frameworks can also be used
-- The currently supported flow is the Pre-Authorized Code Flow
+- The Pre-Authorized Code Flow is the flow currently supported.
 
 ## 2. Initial Setup
 
@@ -411,7 +411,7 @@ app.post('issue/credentials', async (c) => {
         401
       )
     }
-    // Issues Credential
+    // Credential Issuance
     const credential = await issuerFlow.issueCredential(CredentialIssuer(baseUrl), parse, {
       alg: 'ES256',
       cnonce: {
@@ -468,13 +468,13 @@ curl -X POST http://localhost:8080/issue/credentials \
 
 ### CredentialIssuer {#CredentialIssuer}
 
-Represents the identifier of an Issuer. It is a URI-formatted string used to uniquely identify an Issuer.
+Represents the identifier of an Issuer. A URI-formatted string is used to uniquely identify an Issuer.
 
 For the definition, see [issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts).
 
 ### CredentialIssuerMetadata {#CredentialIssuerMetadata}
 
-Defines the metadata of an Issuer. It contains information such as the client name, supported credential formats, endpoints, and so on.
+Defines the metadata of the authorization server. It contains issuer information such as supported formats, endpoints, and so on.
 
 For the definition, see [issuer+verifier/src/credential-issuer.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-issuer.types.ts).
 

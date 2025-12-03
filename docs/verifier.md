@@ -469,8 +469,7 @@ async function initializeVerifierMetadata(verifierId: string, metadata: Verifier
 ## 6. Explanation of Type Definitions
 
 ### VerifierClientId {#VerifierClientId}
-Represents the identifier of the Verifier. It combines the ClientIdScheme with an identifier and is used to uniquely identify a Verifier.
-
+Represents the identifier of the Verifier. This value is the combination of the ClientIdScheme and a verifier identifier, and it is used to uniquely identify a Verifier.
 For the definition, see [issuer+verifier/src/client-id.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/client-id.types.ts).
 
 ### VerifierMetadata {#VerifierMetadata}
