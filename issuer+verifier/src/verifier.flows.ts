@@ -236,14 +236,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
                     })
                   }
                   if (format === 'dc+sd-jwt') {
-                    if (
-                      descriptor.constraints &&
-                      descriptor.constraints.limit_disclosure !== 'required'
-                    ) {
-                      throw err('SD_JWT_DISCLOSURE_REQUIRED', {
-                        message: `The input_descriptor ${descriptor.id} must require "limit_disclosure" when "dc+sd-jwt" is requested.`,
-                      })
-                    }
                     credentialIds.push(descriptor.id)
                     isDcSDJwtRequested = true
                   }
