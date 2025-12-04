@@ -518,7 +518,7 @@ createVerifierMetadata(
 Verifierメタデータ作成時のオプションを定義する型です。証明書または公開鍵の設定が可能です。
 
 
-詳細な型定義については、[verifi.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts)を参照してください。
+詳細な型定義については、[verifier.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts)を参照してください。
 
 
 ### createAuthzRequest
@@ -549,7 +549,7 @@ createAuthzRequest(
 - `options`: リクエスト作成オプション　（[CreateAuthzRequestOptions](#CreateAuthzRequestOptions)）
 
 **戻り値**:
-- AuthorizationRequest`オブジェクトを返します。（[AuthorizationRequest](#AuthorizationRequest)）このオブジェクトは以下の形式のいずれかになります：
+- `AuthorizationRequest`オブジェクトを返します。（[AuthorizationRequest](#AuthorizationRequest)）このオブジェクトは以下の形式のいずれかになります：
 
   - **request_uri形式** (`isRequestUri = true`の場合):
   ```typescript
@@ -583,7 +583,7 @@ createAuthzRequest(
 #### CreateAuthzRequestOptions {#CreateAuthzRequestOptions}
 認証リクエスト作成時のオプションを定義する型です。
 
-詳細な型定義については、[verifi.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts)を参照してください。
+詳細な型定義については、[verifier.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts)を参照してください。
 
 
 **注意事項**:
@@ -641,7 +641,7 @@ Request Object（認可リクエストJAR）の一意識別子です。
 #### FindRequestObjectOptions{#FindRequestObjectOptions}
 リクエストオブジェクト取得時のオプションを定義する型です。
 
-詳細な型定義については、[verifi.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts)を参照してください。
+詳細な型定義については、[verifier.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts)を参照してください。
 
 
 

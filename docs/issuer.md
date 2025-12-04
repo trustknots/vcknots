@@ -515,7 +515,7 @@ findIssuerMetadata(id: CredentialIssuer): Promise<CredentialIssuerMetadata | nul
 **Parameters**:
 - `id`: Identifier of the Issuer ([CredentialIssuer](#CredentialIssuer))
 
-**Return value**: Returns the metadata object ([CredentialIssuerMetadata](#CredentialIssuerMetadata)) or `null`.
+**Return value**: Returns the metadata object ([CredentialIssuerMetadata](#CredentialIssuerMetadata)) or null.
 
 
 ### createIssuerMetadata
@@ -646,7 +646,7 @@ findAuthzServerMetadata(issuer: AuthorizationServerIssuer): Promise<Authorizatio
 **Parameters**:
 - `issuer`: Identifier of the authorization server ([AuthorizationServerIssuer](#AuthorizationServerIssuer))
 
-**Return value**: Returns the metadata object ([AuthorizationServerMetadata](#AuthorizationServerMetadata)) or `null`.
+**Return value**: Returns the metadata object ([AuthorizationServerMetadata](#AuthorizationServerMetadata)) or null.
 
 
 #### AuthorizationServerIssuer{#AuthorizationServerIssuer}
@@ -775,13 +775,13 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 ### Common issues
 
 - **Q: Metadata validation error**  
-  - **A:** Check that the provided metadata conforms to the `CredentialIssuerMetadata` schema and the `AuthorizationServerMetadata` schema.
+  - **A:** Check that the provided metadata conforms to the CredentialIssuerMetadata schema and the AuthorizationServerMetadata schema.
 
 - **Q: Error when creating credential offer**: `FEATURE_NOT_IMPLEMENTED_YET`  
   - **A:** Make sure you are not calling an unimplemented flow. Currently, only the pre-authorized code flow is supported.
 
 - **Q: Error when issuing credential**: `INVALID_PROOF`  
-  - **A:** Check that the header of `prooj.jwt` in the credential request includes a `kid`.
+  - **A:** Check that the header of prooj.jwt in the credential request includes a kid.
 
 
 

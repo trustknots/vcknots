@@ -8,11 +8,11 @@ This tutorial explains how to set up the VCKnots wallet library, provides sample
 
 ## 1. Prerequisites
 
-This section outlines all the technical requirements needed to build the `vcknots/wallet` library and run the tutorial samples.
+This section outlines all the technical requirements needed to build the vcknots/wallet library and run the tutorial samples.
 
 ### 1-1. Go Environment Requirements
 
-* **Go version:** The `vcknots/wallet` library requires Go 1.24.5.
+* **Go version:** The vcknots/wallet library requires Go 1.24.5.
 * **Development environment management (mise):**
     - For this project, we strongly recommend using mise ([https://mise.jdx.dev/](https://mise.jdx.dev/)) to manage the development environment.
     - For example, by running `mise install` as shown below, the required Go version will be installed automatically and environment variables will be configured.
@@ -66,7 +66,7 @@ This section explains how to install the library dependencies and initialize the
 
 ### 2-1. Installing Dependencies
 
-After setting `GOPRIVATE` as a prerequisite, run the following command at the project root (the `wallet` directory) to download the dependencies listed in `go.mod` (such as `github.com/go-jose/go-jose/v4`, `go.etcd.io/bbolt`, `golang.org/x/crypto`, etc.).
+After setting GOPRIVATE as a prerequisite, run the following command at the project root (the wallet directory) to download the dependencies listed in `go.mod` (such as `github.com/go-jose/go-jose/v4`, `go.etcd.io/bbolt`, `golang.org/x/crypto`, etc.).
 
 
 ```bash
@@ -75,7 +75,7 @@ go mod download
 
 ### 2-2. Initializing the Wallet Controller
 
-- The `vcknots/wallet` library uses a highly modular, dispatcher-based architecture.
+- The vcknots/wallet library uses a highly modular, dispatcher-based architecture.
 - The core logic (`controller.go`) depends on interfaces that handle specific tasks such as credstore (persistence), receiver (receiving), presenter (presentation), and verifier (verification).
 
 - The `main` function in `server_integration.go` provides a standard recipe for instantiating the Controller.
@@ -400,7 +400,7 @@ func fetchIssuerMetadata() (*receiverTypes.CredentialIssuerMetadata, error) {
 
 ## 5. Explanation of Type Definitions
 
-This section explains the main Go type definitions used when interacting with the Controller in the `vcknots/wallet` library.
+This section explains the main Go type definitions used when interacting with the Controller in the vcknots/wallet library.
 
 | Type / Interface | Description |
 | :---- | :---- |
@@ -408,7 +408,7 @@ This section explains the main Go type definitions used when interacting with th
 | **DIDCreateOptions** | Options passed to the `GenerateDID` method. Specifies the type of DID to generate (`TypeID`) and the associated public key (`PublicKey`). |
 | **ReceiveCredentialRequest** | Main input for the `ReceiveCredential` method. Encapsulates the `CredentialOffer`, the key (`IKeyEntry`) used for signing, and the optional `CachedIssuerMetadata`. |
 | **CredentialOffer** | Details of the offer received from the Issuer. Includes the Issuer URL (`CredentialIssuer`), the IDs of the requested Credentials (`CredentialConfigurationIDs`), and the authorization grants (`Grants`). |
-| **SavedCredential** | The actual Credential stored in the `credstore`. Wraps `*credential.Credential` (VC raw data) and `*types.CredentialEntry` (metadata). Returned by `GetCredentialEntries`. |
+| **SavedCredential** | The actual Credential stored in the `credstore`. Wraps `\*credential.Credential` (VC raw data) and `\*types.CredentialEntry` (metadata). Returned by `GetCredentialEntries`. |
 | **GetCredentialEntriesRequest** | Search conditions for the `GetCredentialEntries` method. Supports pagination (`Offset`, `Limit`) and dynamic filtering via a Go function (`Filter`). |
 
 ## 6. Notes
@@ -416,7 +416,7 @@ This section explains the main Go type definitions used when interacting with th
 1. **MockKeyEntry must not be used in production (CRITICAL):**  
     - `MockKeyEntry` provided in `server_integration.go` is intended only for testing and demonstration.
     - **Reason:** It keeps the private key (`*ecdsa.PrivateKey`) in plaintext on the Go heap memory.
-    - **Production implementation:** In a production environment, you must implement the `IKeyEntry` interface yourself. This implementation should delegate the `Sign` operation to an OS keystore (`iOS Secure Enclave`, `Android Keystore`) or an HSM (`Hardware Security Module`), and be designed so that the private key itself is never loaded into the application’s memory space (i.e., it is *non-exportable*).  
+    - **Production implementation:** In a production environment, you must implement the `IKeyEntry` interface yourself. This implementation should delegate the `Sign` operation to an OS keystore (`iOS Secure Enclave`, `Android Keystore`) or an HSM (`Hardware Security Module`), and be designed so that the private key itself is never loaded into the application’s memory space (`Non-exportable`).  
 
 2. **GOPRIVATE configuration:**  
     - If `go mod download` or `go build` fails, the most likely cause is a missing GOPRIVATE environment variable configuration. 
@@ -436,7 +436,7 @@ This section explains the main Go type definitions used when interacting with th
   * **A:** The GOPRIVATE environment variable is not configured correctly. Go back to “1. Prerequisites” and make sure `export GOPRIVATE="github.com/trustknots/vcknots/wallet"` has been executed.  
 
 * **Q: `ReceiveCredential` or `PresentCredential` fails with `connection refused` or `timeout`.**  
-  * **A:** The Issuer/Verifier server that the `vcknots/wallet` Go code is trying to communicate with is not running. Follow “1. Prerequisites”, run `pnpm start` in the `packages/server` directory, and confirm that http://localhost:8080 responds.  
+  * **A:** The Issuer/Verifier server that the vcknots/wallet Go code is trying to communicate with is not running. Follow “1. Prerequisites”, run `pnpm start` in the `packages/server` directory, and confirm that http://localhost:8080 responds.  
 
 * **Q: `PresentCredential` succeeds, but the Verifier (Node.js server logs) shows `Invalid signature` or `Presentation verification failed`.**  
   * **A:** This indicates a mismatch in the signature algorithm or format between the `IKeyEntry` used by the Wallet and the Verifier.  

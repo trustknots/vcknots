@@ -54,7 +54,7 @@ Introduction:
 
 ### 1. Creating an Authorization Request
 
-The Verifier generates an authorization request (`openid4vp://authorize?...`) to ask the Wallet to present credentials.
+The Verifier generates an authorization request (openid4vp://authorize?...) to ask the Wallet to present credentials.
 
 #### 1-1. Basic Authorization Request
 
@@ -307,7 +307,7 @@ eyJhbGciOiJFUzI1NiIsInR5cCI6Im9hdXRoLWF1dGh6LXJlcStqd3QiLCJ4NWMiOlsiXG5NSUlDSGpD
 
 
 
-### 3. Receiving and Verifying `vp_token`
+### 3. Receiving and Verifying vp_token
 
 This is an endpoint where the Verifier receives the `vp_token` returned from the Wallet and performs verification (VP verification).
 
@@ -512,7 +512,7 @@ createVerifierMetadata(
 #### CreateVerifierMetadataOptions{#CreateVerifierMetadataOptions}
 Defines the options used when creating verifier metadata. It allows configuration of certificates or public keys.
 
-For detailed type definitions, see [verifi.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts).
+For detailed type definitions, see [verifier.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts).
 
 ### createAuthzRequest
 Creates an authorization request.
@@ -532,10 +532,10 @@ createAuthzRequest(
 
 **Parameters**:
 - `verifierId`: Identifier of the Verifier ([VerifierClientId](#VerifierClientId))
-- `response_type`: Response type (`'vp_token'`)
+- `response_type`: Response type ('vp_token')
 - `client_id`: Client ID (see [OpenID for Verifiable Presentations 5.2 Existing Parameters, client_id](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.2))
-- `response_mode`: Response mode (`'direct_post' | 'query' | 'fragment' | 'dc_api.jwt' | 'dc_api'`)
-- `query`: `presentation_definition` ([5.4. presentation_definition Parameter](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.4)) or DCQL query ([6. Digital Credentials Query Language (DCQL)](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#name-digital-credentials-query-l))
+- `response_mode`: Response mode ('direct_post' | 'query' | 'fragment' | 'dc_api.jwt' | 'dc_api')
+- `query`: presentation_definition ([5.4. presentation_definition Parameter](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.4)) or DCQL query ([6. Digital Credentials Query Language (DCQL)](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#name-digital-credentials-query-l))
 - `isRequestUri`: Flag indicating whether to use a request URI  
   - `isRequestUri = true` → Request URI format (stores the Request Object externally)  
   - `isRequestUri = false` → Direct format (includes parameters directly in the authorization request)
@@ -567,16 +567,16 @@ createAuthzRequest(
   ```
 
 **Error cases**:
-- `UNSUPPORTED_CLIENT_ID_SCHEME`: An unsupported `client_id_scheme` was specified
-- `CERTIFICATE_NOT_FOUND`: Certificate is not registered when using `x509_san_dns` or `x509_san_uri`
-- `INVALID_REQUEST`: `options.base_url` is not specified even though `isRequestUri = true`
+- `UNSUPPORTED_CLIENT_ID_SCHEME`: An unsupported client_id_scheme was specified
+- `CERTIFICATE_NOT_FOUND`: Certificate is not registered when using x509_san_dns or x509_san_uri
+- `INVALID_REQUEST`: options.base_url is not specified even though isRequestUri = true
 
 
 
 #### CreateAuthzRequestOptions {#CreateAuthzRequestOptions}
 Defines the options used when creating an authorization request.
 
-For detailed type definitions, see [verifi.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts).
+For detailed type definitions, see [verifier.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts).
 
 
 **Notes**:
@@ -584,14 +584,14 @@ For detailed type definitions, see [verifi.flows.ts](https://github.com/trustkno
 - If `response_uri` is not specified, `${verifierId}/post` is used by default.
 - For security reasons, it is recommended to use a random, hard-to-predict value for `state`.
 
-#### AuthorizationRequest (response type of `createAuthzRequest`) {#AuthorizationRequest}
+#### AuthorizationRequest (response type of createAuthzRequest) {#AuthorizationRequest}
 
 This is the response type returned by `createAuthzRequest`. It is combined with the PE (Presentation Exchange) or DCQL schema, either as a “Request URI format” using `request_uri`, or as a “direct format” that includes the parameters directly.
 For detailed type definitions, see [authorization-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-request.types.ts).
 
 
 ### findRequestObject
-When the response from `createAuthzRequest` is in JAR format, this method retrieves the JAR-format request object.
+When the response from createAuthzRequest is in JAR format, this method retrieves the JAR-format request object.
 ```typescript
 findRequestObject(
   verifierId: ClientId,
@@ -607,8 +607,9 @@ findRequestObject(
 
 **Return value**:
 - Returns a JWT-formatted Request Object string. This string has the following format:
+```
     {base64url(header)}.{base64url(payload)}.{signature}
-
+```
 **Error cases**:
 - `VERIFIER_NOT_FOUND`: The specified Verifier does not exist
 - `REQUEST_OBJECT_NOT_FOUND`: The specified Request Object does not exist
@@ -631,7 +632,7 @@ For detailed type definitions, see [request-object-id.types.ts](https://github.c
 #### FindRequestObjectOptions{#FindRequestObjectOptions}
 Defines the options used when retrieving a Request Object.
 
-For detailed type definitions, see [verifi.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts).
+For detailed type definitions, see [verifier.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts).
 
 
 
@@ -658,7 +659,7 @@ verifyPresentations(
 - `UNSUPPORTED_VP_TOKEN`: The VP token format is not supported
 - `INVALID_NONCE`: Occurs when the nonce issued at the time of the authorization request is not included in `vp_token`, or does not match. The Wallet must always return a `vp_token` that includes the nonce provided in the authorization request.
 - `INVALID_CREDENTIAL`: Invalid credential
-- `INVALID_PRESENTATION_SUBMISSION`: Invalid `presentation_submission`
+- `INVALID_PRESENTATION_SUBMISSION`: Invalid presentation_submission
 - `HOLDER_BINDING_FAILED`: Holder binding verification failed
 
 
@@ -715,7 +716,7 @@ Note:
 - **Q: Error retrieving request object**: `REQUEST_OBJECT_NOT_FOUND`
   - **A:** A request object can be retrieved only once. Calling with the same Request Object ID multiple times results in an error.
 
-- **Q: Nonce verification error for `vp_token`**: fails with `INVALID_NONCE` – nonce is not valid.
+- **Q: Nonce verification error for vp_token**: fails with `INVALID_NONCE` – nonce is not valid.
   - **A:** Check the following possible causes and solutions.
   - **Causes**:
     - The nonce in `vp_token` does not match the one generated at the time of the authorization request
