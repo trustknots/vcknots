@@ -105,7 +105,7 @@ const credential = await issuer.issueCredential(
   }
 )
 
-console.log('Issued Credential:', credentaial)
+console.log('Issued Credential:', credential)
 ```
 
 ### Verifier Flow
@@ -115,7 +115,7 @@ Initialize the verifier identity.
 
 ```typescript
 const base = 'https://myverifier.example.com'
-const verifierId = VerifierCliendId(base)
+const verifierId = VerifierClientId(base)
 const metadata: VerifierMetadata = {
 	client_name: 'MyVerifier',
 	client_uri: base,
@@ -135,22 +135,24 @@ await verifier.createVerifierMetadata(verifierId, metadata)
 Create a request (typically converted to a QR code) for the wallet to prove something.
 
 ```typescript
+const base = 'https://myverifier.example.com'
+const verifierId = VerifierClientId(base)
 const request = await verifier.createAuthzRequest(
   verifierId,
   'vp_token',
-  verifierId, // client_id
+  `redirect_uri:${base}`, // client_id
   'direct_post',
   {
     // Presentation Exchange Definition
     presentation_definition: {
-      id: 'request-1',
+      id: 'request',
       input_descriptors: [{
         id: 'id-card',
         constraints: { fields: [{ path: ['$.vc.type'], filter: { type: 'string', pattern: 'MyCredential' } }] }
       }]
     }
   },
-  true, // use request_uri (JAR)
+  false, // use request_uri (JAR)
   { base_url: base }
 )
 
