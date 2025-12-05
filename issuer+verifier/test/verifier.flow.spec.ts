@@ -204,9 +204,9 @@ describe('VerifierFlow', () => {
       // Mock the key provider's canHandle function
       mock.method(mockKeyProvider, 'canHandle', () => true)
       // Mock the key store's save function
-      mock.method(mockKeyStoreProvider, 'save', async () => {})
+      mock.method(mockKeyStoreProvider, 'save', async () => { })
       // Mock the metadata store's save function
-      mock.method(mockVerifierMetadataStore, 'save', async () => {})
+      mock.method(mockVerifierMetadataStore, 'save', async () => { })
 
       await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata)
 
@@ -254,7 +254,7 @@ describe('VerifierFlow', () => {
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
       mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => {})
+      mock.method(mockCnonceStoreProvider, 'save', async () => { })
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -315,7 +315,7 @@ describe('VerifierFlow', () => {
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
       mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => {})
+      mock.method(mockCnonceStoreProvider, 'save', async () => { })
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -346,11 +346,6 @@ describe('VerifierFlow', () => {
       assert.equal(req.response_type, 'vp_token')
       assert.equal(req.response_mode, 'direct_post')
       assert.equal(req.nonce, 'nonce-123')
-      assert.ok(req.transaction_data)
-      assert.equal(req.transaction_data.length, 1)
-      const decoded = JSON.parse(base64url.decode(req.transaction_data[0]))
-      assert.equal(decoded.type, 'example_type')
-      assert.deepEqual(decoded.credential_ids, ['my_credential'])
     })
 
     it('should throw VERIFIER_NOT_FOUND if metadata missing', async () => {
@@ -429,7 +424,7 @@ describe('VerifierFlow', () => {
         }
       )
       mock.method(mockRequestObjectIdProvider, 'generate', async () => '1234')
-      mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
+      mock.method(mockRequestObjectStoreProvider, 'save', async () => { })
 
       const req = await verifierFlow.createAuthzRequest(
         ClientId('https://example.com'),
@@ -495,7 +490,7 @@ describe('VerifierFlow', () => {
         }
       )
       mock.method(mockRequestObjectIdProvider, 'generate', async () => 'reqobj-123')
-      mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
+      mock.method(mockRequestObjectStoreProvider, 'save', async () => { })
 
       await assert.rejects(
         verifierFlow.createAuthzRequest(
@@ -552,7 +547,7 @@ describe('VerifierFlow', () => {
         }
       )
       mock.method(mockRequestObjectIdProvider, 'generate', async () => 'reqobj-123')
-      mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
+      mock.method(mockRequestObjectStoreProvider, 'save', async () => { })
 
       await assert.rejects(
         verifierFlow.createAuthzRequest(
@@ -600,7 +595,7 @@ describe('VerifierFlow', () => {
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
       mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => {})
+      mock.method(mockCnonceStoreProvider, 'save', async () => { })
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -681,7 +676,7 @@ describe('VerifierFlow', () => {
         })
       )
       mock.method(mockCnonceStoreProvider, 'validate', async () => true)
-      mock.method(mockCnonceStoreProvider, 'revoke', async () => {})
+      mock.method(mockCnonceStoreProvider, 'revoke', async () => { })
       mock.method(mockCredentialProvider, 'verify', async () => true)
       mock.method(mockDidProvider, 'canHandle', () => true)
       mock.method(mockDidProvider, 'resolveDid', async () => ({

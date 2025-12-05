@@ -218,8 +218,8 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       const parsedQuery = await selectProvider(query$, args.kind).generate(args)
 
-      let transaction_data: string[] = []
-      let credentialIds: string[] = []
+      const transaction_data: string[] = []
+      const credentialIds: string[] = []
       let isDcSDJwtRequested = false
       // Validate: Metadata supports format
       const vpFormats = Object.keys(metadata.vp_formats)
@@ -242,12 +242,9 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
                 }
               }
             }
-            if (isDcSDJwtRequested) {
+            if (isDcSDJwtRequested && options.transaction_data) {
               transaction_data.push(
-                transactionData$.generate(
-                  options?.transaction_data?.type ?? 'example_type',
-                  credentialIds
-                )
+                transactionData$.generate(options.transaction_data.type, credentialIds)
               )
             }
           }
@@ -269,12 +266,9 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
               }
             }
           }
-          if (isDcSDJwtRequested) {
+          if (isDcSDJwtRequested && options.transaction_data) {
             transaction_data.push(
-              transactionData$.generate(
-                options?.transaction_data?.type ?? 'example_type',
-                credentialIds
-              )
+              transactionData$.generate(options.transaction_data.type, credentialIds)
             )
           }
         }
