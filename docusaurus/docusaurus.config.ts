@@ -8,6 +8,7 @@ const config: Config = {
   title: 'trustknots/vcknots',
   tagline: 'Pluggable framework for building Verifiable Credentials ecosystems.',
   favicon: 'img/favicon.ico',
+  trailingSlash: false,
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
