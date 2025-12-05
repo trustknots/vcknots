@@ -3,8 +3,9 @@ name: Deploy Docusaurus to GitHub Pages
 on:
   push:
     branches:
-      - main # ← mainブランチにpushされたらデプロイする
-  workflow_dispatch: # ← 手動実行も可能
+      - main
+      - '**'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,12 +18,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # ← docusaurus deployには全履歴が必要
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22 # ← 使用しているNode.jsバージョンに合わせる
+          node-version: 22
           cache: npm
           cache-dependency-path: ./docusaurus/package-lock.json
 
