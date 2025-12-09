@@ -48,7 +48,7 @@ describe('credential provider', () => {
     descriptor_map: [
       {
         id: 'descriptor-1',
-        format: 'jwt_vc',
+        format: 'jwt_vp_json',
         path: '$',
         path_nested: {
           id: 'id',

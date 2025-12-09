@@ -16,7 +16,7 @@ sidebar_position: 3
 - 本ドキュメントはserverのサンプル実装に基づいて説明します
 - HonoのWebフレームワークを使用していますが、他のフレームワークでも利用可能です
 - 現在対応しているclient_id_schema:x509_san_dns、redirect_uriになります
-- 現在対応しているフォーマットについてVPはjwt_vp、VCはjwt_vc(jwt_vc_json)になります
+- 現在対応しているフォーマットについてVPはjwt_vp_json、VCはjwt_vc_jsonになります
 - stateパラメータについては、実装者の責任での実装となります
 
 ## 2. 初期設定
@@ -152,7 +152,7 @@ curl --location 'http://localhost:8080/verify/request' \
 **レスポンス**
 
 ```
-openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&client_metadata=%7B%22client_name%22%3A%22Sample%20Verifier%20App%22%2C%22client_uri%22%3A%22http%3A%2F%2Flocalhost%3A8080%22%2C%22jwks%22%3A%7B%22keys%22%3A%5B%7B%22kty%22%3A%22EC%22%2C%22x%22%3A%220_3S7HedSywaxlekdt6Or8pkcR13hQaCPMqt9cuZBVc%22%2C%22y%22%3A%22ZVXSCL3HlnMQWKrwMyIAe5wsAIWd3Eu1misKFr3POdA%22%2C%22crv%22%3A%22P-256%22%7D%5D%7D%2C%22vp_formats%22%3A%7B%22jwt_vp%22%3A%7B%22alg%22%3A%5B%22ES256%22%5D%7D%7D%2C%22client_id_scheme%22%3A%22redirect_uri%22%2C%22authorization_signed_response_alg%22%3A%22ES256%22%7D&nonce=5cf220cd62d3453192b1af4f6ba88b87&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fverifiers%2Fhttp%253A%252F%252Flocalhost%253A8080%2Fcallback&client_id_scheme=x509_san_dns&presentation_definition=%7B%22id%22%3A%2243bff439-6929-4843-931f-5b7530ed8010%22%2C%22name%22%3A%22Test%20Name%22%2C%22purpose%22%3A%22Test%20Purpose%22%2C%22input_descriptors%22%3A%5B%7B%22id%22%3A%22UniversityDegreeCredential%22%2C%22format%22%3A%7B%22jwt_vc_json%22%3A%7B%22proof_type%22%3A%5B%22ES256%22%5D%7D%7D%2C%22constraints%22%3A%7B%22fields%22%3A%5B%7B%22path%22%3A%5B%22%24.vc.type%22%5D%2C%22filter%22%3A%7B%22type%22%3A%22array%22%2C%22contains%22%3A%7B%22const%22%3A%22VerifiableCredential%22%7D%7D%7D%5D%7D%7D%5D%7D
+openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&client_metadata=%7B%22client_name%22%3A%22Sample%20Verifier%20App%22%2C%22client_uri%22%3A%22http%3A%2F%2Flocalhost%3A8080%22%2C%22jwks%22%3A%7B%22keys%22%3A%5B%7B%22kty%22%3A%22EC%22%2C%22x%22%3A%220_3S7HedSywaxlekdt6Or8pkcR13hQaCPMqt9cuZBVc%22%2C%22y%22%3A%22ZVXSCL3HlnMQWKrwMyIAe5wsAIWd3Eu1misKFr3POdA%22%2C%22crv%22%3A%22P-256%22%7D%5D%7D%2C%22vp_formats%22%3A%7B%22jwt_vp_json%22%3A%7B%22alg%22%3A%5B%22ES256%22%5D%7D%7D%2C%22client_id_scheme%22%3A%22redirect_uri%22%2C%22authorization_signed_response_alg%22%3A%22ES256%22%7D&nonce=5cf220cd62d3453192b1af4f6ba88b87&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fverifiers%2Fhttp%253A%252F%252Flocalhost%253A8080%2Fcallback&client_id_scheme=x509_san_dns&presentation_definition=%7B%22id%22%3A%2243bff439-6929-4843-931f-5b7530ed8010%22%2C%22name%22%3A%22Test%20Name%22%2C%22purpose%22%3A%22Test%20Purpose%22%2C%22input_descriptors%22%3A%5B%7B%22id%22%3A%22UniversityDegreeCredential%22%2C%22format%22%3A%7B%22jwt_vc_json%22%3A%7B%22proof_type%22%3A%5B%22ES256%22%5D%7D%7D%2C%22constraints%22%3A%7B%22fields%22%3A%5B%7B%22path%22%3A%5B%22%24.vc.type%22%5D%2C%22filter%22%3A%7B%22type%22%3A%22array%22%2C%22contains%22%3A%7B%22const%22%3A%22VerifiableCredential%22%7D%7D%7D%5D%7D%7D%5D%7D
 ```
 
 
@@ -233,7 +233,7 @@ curl --location 'http://localhost:8080/verify/request-object' \
         "name": "Example",
         "purpose": "to verify your UniversityDegree Credential",
         "format": {
-            "jwt_vp":{
+            "jwt_vc_json":{
                 "alg":["RS256"]
             }
         },
@@ -243,7 +243,7 @@ curl --location 'http://localhost:8080/verify/request-object' \
               "path": ["$.type"],
               "filter": {
                 "type": "array",
-                "cotains":{
+                "contains":{
                     "type":"string",
                     "const":"UniversityDegreeCredential"
                 }
@@ -356,11 +356,11 @@ curl --location 'http://localhost:8080/verify/callback' \
 		"descriptor_map": [
 			{
 				"id": "BptkWumGAD21zS6uRm2a",
-				"format": "jwt_vp",
+				"format": "jwt_vp_json",
 				"path": "$",
 				"path_nested": {
 					"id": "BptkWumGAD21zS6uRm2a",
-					"format": "jwt_vc",
+					"format": "jwt_vc_json",
 					"path": "$.verifiableCredential[0]"
 				}
 			}
@@ -383,11 +383,11 @@ curl --location 'http://localhost:8080/verify/callback' \
             "descriptor_map": [
                 {
                     "id": "BptkWumGAD21zS6uRm2a",
-                    "format": "jwt_vp",
+                    "format": "jwt_vp_json",
                     "path": "$",
                     "path_nested": {
                         "id": "BptkWumGAD21zS6uRm2a",
-                        "format": "jwt_vc",
+                        "format": "jwt_vc_json",
                         "path": "$.verifiableCredential[0]"
                     }
                 }
@@ -411,9 +411,16 @@ curl --location 'http://localhost:8080/verify/callback' \
   "client_name": "My Verifier App",
   "client_uri": "http://localhost:8080",
   "vp_formats": {
-    "jwt_vp": {
-      "alg": ["ES256"]
-    }
+		"jwt_vc_json": {
+			"alg_values_supported": ["ES256"]
+		},
+		"jwt_vp_json": {
+			"alg_values_supported": ["ES256"]
+		},
+		"dc+sd-jwt": {
+			"sd-jwt_alg_values": ["ES256", "ES384"],
+			"kb-jwt_alg_values": ["ES256", "ES384"]
+		}
   },
   "client_id_scheme": "redirect_uri"
 }

@@ -186,6 +186,7 @@ describe('VerifierFlow', () => {
         client_name: 'Test Verifier',
         vp_formats: {
           jwt_vc_json: { alg_values_supported: ['ES256'] },
+          jwt_vp_json: { alg_values_supported: ['ES256'] }
         },
       })
       // Mock the key provider's generate function
@@ -225,6 +226,9 @@ describe('VerifierFlow', () => {
         client_name: 'Test Verifier',
         vp_formats: {
           jwt_vc_json: {
+            alg_values_supported: ['ES256'],
+          },
+          jwt_vp_json: {
             alg_values_supported: ['ES256'],
           },
           ldp_vp: {
@@ -285,6 +289,9 @@ describe('VerifierFlow', () => {
         client_name: 'Test Verifier',
         vp_formats: {
           jwt_vc_json: {
+            alg_values_supported: ['ES256'],
+          },
+          jwt_vp_json: {
             alg_values_supported: ['ES256'],
           },
           ldp_vp: {
@@ -390,6 +397,9 @@ describe('VerifierFlow', () => {
           jwt_vc_json: {
             alg_values_supported: ['ES256'],
           },
+          jwt_vp_json: {
+            alg_values_supported: ['ES256'],
+          },
           ldp_vp: {
             proof_type: ['JsonWebSignature2020'],
           },
@@ -456,6 +466,9 @@ describe('VerifierFlow', () => {
           jwt_vc_json: {
             alg_values_supported: ['ES256'],
           },
+          jwt_vp_json: {
+            alg_values_supported: ['ES256'],
+          },
           ldp_vp: {
             proof_type: ['JsonWebSignature2020'],
           },
@@ -511,6 +524,9 @@ describe('VerifierFlow', () => {
         client_name: 'Test Verifier',
         vp_formats: {
           jwt_vc_json: {
+            alg_values_supported: ['ES256'],
+          },
+          jwt_vp_json: {
             alg_values_supported: ['ES256'],
           },
           ldp_vp: {
@@ -670,6 +686,9 @@ describe('VerifierFlow', () => {
           client_name: 'test',
           vp_formats: {
             jwt_vc_json: {
+              alg_values_supported: ['ES256'],
+            },
+            jwt_vp_json: {
               alg_values_supported: ['ES256'],
             },
           },

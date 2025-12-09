@@ -11,9 +11,16 @@ describe('inMemoryVerifierMetadataStore', () => {
     client_name: 'Test Verifier',
     jwks: { keys: [] },
     vp_formats: {
-      jwt_vc: {
-        alg: ['ES256'],
+      jwt_vc_json: {
+        alg_values_supported: ['ES256']
       },
+      jwt_vp_json: {
+        alg_values_supported: ['ES256']
+      },
+      'dc+sd-jwt': {
+        'sd-jwt_alg_values': ['ES256', 'ES384'],
+        'kb-jwt_alg_values': ['ES256', 'ES384']
+      }
     },
   }
 

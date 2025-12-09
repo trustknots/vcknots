@@ -244,6 +244,9 @@ describe('Vcknots', () => {
         jwt_vc_json: {
           alg: ['ES256'],
         },
+        jwt_vp_json: {
+          alg: ['ES256'],
+        },
         ldp_vp: {
           proof_type: ['JsonWebSignature2020'],
         },
@@ -396,11 +399,11 @@ describe('Vcknots', () => {
           descriptor_map: [
             {
               id: '2',
-              format: 'jwt_vp',
+              format: 'jwt_vp_json',
               path: '$.vp',
               path_nested: {
                 id: '2',
-                format: 'jwt_vc',
+                format: 'jwt_vc_json',
                 path: '$.verifiableCredential[0]',
               },
             },

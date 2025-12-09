@@ -15,6 +15,16 @@ describe('CredentialOfferProvider', () => {
   const issuer: CredentialIssuerMetadata = {
     credential_issuer: CredentialIssuer('https://issuer.example.com'),
     credential_endpoint: 'https://issuer.example.com/credential',
+    credential_configurations_supported: {
+      University_Degree: {
+        format: 'jwt_vc_json',
+        credential_definition: {
+          type: ['VCKnots'],
+          credentialSubject: {},
+        },
+        credential_signing_alg_values_supported: ['ES256'],
+      },
+    },
   }
 
   const configurations = [
