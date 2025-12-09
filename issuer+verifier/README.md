@@ -1,6 +1,6 @@
 # @trustknots/vcknots
 
-A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) and OpenID for Verifiable Presentations (OID4VP).
+A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) Draft 13 and OpenID for Verifiable Presentations (OID4VP) Draft 18.
 
 This package provides the core logic for both Issuers and Verifiers, allowing you to build compliant SSI (Self-Sovereign Identity) applications. It is designed with a provider-based architecture, making it easy to swap out implementations for storage, key management, and other infrastructure dependencies.
 
@@ -47,7 +47,7 @@ For a step-by-step guide on how to use this library, please refer to our documen
 
 ## Usage
 
-For comprehensive examples and detailed configurations for both Issuer and Verifier flows, please refer to the example implementations located in the [`server/single`](../../server/single) or [`server/multi`](../../server/multi) directory.
+For comprehensive examples and detailed configurations for both Issuer and Verifier flows, please refer to the example implementations located in the [`server/single`](https://github.com/trustknots/vcknots/tree/main/server/single) or [`server/multi`](https://github.com/trustknots/vcknots/tree/main/server/multi) directory.
 
 ### Issuer Flow
 
@@ -217,13 +217,13 @@ pnpm it
 
 ## Related Projects
 
-* **Wallet Implementation:** For a reference OID4VC wallet implementation, see the [`wallet`](../../wallet) directory in the root of this repository.
-* **Server Examples:** The [`server/single`](../../server/single) and [`server/multi`](../../server/multi) directories provide example implementations for Issuers and Verifiers.
+* **Wallet Implementation:** For a reference OID4VC wallet implementation, see the [`wallet`](https://github.com/trustknots/vcknots/tree/main/wallet) directory in the root of this repository.
+* **Server Examples:** The [`server/single`](https://github.com/trustknots/vcknots/tree/main/server/single) and [`server/multi`](https://github.com/trustknots/vcknots/tree/main/server/multi) directories provide example implementations for Issuers and Verifiers.
 
 ## Contributing
 
-We welcome contributions! Please see our [CONTRIBUTING.md](../../CONTRIBUTING.md) for details on how to get started.
+We welcome contributions! Please see our [CONTRIBUTING.md](https://github.com/trustknots/vcknots/tree/main/CONTRIBUTING.md) for details on how to get started.
 
 ## License
 
-Apache-2.0
+[Apache-2.0](https://github.com/trustknots/vcknots/blob/main/LICENSE)
