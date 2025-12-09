@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [ "next" ]
+    branches: [ "main" ]
 
 jobs:
   core:
@@ -54,32 +54,4 @@ jobs:
 
       - name: Run lint
         working-directory: ./wallet
-        run: make lint        
-
-      # slack
-      - name: Notify Slack (failure)
-        if: failure()
-        uses: slackapi/slack-github-action@v1.27.0
-        with:
-          payload: |
-            {
-                "username": "CI",
-                "icon_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
-                "text": "❌ CI failed for *${{ github.repository }}* on PR <${{ github.event.pull_request.html_url }}|#${{ github.event.pull_request.number }}>\nRun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            }
-        env:
-            SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-      - name: Notify Slack (success)
-        if: success()
-        uses: slackapi/slack-github-action@v1.27.0
-        with:
-          payload: |
-            {
-                "username": "CI",
-                "icon_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
-                "text": "✅ CI passed for *${{ github.repository }}* on PR <${{ github.event.pull_request.html_url }}|#${{ github.event.pull_request.number }}>\nRun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            }
-        env:
-            SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
+        run: make lint

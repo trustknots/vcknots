@@ -33,6 +33,17 @@ const config: Config = {
   i18n: {
     defaultLocale: 'en',
     locales: ['en', 'ja'],
+    localeConfigs: {
+      en: {
+        label: 'English',
+        htmlLang: 'en',
+      },
+      ja: {
+        label: '日本語',
+        htmlLang: 'ja',
+      },
+    },
+    path: '../docs/i18n',
   },
 
   presets: [
@@ -40,7 +51,7 @@ const config: Config = {
       'classic',
       {
         docs: {
-          path: '../docs',
+          path: '../docs/en',
           sidebarPath: './sidebars.ts',
         },
         blog: false,
@@ -70,6 +81,10 @@ const config: Config = {
           sidebarId: 'tutorialSidebar',
           position: 'left',
           label: 'Docs',
+        },
+        {
+          type: 'localeDropdown',
+          position: 'right',
         },
       ],
     },
