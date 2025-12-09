@@ -3,7 +3,6 @@ import { DeepPartialUnknown } from './type.utils'
 import { VerifierMetadata } from './verifier-metadata.types'
 import { PresentationExchange } from './presentation-exchange.types'
 import { Dcql } from './dcql.type'
-// import { TransactionData } from './transaction-data.types'
 
 // https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html
 // https://www.rfc-editor.org/rfc/rfc9101.html
