@@ -88,8 +88,9 @@ describe('VerifierFlow', () => {
   const mockCredentialProvider = {
     kind: 'credential-provider',
     name: 'mock-credential-provider',
-    single: true,
+    single: false,
     verify: mock.fn(),
+    canHandle: mock.fn(),
   } satisfies CredentialProvider
 
   const mockJwtSignatureProvider = {
@@ -186,7 +187,7 @@ describe('VerifierFlow', () => {
         client_name: 'Test Verifier',
         vp_formats: {
           jwt_vc_json: { alg_values_supported: ['ES256'] },
-          jwt_vp_json: { alg_values_supported: ['ES256'] }
+          jwt_vp_json: { alg_values_supported: ['ES256'] },
         },
       })
       // Mock the key provider's generate function
@@ -205,9 +206,9 @@ describe('VerifierFlow', () => {
       // Mock the key provider's canHandle function
       mock.method(mockKeyProvider, 'canHandle', () => true)
       // Mock the key store's save function
-      mock.method(mockKeyStoreProvider, 'save', async () => { })
+      mock.method(mockKeyStoreProvider, 'save', async () => {})
       // Mock the metadata store's save function
-      mock.method(mockVerifierMetadataStore, 'save', async () => { })
+      mock.method(mockVerifierMetadataStore, 'save', async () => {})
 
       await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata)
 
@@ -258,7 +259,7 @@ describe('VerifierFlow', () => {
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
       mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => { })
+      mock.method(mockCnonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -322,7 +323,7 @@ describe('VerifierFlow', () => {
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
       mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => { })
+      mock.method(mockCnonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -434,7 +435,7 @@ describe('VerifierFlow', () => {
         }
       )
       mock.method(mockRequestObjectIdProvider, 'generate', async () => '1234')
-      mock.method(mockRequestObjectStoreProvider, 'save', async () => { })
+      mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
 
       const req = await verifierFlow.createAuthzRequest(
         ClientId('https://example.com'),
@@ -503,7 +504,7 @@ describe('VerifierFlow', () => {
         }
       )
       mock.method(mockRequestObjectIdProvider, 'generate', async () => 'reqobj-123')
-      mock.method(mockRequestObjectStoreProvider, 'save', async () => { })
+      mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
 
       await assert.rejects(
         verifierFlow.createAuthzRequest(
@@ -563,7 +564,7 @@ describe('VerifierFlow', () => {
         }
       )
       mock.method(mockRequestObjectIdProvider, 'generate', async () => 'reqobj-123')
-      mock.method(mockRequestObjectStoreProvider, 'save', async () => { })
+      mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
 
       await assert.rejects(
         verifierFlow.createAuthzRequest(
@@ -611,7 +612,7 @@ describe('VerifierFlow', () => {
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
       mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => { })
+      mock.method(mockCnonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -677,7 +678,18 @@ describe('VerifierFlow', () => {
         presentation_submission: {
           id: 'ps-id',
           definition_id: 'pd-id',
-          descriptor_map: [],
+          descriptor_map: [
+            {
+              id: '2',
+              format: 'jwt_vp_json',
+              path: '$.vp',
+              path_nested: {
+                id: '2',
+                format: 'jwt_vc_json',
+                path: '$.verifiableCredential[0]',
+              },
+            },
+          ],
         },
       })
 
@@ -695,7 +707,8 @@ describe('VerifierFlow', () => {
         })
       )
       mock.method(mockCnonceStoreProvider, 'validate', async () => true)
-      mock.method(mockCnonceStoreProvider, 'revoke', async () => { })
+      mock.method(mockCnonceStoreProvider, 'revoke', async () => {})
+      mock.method(mockCredentialProvider, 'canHandle', async () => true)
       mock.method(mockCredentialProvider, 'verify', async () => true)
       mock.method(mockDidProvider, 'canHandle', () => true)
       mock.method(mockDidProvider, 'resolveDid', async () => ({

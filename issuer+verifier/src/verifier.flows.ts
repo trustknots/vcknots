@@ -456,7 +456,12 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       const [credential, token] = credentials[0]
       const issuer = credential.issuer
-      const vcValid = await credential$.verify(token, issuer, response.presentation_submission)
+      const format = response.presentation_submission.descriptor_map[0].path_nested?.format
+      const vcValid = await selectProvider(credential$, format).verify(
+        token,
+        issuer,
+        response.presentation_submission
+      )
       if (!vcValid) {
         throw err('INVALID_CREDENTIAL', {
           message: 'credential is not valid.',

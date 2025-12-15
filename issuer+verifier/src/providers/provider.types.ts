@@ -120,13 +120,14 @@ export type RequestObjectIdProvider = {
 export type CredentialProvider = {
   kind: 'credential-provider'
   name: string
-  single: true
+  single: false
 
   verify(
     vc: string,
     issuer: string,
     presentationSubmission: PresentationSubmission
   ): Promise<boolean>
+  canHandle(format: string): boolean
 }
 
 export type JwtSignatureProvider = {
