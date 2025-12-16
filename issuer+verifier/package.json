@@ -1,6 +1,6 @@
 {
 	"name": "@trustknots/vcknots",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) and OpenID for Verifiable Presentations (OID4VP).",
 	"main": "lib/index.js",
 	"types": "lib/index.d.ts",
