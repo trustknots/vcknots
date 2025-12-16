@@ -206,8 +206,8 @@ func (s *JwtVcSerializer) SerializePresentation(flavor credential.SupportedSeria
 
 	// Create JWT standard claims
 	claims := jwt.Claims{}
-	if presentation.Holder != nil {
-		claims.Issuer = presentation.Holder.String()
+	if presentation.Holder != "" {
+		claims.Issuer = presentation.Holder
 	}
 
 	// Create custom claims for VP
@@ -350,12 +350,12 @@ func (s *JwtVcSerializer) convertCredentialFromJSON(payloadBase64 string) (*cred
 	}
 
 	// Parse name and description
-	var name, description *string
+	var name, description string
 	if nameStr, ok := vcData["name"].(string); ok {
-		name = &nameStr
+		name = nameStr
 	}
 	if descStr, ok := vcData["description"].(string); ok {
-		description = &descStr
+		description = descStr
 	}
 
 	// Parse issuer
@@ -369,27 +369,19 @@ func (s *JwtVcSerializer) convertCredentialFromJSON(payloadBase64 string) (*cred
 	}
 
 	// Parse credential subjects
-	var subjects []credential.CredentialSubject
+	var sub string
+	var claims *credential.CredentialClaim
 	if subjData, ok := vcData["credentialSubject"]; ok {
-		if subjList, ok := subjData.([]interface{}); ok {
-			// Array of subjects
-			for _, subj := range subjList {
-				if subjMap, ok := subj.(map[string]interface{}); ok {
-					subject, err := s.convertCredentialSubjectFromJSON(subjMap)
-					if err != nil {
-						return nil, types.NewInvalidCredentialError("failed to convert credential subject", err)
-					}
-					subjects = append(subjects, *subject)
-				}
-			}
-		} else if subjMap, ok := subjData.(map[string]interface{}); ok {
-			// Single subject
-			subject, err := s.convertCredentialSubjectFromJSON(subjMap)
+		if subjMap, ok := subjData.(map[string]interface{}); ok {
+			subject, subjectClaims, err := s.convertCredentialSubjectFromJSON(subjMap)
 			if err != nil {
 				return nil, types.NewInvalidCredentialError("failed to convert credential subject", err)
 			}
-			subjects = []credential.CredentialSubject{*subject}
+			sub = subject
+			claims = subjectClaims
 		}
+	} else {
+		return nil, types.NewInvalidCredentialError("credentialSubject is not a valid object", nil)
 	}
 
 	// Parse valid period
@@ -420,39 +412,37 @@ func (s *JwtVcSerializer) convertCredentialFromJSON(payloadBase64 string) (*cred
 	}
 
 	return &credential.Credential{
-		ID:          id,
+		ID:          id.String(),
 		Types:       credTypes,
 		Name:        name,
 		Description: description,
-		Issuer:      *issuer,
-		Subjects:    subjects,
+		Issuer:      issuer.String(),
+		Subject:     sub,
+		Claims:      claims,
 		ValidPeriod: validPeriod,
 	}, nil
 }
 
 // convertCredentialSubjectFromJSON converts JSON map to CredentialSubject
-func (s *JwtVcSerializer) convertCredentialSubjectFromJSON(subjMap map[string]interface{}) (*credential.CredentialSubject, error) {
-	var id *url.URL
-	if idStr, ok := subjMap["id"].(string); ok && idStr != "" {
-		parsedID, err := url.Parse(idStr)
+func (s *JwtVcSerializer) convertCredentialSubjectFromJSON(subjMap map[string]interface{}) (string, *credential.CredentialClaim, error) {
+	var idStr string
+	if id, ok := subjMap["id"].(string); ok && id != "" {
+		parsedID, err := url.Parse(id)
 		if err != nil {
-			return nil, types.NewInvalidCredentialError("invalid subject ID", err)
+			return "", nil, types.NewInvalidCredentialError("invalid subject ID", err)
 		}
-		id = parsedID
+		idStr = parsedID.String()
 	}
 
 	// Extract claims (everything except id)
-	claims := make(map[string]interface{})
+	claims := make(credential.CredentialClaim)
 	for key, value := range subjMap {
 		if key != "id" {
 			claims[key] = value
 		}
 	}
 
-	return &credential.CredentialSubject{
-		ID:     id,
-		Claims: claims,
-	}, nil
+	return idStr, &claims, nil
 }
 
 // convertPresentationToMap converts CredentialPresentation to map for JSON serialization
@@ -461,12 +451,14 @@ func (s *JwtVcSerializer) convertPresentationToMap(presentation *credential.Cred
 		"type": presentation.Types,
 	}
 
-	if presentation.ID != nil {
-		result["id"] = presentation.ID.String()
+	// Add ID if present
+	if presentation.ID != "" {
+		result["id"] = presentation.ID
 	}
 
-	if presentation.Holder != nil {
-		result["holder"] = presentation.Holder.String()
+	// Add holder if present
+	if presentation.Holder != "" {
+		result["holder"] = presentation.Holder
 	}
 
 	// Convert credentials to string array (assuming they are JWT strings)
@@ -541,6 +533,5 @@ func (s *JwtVcSerializer) getAlgorithmFromKey(key keystore.KeyEntry) jose.Signat
 		}
 	}
 
-	// Default fallback
-	return jose.ES256
+	return jose.ES256 // Default to ES256
 }
