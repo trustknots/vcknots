@@ -7,8 +7,8 @@ import { VerifiableCredential } from '../../src'
 import { VcknotsError } from '../../src/errors/vcknots.error'
 import { Jwk } from '../../src/jwk.type'
 import { PresentationSubmission } from '../../src/presentation-submission.types'
-import { jwtVc } from '../../src/providers/jwt-vc.provider'
-import { CredentialProvider } from '../../src/providers/provider.types'
+import { verifyCredentialJwt } from '../../src/providers/verify-credential-jwt-vc.provider'
+import { VerifyCredentialProvider } from '../../src/providers/provider.types'
 
 describe('jwtVc provider', () => {
   const { publicKey, privateKey } = generateKeyPairSync('rsa', {
@@ -17,7 +17,7 @@ describe('jwtVc provider', () => {
   const jwk = publicKey.export({ format: 'jwk' }) as Jwk
   jwk.use = 'sig'
   jwk.alg = 'RS256'
-  let provider: CredentialProvider
+  let provider: VerifyCredentialProvider
   const issuer = 'https://issuer.example.com'
   const kid = 'test-key-id'
   const vc: VerifiableCredential = {
@@ -60,7 +60,7 @@ describe('jwtVc provider', () => {
   }
 
   before(() => {
-    provider = jwtVc()
+    provider = verifyCredentialJwt()
   })
 
   afterEach(() => {

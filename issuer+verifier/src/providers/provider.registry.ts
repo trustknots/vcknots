@@ -8,7 +8,7 @@ import { authzSignatureKey } from './authz-signature-key.provider'
 import { cnonce } from './cnonce.provider'
 import { credentialOffer } from './credential-offer.provider'
 import { credentialProofJWT } from './credential-proof-jwt.provider'
-import { jwtVc } from './jwt-vc.provider'
+import { verifyCredentialJwt } from './verify-credential-jwt-vc.provider'
 import { dcql } from './dcql.provider'
 import { did } from './did-key.provider'
 import { holderBinding } from './holder-binding.provider'
@@ -65,7 +65,7 @@ const initializeDefaultProviders = (
   presentationExchange(),
   dcql(),
   credentialProofJWT(),
-  jwtVc(),
+  verifyCredentialJwt(),
   jwtSignature(),
   holderBinding(),
   verifierSignatureKey(),

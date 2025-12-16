@@ -8,7 +8,7 @@ import { PresentationExchange } from '../src/presentation-exchange.types'
 import {
   CnonceProvider,
   CnonceStoreProvider,
-  CredentialProvider,
+  VerifyCredentialProvider,
   CredentialQueryGenerationOptions,
   CredentialQueryProvider,
   DidProvider,
@@ -85,13 +85,13 @@ describe('VerifierFlow', () => {
     canHandle: mock.fn(),
   } satisfies CredentialQueryProvider
 
-  const mockCredentialProvider = {
-    kind: 'credential-provider',
-    name: 'mock-credential-provider',
+  const mockVerifyCredentialProvider = {
+    kind: 'verify-credential-provider',
+    name: 'mock-verify-credential-provider',
     single: false,
     verify: mock.fn(),
     canHandle: mock.fn(),
-  } satisfies CredentialProvider
+  } satisfies VerifyCredentialProvider
 
   const mockJwtSignatureProvider = {
     kind: 'jwt-signature-provider',
@@ -167,7 +167,7 @@ describe('VerifierFlow', () => {
         mockCnonceProvider,
         mockCnonceStoreProvider,
         mockCredentialQueryProvider,
-        mockCredentialProvider,
+        mockVerifyCredentialProvider,
         mockJwtSignatureProvider,
         mockHolderBindingProvider,
         mockDidProvider,
@@ -708,8 +708,8 @@ describe('VerifierFlow', () => {
       )
       mock.method(mockCnonceStoreProvider, 'validate', async () => true)
       mock.method(mockCnonceStoreProvider, 'revoke', async () => {})
-      mock.method(mockCredentialProvider, 'canHandle', async () => true)
-      mock.method(mockCredentialProvider, 'verify', async () => true)
+      mock.method(mockVerifyCredentialProvider, 'canHandle', async () => true)
+      mock.method(mockVerifyCredentialProvider, 'verify', async () => true)
       mock.method(mockDidProvider, 'canHandle', () => true)
       mock.method(mockDidProvider, 'resolveDid', async () => ({
         id: holderDid,
@@ -730,7 +730,7 @@ describe('VerifierFlow', () => {
       assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
       assert.equal(mockCnonceStoreProvider.validate.mock.callCount(), 1)
       assert.equal(mockCnonceStoreProvider.revoke.mock.callCount(), 1)
-      assert.equal(mockCredentialProvider.verify.mock.callCount(), 1)
+      assert.equal(mockVerifyCredentialProvider.verify.mock.callCount(), 1)
       assert.equal(mockDidProvider.resolveDid.mock.callCount(), 1)
       assert.equal(mockJwtSignatureProvider.verify.mock.callCount(), 1)
       assert.equal(mockHolderBindingProvider.verify.mock.callCount(), 1)

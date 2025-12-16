@@ -117,8 +117,8 @@ export type RequestObjectIdProvider = {
   generate(): Promise<RequestObjectId>
 }
 
-export type CredentialProvider = {
-  kind: 'credential-provider'
+export type VerifyCredentialProvider = {
+  kind: 'verify-credential-provider'
   name: string
   single: false
 
@@ -411,7 +411,7 @@ export type Provider =
   | CredentialQueryProvider
   | RequestObjectStoreProvider
   | RequestObjectIdProvider
-  | CredentialProvider
+  | VerifyCredentialProvider
   | JwtSignatureProvider
   | HolderBindingProvider
   | AuthzRequestJARProvider

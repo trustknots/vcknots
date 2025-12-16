@@ -86,7 +86,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   const nonceStore$ = context.providers.get('cnonce-store-provider')
   const query$ = context.providers.get('credential-query-provider')
   const verifierMetadata$ = context.providers.get('verifier-metadata-store-provider')
-  const credential$ = context.providers.get('credential-provider')
+  const credential$ = context.providers.get('verify-credential-provider')
   const jwtSignature$ = context.providers.get('jwt-signature-provider')
   const holderBinding$ = context.providers.get('holder-binding-provider')
   const did$ = context.providers.get('did-provider')

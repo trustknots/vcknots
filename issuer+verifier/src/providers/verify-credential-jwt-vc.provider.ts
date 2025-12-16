@@ -1,12 +1,12 @@
 import { createPublicKey } from 'node:crypto'
 import * as jwt from 'jsonwebtoken'
 import { err } from '../errors/vcknots.error'
-import { CredentialProvider } from './provider.types'
+import { VerifyCredentialProvider } from './provider.types'
 
-export const jwtVc = (): CredentialProvider => {
+export const verifyCredentialJwt = (): VerifyCredentialProvider => {
   return {
-    kind: 'credential-provider',
-    name: 'default-credential-provider',
+    kind: 'verify-credential-provider',
+    name: 'default-verifier-jwt-vc-provider',
     single: false,
 
     async verify(vc, issuer, presentationSubmission): Promise<boolean> {
