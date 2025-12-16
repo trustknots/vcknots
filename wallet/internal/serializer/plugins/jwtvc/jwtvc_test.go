@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"testing"
@@ -62,43 +63,6 @@ func TestDeserializeCredential_EmptyParts(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected error for empty JWT parts")
-	}
-}
-
-func TestParseAlgorithm(t *testing.T) {
-	serializer := &JwtVcSerializer{}
-
-	tests := []struct {
-		name      string
-		algStr    string
-		expected  jose.SignatureAlgorithm
-		expectErr bool
-	}{
-		{"ES256", "ES256", jose.ES256, false},
-		{"ES384", "ES384", jose.ES384, false},
-		{"ES512", "ES512", jose.ES512, false},
-		{"EdDSA", "EdDSA", jose.EdDSA, false},
-		{"RS256", "RS256", jose.RS256, false},
-		{"unsupported", "HS256", "", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := serializer.parseAlgorithm(tt.algStr)
-
-			if tt.expectErr {
-				if err == nil {
-					t.Fatal("expected error")
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if result != tt.expected {
-					t.Errorf("expected %v, got %v", tt.expected, result)
-				}
-			}
-		})
 	}
 }
 
@@ -173,38 +137,11 @@ func TestConvertPresentationToMap(t *testing.T) {
 	}
 }
 
-func TestGetHashAlgorithm(t *testing.T) {
-	serializer := &JwtVcSerializer{}
-
-	algorithms := []jose.SignatureAlgorithm{
-		jose.ES256,
-		jose.ES384,
-		jose.ES512,
-		jose.EdDSA,
-		jose.RS256,
-	}
-
-	for _, alg := range algorithms {
-		t.Run(string(alg), func(t *testing.T) {
-			hasher := serializer.getHashAlgorithm(alg)
-			if hasher == nil {
-				t.Fatal("expected hasher to be non-nil")
-			}
-
-			// Test that hash works by computing something
-			hasher.Write([]byte("test"))
-			digest := hasher.Sum(nil)
-			if len(digest) == 0 {
-				t.Error("expected digest to be non-empty")
-			}
-		})
-	}
-}
-
 // mockKeyEntry implements keystore.KeyEntry for testing
 type mockKeyEntry struct {
-	keyID string
-	key   jose.JSONWebKey
+	keyID      string
+	publicKey  jose.JSONWebKey
+	privateKey *ecdsa.PrivateKey
 }
 
 func (m *mockKeyEntry) ID() string {
@@ -212,11 +149,15 @@ func (m *mockKeyEntry) ID() string {
 }
 
 func (m *mockKeyEntry) PublicKey() jose.JSONWebKey {
-	return m.key
+	return m.publicKey
 }
 
 func (m *mockKeyEntry) Sign(data []byte) ([]byte, error) {
-	return []byte("mock-signature-" + m.keyID), nil
+	// Hash the data using SHA-256
+	hash := sha256.Sum256(data)
+
+	// Sign using ECDSA and return DER-encoded signature
+	return ecdsa.SignASN1(rand.Reader, m.privateKey, hash[:])
 }
 
 func createMockKeyEntry() keystore.KeyEntry {
@@ -231,8 +172,9 @@ func createMockKeyEntry() keystore.KeyEntry {
 	}
 
 	return &mockKeyEntry{
-		keyID: "test-key-id",
-		key:   jwk,
+		keyID:      "test-key-id",
+		publicKey:  jwk,
+		privateKey: privateKey,
 	}
 }
 
@@ -316,10 +258,11 @@ func TestGetAlgorithmFromKey(t *testing.T) {
 	// Test with key without algorithm specified
 	keyWithoutAlg := &mockKeyEntry{
 		keyID: "test-key-2",
-		key: jose.JSONWebKey{
+		publicKey: jose.JSONWebKey{
 			KeyID: "test-key-2",
 			Use:   "sig",
 		},
+		privateKey: nil,
 	}
 
 	alg = serializer.getAlgorithmFromKey(keyWithoutAlg)
@@ -344,11 +287,12 @@ func TestGetAlgorithmFromKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			key := &mockKeyEntry{
 				keyID: "test-key-" + tt.name,
-				key: jose.JSONWebKey{
+				publicKey: jose.JSONWebKey{
 					Algorithm: tt.algorithm,
 					KeyID:     "test-key-" + tt.name,
 					Use:       "sig",
 				},
+				privateKey: nil,
 			}
 
 			alg := serializer.getAlgorithmFromKey(key)

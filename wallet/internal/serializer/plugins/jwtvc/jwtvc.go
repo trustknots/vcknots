@@ -2,20 +2,18 @@
 package jwtvc
 
 import (
-	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash"
-	"math/big"
+	"maps"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	joseutil "github.com/trustknots/vcknots/wallet/internal/common/jose"
 	"github.com/trustknots/vcknots/wallet/internal/credential"
 	"github.com/trustknots/vcknots/wallet/internal/idprof/plugins/did"
 	"github.com/trustknots/vcknots/wallet/internal/keystore"
@@ -46,145 +44,71 @@ func (s *JwtVcSerializer) DeserializeCredential(flavor credential.SupportedSeria
 		return nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected JWT VC format")
 	}
 
-	jwtStr := string(data)
-	parts := strings.Split(jwtStr, ".")
-	if len(parts) != 3 {
-		return nil, types.NewInvalidJWTError("JWT must have exactly 3 parts separated by dots", nil)
-	}
-
-	header, payload, signature := parts[0], parts[1], parts[2]
-
-	// Basic validation of JWT parts - they should be non-empty and look like base64
-	if header == "" || payload == "" || signature == "" {
-		return nil, types.NewInvalidJWTError("JWT parts cannot be empty", nil)
-	}
-
-	// Decode and parse the credential from payload
-	cred, err := s.convertCredentialFromJSON(payload)
+	// Parse JWT using go-jose (automatic structure validation)
+	jws, err := jose.ParseSigned(string(data), []jose.SignatureAlgorithm{
+		jose.ES256, jose.ES384, jose.ES512, jose.EdDSA, jose.RS256,
+	})
 	if err != nil {
-		// If it's a decoding error, it's likely an invalid JWT format
-		if errors.Is(err, types.ErrDecodingFailed) {
-			return nil, types.NewInvalidJWTError("invalid JWT payload encoding", err)
-		}
-		return nil, types.NewInvalidCredentialError("failed to convert credential from JSON", err)
+		return nil, types.NewInvalidJWTError("failed to parse JWT", err)
 	}
 
-	// Parse header to get algorithm
-	headerData, err := base64.RawURLEncoding.DecodeString(header)
-	if err != nil {
-		return nil, types.NewInvalidJWTError("invalid JWT header encoding", err)
+	// Validate structure (must have exactly 1 signature)
+	if len(jws.Signatures) != 1 {
+		return nil, types.NewInvalidJWTError(fmt.Sprintf("expected exactly 1 signature, got %d", len(jws.Signatures)), nil)
 	}
 
-	var headerMap map[string]any
-	if err := json.Unmarshal(headerData, &headerMap); err != nil {
-		return nil, types.NewInvalidJWTError("header is not a valid JSON object", err)
+	// Extract and validate algorithm
+	algStr := jws.Signatures[0].Header.Algorithm
+	if algStr == "" {
+		return nil, types.NewInvalidJWTError("alg header is missing", nil)
 	}
 
-	algStr, ok := headerMap["alg"].(string)
-	if !ok {
-		return nil, types.NewInvalidJWTError("alg is missing or not a string", nil)
-	}
-
-	alg, err := s.parseAlgorithm(algStr)
+	alg, err := joseutil.ParseAlgorithm(algStr)
 	if err != nil {
 		return nil, fmt.Errorf("unsupported algorithm %s: %w", algStr, types.ErrUnsupportedAlgorithm)
 	}
 
-	// Decode signature
-	sig, err := base64.RawURLEncoding.DecodeString(signature)
+	// Extract payload
+	payloadBytes := jws.UnsafePayloadWithoutVerification()
+
+	// Parse payload JSON
+	var payloadMap map[string]any
+	if err := json.Unmarshal(payloadBytes, &payloadMap); err != nil {
+		return nil, types.NewInvalidJWTError("invalid JSON payload", err)
+	}
+
+	// Extract VC claim
+	vcData, ok := payloadMap["vc"].(map[string]any)
+	if !ok {
+		return nil, types.NewInvalidCredentialError("vc field is missing or not an object", nil)
+	}
+
+	// Convert VC claim to Credential struct
+	cred, err := s.convertVCDataToCredential(vcData)
 	if err != nil {
-		return nil, types.NewInvalidJWTError("invalid JWT signature encoding", err)
+		return nil, err
 	}
 
-	proof := &credential.CredentialProof{
+	// Create signing input for proof (header.payload)
+	// We need to reconstruct this from the original JWT string
+	jwtStr := string(data)
+	parts := strings.Split(jwtStr, ".")
+	if len(parts) != 3 {
+		return nil, types.NewInvalidJWTError("JWT must have exactly 3 parts", nil)
+	}
+	signingInput := []byte(parts[0] + "." + parts[1])
+
+	// Attach proof
+	cred.Proof = &credential.CredentialProof{
 		Algorithm: alg,
-		Signature: sig,
-		Payload:   []byte(header + "." + payload),
+		Signature: jws.Signatures[0].Signature,
+		Payload:   signingInput,
 	}
 
-	cred.Proof = proof
 	return cred, nil
 }
 
 // SerializePresentation serializes a credential presentation to JWT VP format with signature
-
-// derToRaw converts DER-encoded ECDSA signature to raw IEEE P1363 format
-// DER format: 0x30 [total-len] 0x02 [R-len] [R] 0x02 [S-len] [S]
-// Raw format: [R-bytes][S-bytes] with fixed length (32 bytes each for P-256)
-func derToRaw(derSig []byte, keySize int) ([]byte, error) {
-	fmt.Printf("DEBUG: derToRaw input size: %d bytes, keySize: %d\n", len(derSig), keySize)
-
-	if len(derSig) < 8 {
-		return nil, fmt.Errorf("DER signature too short")
-	}
-
-	// Parse DER format manually
-	if derSig[0] != 0x30 {
-		// Not DER format, assume it's already raw
-		fmt.Printf("DEBUG: Not DER format (first byte: 0x%02x), returning as-is\n", derSig[0])
-		return derSig, nil
-	}
-
-	fmt.Printf("DEBUG: Parsing DER signature, first 8 bytes: %x\n", derSig[:8])
-
-	// Skip sequence tag and length
-	offset := 2
-
-	// Parse R
-	if derSig[offset] != 0x02 {
-		return nil, fmt.Errorf("invalid DER format: expected integer tag for R")
-	}
-	offset++
-	rLen := int(derSig[offset])
-	offset++
-
-	if offset+rLen >= len(derSig) {
-		return nil, fmt.Errorf("invalid DER format: R length exceeds signature")
-	}
-
-	rBytes := derSig[offset : offset+rLen]
-	offset += rLen
-
-	fmt.Printf("DEBUG: R length: %d, R bytes: %x\n", rLen, rBytes)
-
-	// Parse S
-	if derSig[offset] != 0x02 {
-		return nil, fmt.Errorf("invalid DER format: expected integer tag for S")
-	}
-	offset++
-	sLen := int(derSig[offset])
-	offset++
-
-	if offset+sLen > len(derSig) {
-		return nil, fmt.Errorf("invalid DER format: S length exceeds signature")
-	}
-
-	sBytes := derSig[offset : offset+sLen]
-
-	fmt.Printf("DEBUG: S length: %d, S bytes: %x\n", sLen, sBytes)
-
-	// Convert to fixed-length raw format
-	// Remove leading zeros and pad to keySize
-	r := new(big.Int).SetBytes(rBytes)
-	s := new(big.Int).SetBytes(sBytes)
-
-	rawSig := make([]byte, keySize*2)
-
-	// Copy R to first half, S to second half
-	rRaw := r.Bytes()
-	sRaw := s.Bytes()
-
-	fmt.Printf("DEBUG: R raw length: %d, S raw length: %d\n", len(rRaw), len(sRaw))
-
-	// Pad with leading zeros if necessary
-	copy(rawSig[keySize-len(rRaw):keySize], rRaw)
-	copy(rawSig[keySize*2-len(sRaw):keySize*2], sRaw)
-
-	fmt.Printf("DEBUG: Final raw signature size: %d bytes\n", len(rawSig))
-
-	return rawSig, nil
-}
-
 func (s *JwtVcSerializer) SerializePresentation(flavor credential.SupportedSerializationFlavor, presentation *credential.CredentialPresentation, key keystore.KeyEntry) ([]byte, *credential.CredentialPresentation, error) {
 	if flavor != credential.JwtVc {
 		return nil, nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected JWT VC format")
@@ -192,6 +116,8 @@ func (s *JwtVcSerializer) SerializePresentation(flavor credential.SupportedSeria
 
 	// Get algorithm from public key
 	keyAlg := s.getAlgorithmFromKey(key)
+
+	// Create DID from public key for kid header
 	kb := key.PublicKey()
 	prof, err := did.NewDIDKeyProfile(&did.DIDKeyProfileCreateOptions{
 		DIDProfileCreateOptions: did.DIDProfileCreateOptions{Method: "key"},
@@ -201,84 +127,67 @@ func (s *JwtVcSerializer) SerializePresentation(flavor credential.SupportedSeria
 		return nil, nil, fmt.Errorf("failed to create DID from public key: %w", err)
 	}
 
-	// Create presentation map for VP claim
+	// Create JWKSigner adapter
+	signerAdapter, err := joseutil.NewJWKSigner(key, keyAlg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create JWKSigner: %w", err)
+	}
+
+	// Configure jose.Signer with kid and typ headers
+	signingKey := jose.SigningKey{
+		Algorithm: keyAlg,
+		Key:       signerAdapter,
+	}
+
+	options := &jose.SignerOptions{}
+	options.WithType("JWT")
+	options.WithHeader("kid", prof.ID)
+
+	signer, err := jose.NewSigner(signingKey, options)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create signer: %w", err)
+	}
+
 	presentationMap := s.convertPresentationToMap(presentation)
 
-	// Create JWT standard claims
 	claims := jwt.Claims{}
 	if presentation.Holder != "" {
 		claims.Issuer = presentation.Holder
 	}
 
-	// Create custom claims for VP
 	customClaims := map[string]any{
-		"vp": presentationMap, // Verifiable Presentation claim
+		"vp": presentationMap,
 	}
 
-	// Add nonce for replay protection if present
 	if presentation.Nonce != nil {
 		customClaims["nonce"] = *presentation.Nonce
 	}
 
-	// Create JWT header
-	header := map[string]any{
-		"alg": string(keyAlg),
-		"typ": "JWT",
-		"kid": prof.ID,
-	}
-
-	headerBytes, err := json.Marshal(header)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to marshal JWT header: %w", err)
-	}
-	headerEncoded := base64.RawURLEncoding.EncodeToString(headerBytes)
-
-	// Create JWT payload combining standard and custom claims
-	payload := make(map[string]any)
-
-	// Add standard claims
+	// Merge claims into a single map
+	allClaims := make(map[string]any)
 	if claims.Issuer != "" {
-		payload["iss"] = claims.Issuer
+		allClaims["iss"] = claims.Issuer
 	}
 
-	// Add custom claims
-	for k, v := range customClaims {
-		payload[k] = v
-	}
+	maps.Copy(allClaims, customClaims)
 
-	payloadBytes, err := json.Marshal(payload)
+	// Sign and serialize JWT
+	jwtBuilder := jwt.Signed(signer).Claims(allClaims)
+	jwtString, err := jwtBuilder.Serialize()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to marshal JWT payload: %w", err)
+		return nil, nil, fmt.Errorf("failed to serialize JWT: %w", err)
 	}
-	payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadBytes)
 
-	// Create signing input (header.payload)
-	signingInput := headerEncoded + "." + payloadEncoded
-	signingInputBytes := []byte(signingInput)
-
-	// Sign using KeyEntry.Sign method - this returns actual signature bytes
-	rawSigBytes, err := key.Sign(signingInputBytes)
+	// Parse the JWT to extract proof information
+	jws, err := jose.ParseSigned(jwtString, []jose.SignatureAlgorithm{keyAlg})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to sign JWT: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse signed JWT: %w", err)
 	}
 
-	// For ES256, signature should be 64 bytes (32 bytes r + 32 bytes s)
-	// If it's not, try DER conversion
-	var sigBytes []byte
-	if keyAlg == jose.ES256 && len(rawSigBytes) != 64 {
-		sigBytes, err = derToRaw(rawSigBytes, 32)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert signature format: %w", err)
-		}
-	} else {
-		sigBytes = rawSigBytes
+	// Extract signature and payload for CredentialProof
+	if len(jws.Signatures) != 1 {
+		return nil, nil, fmt.Errorf("expected exactly 1 signature, got %d", len(jws.Signatures))
 	}
-
-	// Encode signature using URL-safe base64 without padding
-	sigEncoded := base64.RawURLEncoding.EncodeToString(sigBytes)
-
-	// Construct complete JWT token
-	jwtString := signingInput + "." + sigEncoded
 
 	// Create presentation with cryptographic proof
 	presentationWithProof := &credential.CredentialPresentation{
@@ -289,8 +198,8 @@ func (s *JwtVcSerializer) SerializePresentation(flavor credential.SupportedSeria
 		Nonce:       presentation.Nonce,
 		Proof: &credential.CredentialProof{
 			Algorithm: keyAlg,
-			Signature: sigBytes,
-			Payload:   signingInputBytes,
+			Signature: jws.Signatures[0].Signature,
+			Payload:   jws.UnsafePayloadWithoutVerification(),
 		},
 	}
 
@@ -315,15 +224,21 @@ func (s *JwtVcSerializer) convertCredentialFromJSON(payloadBase64 string) (*cred
 		return nil, types.NewDecodingError("failed to decode payload", err)
 	}
 
-	var payloadMap map[string]interface{}
+	var payloadMap map[string]any
 	if err := json.Unmarshal(payloadData, &payloadMap); err != nil {
 		return nil, types.NewInvalidJWTError("invalid JSON payload", err)
 	}
 
-	vcData, ok := payloadMap["vc"].(map[string]interface{})
+	vcData, ok := payloadMap["vc"].(map[string]any)
 	if !ok {
 		return nil, types.NewInvalidCredentialError("vc field is missing or not an object", nil)
 	}
+
+	return s.convertVCDataToCredential(vcData)
+}
+
+// convertVCDataToCredential converts VC data map to Credential struct
+func (s *JwtVcSerializer) convertVCDataToCredential(vcData map[string]any) (*credential.Credential, error) {
 
 	// Parse ID
 	var id *url.URL
@@ -336,7 +251,7 @@ func (s *JwtVcSerializer) convertCredentialFromJSON(payloadBase64 string) (*cred
 	}
 
 	// Parse types
-	typesList, ok := vcData["type"].([]interface{})
+	typesList, ok := vcData["type"].([]any)
 	if !ok {
 		return nil, types.NewInvalidCredentialError("type field is missing or not an array", nil)
 	}
@@ -372,7 +287,7 @@ func (s *JwtVcSerializer) convertCredentialFromJSON(payloadBase64 string) (*cred
 	var sub string
 	var claims *credential.CredentialClaim
 	if subjData, ok := vcData["credentialSubject"]; ok {
-		if subjMap, ok := subjData.(map[string]interface{}); ok {
+		if subjMap, ok := subjData.(map[string]any); ok {
 			subject, subjectClaims, err := s.convertCredentialSubjectFromJSON(subjMap)
 			if err != nil {
 				return nil, types.NewInvalidCredentialError("failed to convert credential subject", err)
@@ -424,7 +339,7 @@ func (s *JwtVcSerializer) convertCredentialFromJSON(payloadBase64 string) (*cred
 }
 
 // convertCredentialSubjectFromJSON converts JSON map to CredentialSubject
-func (s *JwtVcSerializer) convertCredentialSubjectFromJSON(subjMap map[string]interface{}) (string, *credential.CredentialClaim, error) {
+func (s *JwtVcSerializer) convertCredentialSubjectFromJSON(subjMap map[string]any) (string, *credential.CredentialClaim, error) {
 	var idStr string
 	if id, ok := subjMap["id"].(string); ok && id != "" {
 		parsedID, err := url.Parse(id)
@@ -446,8 +361,8 @@ func (s *JwtVcSerializer) convertCredentialSubjectFromJSON(subjMap map[string]in
 }
 
 // convertPresentationToMap converts CredentialPresentation to map for JSON serialization
-func (s *JwtVcSerializer) convertPresentationToMap(presentation *credential.CredentialPresentation) map[string]interface{} {
-	result := map[string]interface{}{
+func (s *JwtVcSerializer) convertPresentationToMap(presentation *credential.CredentialPresentation) map[string]any {
+	result := map[string]any{
 		"type": presentation.Types,
 	}
 
@@ -471,46 +386,12 @@ func (s *JwtVcSerializer) convertPresentationToMap(presentation *credential.Cred
 	return result
 }
 
-// parseAlgorithm converts string algorithm to jose.SignatureAlgorithm
-func (s *JwtVcSerializer) parseAlgorithm(algStr string) (jose.SignatureAlgorithm, error) {
-	switch algStr {
-	case "ES256":
-		return jose.ES256, nil
-	case "ES384":
-		return jose.ES384, nil
-	case "ES512":
-		return jose.ES512, nil
-	case "EdDSA":
-		return jose.EdDSA, nil
-	case "RS256":
-		return jose.RS256, nil
-	default:
-		return "", fmt.Errorf("unsupported algorithm %s: %w", algStr, types.ErrUnsupportedAlgorithm)
-	}
-}
-
-// getHashAlgorithm returns the appropriate hash algorithm for the signature algorithm
-func (s *JwtVcSerializer) getHashAlgorithm(alg jose.SignatureAlgorithm) hash.Hash {
-	switch alg {
-	case jose.ES256, jose.RS256:
-		return sha256.New()
-	case jose.ES384:
-		return sha512.New384() // Use SHA-384 from crypto/sha512
-	case jose.ES512:
-		return sha512.New()
-	case jose.EdDSA:
-		return sha512.New() // Ed25519 uses SHA-512 internally
-	default:
-		return sha256.New() // Default fallback
-	}
-}
-
 // getAlgorithmFromKey extracts the signature algorithm from a key entry
 func (s *JwtVcSerializer) getAlgorithmFromKey(key keystore.KeyEntry) jose.SignatureAlgorithm {
 	// Get the algorithm from the public key
 	pubKey := key.PublicKey()
 	if pubKey.Algorithm != "" {
-		if alg, err := s.parseAlgorithm(string(pubKey.Algorithm)); err == nil {
+		if alg, err := joseutil.ParseAlgorithm(pubKey.Algorithm); err == nil {
 			return alg
 		}
 	}

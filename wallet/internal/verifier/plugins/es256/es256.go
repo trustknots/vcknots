@@ -33,7 +33,7 @@ func (v *ES256Verifier) Verify(proof *credential.CredentialProof, publicKey *jos
 		return false, types.NewVerificationError(proof.Algorithm, "public key cannot be nil", types.ErrInvalidPublicKey)
 	}
 
-	// Extract the ECDSA public key
+	// Extract the ECDSA public key for cryptographic verification
 	ecdsaKey, ok := publicKey.Key.(*ecdsa.PublicKey)
 	if !ok {
 		return false, types.NewVerificationError(proof.Algorithm,
@@ -46,24 +46,25 @@ func (v *ES256Verifier) Verify(proof *credential.CredentialProof, publicKey *jos
 		return false, types.NewVerificationError(proof.Algorithm, "payload cannot be empty", types.ErrInvalidPayload)
 	}
 
-	// Hash the payload using SHA-256
+	// Hash the payload using SHA-256 (crypto/sha256 - standard library)
 	hash := sha256.Sum256(proof.Payload)
 
-	// Parse the signature (assuming it's in the format r||s)
+	// Validate signature format (r||s, 64 bytes for ES256)
 	if len(proof.Signature) != 64 {
 		return false, types.NewVerificationError(proof.Algorithm,
 			fmt.Sprintf("invalid signature length: expected 64 bytes, got %d", len(proof.Signature)),
 			types.ErrInvalidSignature)
 	}
 
+	// Parse signature components (r||s)
 	r := new(big.Int).SetBytes(proof.Signature[:32])
 	s := new(big.Int).SetBytes(proof.Signature[32:])
 
-	// Verify the signature
+	// Verify signature using crypto/ecdsa (standard library)
 	valid := ecdsa.Verify(ecdsaKey, hash[:], r, s)
 	if !valid {
 		return false, types.NewVerificationError(proof.Algorithm, "signature verification failed", types.ErrVerificationFailed)
 	}
 
-	return valid, nil
+	return true, nil
 }
