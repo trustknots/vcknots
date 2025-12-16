@@ -587,16 +587,11 @@ func (c *Controller) PresentCredential(uriString string, key IKeyEntry) error {
 		return fmt.Errorf("failed to generate DID: %w", err)
 	}
 
-	didURL, err := url.Parse(did.ID)
-	if err != nil {
-		return fmt.Errorf("failed to parse DID URL: %w", err)
-	}
-
 	presentation := &credential.CredentialPresentation{
-		ID:          &url.URL{Scheme: "urn", Opaque: "uuid:" + uuid.New().String()},
+		ID:          "urn:uuid:" + uuid.New().String(),
 		Types:       []string{"VerifiablePresentation"},
 		Credentials: serializedCredentials,
-		Holder:      didURL,
+		Holder:      did.ID,
 		Nonce:       &req.Nonce,
 	}
 

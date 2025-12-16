@@ -511,9 +511,8 @@ func TestController_PresentCredential_MissingRequiredFields_Integration(t *testi
 func TestController_VerifyCredential_Integration(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
-	credId, _ := url.Parse("hoge://test-credential")
 	cred := &credential.Credential{
-		ID:    credId,
+		ID:    "hoge://test-credential",
 		Types: []string{"VerifiableCredential"},
 		Proof: nil, // No proof
 	}
@@ -533,11 +532,9 @@ func TestController_VerifyCredential_Integration(t *testing.T) {
 func TestController_VerifyCredential_WithProof_Integration(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
-	credId, _ := url.Parse("https://example.com/credentials/123")
-
 	// Create credential with proof
 	cred := &credential.Credential{
-		ID:    credId,
+		ID:    "https://example.com/credentials/123",
 		Types: []string{"VerifiableCredential", "TestCredential"},
 		Proof: &credential.CredentialProof{
 			Algorithm: "ES256",
@@ -966,7 +963,7 @@ func TestController_GetCredentialEntries_FilterTests(t *testing.T) {
 		{
 			name: "filter by ID presence",
 			filter: func(cred *SavedCredential) bool {
-				return cred != nil && cred.Credential != nil && cred.Credential.ID != nil
+				return cred != nil && cred.Credential != nil && cred.Credential.ID != ""
 			},
 		},
 		{
