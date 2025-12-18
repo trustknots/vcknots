@@ -1,19 +1,23 @@
 import { err } from '../errors/vcknots.error'
-import { CredentialProvider } from './provider.types'
-// const { importJWK } = require("jose")
+import { VerifyCredentialProvider } from './provider.types'
 const { SDJwtInstance } = require('@sd-jwt/core')
 import { ES256, digest } from '@sd-jwt/crypto-nodejs'
 import { decodeSdJwt } from '@sd-jwt/decode'
 import * as jose from 'jose'
 
-export const credentialSDJWT = (): CredentialProvider => {
+export const verifyCredentialSDJwt = (): VerifyCredentialProvider => {
   return {
-    kind: 'credential-provider',
+    kind: 'verify-credential-provider',
     name: 'sd-jwt-credential-provider',
     single: false,
 
     async verify(vc, issuer, presentationSubmission): Promise<boolean> {
+      // TODO: Change to Option
+      const specifiedDiscloseres: string[] = []
+      const isKbjwt = false
+
       try {
+        // Sample SD-JWT VC string for testing
         const sdJwtString =
           'eyJhbGciOiJFUzI1NiIsImtpZCI6Ik9GWV9kbVpuQnIxMUYxSkg5dzdNMUVPNEEweGU4VmpQQUl6YS02QzdfVUUiLCJ0eXBlIjoiZGMrc2Qtand0In0.eyJpc3MiOiJodHRwczovL3Zja25vdHMtYXBwLXNkLWp3dC0tdmNrbm90cy5hc2lhLWVhc3QxLmhvc3RlZC5hcHAiLCJpYXQiOjE3NjU1MjI1MDQsInZjdCI6InVybjpldWRpOnBpZDoxIiwiZXhwIjoxODgzMDAwMDAwLCJfc2QiOlsiMVBJdkhhVnM1SmN5V1h0QWNTakNFVUF3T1Radi1WZll3NV9vaUNBTHpkSSIsIkRNa2ZkWVIwOHVrX2kxSkx5Qzd4MmtaM2ZqXzNUdVdNM2huQ0tmQURiT0UiLCJGUlJWU3FnMXlLM1JObjhmS1VjaU1vV3ZQb25TdnhnMGV4MFhRcTRVa1VrIiwiWlhTTS1VRkRRVzZ1T00xalhFdkwyYld4RkxaenJyMlBHdHhkeWg4SVZNcyIsIm1HVWFxdWNaQlB5QzZBV0twS3NreDJTNXNWSzJpSTE5eS1kWHo3ODNnaFUiLCJ3c1JLY2RqanJ3ZnRtenU4R1V6THREdUtkZzNsSElZTmc5SnIwVEdiMENzIl0sIl9zZF9hbGciOiJzaGEtMjU2In0.HkshPJyBeptaVKSyoWl6-n1SeZ2-ZaHn_H4LUbj33pXCY-4aWwv2otXlUfOBp93QH8rXbNW_ZaJ1e1oij1pN1g~WyIzTHJnYjRMWmtzTjlwYVBQNGhfYWJRIiwiZ2l2ZW5fbmFtZSIsIkpvaG4iXQ~WyJyQ0NYZjRNSW5rakVTUGhqaEZ0alFRIiwiZmFtaWx5X25hbWUiLCJEb2UiXQ~WyJab1k2ZGdIUXVlRmFheE85REFDenpnIiwiZW1haWwiLCJqb2huZG9lQGV4YW1wbGUuY29tIl0~WyJsZjVYaEVObzZHNlZHdkZnSEdLNlJnIiwicGhvbmVfbnVtYmVyIiwiKzEtMjAyLTU1NS0wMTAxIl0~WyJGNjJoVlZnSEFQMXVOZ2pCVlNPd2RnIiwiYWRkcmVzcyIsIntcInN0cmVldF9hZGRyZXNzXCI6IFwiMTIzIE1haW4gU3RcIiwgXCJsb2NhbGl0eVwiOiBcIkFueXRvd25cIiwgXCJyZWdpb25cIjogXCJBbnlzdGF0ZVwiLCBcImNvdW50cnlcIjogXCJVU1wifSJd~WyJTc0VMNC1zTlFDQkprSXI0UXBqaFVRIiwiYmlydGhkYXRlIiwiMTk0MC0wMS0wMSJd~'
 
@@ -108,8 +112,8 @@ export const credentialSDJWT = (): CredentialProvider => {
         await sdJwtInst.validate(sdJwtString)
         const { payload: claims } = await sdJwtInst.verify(
           sdJwtString,
-          [], // 必須開示クレームキーがあればここに
-          false // キーバインディング不要なら false
+          specifiedDiscloseres,
+          isKbjwt
         )
         console.log('Verified claims:', claims)
       } catch (e) {
