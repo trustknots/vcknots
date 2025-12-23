@@ -18,8 +18,8 @@ export const verifyCredentialSDJwt = (): VerifyCredentialProvider => {
         })
       }
 
-      const specifiedDiscloseres = options?.specifiedDiscloseres || []
-      const isKbjwt = options?.isKbjwt || false
+      const specifiedDisclosures = options?.specifiedDisclosures || []
+      const isKbJwt = options?.isKbJwt || false
 
       try {
         const decodedSdJwt = await decodeSdJwt(vc, digest)
@@ -111,7 +111,7 @@ export const verifyCredentialSDJwt = (): VerifyCredentialProvider => {
           hasher: digest,
         })
         await sdJwtInst.validate(vc)
-        const { payload: claims } = await sdJwtInst.verify(vc, specifiedDiscloseres, isKbjwt)
+        const { payload: claims } = await sdJwtInst.verify(vc, specifiedDisclosures, isKbJwt)
         console.log('Verified claims:', claims)
       } catch (e) {
         throw err('INVALID_SD_JWT', {
