@@ -117,6 +117,19 @@ export type RequestObjectIdProvider = {
   generate(): Promise<RequestObjectId>
 }
 
+export type VerifyCredentialVerifyOptions =
+  | {
+      kind: 'jwt_vc_json'
+    }
+  | {
+      kind: 'dc+sd-jwt'
+      specifiedDisclosures?: string[]
+      isKbJwt?: boolean
+      expectedAud?: string
+      expectedNonce?: string
+      expectedTransactionDataHashes?: string[]
+    }
+
 export type VerifyCredentialProvider = {
   kind: 'verify-credential-provider'
   name: string
@@ -125,7 +138,8 @@ export type VerifyCredentialProvider = {
   verify(
     vc: string,
     issuer: string,
-    presentationSubmission: PresentationSubmission
+    presentationSubmission: PresentationSubmission,
+    options?: VerifyCredentialVerifyOptions
   ): Promise<boolean>
   canHandle(format: string): boolean
 }

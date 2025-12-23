@@ -11,17 +11,18 @@ export const verifyCredentialSDJwt = (): VerifyCredentialProvider => {
     name: 'sd-jwt-credential-provider',
     single: false,
 
-    async verify(vc, issuer, presentationSubmission): Promise<boolean> {
-      // TODO: Change to Option
-      const specifiedDiscloseres: string[] = []
-      const isKbjwt = false
+    async verify(vc, issuer, presentationSubmission, options): Promise<boolean> {
+      if (options && options.kind !== 'dc+sd-jwt') {
+        throw err('ILLEGAL_ARGUMENT', {
+          message: `${options.kind} is not supported.`,
+        })
+      }
+
+      const specifiedDiscloseres = options?.specifiedDiscloseres || []
+      const isKbjwt = options?.isKbjwt || false
 
       try {
-        // Sample SD-JWT VC string for testing
-        const sdJwtString =
-          'eyJhbGciOiJFUzI1NiIsImtpZCI6Ik9GWV9kbVpuQnIxMUYxSkg5dzdNMUVPNEEweGU4VmpQQUl6YS02QzdfVUUiLCJ0eXBlIjoiZGMrc2Qtand0In0.eyJpc3MiOiJodHRwczovL3Zja25vdHMtYXBwLXNkLWp3dC0tdmNrbm90cy5hc2lhLWVhc3QxLmhvc3RlZC5hcHAiLCJpYXQiOjE3NjU1MjI1MDQsInZjdCI6InVybjpldWRpOnBpZDoxIiwiZXhwIjoxODgzMDAwMDAwLCJfc2QiOlsiMVBJdkhhVnM1SmN5V1h0QWNTakNFVUF3T1Radi1WZll3NV9vaUNBTHpkSSIsIkRNa2ZkWVIwOHVrX2kxSkx5Qzd4MmtaM2ZqXzNUdVdNM2huQ0tmQURiT0UiLCJGUlJWU3FnMXlLM1JObjhmS1VjaU1vV3ZQb25TdnhnMGV4MFhRcTRVa1VrIiwiWlhTTS1VRkRRVzZ1T00xalhFdkwyYld4RkxaenJyMlBHdHhkeWg4SVZNcyIsIm1HVWFxdWNaQlB5QzZBV0twS3NreDJTNXNWSzJpSTE5eS1kWHo3ODNnaFUiLCJ3c1JLY2RqanJ3ZnRtenU4R1V6THREdUtkZzNsSElZTmc5SnIwVEdiMENzIl0sIl9zZF9hbGciOiJzaGEtMjU2In0.HkshPJyBeptaVKSyoWl6-n1SeZ2-ZaHn_H4LUbj33pXCY-4aWwv2otXlUfOBp93QH8rXbNW_ZaJ1e1oij1pN1g~WyIzTHJnYjRMWmtzTjlwYVBQNGhfYWJRIiwiZ2l2ZW5fbmFtZSIsIkpvaG4iXQ~WyJyQ0NYZjRNSW5rakVTUGhqaEZ0alFRIiwiZmFtaWx5X25hbWUiLCJEb2UiXQ~WyJab1k2ZGdIUXVlRmFheE85REFDenpnIiwiZW1haWwiLCJqb2huZG9lQGV4YW1wbGUuY29tIl0~WyJsZjVYaEVObzZHNlZHdkZnSEdLNlJnIiwicGhvbmVfbnVtYmVyIiwiKzEtMjAyLTU1NS0wMTAxIl0~WyJGNjJoVlZnSEFQMXVOZ2pCVlNPd2RnIiwiYWRkcmVzcyIsIntcInN0cmVldF9hZGRyZXNzXCI6IFwiMTIzIE1haW4gU3RcIiwgXCJsb2NhbGl0eVwiOiBcIkFueXRvd25cIiwgXCJyZWdpb25cIjogXCJBbnlzdGF0ZVwiLCBcImNvdW50cnlcIjogXCJVU1wifSJd~WyJTc0VMNC1zTlFDQkprSXI0UXBqaFVRIiwiYmlydGhkYXRlIiwiMTk0MC0wMS0wMSJd~'
-
-        const decodedSdJwt = await decodeSdJwt(sdJwtString, digest)
+        const decodedSdJwt = await decodeSdJwt(vc, digest)
         const sdJwtHeader = decodedSdJwt.jwt.header
 
         let publicJwk: jose.JWK | undefined
@@ -109,12 +110,8 @@ export const verifyCredentialSDJwt = (): VerifyCredentialProvider => {
           verifier,
           hasher: digest,
         })
-        await sdJwtInst.validate(sdJwtString)
-        const { payload: claims } = await sdJwtInst.verify(
-          sdJwtString,
-          specifiedDiscloseres,
-          isKbjwt
-        )
+        await sdJwtInst.validate(vc)
+        const { payload: claims } = await sdJwtInst.verify(vc, specifiedDiscloseres, isKbjwt)
         console.log('Verified claims:', claims)
       } catch (e) {
         throw err('INVALID_SD_JWT', {
