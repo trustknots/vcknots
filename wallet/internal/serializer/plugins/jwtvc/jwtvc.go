@@ -109,7 +109,8 @@ func (s *JwtVcSerializer) DeserializeCredential(flavor credential.SupportedSeria
 }
 
 // SerializePresentation serializes a credential presentation to JWT VP format with signature
-func (s *JwtVcSerializer) SerializePresentation(flavor credential.SupportedSerializationFlavor, presentation *credential.CredentialPresentation, key keystore.KeyEntry) ([]byte, *credential.CredentialPresentation, error) {
+// options parameter is ignored for JWT VC (no selective disclosure support)
+func (s *JwtVcSerializer) SerializePresentation(flavor credential.SupportedSerializationFlavor, presentation *credential.CredentialPresentation, key keystore.KeyEntry, options types.SerializePresentationOptions) ([]byte, *credential.CredentialPresentation, error) {
 	if flavor != credential.JwtVc {
 		return nil, nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected JWT VC format")
 	}
@@ -139,11 +140,11 @@ func (s *JwtVcSerializer) SerializePresentation(flavor credential.SupportedSeria
 		Key:       signerAdapter,
 	}
 
-	options := &jose.SignerOptions{}
-	options.WithType("JWT")
-	options.WithHeader("kid", prof.ID)
+	signerOpts := &jose.SignerOptions{}
+	signerOpts.WithType("JWT")
+	signerOpts.WithHeader("kid", prof.ID)
 
-	signer, err := jose.NewSigner(signingKey, options)
+	signer, err := jose.NewSigner(signingKey, signerOpts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create signer: %w", err)
 	}

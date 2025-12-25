@@ -23,6 +23,12 @@ var (
 	ErrNilPlugin            = errors.New("serialization plugin cannot be nil")
 )
 
+// SerializePresentationOptions is a marker interface for presentation serialization options
+// Each plugin can define its own options struct that implements this interface
+type SerializePresentationOptions interface {
+	IsSerializePresentationOptions()
+}
+
 // Serializer defines the interface that all serialization plugins must implement
 type Serializer interface {
 	// SerializeCredential serializes a Credential struct to byte array
@@ -32,8 +38,9 @@ type Serializer interface {
 	DeserializeCredential(flavor credential.SupportedSerializationFlavor, data []byte) (*credential.Credential, error)
 
 	// SerializePresentation serializes a CredentialPresentation struct to byte array with signature
+	// options: Plugin-specific options (can be nil for defaults)
 	// Returns (serialized bytes, signed presentation with proof)
-	SerializePresentation(flavor credential.SupportedSerializationFlavor, presentation *credential.CredentialPresentation, key keystore.KeyEntry) ([]byte, *credential.CredentialPresentation, error)
+	SerializePresentation(flavor credential.SupportedSerializationFlavor, presentation *credential.CredentialPresentation, key keystore.KeyEntry, options SerializePresentationOptions) ([]byte, *credential.CredentialPresentation, error)
 
 	// DeserializePresentation deserializes byte array to CredentialPresentation struct
 	DeserializePresentation(flavor credential.SupportedSerializationFlavor, data []byte) (*credential.CredentialPresentation, error)
