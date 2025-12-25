@@ -6,7 +6,7 @@ import { DeepPartialUnknown } from './type.utils'
 const vpTokenSchema = z.string().or(z.record(z.string(), z.unknown()))
 const authorizationResponseSchema = z.object({
   vp_token: vpTokenSchema.or(z.array(vpTokenSchema)),
-  presentation_submission: PresentationSubmission.schema,
+  presentation_submission: PresentationSubmission.schema.optional(),
   state: z.string().optional(),
 })
 export type AuthorizationResponse = z.infer<typeof authorizationResponseSchema>

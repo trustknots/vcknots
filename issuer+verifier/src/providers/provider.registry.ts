@@ -8,7 +8,7 @@ import { authzSignatureKey } from './authz-signature-key.provider'
 import { cnonce } from './cnonce.provider'
 import { credentialOffer } from './credential-offer.provider'
 import { credentialProofJWT } from './credential-proof-jwt.provider'
-import { verifyCredentialJwt } from './verify-credential-jwt-vc.provider'
+import { verifyCredentialJwt } from './verify-credential-jwt-vc-json.provider'
 import { dcql } from './dcql.provider'
 import { did } from './did-key.provider'
 import { holderBinding } from './holder-binding.provider'
@@ -24,6 +24,8 @@ import { requestObjectId } from './request-object-id.provider'
 import { verifierSignatureKey } from './verifier-signature-key.provider'
 import { certificate } from './certificate.provider'
 import { transactionData } from './transaction-data.provider'
+import { verifyVerifiablePresentation } from './verify-presentation-jwt-vp-json.provider'
+import { verifyVerifiablePresentationDcSdJwt } from './verify-presentation-dc-sd-jwt.provider'
 
 type ArrayUnless<P extends Provider> = P['single'] extends true ? P : P[]
 
@@ -75,6 +77,8 @@ const initializeDefaultProviders = (
   authzRequestJARX5c(),
   certificate(),
   transactionData(),
+  verifyVerifiablePresentation(),
+  verifyVerifiablePresentationDcSdJwt(),
 ]
 
 export const initializeProviderRegistry = (

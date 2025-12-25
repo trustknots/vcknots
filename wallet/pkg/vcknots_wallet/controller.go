@@ -562,11 +562,11 @@ func (c *Controller) PresentCredential(uriString string, key IKeyEntry) error {
 		descriptionItemID := uuid.New().String()
 		descriptorMap = append(descriptorMap, presenterTypes.DescriptorMapItem{
 			ID:     descriptionItemID,
-			Format: "jwt_vc",
+			Format: "jwt_vp_json",
 			Path:   fmt.Sprintf("$.vp_token[%d]", i),
 			PathNested: &presenterTypes.DescriptorMapItem{
 				ID:     descriptionItemID,
-				Format: "jwt_vc",
+				Format: "jwt_vc_json",
 				Path:   fmt.Sprintf("$.verifiableCredential[%d]", i),
 			},
 		})
