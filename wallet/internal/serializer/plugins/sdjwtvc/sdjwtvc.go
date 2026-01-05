@@ -22,8 +22,8 @@ import (
 type SdJwtVcSerializer struct{}
 
 // NewSdJwtVcSerializer creates a new SD-JWT VC serializer
-func NewSdJwtVcSerializer() *SdJwtVcSerializer {
-	return &SdJwtVcSerializer{}
+func NewSdJwtVcSerializer() (*SdJwtVcSerializer, error) {
+	return &SdJwtVcSerializer{}, nil
 }
 
 // SdJwtVcPresentationOptions contains options for SD-JWT VC presentation serialization

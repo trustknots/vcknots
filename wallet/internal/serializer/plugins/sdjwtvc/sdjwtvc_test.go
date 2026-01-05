@@ -103,7 +103,10 @@ func createTestSDJWT() string {
 }
 
 func TestNewSdJwtVcSerializer(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatal("failed to initialize sd-jwt vc serializer")
+	}
 	if serializer == nil {
 		t.Fatal("expected serializer to be non-nil")
 	}
@@ -346,58 +349,73 @@ func TestSdJwtVcPresentationOptions_IsSerializePresentationOptions(t *testing.T)
 }
 
 func TestSerializePresentation_UnsupportedFormat(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
 
 	presentation := &credential.CredentialPresentation{
 		Types:       []string{"VerifiablePresentation"},
 		Credentials: [][]byte{[]byte("test")},
 	}
 
-	_, _, err := serializer.SerializePresentation(credential.JwtVc, presentation, nil, nil)
+	_, _, err = serializer.SerializePresentation(credential.JwtVc, presentation, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for unsupported format")
 	}
 }
 
 func TestSerializePresentation_NilPresentation(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
 
-	_, _, err := serializer.SerializePresentation(credential.SDJwtVC, nil, nil, nil)
+	_, _, err = serializer.SerializePresentation(credential.SDJwtVC, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for nil presentation")
 	}
 }
 
 func TestSerializePresentation_NoCredentials(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
 
 	presentation := &credential.CredentialPresentation{
 		Types:       []string{"VerifiablePresentation"},
 		Credentials: [][]byte{},
 	}
 
-	_, _, err := serializer.SerializePresentation(credential.SDJwtVC, presentation, nil, nil)
+	_, _, err = serializer.SerializePresentation(credential.SDJwtVC, presentation, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for no credentials")
 	}
 }
 
 func TestSerializePresentation_MultipleCredentials(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
 
 	presentation := &credential.CredentialPresentation{
 		Types:       []string{"VerifiablePresentation"},
 		Credentials: [][]byte{[]byte("cred1"), []byte("cred2")},
 	}
 
-	_, _, err := serializer.SerializePresentation(credential.SDJwtVC, presentation, nil, nil)
+	_, _, err = serializer.SerializePresentation(credential.SDJwtVC, presentation, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for multiple credentials")
 	}
 }
 
 func TestSerializePresentation_KeyBindingValidation(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
 	testSDJWT := createTestSDJWT()
 
 	presentation := &credential.CredentialPresentation{
@@ -412,7 +430,7 @@ func TestSerializePresentation_KeyBindingValidation(t *testing.T) {
 		Nonce:             "test-nonce",
 	}
 
-	_, _, err := serializer.SerializePresentation(credential.SDJwtVC, presentation, nil, opts)
+	_, _, err = serializer.SerializePresentation(credential.SDJwtVC, presentation, nil, opts)
 	if err == nil {
 		t.Fatal("expected error when key is nil but RequireKeyBinding is true")
 	}
@@ -442,7 +460,10 @@ func TestSerializePresentation_KeyBindingValidation(t *testing.T) {
 }
 
 func TestSerializePresentation_WithKeyBinding(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
 	testSDJWT := createTestSDJWT()
 
 	key, err := newMockKeyEntry()
@@ -488,7 +509,10 @@ func TestSerializePresentation_WithKeyBinding(t *testing.T) {
 }
 
 func TestSerializePresentation_WithoutKeyBinding(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
 	testSDJWT := createTestSDJWT()
 
 	presentation := &credential.CredentialPresentation{
@@ -518,7 +542,10 @@ func TestSerializePresentation_WithoutKeyBinding(t *testing.T) {
 }
 
 func TestSerializePresentation_SelectiveDisclosure(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
 	testSDJWT := createTestSDJWT()
 
 	presentation := &credential.CredentialPresentation{
@@ -547,7 +574,10 @@ func TestSerializePresentation_SelectiveDisclosure(t *testing.T) {
 }
 
 func TestDeserializeCredential(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
 
 	t.Run("Unsupported format", func(t *testing.T) {
 		_, err := serializer.DeserializeCredential(credential.JwtVc, []byte("test"))
@@ -601,7 +631,10 @@ func TestDeserializeCredential(t *testing.T) {
 }
 
 func TestDeserializePresentation(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
 
 	t.Run("Unsupported format", func(t *testing.T) {
 		_, err := serializer.DeserializePresentation(credential.JwtVc, []byte("test"))
@@ -674,7 +707,10 @@ func TestDeserializePresentation(t *testing.T) {
 }
 
 func TestSerializeCredential(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
 
 	t.Run("Unsupported format", func(t *testing.T) {
 		_, err := serializer.SerializeCredential(credential.JwtVc, &credential.Credential{})
@@ -692,7 +728,10 @@ func TestSerializeCredential(t *testing.T) {
 }
 
 func TestSerializeDeserializeRoundTrip(t *testing.T) {
-	serializer := NewSdJwtVcSerializer()
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
 	testSDJWT := createTestSDJWT()
 
 	// First, deserialize

@@ -7,6 +7,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/internal/credential"
 	"github.com/trustknots/vcknots/wallet/internal/keystore"
 	"github.com/trustknots/vcknots/wallet/internal/serializer/plugins/jwtvc"
+	"github.com/trustknots/vcknots/wallet/internal/serializer/plugins/sdjwtvc"
 	"github.com/trustknots/vcknots/wallet/internal/serializer/types"
 )
 
@@ -37,8 +38,14 @@ func WithDefaultConfig() func(*SerializationDispatcher) error {
 		if err != nil {
 			return types.NewFormatError(credential.JwtVc, err, "failed to create JWT VC serializer")
 		}
-
 		d.RegisterPlugin(credential.JwtVc, jwtVcPlugin)
+
+		sdJwtVcPlugin, err := sdjwtvc.NewSdJwtVcSerializer()
+		if err != nil {
+			return types.NewFormatError(credential.JwtVc, err, "failed to create SD-JWT VC serializer")
+		}
+		d.RegisterPlugin(credential.SDJwtVC, sdJwtVcPlugin)
+
 		return nil
 	}
 }
