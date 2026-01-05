@@ -431,7 +431,7 @@ func presentation(controller *vcknots_wallet.Controller, key *MockKeyEntry, rece
 	logger.Info("Request URI is valid", "scheme", urlParsed.Scheme)
 
 	// Present demo credential to the verifier
-	err = controller.PresentCredential(string(body), key)
+	err = controller.PresentCredential(string(body), key, nil)
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
 		panic(err)

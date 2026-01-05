@@ -154,7 +154,7 @@ func TestCredentialEntry_DIFClaimFormat(t *testing.T) {
 	tests := []struct {
 		name    string
 		fields  fields
-		want    credential.SupportedSerializationFlavor
+		want    string
 		wantErr bool
 	}{
 		{
@@ -198,7 +198,7 @@ func TestCredentialEntry_DIFClaimFormat(t *testing.T) {
 				Raw:        []byte(""),
 				MimeType:   "application/hogefugapiyo",
 			},
-			want:    credential.JwtVc,
+			want:    "hoge",
 			wantErr: true,
 		},
 	}
