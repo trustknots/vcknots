@@ -12,453 +12,631 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
-	joseutil "github.com/trustknots/vcknots/wallet/internal/common/jose"
+	josehelper "github.com/trustknots/vcknots/wallet/internal/common/jose"
 	"github.com/trustknots/vcknots/wallet/internal/credential"
 	"github.com/trustknots/vcknots/wallet/internal/keystore"
 	"github.com/trustknots/vcknots/wallet/internal/serializer/types"
 )
 
+// SdJwtVcSerializer implements Serializer for SD-JWT VC format
 type SdJwtVcSerializer struct{}
 
+// NewSdJwtVcSerializer creates a new SD-JWT VC serializer
 func NewSdJwtVcSerializer() *SdJwtVcSerializer {
 	return &SdJwtVcSerializer{}
 }
 
 // SdJwtVcPresentationOptions contains options for SD-JWT VC presentation serialization
 type SdJwtVcPresentationOptions struct {
-	// SelectedClaims specifies which claims to disclose
-	// If nil or empty, all claims are disclosed
+	// SelectedClaims specifies which claims to disclose in the presentation
 	SelectedClaims []string
+	// RequireKeyBinding indicates whether a Key Binding JWT is required
+	RequireKeyBinding bool
+	// Audience is the intended audience for the Key Binding JWT (required if RequireKeyBinding is true)
+	Audience string
+	// Nonce is the nonce value for the Key Binding JWT (required if RequireKeyBinding is true)
+	Nonce string
 }
 
-// IsSerializePresentationOptions implements types.SerializePresentationOptions
+// IsSerializePresentationOptions implements the marker interface
 func (o *SdJwtVcPresentationOptions) IsSerializePresentationOptions() {}
 
-// disclosure represents a parsed SD-JWT disclosure
-type disclosure struct {
-	Salt       string
-	ClaimName  string
-	ClaimValue any
-	Hash       string
+// CombinedFormatForPresentation represents an SD-JWT in combined format for presentation
+// Format: <Issuer-signed JWT>~<Disclosure 1>~<Disclosure 2>~...~<Disclosure N>~<optional KB-JWT>
+type CombinedFormatForPresentation struct {
+	SDJWT         string   // The issuer-signed JWT
+	Disclosures   []string // The disclosed claims
+	KeyBindingJWT string   // Optional Key Binding JWT
 }
 
-// getHashAlgorithm extracts the hash algorithm from the JWT payload
-// Returns "sha-256" as default if _sd_alg is not specified
-func getHashAlgorithm(payloadMap map[string]any) string {
-	if sdAlg, ok := payloadMap["_sd_alg"].(string); ok {
-		return sdAlg
+// Serialize returns the SD-JWT in combined format
+func (cf *CombinedFormatForPresentation) Serialize() string {
+	result := cf.SDJWT
+	for _, disc := range cf.Disclosures {
+		result += "~" + disc
 	}
-	return "sha-256" // Default per RFC 9901
+	result += "~"
+	if cf.KeyBindingJWT != "" {
+		result += cf.KeyBindingJWT
+	}
+	return result
 }
 
-// computeDisclosureHash computes the hash of a disclosure string using the specified algorithm
-func computeDisclosureHash(disclosureStr string, algorithm string) (string, error) {
-	var hasher hash.Hash
-	switch algorithm {
+// ParseCombinedFormatForPresentation parses an SD-JWT combined format string
+func ParseCombinedFormatForPresentation(input string) *CombinedFormatForPresentation {
+	result := &CombinedFormatForPresentation{}
+
+	// Split by ~ separator
+	parts := strings.Split(input, "~")
+	if len(parts) == 0 {
+		return result
+	}
+
+	// First part is always the SD-JWT
+	result.SDJWT = parts[0]
+
+	// Process remaining parts
+	for i := 1; i < len(parts); i++ {
+		part := parts[i]
+		if part == "" {
+			continue
+		}
+		// Check if this is a JWT (has 2 dots) - could be KB-JWT
+		if strings.Count(part, ".") == 2 && i == len(parts)-1 {
+			result.KeyBindingJWT = part
+		} else {
+			result.Disclosures = append(result.Disclosures, part)
+		}
+	}
+
+	return result
+}
+
+// Disclosure represents a parsed SD-JWT disclosure
+type Disclosure struct {
+	Salt           string      // Random salt
+	Name           string      // Claim name (empty for array elements)
+	Value          interface{} // Claim value
+	EncodedValue   string      // Original base64url encoded disclosure
+	Digest         string      // Computed hash of the disclosure
+	IsArrayElement bool        // True if this is an array element disclosure
+}
+
+// parseDisclosure parses a base64url encoded disclosure
+func parseDisclosure(encodedDisclosure string, sdAlg string) (*Disclosure, error) {
+	// Decode base64url
+	decoded, err := base64.RawURLEncoding.DecodeString(encodedDisclosure)
+	if err != nil {
+		return nil, types.NewDecodingError("failed to decode disclosure", err)
+	}
+
+	// Parse JSON array
+	var arr []interface{}
+	if err := json.Unmarshal(decoded, &arr); err != nil {
+		return nil, types.NewDecodingError("disclosure is not a valid JSON array", err)
+	}
+
+	disc := &Disclosure{
+		EncodedValue: encodedDisclosure,
+	}
+
+	// Array element disclosure:  [salt, value]
+	// Object property disclosure: [salt, name, value]
+	if len(arr) == 2 {
+		disc.IsArrayElement = true
+		salt, ok := arr[0].(string)
+		if !ok {
+			return nil, types.NewDecodingError("disclosure salt must be a string", nil)
+		}
+		disc.Salt = salt
+		disc.Value = arr[1]
+	} else if len(arr) == 3 {
+		salt, ok := arr[0].(string)
+		if !ok {
+			return nil, types.NewDecodingError("disclosure salt must be a string", nil)
+		}
+		name, ok := arr[1].(string)
+		if !ok {
+			return nil, types.NewDecodingError("disclosure name must be a string", nil)
+		}
+		disc.Salt = salt
+		disc.Name = name
+		disc.Value = arr[2]
+	} else {
+		return nil, types.NewDecodingError("disclosure must have 2 or 3 elements", nil)
+	}
+
+	// Compute digest
+	digest, err := computeDisclosureHash(encodedDisclosure, sdAlg)
+	if err != nil {
+		return nil, err
+	}
+	disc.Digest = digest
+
+	return disc, nil
+}
+
+// computeDisclosureHash computes the hash of a disclosure using the specified algorithm
+func computeDisclosureHash(disclosure string, algorithm string) (string, error) {
+	var h hash.Hash
+	switch strings.ToLower(algorithm) {
 	case "sha-256":
-		hasher = sha256.New()
+		h = sha256.New()
 	case "sha-384":
-		hasher = sha512.New384()
+		h = sha512.New384()
 	case "sha-512":
-		hasher = sha512.New()
+		h = sha512.New()
 	default:
 		return "", fmt.Errorf("unsupported hash algorithm: %s", algorithm)
 	}
 
-	hasher.Write([]byte(disclosureStr))
-	hashBytes := hasher.Sum(nil)
-
-	// Return base64url encoded hash
+	h.Write([]byte(disclosure))
+	hashBytes := h.Sum(nil)
 	return base64.RawURLEncoding.EncodeToString(hashBytes), nil
 }
 
-// extractSdArray extracts the _sd array from a map
-func extractSdArray(m map[string]any) []string {
-	if sd, ok := m["_sd"].([]any); ok {
-		result := make([]string, 0, len(sd))
-		for _, item := range sd {
-			if hashStr, ok := item.(string); ok {
-				result = append(result, hashStr)
-			}
-		}
-		return result
-	}
-	return nil
+// KeyBindingJWT represents the structure of a Key Binding JWT
+type KeyBindingJWT struct {
+	Iat    int64  `json:"iat"`
+	Aud    string `json:"aud"`
+	Nonce  string `json:"nonce"`
+	SdHash string `json:"sd_hash"`
 }
 
-// contains checks if a string is in a slice
-func contains(arr []string, val string) bool {
-	for _, item := range arr {
-		if item == val {
-			return true
-		}
+// createKeyBindingJWT creates a Key Binding JWT
+func createKeyBindingJWT(sdJwtWithDisclosures string, key keystore.KeyEntry, alg jose.SignatureAlgorithm, audience, nonce string, sdAlg string) (string, error) {
+	// Compute sd_hash
+	var h hash.Hash
+	switch strings.ToLower(sdAlg) {
+	case "sha-256":
+		h = sha256.New()
+	case "sha-384":
+		h = sha512.New384()
+	case "sha-512":
+		h = sha512.New()
+	default:
+		h = sha256.New()
 	}
-	return false
-}
+	h.Write([]byte(sdJwtWithDisclosures))
+	sdHash := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 
-// parseDisclosure parses a base64url-encoded disclosure string
-// Returns a disclosure struct with the parsed salt, claim name, claim value, and computed hash
-func parseDisclosure(disclosureStr string, sdAlg string) (disclosure, error) {
-	// Base64URL decode
-	decoded, err := base64.RawURLEncoding.DecodeString(disclosureStr)
+	// Create KB-JWT claims
+	kbClaims := KeyBindingJWT{
+		Iat:    time.Now().Unix(),
+		Aud:    audience,
+		Nonce:  nonce,
+		SdHash: sdHash,
+	}
+
+	// Create KB-JWT header
+	kbHeader := map[string]interface{}{
+		"typ": "kb+jwt",
+		"alg": string(alg),
+	}
+
+	// Encode header and claims
+	headerBytes, err := json.Marshal(kbHeader)
 	if err != nil {
-		return disclosure{}, fmt.Errorf("invalid base64 encoding: %w", err)
+		return "", fmt.Errorf("failed to marshal KB-JWT header: %w", err)
 	}
+	headerEncoded := base64.RawURLEncoding.EncodeToString(headerBytes)
 
-	// Parse JSON array: [salt, claim_name, claim_value]
-	var discArray []any
-	if err := json.Unmarshal(decoded, &discArray); err != nil {
-		return disclosure{}, fmt.Errorf("invalid JSON in disclosure: %w", err)
-	}
-
-	if len(discArray) != 3 {
-		return disclosure{}, fmt.Errorf("disclosure must have exactly 3 elements, got %d", len(discArray))
-	}
-
-	salt, ok := discArray[0].(string)
-	if !ok {
-		return disclosure{}, fmt.Errorf("salt must be a string")
-	}
-
-	claimName, ok := discArray[1].(string)
-	if !ok {
-		return disclosure{}, fmt.Errorf("claim name must be a string")
-	}
-
-	claimValue := discArray[2]
-
-	// Compute hash
-	hash, err := computeDisclosureHash(disclosureStr, sdAlg)
+	claimsBytes, err := json.Marshal(kbClaims)
 	if err != nil {
-		return disclosure{}, fmt.Errorf("failed to compute disclosure hash: %w", err)
+		return "", fmt.Errorf("failed to marshal KB-JWT claims: %w", err)
+	}
+	claimsEncoded := base64.RawURLEncoding.EncodeToString(claimsBytes)
+
+	// Create signing input
+	signingInput := headerEncoded + "." + claimsEncoded
+
+	// Sign
+	sigBytes, err := key.Sign([]byte(signingInput))
+	if err != nil {
+		return "", fmt.Errorf("failed to sign KB-JWT: %w", err)
 	}
 
-	return disclosure{
-		Salt:       salt,
-		ClaimName:  claimName,
-		ClaimValue: claimValue,
-		Hash:       hash,
-	}, nil
+	// Convert DER to raw format if needed
+	keySize, err := josehelper.GetKeySizeForAlgorithm(alg)
+	if err == nil && len(sigBytes) != keySize*2 {
+		sigBytes, err = josehelper.ConvertDERToRaw(sigBytes, keySize)
+		if err != nil {
+			return "", fmt.Errorf("failed to convert signature format: %w", err)
+		}
+	}
+
+	sigEncoded := base64.RawURLEncoding.EncodeToString(sigBytes)
+	return signingInput + "." + sigEncoded, nil
 }
 
-// SerializeCredential serializes a credential to JWT VC format
+// SerializeCredential serializes a credential to SD-JWT VC format
 func (s *SdJwtVcSerializer) SerializeCredential(flavor credential.SupportedSerializationFlavor, cred *credential.Credential) ([]byte, error) {
 	if flavor != credential.SDJwtVC {
-		return nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected JWT VC format")
+		return nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected SD-JWT VC format")
 	}
 
-	// This method is not fully implemented in the original Dart code
-	return nil, types.NewFormatError(flavor, errors.New("not implemented"), "SerializeCredential not implemented for SD JWT VC format")
+	// SerializeCredential for SD-JWT VC is typically handled by issuers
+	// This implementation returns an error as credentials are issued by external systems
+	return nil, types.NewFormatError(flavor, errors.New("not implemented"), "SerializeCredential not implemented for SD-JWT VC format - credentials are issued by external systems")
 }
 
-// DeserializeCredential deserializes an SD-JWT VC formatted credential
+// DeserializeCredential deserializes an SD-JWT VC to credential struct
 func (s *SdJwtVcSerializer) DeserializeCredential(flavor credential.SupportedSerializationFlavor, data []byte) (*credential.Credential, error) {
 	if flavor != credential.SDJwtVC {
 		return nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected SD-JWT VC format")
 	}
 
-	// Step 1: Parse SD-JWT format (split on ~)
-	str := string(data)
-	parts := strings.Split(str, "~")
-	if len(parts) < 2 {
-		return nil, types.NewFormatError(flavor, types.ErrDecodingFailed, "invalid SD-JWT VC format")
+	// Parse combined format
+	cf := ParseCombinedFormatForPresentation(string(data))
+	if cf.SDJWT == "" {
+		return nil, types.NewInvalidJWTError("SD-JWT is empty", nil)
 	}
 
-	jwtStr := parts[0]
-	// Filter out empty strings from trailing ~
-	disclosureStrings := make([]string, 0)
-	for _, disc := range parts[1:] {
-		if disc != "" {
-			disclosureStrings = append(disclosureStrings, disc)
-		}
+	// Parse the issuer-signed JWT
+	jwtParts := strings.Split(cf.SDJWT, ".")
+	if len(jwtParts) != 3 {
+		return nil, types.NewInvalidJWTError("SD-JWT must have exactly 3 parts separated by dots", nil)
 	}
 
-	// Step 2: Parse JWT using jose.ParseSigned
-	jws, err := jose.ParseSigned(jwtStr, []jose.SignatureAlgorithm{
-		jose.ES256, jose.ES384, jose.ES512, jose.EdDSA, jose.RS256,
-	})
+	header, payload, signature := jwtParts[0], jwtParts[1], jwtParts[2]
+
+	if header == "" || payload == "" || signature == "" {
+		return nil, types.NewInvalidJWTError("SD-JWT parts cannot be empty", nil)
+	}
+
+	// Decode header
+	headerData, err := base64.RawURLEncoding.DecodeString(header)
 	if err != nil {
-		return nil, types.NewInvalidJWTError("failed to parse SD-JWT", err)
+		return nil, types.NewInvalidJWTError("invalid SD-JWT header encoding", err)
 	}
 
-	// Step 3: Validate structure
-	if len(jws.Signatures) != 1 {
-		return nil, types.NewInvalidJWTError(fmt.Sprintf("expected exactly 1 signature, got %d", len(jws.Signatures)), nil)
+	var headerMap map[string]interface{}
+	if err := json.Unmarshal(headerData, &headerMap); err != nil {
+		return nil, types.NewInvalidJWTError("SD-JWT header is not valid JSON", err)
 	}
 
-	// Extract algorithm
-	algStr := jws.Signatures[0].Header.Algorithm
-	if algStr == "" {
-		return nil, types.NewInvalidJWTError("alg header is missing", nil)
+	// Get algorithm from header
+	algStr, ok := headerMap["alg"].(string)
+	if !ok {
+		return nil, types.NewInvalidJWTError("alg is missing or not a string", nil)
 	}
-	alg, err := joseutil.ParseAlgorithm(algStr)
+
+	alg, err := josehelper.ParseAlgorithm(algStr)
 	if err != nil {
 		return nil, fmt.Errorf("unsupported algorithm %s: %w", algStr, types.ErrUnsupportedAlgorithm)
 	}
 
-	// Step 4: Extract payload WITHOUT verification
-	payloadBytes := jws.UnsafePayloadWithoutVerification()
-
-	// Parse payload as JSON
-	var payloadMap map[string]any
-	if err := json.Unmarshal(payloadBytes, &payloadMap); err != nil {
-		return nil, types.NewInvalidJWTError("invalid JSON payload", err)
+	// Decode payload
+	payloadData, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		return nil, types.NewInvalidJWTError("invalid SD-JWT payload encoding", err)
 	}
 
-	// Step 5: Get hash algorithm and parse disclosures
-	sdAlg := getHashAlgorithm(payloadMap)
-	disclosures := make([]disclosure, 0, len(disclosureStrings))
-	for _, discStr := range disclosureStrings {
+	var payloadMap map[string]interface{}
+	if err := json.Unmarshal(payloadData, &payloadMap); err != nil {
+		return nil, types.NewInvalidJWTError("SD-JWT payload is not valid JSON", err)
+	}
+
+	// Get _sd_alg (default to sha-256 per spec)
+	sdAlg := "sha-256"
+	if algVal, ok := payloadMap["_sd_alg"].(string); ok {
+		sdAlg = algVal
+	}
+
+	// Parse disclosures and build disclosed claims map
+	disclosedClaims := make(map[string]interface{})
+	for _, discStr := range cf.Disclosures {
 		disc, err := parseDisclosure(discStr, sdAlg)
 		if err != nil {
-			return nil, types.NewDecodingError(fmt.Sprintf("failed to parse disclosure: %s", discStr), err)
+			return nil, types.NewDecodingError("failed to parse disclosure", err)
 		}
-		disclosures = append(disclosures, disc)
+		if !disc.IsArrayElement && disc.Name != "" {
+			disclosedClaims[disc.Name] = disc.Value
+		}
 	}
 
-	// Step 6: Extract top-level _sd array
-	topLevelSd := extractSdArray(payloadMap)
-
-	// Step 7: Build reconstructed claims map
-	reconstructed := make(map[string]any)
+	// Merge disclosed claims with non-selective claims from payload
+	allClaims := make(map[string]interface{})
 	for k, v := range payloadMap {
-		reconstructed[k] = v
-	}
-
-	// Remove metadata fields
-	delete(reconstructed, "_sd")
-	delete(reconstructed, "_sd_alg")
-
-	// Step 8: Verify and merge disclosures into claims
-	for _, disc := range disclosures {
-		// Check if this disclosure is for top-level or nested in credentialSubject
-		isTopLevel := contains(topLevelSd, disc.Hash)
-
-		if isTopLevel {
-			// Add to top-level reconstructed claims
-			reconstructed[disc.ClaimName] = disc.ClaimValue
-		} else if credSubj, ok := reconstructed["credentialSubject"].(map[string]any); ok {
-			// Check if it belongs to credentialSubject
-			nestedSd := extractSdArray(credSubj)
-			if contains(nestedSd, disc.Hash) {
-				credSubj[disc.ClaimName] = disc.ClaimValue
-			} else {
-				// Hash not found in either _sd array
-				return nil, types.NewInvalidCredentialError(
-					fmt.Sprintf("disclosure hash not found in _sd array: %s", disc.Hash), nil)
-			}
-		} else {
-			return nil, types.NewInvalidCredentialError(
-				fmt.Sprintf("disclosure hash not found in _sd array: %s", disc.Hash), nil)
+		// Skip SD-JWT specific claims
+		if k == "_sd" || k == "_sd_alg" || k == "cnf" {
+			continue
 		}
+		allClaims[k] = v
+	}
+	for k, v := range disclosedClaims {
+		allClaims[k] = v
 	}
 
-	// Clean up credentialSubject metadata
-	if credSubj, ok := reconstructed["credentialSubject"].(map[string]any); ok {
-		delete(credSubj, "_sd")
+	// Extract credential fields
+	cred := &credential.Credential{}
+
+	// Parse vct (verifiable credential type)
+	if vct, ok := payloadMap["vct"].(string); ok {
+		cred.Types = []string{vct}
 	}
 
-	// Step 9: Map SD-JWT VC claims to Credential struct
-	// Extract credential type from vct claim
-	vct, ok := reconstructed["vct"].(string)
-	if !ok {
-		return nil, types.NewInvalidCredentialError("vct claim is missing or invalid", nil)
-	}
-	credTypes := []string{"VerifiableCredential", vct}
-
-	// Extract issuer (required)
-	issuerStr, ok := reconstructed["iss"].(string)
-	if !ok {
-		return nil, types.NewInvalidCredentialError("iss claim is missing or invalid", nil)
+	// Parse issuer
+	if iss, ok := payloadMap["iss"].(string); ok {
+		cred.Issuer = iss
 	}
 
-	// Extract ID (jti claim, optional)
-	var credID string
-	if jti, ok := reconstructed["jti"].(string); ok {
-		credID = jti
+	// Parse subject
+	if sub, ok := payloadMap["sub"].(string); ok {
+		cred.Subject = sub
 	}
 
-	// Extract and convert credentialSubject
-	var subject string
-	claims := make(credential.CredentialClaim)
-
-	if credSubj, ok := reconstructed["credentialSubject"].(map[string]any); ok {
-		if id, ok := credSubj["id"].(string); ok {
-			subject = id
-		}
-
-		// Copy all claims except id
-		for k, v := range credSubj {
-			if k != "id" {
-				claims[k] = v
-			}
-		}
+	// Parse validity period
+	validPeriod := &credential.CredentialValidPeriod{}
+	if iat, ok := payloadMap["iat"].(float64); ok {
+		t := time.Unix(int64(iat), 0)
+		validPeriod.From = &t
+	}
+	if exp, ok := payloadMap["exp"].(float64); ok {
+		t := time.Unix(int64(exp), 0)
+		validPeriod.To = &t
+	}
+	if validPeriod.From != nil || validPeriod.To != nil {
+		cred.ValidPeriod = validPeriod
 	}
 
-	// Add cnf to claims if present
-	if cnf, ok := reconstructed["cnf"]; ok {
-		claims["cnf"] = cnf
+	// Store claims
+	claims := credential.CredentialClaim(allClaims)
+	cred.Claims = &claims
+
+	// Decode signature
+	sig, err := base64.RawURLEncoding.DecodeString(signature)
+	if err != nil {
+		return nil, types.NewInvalidJWTError("invalid SD-JWT signature encoding", err)
 	}
 
-	// Extract valid period from JWT claims
-	var validPeriod *credential.CredentialValidPeriod
-	if iat, ok := reconstructed["iat"].(float64); ok {
-		from := time.Unix(int64(iat), 0)
-		validPeriod = &credential.CredentialValidPeriod{From: &from}
-	}
-	if exp, ok := reconstructed["exp"].(float64); ok {
-		to := time.Unix(int64(exp), 0)
-		if validPeriod == nil {
-			validPeriod = &credential.CredentialValidPeriod{To: &to}
-		} else {
-			validPeriod.To = &to
-		}
-	}
-
-	// Step 10: Attach proof
-	// Reconstruct signing input (header.payload)
-	jwtParts := strings.Split(jwtStr, ".")
-	if len(jwtParts) != 3 {
-		return nil, types.NewInvalidJWTError("JWT must have exactly 3 parts", nil)
-	}
-	signingInput := []byte(jwtParts[0] + "." + jwtParts[1])
-
-	cred := &credential.Credential{
-		ID:          credID,
-		Types:       credTypes,
-		Issuer:      issuerStr,
-		Subject:     subject,
-		Claims:      &claims,
-		ValidPeriod: validPeriod,
-		Proof: &credential.CredentialProof{
-			Algorithm: alg,
-			Signature: jws.Signatures[0].Signature,
-			Payload:   signingInput,
-		},
+	// Create proof
+	cred.Proof = &credential.CredentialProof{
+		Algorithm: alg,
+		Signature: sig,
+		Payload:   []byte(header + "." + payload),
 	}
 
 	return cred, nil
 }
 
 // SerializePresentation serializes a credential presentation with selective disclosure
-// options: SdJwtVcPresentationOptions for specifying which claims to disclose (can be nil for all claims)
-// Note: Key parameter is accepted for future KB-JWT support but not currently used
-func (s *SdJwtVcSerializer) SerializePresentation(flavor credential.SupportedSerializationFlavor, presentation *credential.CredentialPresentation, key keystore.KeyEntry, options types.SerializePresentationOptions) ([]byte, *credential.CredentialPresentation, error) {
+func (s *SdJwtVcSerializer) SerializePresentation(
+	flavor credential.SupportedSerializationFlavor,
+	presentation *credential.CredentialPresentation,
+	key keystore.KeyEntry,
+	options types.SerializePresentationOptions,
+) ([]byte, *credential.CredentialPresentation, error) {
 	if flavor != credential.SDJwtVC {
 		return nil, nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected SD-JWT VC format")
 	}
 
-	// Step 1: Validate input
 	if presentation == nil {
-		return nil, nil, types.NewFormatError(flavor, types.ErrInvalidPresentation, "presentation cannot be nil")
+		return nil, nil, types.NewInvalidCredentialError("presentation cannot be nil", nil)
 	}
 
 	if len(presentation.Credentials) == 0 {
-		return nil, nil, types.NewFormatError(flavor, types.ErrInvalidPresentation, "no credentials in presentation")
+		return nil, nil, types.NewInvalidCredentialError("presentation must contain at least one credential", nil)
 	}
 
-	// MVP: Support only single credential presentations
+	// SD-JWT VC format only supports single credential presentations
 	if len(presentation.Credentials) > 1 {
-		return nil, nil, types.NewFormatError(flavor,
-			errors.New("multiple credentials not supported"),
-			"SD-JWT VP currently supports only single credential presentations")
+		return nil, nil, types.NewInvalidCredentialError("SD-JWT VC format only supports single credential presentations", nil)
 	}
 
-	credentialData := presentation.Credentials[0]
-
-	// Step 2: Validate credential is SD-JWT format
-	str := string(credentialData)
-	parts := strings.Split(str, "~")
-	if len(parts) < 2 {
-		return nil, nil, types.NewFormatError(flavor, types.ErrInvalidCredential,
-			"credential is not in SD-JWT format")
-	}
-
-	jwtStr := parts[0]
-	allDisclosureStrings := make([]string, 0)
-	for _, disc := range parts[1:] {
-		if disc != "" {
-			allDisclosureStrings = append(allDisclosureStrings, disc)
+	// Parse options
+	var sdOpts *SdJwtVcPresentationOptions
+	if options != nil {
+		var ok bool
+		sdOpts, ok = options.(*SdJwtVcPresentationOptions)
+		if !ok {
+			return nil, nil, types.NewInvalidCredentialError("invalid presentation options type", nil)
 		}
 	}
 
-	// Step 3: Parse the credential to extract its proof
-	cred, err := s.DeserializeCredential(flavor, credentialData)
+	// Validate key binding requirements
+	if sdOpts != nil && sdOpts.RequireKeyBinding {
+		if key == nil {
+			return nil, nil, types.NewInvalidCredentialError("key is required for key binding", nil)
+		}
+		if sdOpts.Audience == "" {
+			return nil, nil, types.NewInvalidCredentialError("audience is required for key binding", nil)
+		}
+		if sdOpts.Nonce == "" {
+			return nil, nil, types.NewInvalidCredentialError("nonce is required for key binding", nil)
+		}
+	}
+
+	// Parse the SD-JWT from the credential
+	sdJwtData := string(presentation.Credentials[0])
+	cf := ParseCombinedFormatForPresentation(sdJwtData)
+
+	if cf.SDJWT == "" {
+		return nil, nil, types.NewInvalidJWTError("credential does not contain a valid SD-JWT", nil)
+	}
+
+	// Get _sd_alg from the SD-JWT payload
+	jwtParts := strings.Split(cf.SDJWT, ".")
+	if len(jwtParts) != 3 {
+		return nil, nil, types.NewInvalidJWTError("SD-JWT must have 3 parts", nil)
+	}
+
+	payloadData, err := base64.RawURLEncoding.DecodeString(jwtParts[1])
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse credential for presentation: %w", err)
+		return nil, nil, types.NewInvalidJWTError("invalid SD-JWT payload encoding", err)
 	}
 
-	// Step 4: Determine selective disclosure based on options
-	var filteredDisclosures []string
+	var payloadMap map[string]interface{}
+	if err := json.Unmarshal(payloadData, &payloadMap); err != nil {
+		return nil, nil, types.NewInvalidJWTError("SD-JWT payload is not valid JSON", err)
+	}
 
-	if opts, ok := options.(*SdJwtVcPresentationOptions); ok && opts != nil && len(opts.SelectedClaims) > 0 {
-		// Selective disclosure: filter based on SelectedClaims
-		// Parse JWT to get hash algorithm
-		jws, err := jose.ParseSigned(jwtStr, []jose.SignatureAlgorithm{
-			jose.ES256, jose.ES384, jose.ES512, jose.EdDSA, jose.RS256,
-		})
-		if err != nil {
-			return nil, nil, types.NewInvalidJWTError("failed to parse SD-JWT for filtering", err)
-		}
+	sdAlg := "sha-256"
+	if algVal, ok := payloadMap["_sd_alg"].(string); ok {
+		sdAlg = algVal
+	}
 
-		payloadBytes := jws.UnsafePayloadWithoutVerification()
-		var payloadMap map[string]any
-		if err := json.Unmarshal(payloadBytes, &payloadMap); err != nil {
-			return nil, nil, types.NewInvalidJWTError("invalid JSON payload", err)
-		}
-
-		sdAlg := getHashAlgorithm(payloadMap)
-
-		// Create a set of selected claims for fast lookup
-		selectedSet := make(map[string]bool)
-		for _, claim := range opts.SelectedClaims {
-			selectedSet[claim] = true
-		}
-
-		// Filter disclosures
-		for _, discStr := range allDisclosureStrings {
+	// Filter disclosures based on selected claims
+	var selectedDisclosures []string
+	if sdOpts != nil && len(sdOpts.SelectedClaims) > 0 {
+		// Parse all disclosures
+		for _, discStr := range cf.Disclosures {
 			disc, err := parseDisclosure(discStr, sdAlg)
 			if err != nil {
-				// Skip invalid disclosures
 				continue
 			}
-
-			// Check if this claim should be disclosed
-			if selectedSet[disc.ClaimName] {
-				filteredDisclosures = append(filteredDisclosures, discStr)
+			// Include if the claim name is in selected claims
+			for _, selectedClaim := range sdOpts.SelectedClaims {
+				if disc.Name == selectedClaim {
+					selectedDisclosures = append(selectedDisclosures, discStr)
+					break
+				}
 			}
 		}
 	} else {
-		// No options or no selected claims specified: include all disclosures
-		filteredDisclosures = allDisclosureStrings
+		// Include all disclosures if no specific claims selected
+		selectedDisclosures = cf.Disclosures
 	}
 
-	// Step 5: Rebuild SD-JWT with filtered disclosures
-	result := jwtStr
-	for _, disc := range filteredDisclosures {
-		result += "~" + disc
+	// Build the presentation SD-JWT with selected disclosures
+	presentationCF := &CombinedFormatForPresentation{
+		SDJWT:       cf.SDJWT,
+		Disclosures: selectedDisclosures,
 	}
-	result += "~" // Trailing separator
 
-	// Step 6: Create presentation with proof (reuse credential's proof)
+	// Create Key Binding JWT if required
+	if sdOpts != nil && sdOpts.RequireKeyBinding && key != nil {
+		// Get algorithm from key
+		pubKey := key.PublicKey()
+		algStr := pubKey.Algorithm
+		if algStr == "" {
+			algStr = "ES256"
+		}
+		alg, err := josehelper.ParseAlgorithm(algStr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to parse algorithm: %w", err)
+		}
+
+		// Create the SD-JWT with disclosures for hashing
+		sdJwtWithDisclosures := presentationCF.Serialize()
+		// Remove trailing ~ if KB-JWT will be added
+		sdJwtWithDisclosures = strings.TrimSuffix(sdJwtWithDisclosures, "~") + "~"
+
+		kbJwt, err := createKeyBindingJWT(sdJwtWithDisclosures, key, alg, sdOpts.Audience, sdOpts.Nonce, sdAlg)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create key binding JWT:  %w", err)
+		}
+		presentationCF.KeyBindingJWT = kbJwt
+	}
+
+	// Serialize the presentation
+	serialized := presentationCF.Serialize()
+
+	// Create presentation with proof
 	presentationWithProof := &credential.CredentialPresentation{
 		ID:          presentation.ID,
 		Types:       presentation.Types,
-		Credentials: [][]byte{[]byte(result)},
+		Credentials: [][]byte{[]byte(serialized)},
 		Holder:      presentation.Holder,
 		Nonce:       presentation.Nonce,
-		Proof:       cred.Proof, // Reuse credential proof since no KB-JWT
 	}
 
-	return []byte(result), presentationWithProof, nil
+	// Add proof if key binding was used
+	if sdOpts != nil && sdOpts.RequireKeyBinding && key != nil && presentationCF.KeyBindingJWT != "" {
+		// Parse KB-JWT to get signature
+		kbParts := strings.Split(presentationCF.KeyBindingJWT, ".")
+		if len(kbParts) == 3 {
+			sig, _ := base64.RawURLEncoding.DecodeString(kbParts[2])
+			pubKey := key.PublicKey()
+			algStr := pubKey.Algorithm
+			if algStr == "" {
+				algStr = "ES256"
+			}
+			alg, _ := josehelper.ParseAlgorithm(algStr)
+			presentationWithProof.Proof = &credential.CredentialProof{
+				Algorithm: alg,
+				Signature: sig,
+				Payload:   []byte(kbParts[0] + "." + kbParts[1]),
+			}
+		}
+	}
+
+	return []byte(serialized), presentationWithProof, nil
 }
 
-// DeserializePresentation deserializes a JWT VC formatted credential presentation
+// DeserializePresentation deserializes an SD-JWT VC presentation
 func (s *SdJwtVcSerializer) DeserializePresentation(flavor credential.SupportedSerializationFlavor, data []byte) (*credential.CredentialPresentation, error) {
 	if flavor != credential.SDJwtVC {
-		return nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected JWT VC format")
+		return nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected SD-JWT VC format")
 	}
 
-	// This method is not fully implemented in the original Dart code
-	return nil, types.NewFormatError(flavor, errors.New("not implemented"), "DeserializePresentation not implemented for SD JWT VC format")
+	// Parse combined format
+	cf := ParseCombinedFormatForPresentation(string(data))
+	if cf.SDJWT == "" {
+		return nil, types.NewInvalidJWTError("SD-JWT presentation is empty", nil)
+	}
+
+	// Create presentation
+	presentation := &credential.CredentialPresentation{
+		Types:       []string{"VerifiablePresentation"},
+		Credentials: [][]byte{data},
+	}
+
+	// If Key Binding JWT exists, parse it for proof
+	if cf.KeyBindingJWT != "" {
+		kbParts := strings.Split(cf.KeyBindingJWT, ".")
+		if len(kbParts) != 3 {
+			return nil, types.NewInvalidJWTError("Key Binding JWT must have 3 parts", nil)
+		}
+
+		// Parse KB-JWT header for algorithm
+		kbHeaderData, err := base64.RawURLEncoding.DecodeString(kbParts[0])
+		if err != nil {
+			return nil, types.NewInvalidJWTError("invalid KB-JWT header encoding", err)
+		}
+
+		var kbHeader map[string]interface{}
+		if err := json.Unmarshal(kbHeaderData, &kbHeader); err != nil {
+			return nil, types.NewInvalidJWTError("KB-JWT header is not valid JSON", err)
+		}
+
+		algStr, ok := kbHeader["alg"].(string)
+		if !ok {
+			return nil, types.NewInvalidJWTError("KB-JWT alg is missing or not a string", nil)
+		}
+
+		alg, err := josehelper.ParseAlgorithm(algStr)
+		if err != nil {
+			return nil, fmt.Errorf("unsupported KB-JWT algorithm: %w", err)
+		}
+
+		// Decode signature
+		sig, err := base64.RawURLEncoding.DecodeString(kbParts[2])
+		if err != nil {
+			return nil, types.NewInvalidJWTError("invalid KB-JWT signature encoding", err)
+		}
+
+		// Parse KB-JWT body for nonce
+		kbBodyData, err := base64.RawURLEncoding.DecodeString(kbParts[1])
+		if err != nil {
+			return nil, types.NewInvalidJWTError("invalid KB-JWT body encoding", err)
+		}
+
+		var kbBody KeyBindingJWT
+		if err := json.Unmarshal(kbBodyData, &kbBody); err != nil {
+			return nil, types.NewInvalidJWTError("KB-JWT body is not valid JSON", err)
+		}
+
+		if kbBody.Nonce != "" {
+			presentation.Nonce = &kbBody.Nonce
+		}
+
+		presentation.Proof = &credential.CredentialProof{
+			Algorithm: alg,
+			Signature: sig,
+			Payload:   []byte(kbParts[0] + "." + kbParts[1]),
+		}
+	}
+
+	return presentation, nil
 }
