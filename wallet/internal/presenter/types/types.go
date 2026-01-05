@@ -69,7 +69,7 @@ type PresentationSubmission struct {
 
 type DescriptorMapItem struct {
 	ID         string             `json:"id"`
-	Format     string             `json:"format"`
+	Format     string             `json:"format"` // claim format registry: https://identity.foundation/claim-format-registry/
 	Path       string             `json:"path"`
 	PathNested *DescriptorMapItem `json:"path_nested,omitempty"`
 }

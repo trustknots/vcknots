@@ -365,7 +365,7 @@ func TestController_PresentCredential_InvalidID_Integration(t *testing.T) {
 	mockKey := newMockKeyEntry()
 
 	// This should fail when trying to parse the invalid URI
-	err := controller.PresentCredential(mockURI, mockKey)
+	err := controller.PresentCredential(mockURI, mockKey, nil)
 	if err == nil {
 		t.Error("Expected PresentCredential to fail with invalid URI")
 		return
@@ -415,7 +415,7 @@ func TestController_PresentCredential_ErrorPaths_Integration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockKey := newMockKeyEntry()
-			err := controller.PresentCredential(tt.uri, mockKey)
+			err := controller.PresentCredential(tt.uri, mockKey, nil)
 			if tt.wantErr && err == nil {
 				t.Errorf("PresentCredential() expected error but got none")
 			}
@@ -478,7 +478,7 @@ func TestController_PresentCredential_MissingRequiredFields_Integration(t *testi
 		t.Run(tt.name, func(t *testing.T) {
 			mockURI := tt.setupMockURI()
 			mockKey := newMockKeyEntry()
-			err := controller.PresentCredential(mockURI, mockKey)
+			err := controller.PresentCredential(mockURI, mockKey, nil)
 
 			if err == nil {
 				t.Errorf("PresentCredential() expected error but got none")
@@ -761,7 +761,7 @@ func TestController_PresentCredential_WithMockServer_Integration(t *testing.T) {
 		url.QueryEscape(presentationDefinition), vpEndpointURL.String())
 
 	mockKey := newMockKeyEntry()
-	err = controller.PresentCredential(presentationURI, mockKey)
+	err = controller.PresentCredential(presentationURI, mockKey, nil)
 	if err != nil {
 		t.Fatalf("PresentCredential failed: %v", err)
 	}
@@ -1120,7 +1120,7 @@ func TestController_PresentCredential_DetailedErrorPaths_Integration(t *testing.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockKey := newMockKeyEntry()
-			err := controller.PresentCredential(tt.mockURIString, mockKey)
+			err := controller.PresentCredential(tt.mockURIString, mockKey, nil)
 
 			if !tt.expectParseError && !tt.expectCredError && err != nil {
 				t.Errorf("PresentCredential() unexpected error: %v", err)
@@ -1146,7 +1146,7 @@ func TestController_PresentCredential_DetailedErrorPaths_Integration(t *testing.
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				mockKey := newMockKeyEntry()
-				err := controller.PresentCredential(tc.uri, mockKey)
+				err := controller.PresentCredential(tc.uri, mockKey, nil)
 				if err == nil {
 					t.Errorf("Expected error for %s but got none", tc.name)
 				}

@@ -22,6 +22,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/internal/receiver"
 	receiverTypes "github.com/trustknots/vcknots/wallet/internal/receiver/types"
 	"github.com/trustknots/vcknots/wallet/internal/serializer"
+	serializerTypes "github.com/trustknots/vcknots/wallet/internal/serializer/types"
 	"github.com/trustknots/vcknots/wallet/internal/verifier"
 )
 
@@ -505,7 +506,7 @@ func (c *Controller) GetCredentialEntry(id string) (*SavedCredential, error) {
 	}, nil
 }
 
-func (c *Controller) PresentCredential(uriString string, key IKeyEntry) error {
+func (c *Controller) PresentCredential(uriString string, key IKeyEntry, options serializerTypes.SerializePresentationOptions) error {
 	req, err := c.presenter.ParseRequestURI(uriString)
 	if err != nil {
 		return fmt.Errorf("failed to parse request URI: %w", err)
@@ -555,21 +556,38 @@ func (c *Controller) PresentCredential(uriString string, key IKeyEntry) error {
 
 	// Use the first credential for testing
 	selectedCredentials := entries[:1]
+	var serializationFlavor *credential.SupportedSerializationFlavor
 
 	for i, entry := range selectedCredentials {
-		serializedCredentials = append(serializedCredentials, entry.Entry.Raw)
+		sf, err := entry.Entry.SerializationFlavor()
+		if serializationFlavor == nil {
+			serializationFlavor = &sf
+		} else {
+			if *serializationFlavor != sf {
+				return fmt.Errorf("Error: each credential has different format")
+			}
+		}
 
+		serializedCredentials = append(serializedCredentials, entry.Entry.Raw)
+		claimFormat, err := entry.Entry.DIFClaimFormat()
+		if err != nil {
+			return err
+		}
 		descriptionItemID := uuid.New().String()
 		descriptorMap = append(descriptorMap, presenterTypes.DescriptorMapItem{
 			ID:     descriptionItemID,
-			Format: "jwt_vc",
+			Format: claimFormat,
 			Path:   fmt.Sprintf("$.vp_token[%d]", i),
 			PathNested: &presenterTypes.DescriptorMapItem{
 				ID:     descriptionItemID,
-				Format: "jwt_vc",
+				Format: claimFormat,
 				Path:   fmt.Sprintf("$.verifiableCredential[%d]", i),
 			},
 		})
+	}
+
+	if serializationFlavor == nil {
+		return fmt.Errorf("Error: failed to detect serialization flavor")
 	}
 
 	presentationSubmission := presenterTypes.PresentationSubmission{
@@ -595,11 +613,14 @@ func (c *Controller) PresentCredential(uriString string, key IKeyEntry) error {
 		Nonce:       &req.Nonce,
 	}
 
+	// TODO: ここでjwtvc決め打ちになっちゃってるので、sd-jwtだったらsd-jwtでpresentする（mimeに応じたserialize）
+
 	// generate VP and serialize
 	bytes, _, err := c.serializer.SerializePresentation(
-		credential.JwtVc,
+		*serializationFlavor,
 		presentation,
 		key,
+		options,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to serialize presentation: %w", err)
