@@ -187,7 +187,7 @@ func TestSerializePresentation(t *testing.T) {
 	// Test with unsupported format
 	presentation := &credential.CredentialPresentation{}
 	key := createMockKeyEntry()
-	_, _, err = serializer.SerializePresentation(credential.MockFormat, presentation, key)
+	_, _, err = serializer.SerializePresentation(credential.MockFormat, presentation, key, nil)
 	if err == nil {
 		t.Fatal("expected error for unsupported format")
 	}
@@ -208,7 +208,7 @@ func TestSerializePresentation(t *testing.T) {
 		},
 	}
 
-	jwtBytes, presentationWithProof, err := serializer.SerializePresentation(credential.JwtVc, presentation, key)
+	jwtBytes, presentationWithProof, err := serializer.SerializePresentation(credential.JwtVc, presentation, key, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
