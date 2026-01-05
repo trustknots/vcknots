@@ -99,6 +99,17 @@ func TestCredentialEntry_SerializationFlavor(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "Normal case (SdJwtVc)",
+			fields: fields{
+				Id:         "hoge",
+				ReceivedAt: time.Now(),
+				Raw:        []byte(""),
+				MimeType:   "application/dc+sd-jwt",
+			},
+			want:    credential.SDJwtVC,
+			wantErr: false,
+		},
+		{
 			name: "Invalid case",
 			fields: fields{
 				Id:         "hoge",

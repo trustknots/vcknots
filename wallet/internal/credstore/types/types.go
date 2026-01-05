@@ -68,13 +68,16 @@ func (ce *CredentialEntry) Serialize() ([]byte, error) {
 }
 
 func (ce *CredentialEntry) SerializationFlavor() (credential.SupportedSerializationFlavor, error) {
-	if ce.MimeType == string(credential.JwtVc) {
+	switch ce.MimeType {
+	case string(credential.JwtVc):
 		return credential.JwtVc, nil
-	}
-	if ce.MimeType == string(credential.MockFormat) {
+	case string(credential.SDJwtVC):
+		return credential.SDJwtVC, nil
+	case string(credential.MockFormat):
 		return credential.MockFormat, nil
+	default:
+		return "", fmt.Errorf("unknown serialization flavor")
 	}
-	return "", fmt.Errorf("unknown serialization flavor")
 }
 
 type SupportedCredStoreTypes int
