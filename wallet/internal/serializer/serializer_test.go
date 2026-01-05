@@ -30,7 +30,7 @@ func (m *MockSerializer) DeserializeCredential(flavor credential.SupportedSerial
 	return &credential.Credential{}, nil
 }
 
-func (m *MockSerializer) SerializePresentation(flavor credential.SupportedSerializationFlavor, presentation *credential.CredentialPresentation, key keystore.KeyEntry) ([]byte, *credential.CredentialPresentation, error) {
+func (m *MockSerializer) SerializePresentation(flavor credential.SupportedSerializationFlavor, presentation *credential.CredentialPresentation, key keystore.KeyEntry, options types.SerializePresentationOptions) ([]byte, *credential.CredentialPresentation, error) {
 	if m.shouldError {
 		return nil, nil, errors.New("mock error")
 	}
@@ -85,7 +85,7 @@ func TestNewSerializationDispatcherWithDefaultConfig(t *testing.T) {
 	}
 
 	formats := dispatcher.GetSupportedFormats()
-	if len(formats) != 1 { // WithDefaultConfig supports only jwtvc
+	if len(formats) != 2 { // WithDefaultConfig supports only jwtvc
 		t.Errorf("Expected 1 supported formats, got %d", len(formats))
 	}
 }
@@ -310,7 +310,7 @@ func TestSerializePresentation(t *testing.T) {
 		}
 		presentation := credential.CredentialPresentation{}
 		keyEntry := MockKeyEntry{shouldSignError: false}
-		_, _, err = dispatcher.SerializePresentation(credential.JwtVc, &presentation, &keyEntry)
+		_, _, err = dispatcher.SerializePresentation(credential.JwtVc, &presentation, &keyEntry, nil)
 		if err != nil {
 			t.Fatalf("SerializePresentation failed: error = %v", err)
 		}
@@ -322,7 +322,7 @@ func TestSerializePresentation(t *testing.T) {
 			t.Fatalf("Failed to initialize SerializationDispatcher: %v", err)
 		}
 		keyEntry := MockKeyEntry{shouldSignError: false}
-		_, _, err = dispatcher.SerializePresentation(credential.JwtVc, nil, &keyEntry)
+		_, _, err = dispatcher.SerializePresentation(credential.JwtVc, nil, &keyEntry, nil)
 		if err == nil {
 			t.Errorf("SerializePresentation() should return error when presentation argument is nil")
 		}
@@ -334,7 +334,7 @@ func TestSerializePresentation(t *testing.T) {
 			t.Fatalf("Failed to initialize SerializationDispatcher: %v", err)
 		}
 		presentation := credential.CredentialPresentation{}
-		_, _, err = dispatcher.SerializePresentation(credential.JwtVc, &presentation, nil)
+		_, _, err = dispatcher.SerializePresentation(credential.JwtVc, &presentation, nil, nil)
 		if err == nil {
 			t.Errorf("SerializePresentation() should return error when key argument is nil")
 		}
@@ -347,7 +347,7 @@ func TestSerializePresentation(t *testing.T) {
 		}
 		presentation := credential.CredentialPresentation{}
 		keyEntry := MockKeyEntry{shouldSignError: false}
-		_, _, err = dispatcher.SerializePresentation("unsupported flavor", &presentation, &keyEntry)
+		_, _, err = dispatcher.SerializePresentation("unsupported flavor", &presentation, &keyEntry, nil)
 		if err == nil {
 			t.Errorf("SerializePresentation() should return error when key argument is nil")
 		}
@@ -365,7 +365,7 @@ func TestSerializePresentation(t *testing.T) {
 		}
 		presentation := credential.CredentialPresentation{}
 		keyEntry := MockKeyEntry{shouldSignError: false}
-		_, _, err = dispatcher.SerializePresentation(credential.JwtVc, &presentation, &keyEntry)
+		_, _, err = dispatcher.SerializePresentation(credential.JwtVc, &presentation, &keyEntry, nil)
 		if err == nil {
 			t.Errorf("SerializePresentation should return error when plugin failed")
 		}
