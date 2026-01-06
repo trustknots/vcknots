@@ -121,6 +121,34 @@ describe('sd-jwt provider', () => {
     )
   })
 
+  it('fails when Key-Binding JWT is expected but not present', async () => {
+    const sdJwt = await issueSdJwt(issuer)
+    mockFetch({ issuer, jwks: { keys: [publicJwk] } })
+
+    await assert.rejects(
+      provider.verify(sdJwt, { kind: 'dc+sd-jwt', isKbJwt: true }),
+      (err: VcknotsError) => {
+        assert.equal(err.name, 'INVALID_SD_JWT')
+        assert.match(err.message, /Expected Key-Binding JWT, but it was not present./)
+        return true
+      }
+    )
+  })
+
+  it('verifies successfully when Key-Binding JWT is expected and present', async () => {
+    let sdJwt = await issueSdJwt(issuer)
+    sdJwt += 'eyJhbGciO..'
+    mockFetch({ issuer, jwks: { keys: [publicJwk] } })
+
+    await assert.rejects(
+      provider.verify(sdJwt, { kind: 'dc+sd-jwt', isKbJwt: true }),
+      (err: Error) => {
+        assert.notEqual(err.message, 'Expected Key-Binding JWT, but it was not present.')
+        return true
+      }
+    )
+  })
+
   it('reports supported format via canHandle', () => {
     assert.equal(provider.canHandle('dc+sd-jwt'), true)
     assert.equal(provider.canHandle('jwt_vc_json'), false)

@@ -21,6 +21,12 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       const specifiedDisclosures = options?.specifiedDisclosures || []
       const isKbJwt = options?.isKbJwt || false
 
+      if (isKbJwt && vp.endsWith('~')) {
+        throw err('INVALID_SD_JWT', {
+          message: 'Expected Key-Binding JWT, but it was not present.',
+        })
+      }
+
       const decodedSdJwt = await decodeSdJwt(vp, digest)
       const sdJwtHeader = decodedSdJwt.jwt.header
 

@@ -14,25 +14,25 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
     single: true,
 
     async verify(vc): Promise<boolean> {
+      if (typeof vc !== 'string') {
+        throw err('ILLEGAL_ARGUMENT', {
+          message: 'VC represented as object is not supported.',
+        })
+      }
       const decodedJwtVc = jwt.decode(vc, { complete: true })
       if (!decodedJwtVc) {
         throw err('INVALID_CREDENTIAL')
       }
 
       let iss: string | undefined
-      if (typeof vc === 'string') {
-        const parts = vc.split('.')
-        const payload = parts[1]
-        const decoded = JSON.parse(base64url.decode(payload))
-        const credential = decoded.vc ? decoded.vc : decoded
-        if (parseVerifiableCredentialBase(credential)) {
-          iss = credential.issuer
-        }
-      } else {
-        throw err('ILLEGAL_ARGUMENT', {
-          message: 'VC represented as object is not supported.',
-        })
+      const parts = vc.split('.')
+      const payload = parts[1]
+      const decoded = JSON.parse(base64url.decode(payload))
+      const credential = decoded.vc ? decoded.vc : decoded
+      if (parseVerifiableCredentialBase(credential)) {
+        iss = credential.issuer
       }
+
       let publicJwk: jose.JWK | undefined
       if (iss && typeof iss === 'string') {
         const issUri = new URL(iss)
@@ -84,7 +84,10 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
             message: `Empty JWKS keys in jwt-vc-issuer for: ${issUri}`,
           })
         }
-        const publicKey = createPublicKey({ key: publicJwk as NodeJsonWebKey, format: 'jwk' })
+        const publicKey = createPublicKey({
+          key: publicJwk as NodeJsonWebKey,
+          format: 'jwk',
+        })
 
         const decode = jwt.verify(vc, publicKey, {
           complete: true,
