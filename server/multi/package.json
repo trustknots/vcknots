@@ -1,7 +1,7 @@
 {
 	"name": "@trustknots/multi-server",
 	"version": "0.1.0",
-	"description": "",
+	"description": "[WIP]",
 	"type": "module",
 	"main": "lib/example.js",
 	"private": true,

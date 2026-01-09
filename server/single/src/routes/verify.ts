@@ -127,6 +127,59 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     }
   })
 
+  // Receive the vp_token from the request and verify it
+  verifyApp.post('/form/callback', async (c) => {
+    try {
+      const verifierId = VerifierClientId(baseUrl)
+      const contentType = c.req.header('content-type')?.toLowerCase() ?? ''
+      let payload = {}
+      if (contentType.includes('application/x-www-form-urlencoded')) {
+        const form = await c.req.parseBody()
+        let presentationSubmission = form.presentation_submission
+        if (typeof presentationSubmission === 'string' && presentationSubmission.trim() !== '') {
+          try {
+            presentationSubmission = JSON.parse(decodeURIComponent(presentationSubmission))
+          } catch {
+            return c.json(
+              {
+                error: 'invalid_request',
+                error_description: 'presentation_submission must be JSON',
+              },
+              400
+            )
+          }
+        }
+        const vp = form.vp_token
+        payload = {
+          vp_token: Array.isArray(vp) ? vp : (vp ?? undefined),
+          presentation_submission: presentationSubmission,
+          state: typeof form.state === 'string' ? form.state : undefined,
+        }
+      } else {
+        return c.json(
+          {
+            error: 'unsupported_content_type',
+            error_description: 'Only application/x-www-form-urlencoded are supported.',
+          },
+          400
+        )
+      }
+
+      // Validate it using the AuthorizationResponse
+      const authorizationResponse = VerifierAuthorizationResponse(payload)
+
+      // Add additional validation as needed
+      await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
+
+      return c.json({
+        message: 'Callback received successfully',
+        authorization_response: authorizationResponse,
+      })
+    } catch (err) {
+      return c.json(handleError(err), 400)
+    }
+  })
+
   const presentationDefinitionJwtVC = {
     id: randomUUID(),
     name: 'Test Name',
