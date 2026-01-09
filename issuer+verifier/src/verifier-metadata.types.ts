@@ -49,8 +49,6 @@ export const verifierMetadataSchema = z.object({
   software_version: z.string().optional(),
   response_types: z.enum(['code', 'token']).optional(),
   vp_formats: z.record(z.string(), z.unknown()),
-  client_id_scheme: z.enum(['pre-registered', 'redirect_uri', 'entity_id', 'did']).optional(),
-  vcknots_description: z.string().optional(),
   authorization_signed_response_alg: z.string().optional(), // mentioned in OID4VP draft24
   authorization_encrypted_response_alg: z.string().optional(), // mentioned in OID4VP draft24
   authorization_encrypted_response_enc: z.string().optional(), // mentioned in OID4VP draft24
@@ -82,8 +80,6 @@ export const VerifierMetadata = (value?: {
   software_version?: string
   response_types?: string[]
   vp_formats?: Record<string, unknown>
-  client_id_scheme?: string
-  vcknots_description?: string
   authorization_signed_response_alg?: string
   authorization_encrypted_response_alg?: string
   authorization_encrypted_response_enc?: string

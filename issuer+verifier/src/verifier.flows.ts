@@ -293,7 +293,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           scope: options.scope,
           state: options.state,
           response_uri: responseUri,
-          iss: verifierId,
+          iss: client_id,
           aud: 'https://self-issued.me/v2',
           client_metadata: metadata,
           response_mode: response_mode || 'direct_post',

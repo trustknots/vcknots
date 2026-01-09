@@ -19,7 +19,8 @@ export const inMemoryVerifierCertificateStore = (): VerifierCertificateStoreProv
         c
           .replace(/-----BEGIN CERTIFICATE-----/g, '')
           .replace(/-----END CERTIFICATE-----/g, '')
-          .replace(/\r\n/g, '')
+          .replace(/\s+/g, '')
+          .trim()
       )
     },
   }
