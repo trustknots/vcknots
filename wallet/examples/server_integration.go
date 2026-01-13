@@ -34,8 +34,10 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/trustknots/vcknots/wallet/internal/credential"
 	"github.com/trustknots/vcknots/wallet/internal/credstore"
 	"github.com/trustknots/vcknots/wallet/internal/idprof"
 	"github.com/trustknots/vcknots/wallet/internal/presenter"
@@ -43,6 +45,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/internal/receiver"
 	"github.com/trustknots/vcknots/wallet/internal/receiver/types"
 	"github.com/trustknots/vcknots/wallet/internal/serializer"
+	"github.com/trustknots/vcknots/wallet/internal/serializer/plugins/sdjwtvc"
 	"github.com/trustknots/vcknots/wallet/internal/verifier"
 	"github.com/trustknots/vcknots/wallet/pkg/vcknots_wallet"
 )
@@ -270,7 +273,7 @@ func receiveCredential(controller *vcknots_wallet.Controller, key *MockKeyEntry,
 	return savedCredential
 }
 
-func presentation(controller *vcknots_wallet.Controller, key *MockKeyEntry, receivedCredential *vcknots_wallet.SavedCredential, logger *slog.Logger) {
+func presentation(controller *vcknots_wallet.Controller, key *MockKeyEntry, receivedCredential *vcknots_wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
 	// Example verifier details
 	verifierURL := "http://localhost:8080"
 
@@ -342,10 +345,11 @@ func presentation(controller *vcknots_wallet.Controller, key *MockKeyEntry, rece
 		}
 	}
 
-	if specificType == "" {
-		logger.Error("No specific credential type found")
-		panic(fmt.Errorf("no specific credential type found"))
-	}
+	specificType = "Hoge"
+	// if specificType == "" {
+	// 	logger.Error("No specific credential type found")
+	// 	panic(fmt.Errorf("no specific credential type found"))
+	// }
 
 	// Build field constraints dynamically
 	fieldsJSON := `[
@@ -431,7 +435,7 @@ func presentation(controller *vcknots_wallet.Controller, key *MockKeyEntry, rece
 	logger.Info("Request URI is valid", "scheme", urlParsed.Scheme)
 
 	// Present demo credential to the verifier
-	err = controller.PresentCredential(string(body), key, nil)
+	err = controller.PresentCredential(string(body), key, options)
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
 		panic(err)
@@ -439,7 +443,7 @@ func presentation(controller *vcknots_wallet.Controller, key *MockKeyEntry, rece
 	logger.Info("Credential presented successfully")
 }
 
-func main() {
+func mainJwt() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	// Create credential store with default config
@@ -509,5 +513,114 @@ func main() {
 	receivedCredential := receiveCredential(controller, mockKey, logger)
 
 	// Tests - Use the received credential for presentation
-	presentation(controller, mockKey, receivedCredential, logger)
+	presentation(controller, mockKey, receivedCredential, nil, logger)
+}
+
+func mainSdJwt() {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	// Create credential store with default config
+	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
+	if err != nil {
+		panic(err)
+	}
+	// Save example sd-jwt credential
+	sdJwtCredFile, err := os.ReadFile("./examples/example_sd_jwt.txt")
+	if err != nil {
+		panic(err)
+	}
+	err = credStore.SaveCredentialEntry(credstore.CredentialEntry{
+		Id:         "sample-sdjwt",
+		ReceivedAt: time.Now(),
+		Raw:        sdJwtCredFile,
+		MimeType:   string(credential.SDJwtVC),
+	}, credstore.SupportedCredStoreTypes(0))
+	if err != nil {
+		panic(err)
+	}
+	savedSdJwtCredEntry, err := credStore.GetCredentialEntry("sample-sdjwt", credstore.SupportedCredStoreTypes(0))
+	if err != nil {
+		panic(err)
+	}
+
+	// Create receiver with default config
+	receiver, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+	if err != nil {
+		panic(err)
+	}
+
+	serializer, err := serializer.NewSerializationDispatcher(serializer.WithDefaultConfig())
+	if err != nil {
+		panic(err)
+	}
+
+	// Create verifier with default config
+	verifier, err := verifier.NewVerificationDispatcher(verifier.WithDefaultConfig())
+	if err != nil {
+		panic(err)
+	}
+
+	// Create presenter with default config
+	// Load the server's certificate for TLS verification
+	certFile, err := os.ReadFile("../server/samples/certificate-openid-test/certificate_openid.pem")
+	if err != nil {
+		panic(err)
+	}
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM(certFile) {
+		panic("Failed to parse certificate")
+	}
+	p := &oid4vp.Oid4vpPresenter{
+		X509TrustChainRoots: certPool,
+	}
+	presenter, err := presenter.NewPresentationDispatcher(presenter.WithPlugin(presenter.Oid4vp, p))
+	if err != nil {
+		panic(err)
+	}
+
+	// Create identity profiler dispatcher with default config
+	idProf, err := idprof.NewIdentityProfileDispatcher(idprof.WithDefaultConfig())
+	if err != nil {
+		panic(err)
+	}
+
+	config := vcknots_wallet.ControllerConfig{
+		CredStore:  credStore,
+		IDProfiler: idProf,
+		Receiver:   receiver,
+		Serializer: serializer,
+		Verifier:   verifier,
+		Presenter:  presenter,
+	}
+
+	controller, err := vcknots_wallet.NewController(config)
+	if err != nil {
+		panic(err)
+	}
+
+	logger.Info("Starting server integration check...")
+
+	mockKey := NewMockKeyEntry()
+
+	// deserialized
+	deserializedSdJwtCred, err := serializer.DeserializeCredential(credential.SDJwtVC, savedSdJwtCredEntry.Raw)
+	if err != nil {
+		panic(err)
+	}
+	savedSdJwtCred := vcknots_wallet.SavedCredential{
+		Credential: deserializedSdJwtCred,
+		Entry:      savedSdJwtCredEntry,
+	}
+	logger.Info("Deserialized credential", "credential.issuer", deserializedSdJwtCred.Issuer, "credential.claims", deserializedSdJwtCred.Claims)
+
+	options := sdjwtvc.SdJwtVcPresentationOptions{
+		SelectedClaims:    []string{"given_name"},
+		RequireKeyBinding: false,
+	}
+	presentation(controller, mockKey, &savedSdJwtCred, &options, logger)
+}
+
+func main() {
+	// mainJwt()
+	mainSdJwt()
 }

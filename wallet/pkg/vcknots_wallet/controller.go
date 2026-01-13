@@ -613,8 +613,6 @@ func (c *Controller) PresentCredential(uriString string, key IKeyEntry, options 
 		Nonce:       &req.Nonce,
 	}
 
-	// TODO: ここでjwtvc決め打ちになっちゃってるので、sd-jwtだったらsd-jwtでpresentする（mimeに応じたserialize）
-
 	// generate VP and serialize
 	bytes, _, err := c.serializer.SerializePresentation(
 		*serializationFlavor,

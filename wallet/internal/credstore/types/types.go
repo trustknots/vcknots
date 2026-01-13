@@ -86,7 +86,7 @@ func (ce *CredentialEntry) DIFClaimFormat() (string, error) {
 	case string(credential.JwtVc):
 		return "jwt_vc", nil
 	case string(credential.SDJwtVC):
-		return "sd_jwt", nil
+		return "dc+sd-jwt", nil // TODO: Fix to sd_jwt
 	case string(credential.MockFormat):
 		return "mock", nil
 	default:
