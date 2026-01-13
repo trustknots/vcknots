@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { serve } from '@hono/node-server'
 import { initializeContext } from '@trustknots/vcknots'
 import {
@@ -15,7 +16,7 @@ import {
   initializeAuthzFlow,
   AuthorizationServerMetadata,
 } from '@trustknots/vcknots/authz'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import issuerMetadataConfigRaw from '../../samples/issuer_metadata.json' with { type: 'json' }
@@ -107,22 +108,28 @@ async function initializeVerifierMetadata(verifierId: string, metadata: Verifier
     // const verifierMetadata = VerifierMetadata(metadata)
 
     const __dirname = dirname(fileURLToPath(import.meta.url))
-    const privateKeyPath = join(
+    const defaultPrivateKeyPath = join(
       __dirname,
-      '../../',
-      'samples/certificate-openid-test/private_key_openid.pem'
+      '../../samples/certificate-openid-test/private_key_openid.pem'
     )
-    const certificatePath = join(
+    const defaultCertPath = join(
       __dirname,
-      '../../',
-      'samples/certificate-openid-test/certificate_openid.pem'
+      '../../samples/certificate-openid-test/certificate_openid.pem'
     )
-    const option = {
-      privateKey: readFileSync(privateKeyPath, 'utf-8'),
-      certificate: readFileSync(certificatePath, 'utf-8'),
-      format: 'pem',
-      alg: 'ES256',
-    } as const
+
+    const privateKeyPath = process.env.PRIVATE_KEY_PATH
+      ? resolve(process.env.PRIVATE_KEY_PATH)
+      : defaultPrivateKeyPath
+
+    const privateKey = process.env.PRIVATE_KEY ?? readFileSync(privateKeyPath, 'utf-8')
+
+    const certificatePath = process.env.CERTIFICATE_PATH
+      ? resolve(process.env.CERTIFICATE_PATH)
+      : defaultCertPath
+
+    const certificate = process.env.CERTIFICATE ?? readFileSync(certificatePath, 'utf-8')
+
+    const option = { privateKey, certificate, format: 'pem', alg: 'ES256' } as const
 
     await verifierFlow.createVerifierMetadata(clientId, metadata, option)
 

@@ -110,35 +110,17 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
   verifyApp.post('/callback', async (c) => {
     try {
       const verifierId = VerifierClientId(baseUrl)
-      const json = await c.req.json()
-
-      // Validate it using the AuthorizationResponse
-      const authorizationResponse = VerifierAuthorizationResponse(json)
-
-      // Add additional validation as needed
-      await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
-
-      return c.json({
-        message: 'Callback received successfully',
-        authorization_response: authorizationResponse,
-      })
-    } catch (err) {
-      return c.json(handleError(err), 400)
-    }
-  })
-
-  // Receive the vp_token from the request and verify it
-  verifyApp.post('/form/callback', async (c) => {
-    try {
-      const verifierId = VerifierClientId(baseUrl)
       const contentType = c.req.header('content-type')?.toLowerCase() ?? ''
-      let payload = {}
-      if (contentType.includes('application/x-www-form-urlencoded')) {
-        const form = await c.req.parseBody()
-        let presentationSubmission = form.presentation_submission
-        if (typeof presentationSubmission === 'string' && presentationSubmission.trim() !== '') {
+
+      let payload: Partial<VerifierAuthorizationResponse> = {}
+      if (contentType.includes('application/json')) {
+        payload = await c.req.json()
+      } else if (contentType.includes('application/x-www-form-urlencoded')) {
+        const form = await c.req.formData()
+        const presentationSubmission = form.get('presentation_submission')
+        if (typeof presentationSubmission === 'string' && presentationSubmission.trim()) {
           try {
-            presentationSubmission = JSON.parse(decodeURIComponent(presentationSubmission))
+            payload.presentation_submission = JSON.parse(presentationSubmission)
           } catch {
             return c.json(
               {
@@ -149,20 +131,13 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
             )
           }
         }
-        const vp = form.vp_token
-        payload = {
-          vp_token: Array.isArray(vp) ? vp : (vp ?? undefined),
-          presentation_submission: presentationSubmission,
-          state: typeof form.state === 'string' ? form.state : undefined,
+        const vpToken = form.getAll('vp_token').filter((v): v is string => typeof v === 'string')
+        payload.vp_token =
+          vpToken.length === 0 ? undefined : vpToken.length === 1 ? vpToken[0] : vpToken
+        const state = form.get('state')
+        if (typeof state === 'string') {
+          payload.state = state
         }
-      } else {
-        return c.json(
-          {
-            error: 'unsupported_content_type',
-            error_description: 'Only application/x-www-form-urlencoded are supported.',
-          },
-          400
-        )
       }
 
       // Validate it using the AuthorizationResponse
