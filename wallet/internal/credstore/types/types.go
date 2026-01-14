@@ -80,20 +80,6 @@ func (ce *CredentialEntry) SerializationFlavor() (credential.SupportedSerializat
 	}
 }
 
-// for OID4VP presentation submission description regisry: https://identity.foundation/claim-format-registry/
-func (ce *CredentialEntry) DIFClaimFormat() (string, error) {
-	switch ce.MimeType {
-	case string(credential.JwtVc):
-		return "jwt_vc", nil
-	case string(credential.SDJwtVC):
-		return "dc+sd-jwt", nil // TODO: Fix to sd_jwt
-	case string(credential.MockFormat):
-		return "mock", nil
-	default:
-		return "", fmt.Errorf("unknown serialization flavor")
-	}
-}
-
 type SupportedCredStoreTypes int
 
 type CredStore interface {

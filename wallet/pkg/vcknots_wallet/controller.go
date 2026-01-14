@@ -567,20 +567,19 @@ func (c *Controller) PresentCredential(uriString string, key IKeyEntry, options 
 				return fmt.Errorf("Error: each credential has different format")
 			}
 		}
-
-		serializedCredentials = append(serializedCredentials, entry.Entry.Raw)
-		claimFormat, err := entry.Entry.DIFClaimFormat()
+		vcFormat, vpFormat, err := sf.OID4VPFormatIdentifier()
 		if err != nil {
-			return err
+			return fmt.Errorf("Error: unsupported format")
 		}
+		serializedCredentials = append(serializedCredentials, entry.Entry.Raw)
 		descriptionItemID := uuid.New().String()
 		descriptorMap = append(descriptorMap, presenterTypes.DescriptorMapItem{
 			ID:     descriptionItemID,
-			Format: claimFormat,
+			Format: vpFormat,
 			Path:   fmt.Sprintf("$.vp_token[%d]", i),
 			PathNested: &presenterTypes.DescriptorMapItem{
 				ID:     descriptionItemID,
-				Format: claimFormat,
+				Format: vcFormat,
 				Path:   fmt.Sprintf("$.verifiableCredential[%d]", i),
 			},
 		})

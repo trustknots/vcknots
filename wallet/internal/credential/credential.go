@@ -3,6 +3,7 @@
 package credential
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
@@ -15,6 +16,20 @@ const (
 	SDJwtVC    SupportedSerializationFlavor = "application/dc+sd-jwt"
 	MockFormat SupportedSerializationFlavor = "plain/mock" // For testing
 )
+
+// for OID4VP presentation submission. (vc format, vp format, err)
+func (sf *SupportedSerializationFlavor) OID4VPFormatIdentifier() (string, string, error) {
+	switch *sf {
+	case JwtVc:
+		return "jwt_vc_json", "jwt_vp_json", nil
+	case SDJwtVC:
+		return "dc+sd-jwt", "dc+sd-jwt", nil
+	case MockFormat:
+		return "mock_vc", "mock_vp", nil
+	default:
+		return "", "", fmt.Errorf("unknown serialization flavor")
+	}
+}
 
 type Credential struct {
 	ID          string
