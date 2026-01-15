@@ -1,6 +1,4 @@
 {
-	"client_name": "Sample Verifier App",
-	"client_uri": "https://virifier.example.com",
 	"vp_formats": {
 		"jwt_vc_json": {
 			"alg_values_supported": ["ES256"]

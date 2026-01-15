@@ -58,7 +58,6 @@ serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, a
   console.log(`Server is running on http://localhost:${info.port}`)
 
   // Execute initialization (using the default settings)
-  verifierMetadataConfig.client_uri = `${baseUrl}`
   await initializeVerifierMetadata(baseUrl, verifierMetadataConfig)
 
   issuerMetadataConfig.credential_issuer = CredentialIssuer(`${baseUrl}`)

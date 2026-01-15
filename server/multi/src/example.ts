@@ -61,8 +61,6 @@ serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, a
   // By default, issuerId, authorizationServerId, and verifierId use the baseUrl
   const issuerURL = `${baseUrl}/issuers/${encodeURIComponent(baseUrl)}`
   const authzURL = `${baseUrl}/authorizations/${encodeURIComponent(baseUrl)}`
-  const verifierURL = `${baseUrl}/verifiers/${encodeURIComponent(baseUrl)}`
-  verifierMetadataConfig.client_uri = verifierURL
   await initializeVerifierMetadata(baseUrl, verifierMetadataConfig)
 
   issuerMetadataConfig.credential_issuer = CredentialIssuer(baseUrl)

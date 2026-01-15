@@ -17,6 +17,35 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   const verifierFlow = initializeVerifierFlow(context)
 
+  type PayloadResult =
+    | { ok: true; payload: Partial<VerifierAuthorizationResponse> }
+    | { ok: false; error: { error: string; error_description: string } }
+  const normalizeContentType = (value: string) => value.split(';')[0]?.trim().toLowerCase() ?? ''
+  const parseFormPayload = (form: FormData): PayloadResult => {
+    const payload: Partial<VerifierAuthorizationResponse> = {}
+    const presentationSubmission = form.get('presentation_submission')
+    if (typeof presentationSubmission === 'string' && presentationSubmission.trim()) {
+      try {
+        payload.presentation_submission = JSON.parse(presentationSubmission)
+      } catch {
+        return {
+          ok: false,
+          error: {
+            error: 'invalid_request',
+            error_description: 'presentation_submission must be JSON',
+          },
+        }
+      }
+    }
+    const vpToken = form.getAll('vp_token').filter((v): v is string => typeof v === 'string')
+    payload.vp_token = vpToken.length === 0 ? undefined : vpToken.length === 1 ? vpToken[0] : vpToken
+    const state = form.get('state')
+    if (typeof state === 'string') {
+      payload.state = state
+    }
+    return { ok: true, payload }
+  }
+
   const canHandleClientIdScheme: VerifierClientIdScheme[] = ['redirect_uri', 'x509_san_dns']
   function validateClientIdScheme(client_id: string): ClientIdentifier {
     if (client_id == null || client_id === '') {
@@ -108,48 +137,35 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   // Receive the vp_token from the request and verify it
   verifyApp.post('/callback', async (c) => {
+
     try {
       const verifierId = VerifierClientId(baseUrl)
-      const contentType = c.req.header('content-type')?.toLowerCase() ?? ''
+      const contentType = normalizeContentType(c.req.header('content-type') ?? '')
 
-      let payload: Partial<VerifierAuthorizationResponse> = {}
-      if (contentType.includes('application/json')) {
-        payload = await c.req.json()
-      } else if (contentType.includes('application/x-www-form-urlencoded')) {
-        const form = await c.req.formData()
-        const presentationSubmission = form.get('presentation_submission')
-        if (typeof presentationSubmission === 'string' && presentationSubmission.trim()) {
-          try {
-            payload.presentation_submission = JSON.parse(presentationSubmission)
-          } catch {
-            return c.json(
-              {
-                error: 'invalid_request',
-                error_description: 'presentation_submission must be JSON',
-              },
-              400
-            )
-          }
-        }
-        const vpToken = form.getAll('vp_token').filter((v): v is string => typeof v === 'string')
-        payload.vp_token =
-          vpToken.length === 0 ? undefined : vpToken.length === 1 ? vpToken[0] : vpToken
-        const state = form.get('state')
-        if (typeof state === 'string') {
-          payload.state = state
-        }
+      let parsed: PayloadResult
+      if (contentType === 'application/json') {
+        parsed = { ok: true, payload: await c.req.json() }
+      } else if (contentType === 'application/x-www-form-urlencoded') {
+        console.log("Form data received:", await c.req.formData());
+        parsed = parseFormPayload(await c.req.formData())
+      } else {
+        parsed = { ok: true, payload: {} }
+      }
+      if (!parsed.ok) {
+        return c.json(parsed.error, 400)
       }
 
       // Validate it using the AuthorizationResponse
-      const authorizationResponse = VerifierAuthorizationResponse(payload)
+      const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
 
       // Add additional validation as needed
       await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
+      return c.json({ redirect_uri: `${baseUrl}/verified` }, 200);
 
-      return c.json({
-        message: 'Callback received successfully',
-        authorization_response: authorizationResponse,
-      })
+      // return c.json({
+      //   message: 'Callback received successfully',
+      //   authorization_response: authorizationResponse,
+      // })
     } catch (err) {
       return c.json(handleError(err), 400)
     }
@@ -191,6 +207,8 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     base_url: string
     is_request_uri: boolean
     client_id: ClientIdentifier
+    is_transaction_data: boolean
+    response_uri?: string
   }
   verifyApp.post('/request-object', async (c) => {
     const raw = await c.req.text()
@@ -220,6 +238,12 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           ? input.base_url
           : baseUrl,
       is_request_uri: typeof input.is_request_uri === 'boolean' ? input.is_request_uri : true,
+      is_transaction_data:
+        typeof input.is_transaction_data === 'boolean' ? input.is_transaction_data : false,
+      response_uri:
+        typeof input.response_uri === 'string' && input.response_uri.trim() !== ''
+          ? input.response_uri
+          : undefined,
       client_id:
         typeof input.client_id === 'string' && input.client_id.trim() !== ''
           ? validateClientIdScheme(input.client_id)
@@ -238,9 +262,11 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         {
           state: requestObject.state,
           base_url: baseUrl,
-          response_uri: `${baseUrl}/callback`,
+          response_uri: requestObject.response_uri ?? `${baseUrl}/callback`,
           request_uri: `${baseUrl}/request.jwt`,
-          transaction_data: { type: 'sample_type' },
+          ...(requestObject.is_transaction_data
+            ? { transaction_data: { type: 'sample_type' } }
+            : {}),
         }
       )
       const encoded = Object.entries(request)
@@ -268,6 +294,17 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       return c.json(handleError(err), 400)
     }
   })
+
+  verifyApp.get("/verified", async (c) => {
+    console.log("Verified received from get request");
+    return c.json({ message: "DONE!!" }, 200);
+  });
+
+  verifyApp.post("/dummy", async (c) => {
+    console.log("dummy request");
+    return c.json({ redirect_uri: `${baseUrl}/verified` }, 200);
+  });
+
 
   return verifyApp
 }
