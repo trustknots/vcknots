@@ -573,6 +573,30 @@ func TestSerializePresentation_SelectiveDisclosure(t *testing.T) {
 	}
 }
 
+func TestSerializePresentation_SelectiveDisclosure_InvalidSelectedClaims(t *testing.T) {
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
+	testSDJWT := createTestSDJWT()
+
+	presentation := &credential.CredentialPresentation{
+		Types:       []string{"VerifiablePresentation"},
+		Credentials: [][]byte{[]byte(testSDJWT)},
+	}
+
+	// Only select given_name
+	opts := &SdJwtVcPresentationOptions{
+		SelectedClaims:    []string{"given_name", "no_exist_field"},
+		RequireKeyBinding: false,
+	}
+
+	_, _, err = serializer.SerializePresentation(credential.SDJwtVC, presentation, nil, opts)
+	if err == nil {
+		t.Fatalf("If given SelectedClaims doesn't exist in the credential, should be error.")
+	}
+}
+
 func TestDeserializeCredential(t *testing.T) {
 	serializer, err := NewSdJwtVcSerializer()
 	if err != nil {

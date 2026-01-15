@@ -478,24 +478,30 @@ func (s *SdJwtVcSerializer) SerializePresentation(
 
 	// Filter disclosures based on selected claims
 	var selectedDisclosures []string
-	if sdOpts != nil && len(sdOpts.SelectedClaims) > 0 {
-		// Parse all disclosures
-		for _, discStr := range cf.Disclosures {
-			disc, err := parseDisclosure(discStr, sdAlg)
-			if err != nil {
-				continue
-			}
-			// Include if the claim name is in selected claims
-			for _, selectedClaim := range sdOpts.SelectedClaims {
-				if disc.Name == selectedClaim {
-					selectedDisclosures = append(selectedDisclosures, discStr)
-					break
+	if sdOpts != nil {
+		if len(sdOpts.SelectedClaims) > 0 {
+			// Parse all disclosures
+			for _, discStr := range cf.Disclosures {
+				disc, err := parseDisclosure(discStr, sdAlg)
+				if err != nil {
+					continue
+				}
+				// Include if the claim name is in selected claims
+				for _, selectedClaim := range sdOpts.SelectedClaims {
+					if disc.Name == selectedClaim {
+						selectedDisclosures = append(selectedDisclosures, discStr)
+						break
+					}
 				}
 			}
+			// compare selectedDisclosures and sdOpts.SelectedClaims
+			if len(selectedDisclosures) != len(sdOpts.SelectedClaims) {
+				return nil, nil, fmt.Errorf("Error: Some of the given selected claims don't exist in the credential")
+			}
+		} else {
+			// Include all disclosures if no specific claims selected
+			selectedDisclosures = cf.Disclosures
 		}
-	} else {
-		// Include all disclosures if no specific claims selected
-		selectedDisclosures = cf.Disclosures
 	}
 
 	// Build the presentation SD-JWT with selected disclosures
