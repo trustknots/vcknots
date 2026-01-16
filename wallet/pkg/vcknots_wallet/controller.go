@@ -560,16 +560,19 @@ func (c *Controller) PresentCredential(uriString string, key IKeyEntry, options 
 
 	for i, entry := range selectedCredentials {
 		sf, err := entry.Entry.SerializationFlavor()
+		if err != nil {
+			return fmt.Errorf("error: credential entry has no serialization flavor information")
+		}
 		if serializationFlavor == nil {
 			serializationFlavor = &sf
 		} else {
 			if *serializationFlavor != sf {
-				return fmt.Errorf("Error: each credential has different format")
+				return fmt.Errorf("error: each credential has different format")
 			}
 		}
 		vcFormat, vpFormat, err := sf.OID4VPFormatIdentifier()
 		if err != nil {
-			return fmt.Errorf("Error: unsupported format")
+			return fmt.Errorf("error: unsupported format")
 		}
 		serializedCredentials = append(serializedCredentials, entry.Entry.Raw)
 		descriptionItemID := uuid.New().String()
@@ -586,7 +589,7 @@ func (c *Controller) PresentCredential(uriString string, key IKeyEntry, options 
 	}
 
 	if serializationFlavor == nil {
-		return fmt.Errorf("Error: failed to detect serialization flavor")
+		return fmt.Errorf("error: failed to detect serialization flavor")
 	}
 
 	presentationSubmission := presenterTypes.PresentationSubmission{

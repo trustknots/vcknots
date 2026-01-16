@@ -496,7 +496,7 @@ func (s *SdJwtVcSerializer) SerializePresentation(
 			}
 			// compare selectedDisclosures and sdOpts.SelectedClaims
 			if len(selectedDisclosures) != len(sdOpts.SelectedClaims) {
-				return nil, nil, fmt.Errorf("Error: Some of the given selected claims don't exist in the credential")
+				return nil, nil, fmt.Errorf("error: Some of the given selected claims don't exist in the credential")
 			}
 		} else {
 			// Include all disclosures if no specific claims selected

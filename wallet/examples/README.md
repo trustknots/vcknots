@@ -108,7 +108,12 @@ Open a new terminal, return to the wallet directory, and run the server integrat
 
 ```bash
 cd /path/to/vcknots/wallet
-go run examples/server_integration.go
+
+# jwtvc
+go run examples/server_integration_jwtvc/server_integration_jwtvc.go
+
+# sd-jwt
+go run examples/server_integration_sdjwt/server_integration_sdjwt.go
 ```
 
 ### Step 3: Check the results
