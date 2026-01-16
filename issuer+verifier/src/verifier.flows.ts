@@ -41,7 +41,13 @@ export type CreateAuthzRequestOptions = {
   request_uri?: string
   transaction_data?: { type: string; transaction_data_hashes_alg?: string[] }
 }
-
+export type VerifyPresentationOptions = {
+  specifiedDisclosures?: string[]
+  isKbJwt?: boolean
+  expectedAud?: string
+  expectedNonce?: string
+  expectedTransactionDataHashes?: string[]
+}
 export type FindRequestObjectOptions = {
   alg?: string
   // https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.11 is not supported
@@ -70,7 +76,11 @@ export type VerifierFlow = {
     objectId: RequestObjectId,
     options?: FindRequestObjectOptions
   ): Promise<string>
-  verifyPresentations: (id: ClientId, response: AuthorizationResponse) => Promise<boolean>
+  verifyPresentations: (
+    id: ClientId,
+    response: AuthorizationResponse,
+    isKbJwt?: boolean
+  ) => Promise<boolean>
 }
 
 const isPresentationExchange = (query: unknown): query is PresentationExchange =>
@@ -370,7 +380,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       return `${encode(header)}.${encode(payload)}.${signature}`
     },
-    async verifyPresentations(id, response) {
+    async verifyPresentations(id, response, isKbJwt) {
       const verifier = await verifierMetadata$.fetch(id)
       if (!verifier) {
         throw raise('VERIFIER_NOT_FOUND', {
@@ -403,8 +413,11 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
 
       const format = response.presentation_submission.descriptor_map[0].format
+      const options = { kind: format, isKbJwt: isKbJwt }
+      // const isKbJwt = options?.kind === 'dc+sd-jwt' ? options.isKbJwt : false
       const vpValid = await selectProvider(verifiablePresentation$, format).verify(
-        response.vp_token
+        response.vp_token,
+        options
       )
 
       return vpValid

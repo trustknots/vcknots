@@ -4,6 +4,7 @@ const { SDJwtInstance } = require('@sd-jwt/core')
 import { ES256, digest } from '@sd-jwt/crypto-nodejs'
 import { decodeSdJwt } from '@sd-jwt/decode'
 import * as jose from 'jose'
+import { X509Certificate } from 'node:crypto'
 
 export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentationProvider => {
   return {
@@ -91,10 +92,17 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
           })
         }
       } else if (sdJwtHeader.x5c && Array.isArray(sdJwtHeader.x5c) && sdJwtHeader.x5c.length > 0) {
-        // TODO: implement x5c to JWK conversion
-        throw err('INTERNAL_SERVER_ERROR', {
-          message: 'x5c header handling not implemented yet',
-        })
+        const leafCert = sdJwtHeader.x5c[0]
+        try {
+          const cert = leafCert.includes('BEGIN CERTIFICATE')
+            ? new X509Certificate(leafCert)
+            : new X509Certificate(Buffer.from(leafCert, 'base64'))
+          publicJwk = await jose.exportJWK(cert.publicKey)
+        } catch (error) {
+          throw err('INVALID_SD_JWT', {
+            message: 'Invalid x5c certificate in SD-JWT header',
+          })
+        }
       } else {
         throw err('INVALID_SD_JWT', {
           message: 'No method to obtain public JWK for SD-JWT verification',
