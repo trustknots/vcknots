@@ -1,0 +1,35 @@
+name: CI docs check build(on PR changed)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'docusaurus/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ./docusaurus/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./docusaurus
+
+      - name: Build Docusaurus
+        run: npm run build
+        working-directory: ./docusaurus

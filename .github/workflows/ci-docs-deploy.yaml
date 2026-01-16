@@ -1,9 +1,12 @@
-name: Deploy Docusaurus to GitHub Pages
+name: CI docs deploy(on merge to main)
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'docs/**'
+      - 'docusaurus/**'
   workflow_dispatch:
 
 permissions:

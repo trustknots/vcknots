@@ -1,0 +1,52 @@
+name: CI google-cloud
+
+# google-cloud depends on issuer+verifier
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'issuer+verifier/**'
+      - 'google-cloud/**'
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # prefer control dependencies by pnpm
+      # - name: Run lint issuer+verifier
+      #   run: |
+      #     pnpm --filter @trustknots/vcknots lint
+
+      - name: Run lint google-cloud
+        run: |
+          pnpm --filter @trustknots/google-cloud lint
+
+      # - name: Run tests issuer+verifier
+      #   run: |
+      #     node --import tsx --test --experimental-test-coverage "issuer+verifier/test/**/*.spec.ts"
+
+      - name: Run tests google-cloud
+        run: |
+          node --import tsx --test --experimental-test-coverage "google-cloud/test/**/*.spec.ts"
+
+      # - name: Build issuer+verifier
+      #   run: pnpm --filter @trustknots/vcknots build
+
+      - name: Build google-cloud
+        run: pnpm --filter @trustknots/google-cloud build
