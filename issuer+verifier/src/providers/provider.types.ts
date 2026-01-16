@@ -20,7 +20,6 @@ import { Jwk } from '../jwk.type'
 import { JwtContent, JwtPayload } from '../jwt.types'
 import { PreAuthorizedCode } from '../pre-authorized-code.types'
 import { PresentationExchange } from '../presentation-exchange.types'
-import { PresentationSubmission } from '../presentation-submission.types'
 import { RequestObjectId } from '../request-object-id.types'
 import { RequestObject } from '../request-object.types'
 import { Certificate, SignatureKeyPair, TmpVerifierSignatureKeyPair } from '../signature-key.types'
@@ -117,16 +116,34 @@ export type RequestObjectIdProvider = {
   generate(): Promise<RequestObjectId>
 }
 
-export type CredentialProvider = {
-  kind: 'credential-provider'
+export type VerifyCredentialProvider = {
+  kind: 'verify-verifiable-credential-provider'
   name: string
   single: true
 
-  verify(
-    vc: string,
-    issuer: string,
-    presentationSubmission: PresentationSubmission
-  ): Promise<boolean>
+  verify(vc: string): Promise<boolean>
+  canHandle(format: string): boolean
+}
+
+export type VerifyVerifiablePresentationVerifyOptions =
+  | {
+      kind: 'jwt_vp_json'
+    }
+  | {
+      kind: 'dc+sd-jwt'
+      specifiedDisclosures?: string[]
+      isKbJwt?: boolean
+      expectedAud?: string
+      expectedNonce?: string
+      expectedTransactionDataHashes?: string[]
+    }
+export type VerifyVerifiablePresentationProvider = {
+  kind: 'verify-verifiable-presentation-provider'
+  name: string
+  single: false
+
+  verify(vp: string, options?: VerifyVerifiablePresentationVerifyOptions): Promise<boolean>
+  canHandle(format: string): boolean
 }
 
 export type JwtSignatureProvider = {
@@ -410,7 +427,8 @@ export type Provider =
   | CredentialQueryProvider
   | RequestObjectStoreProvider
   | RequestObjectIdProvider
-  | CredentialProvider
+  | VerifyCredentialProvider
+  | VerifyVerifiablePresentationProvider
   | JwtSignatureProvider
   | HolderBindingProvider
   | AuthzRequestJARProvider

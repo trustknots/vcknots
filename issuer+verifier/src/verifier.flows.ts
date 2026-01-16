@@ -1,9 +1,7 @@
 import base64url from 'base64url'
-import * as jwt from 'jsonwebtoken'
 import { AuthorizationRequest } from './authorization-request.types'
 import { AuthorizationResponse } from './authorization-response.types'
 import { ClientId } from './client-id.types'
-import { VerifiableCredential, parseVerifiableCredentialBase } from './credential.types'
 import { Dcql } from './dcql.type'
 import { err, raise } from './errors/vcknots.error'
 import { PresentationExchange } from './presentation-exchange.types'
@@ -52,7 +50,6 @@ export type FindRequestObjectOptions = {
 }
 
 export type VerifierFlow = {
-  //findVerifierMetadata(/* client_id? */): Promise<VerifierMetadata>
   findVerifierCertificate: (id: ClientId) => Promise<Certificate | null>
   createVerifierMetadata(
     verifierId: ClientId,
@@ -73,7 +70,7 @@ export type VerifierFlow = {
     objectId: RequestObjectId,
     options?: FindRequestObjectOptions
   ): Promise<string>
-  verifyPresentations: (id: ClientId, response: AuthorizationResponse) => Promise<void>
+  verifyPresentations: (id: ClientId, response: AuthorizationResponse) => Promise<boolean>
 }
 
 const isPresentationExchange = (query: unknown): query is PresentationExchange =>
@@ -86,10 +83,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   const nonceStore$ = context.providers.get('cnonce-store-provider')
   const query$ = context.providers.get('credential-query-provider')
   const verifierMetadata$ = context.providers.get('verifier-metadata-store-provider')
-  const credential$ = context.providers.get('credential-provider')
-  const jwtSignature$ = context.providers.get('jwt-signature-provider')
-  const holderBinding$ = context.providers.get('holder-binding-provider')
-  const did$ = context.providers.get('did-provider')
   const key$ = context.providers.get('verifier-signature-key-provider')
   const keyStore$ = context.providers.get('verifier-signature-key-store-provider')
   const requestObjectId$ = context.providers.get('request-object-id-provider')
@@ -98,6 +91,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   const certificateStore$ = context.providers.get('verifier-certificate-store-provider')
   const certificate$ = context.providers.get('certificate-provider')
   const transactionData$ = context.providers.get('transaction-data-provider')
+  const verifiablePresentation$ = context.providers.get('verify-verifiable-presentation-provider')
 
   return {
     async findVerifierCertificate(id) {
@@ -293,7 +287,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           scope: options.scope,
           state: options.state,
           response_uri: responseUri,
-          iss: verifierId,
+          iss: client_id,
           aud: 'https://self-issued.me/v2',
           client_metadata: metadata,
           response_mode: response_mode || 'direct_post',
@@ -384,136 +378,36 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         })
       }
 
-      const vpToken = Array.isArray(response.vp_token) ? response.vp_token : [response.vp_token]
+      if (Array.isArray(response.vp_token) && response.vp_token.length === 1) {
+        throw err('UNSUPPORTED_VP_TOKEN', {
+          message:
+            'When a single Verifiable Presentation is returned, the array syntax MUST NOT be used.',
+        })
+      }
 
-      if (!Array.isArray(vpToken) || vpToken.length !== 1) {
+      // TODO: Implement
+      if (!response.presentation_submission) {
+        throw err('ILLEGAL_ARGUMENT', {
+          message: 'DQCL is not supported yet',
+        })
+      }
+      if (Array.isArray(response.vp_token) && response.vp_token.length !== 1) {
         throw err('UNSUPPORTED_VP_TOKEN', {
           message: 'Submitting multiple verifiable presentations are not supported yet',
         })
       }
-      if (typeof vpToken[0] !== 'string') {
+      if (typeof response.vp_token !== 'string') {
         throw err('UNSUPPORTED_VP_TOKEN', {
-          message: 'Bare object vp_token is not supported yet',
+          message: 'vp_token object is not supported yet',
         })
       }
 
-      // TODO: review where the processing is located
-      const credentials: [
-        VerifiableCredential,
-        string /* jwt_vc（It is originally the role of the Provider）*/,
-      ][] = []
-      const decodedVps = []
-      for (const token of vpToken) {
-        if (typeof token === 'string') {
-          const decoded = jwt.decode(token, { complete: true })
-          if (!decoded) {
-            throw err('INVALID_VP_TOKEN', {
-              message: `Invalid vp_token: ${vpToken}`,
-            })
-          }
-          decodedVps.push(decoded)
-          const payload =
-            typeof decoded.payload === 'string' ? JSON.parse(decoded.payload) : decoded.payload
-
-          const nonce = payload.nonce
-          const nonceValid = await nonceStore$.validate(nonce)
-          if (!nonceValid) {
-            throw err('INVALID_NONCE', {
-              message: 'nonce is not valid.',
-            })
-          }
-          await nonceStore$.revoke(nonce)
-
-          const vc = payload.vp.verifiableCredential
-          if (Array.isArray(vc)) {
-            for (const token of vc) {
-              if (typeof token === 'string') {
-                const parts = token.split('.')
-                const payload = parts[1]
-                const decoded = JSON.parse(base64url.decode(payload))
-                const credential = decoded.vc ? decoded.vc : decoded
-                if (parseVerifiableCredentialBase(credential)) {
-                  credentials.push([credential, token])
-                }
-              } else {
-                throw err('ILLEGAL_ARGUMENT', {
-                  message: 'VC represented as object is not supported.',
-                })
-              }
-            }
-          }
-        } else if (typeof token === 'object' && token !== null) {
-          throw err('UNSUPPORTED_VP_TOKEN', {
-            message: 'Bare object vp_token is not supported yet',
-          })
-        }
-      }
-      if (!Array.isArray(credentials) || credentials.length === 0) {
-        throw err('INVALID_CREDENTIAL', {
-          message: 'No credentials is included',
-        })
-      }
-
-      const [credential, token] = credentials[0]
-      const issuer = credential.issuer
-      const vcValid = await credential$.verify(token, issuer, response.presentation_submission)
-      if (!vcValid) {
-        throw err('INVALID_CREDENTIAL', {
-          message: 'credential is not valid.',
-        })
-      }
-
-      const decoded = decodedVps[0]
-      if (!decoded.header.kid) {
-        throw err('INVALID_VP_TOKEN', {
-          message: `Missing key id in the header: ${JSON.stringify(decoded.header)}`,
-        })
-      }
-      const kid = decoded.header.kid
-      const didSplit = kid.split(':')
-      if (didSplit.length < 3 || didSplit[0] !== 'did') {
-        throw raise('INVALID_PROOF', {
-          message: `Invalid DID format: ${kid}`,
-        })
-      }
-      const didDoc = await selectProvider(did$, didSplit[1]).resolveDid(kid)
-      if (!didDoc || !didDoc.verificationMethod) {
-        throw err('INVALID_VP_TOKEN', {
-          message: `Cannot resolve DID: ${decoded.header.kid}`,
-        })
-      }
-      if (!didDoc.id.startsWith('did:key:')) {
-        throw err('INVALID_VP_TOKEN', {
-          message: `Unsupported DID method: ${didDoc.id}`,
-        })
-      }
-
-      const vm = didDoc.verificationMethod.find(
-        // FIXME: this is a hacky way to find the verification method and only works for did:key
-        (it) => it.id.startsWith(`${decoded.header.kid}`)
+      const format = response.presentation_submission.descriptor_map[0].format
+      const vpValid = await selectProvider(verifiablePresentation$, format).verify(
+        response.vp_token
       )
-      if (!vm || !vm.publicKeyJwk) {
-        throw err('INVALID_VP_TOKEN', {
-          message: `Cannot find verification method: ${decoded.header.kid}`,
-        })
-      }
-      const publicKey = vm.publicKeyJwk
-      const JwtValid = await jwtSignature$.verify(vpToken[0], publicKey)
-      if (!JwtValid) {
-        throw err('INVALID_PROOF', {
-          message: 'jwt is not valid.',
-        })
-      }
-      const holderBindingValid = await holderBinding$.verify(
-        credentials.map(([it]) => it),
-        publicKey
-      )
-      if (!holderBindingValid) {
-        throw err('HOLDER_BINDING_FAILED', {
-          message: 'Holder binding verification failed.',
-        })
-      }
-      return
+
+      return vpValid
     },
   }
 }

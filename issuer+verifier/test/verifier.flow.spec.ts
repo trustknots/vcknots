@@ -8,17 +8,14 @@ import { PresentationExchange } from '../src/presentation-exchange.types'
 import {
   CnonceProvider,
   CnonceStoreProvider,
-  CredentialProvider,
   CredentialQueryGenerationOptions,
   CredentialQueryProvider,
-  DidProvider,
-  HolderBindingProvider,
-  JwtSignatureProvider,
   RequestObjectIdProvider,
   RequestObjectStoreProvider,
   VerifierMetadataStoreProvider,
   VerifierSignatureKeyProvider,
   VerifierSignatureKeyStoreProvider,
+  VerifyVerifiablePresentationProvider,
 } from '../src/providers'
 import { VcknotsContext, initializeContext } from '../src/vcknots.context'
 import { VerifierMetadata } from '../src/verifier-metadata.types'
@@ -85,34 +82,13 @@ describe('VerifierFlow', () => {
     canHandle: mock.fn(),
   } satisfies CredentialQueryProvider
 
-  const mockCredentialProvider = {
-    kind: 'credential-provider',
-    name: 'mock-credential-provider',
-    single: true,
-    verify: mock.fn(),
-  } satisfies CredentialProvider
-
-  const mockJwtSignatureProvider = {
-    kind: 'jwt-signature-provider',
-    name: 'mock-jwt-signature-provider',
-    single: true,
-    verify: mock.fn(),
-  } satisfies JwtSignatureProvider
-
-  const mockHolderBindingProvider = {
-    kind: 'holder-binding-provider',
-    name: 'mock-holder-binding-provider',
-    single: true,
-    verify: mock.fn(),
-  } satisfies HolderBindingProvider
-
-  const mockDidProvider = {
-    kind: 'did-provider',
-    name: 'mock-did-provider',
+  const mockVerifyVerifiablePresentationProvider = {
+    kind: 'verify-verifiable-presentation-provider',
+    name: 'mock-verify-verifiable-presentation-provider',
     single: false,
-    resolveDid: mock.fn(),
+    verify: mock.fn(),
     canHandle: mock.fn(),
-  } satisfies DidProvider
+  } satisfies VerifyVerifiablePresentationProvider
 
   const mockRequestObjectStoreProvider = {
     kind: 'request-object-store-provider',
@@ -166,15 +142,12 @@ describe('VerifierFlow', () => {
         mockCnonceProvider,
         mockCnonceStoreProvider,
         mockCredentialQueryProvider,
-        mockCredentialProvider,
-        mockJwtSignatureProvider,
-        mockHolderBindingProvider,
-        mockDidProvider,
         mockRequestObjectStoreProvider,
         mockRequestObjectIdProvider,
         mockTransactionDataProvider,
         mockKeyProvider,
         mockKeyStoreProvider,
+        mockVerifyVerifiablePresentationProvider,
       ],
     })
     verifierFlow = initializeVerifierFlow(context)
@@ -186,7 +159,7 @@ describe('VerifierFlow', () => {
         client_name: 'Test Verifier',
         vp_formats: {
           jwt_vc_json: { alg_values_supported: ['ES256'] },
-          jwt_vp_json: { alg_values_supported: ['ES256'] }
+          jwt_vp_json: { alg_values_supported: ['ES256'] },
         },
       })
       // Mock the key provider's generate function
@@ -205,9 +178,9 @@ describe('VerifierFlow', () => {
       // Mock the key provider's canHandle function
       mock.method(mockKeyProvider, 'canHandle', () => true)
       // Mock the key store's save function
-      mock.method(mockKeyStoreProvider, 'save', async () => { })
+      mock.method(mockKeyStoreProvider, 'save', async () => {})
       // Mock the metadata store's save function
-      mock.method(mockVerifierMetadataStore, 'save', async () => { })
+      mock.method(mockVerifierMetadataStore, 'save', async () => {})
 
       await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata)
 
@@ -258,7 +231,7 @@ describe('VerifierFlow', () => {
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
       mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => { })
+      mock.method(mockCnonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -322,7 +295,7 @@ describe('VerifierFlow', () => {
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
       mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => { })
+      mock.method(mockCnonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -434,7 +407,7 @@ describe('VerifierFlow', () => {
         }
       )
       mock.method(mockRequestObjectIdProvider, 'generate', async () => '1234')
-      mock.method(mockRequestObjectStoreProvider, 'save', async () => { })
+      mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
 
       const req = await verifierFlow.createAuthzRequest(
         ClientId('https://example.com'),
@@ -503,7 +476,7 @@ describe('VerifierFlow', () => {
         }
       )
       mock.method(mockRequestObjectIdProvider, 'generate', async () => 'reqobj-123')
-      mock.method(mockRequestObjectStoreProvider, 'save', async () => { })
+      mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
 
       await assert.rejects(
         verifierFlow.createAuthzRequest(
@@ -563,7 +536,7 @@ describe('VerifierFlow', () => {
         }
       )
       mock.method(mockRequestObjectIdProvider, 'generate', async () => 'reqobj-123')
-      mock.method(mockRequestObjectStoreProvider, 'save', async () => { })
+      mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
 
       await assert.rejects(
         verifierFlow.createAuthzRequest(
@@ -611,7 +584,7 @@ describe('VerifierFlow', () => {
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
       mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => { })
+      mock.method(mockCnonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -677,7 +650,13 @@ describe('VerifierFlow', () => {
         presentation_submission: {
           id: 'ps-id',
           definition_id: 'pd-id',
-          descriptor_map: [],
+          descriptor_map: [
+            {
+              id: '2',
+              format: 'jwt_vp_json',
+              path: '$.vp',
+            },
+          ],
         },
       })
 
@@ -685,42 +664,20 @@ describe('VerifierFlow', () => {
         VerifierMetadata({
           client_name: 'test',
           vp_formats: {
-            jwt_vc_json: {
-              alg_values_supported: ['ES256'],
-            },
             jwt_vp_json: {
               alg_values_supported: ['ES256'],
             },
           },
         })
       )
-      mock.method(mockCnonceStoreProvider, 'validate', async () => true)
-      mock.method(mockCnonceStoreProvider, 'revoke', async () => { })
-      mock.method(mockCredentialProvider, 'verify', async () => true)
-      mock.method(mockDidProvider, 'canHandle', () => true)
-      mock.method(mockDidProvider, 'resolveDid', async () => ({
-        id: holderDid,
-        verificationMethod: [
-          {
-            id: `${holderDid}#${holderDid}`,
-            type: 'JsonWebKey2020',
-            controller: holderDid,
-            publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: 'test' },
-          },
-        ],
-      }))
-      mock.method(mockJwtSignatureProvider, 'verify', async () => true)
-      mock.method(mockHolderBindingProvider, 'verify', async () => true)
+      mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
+      mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => true)
 
-      await assert.doesNotReject(verifierFlow.verifyPresentations(verifierId, response))
+      const result = await verifierFlow.verifyPresentations(verifierId, response)
+      assert.equal(result, true)
 
       assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
-      assert.equal(mockCnonceStoreProvider.validate.mock.callCount(), 1)
-      assert.equal(mockCnonceStoreProvider.revoke.mock.callCount(), 1)
-      assert.equal(mockCredentialProvider.verify.mock.callCount(), 1)
-      assert.equal(mockDidProvider.resolveDid.mock.callCount(), 1)
-      assert.equal(mockJwtSignatureProvider.verify.mock.callCount(), 1)
-      assert.equal(mockHolderBindingProvider.verify.mock.callCount(), 1)
+      assert.equal(mockVerifyVerifiablePresentationProvider.verify.mock.callCount(), 1)
     })
   })
 })
