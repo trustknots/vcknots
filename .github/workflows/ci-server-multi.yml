@@ -1,11 +1,11 @@
-name: CI server
+name: CI multi server
 
 # server depends on issuer+verifier
 on:
   pull_request:
     branches: ["main"]
     paths:
-      - server/single/**
+      - server/multi/**
 
 jobs:
   core:
@@ -29,11 +29,11 @@ jobs:
 
       - name: Run format
         run: |
-          pnpm --filter ...@trustknots/server format
+          pnpm --filter ...@trustknots/multi-server format
 
       - name: Run lint
         run: |
-          pnpm --filter ...@trustknots/server lint
+          pnpm --filter ...@trustknots/multi-server lint
 
       - name: Build
-        run: pnpm --filter ...@trustknots/server... build
+        run: pnpm --filter ...@trustknots/multi-server... build

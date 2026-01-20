@@ -22,52 +22,57 @@ IPHONE_SIMULATOR_SDK_CLANG=$(shell xcrun --sdk iphonesimulator --find clang)
 
 
 # Android settings
+NEED_ANDROID := $(filter android android-arm64 all,$(MAKECMDGOALS))
 
-NDK_PATH :=
-ifneq ($(ANDROID_NDK_HOME),)
-    ifeq ("$(wildcard $(ANDROID_NDK_HOME)/source.properties)","")
-        $(warning "Warning: ANDROID_NDK_HOME is set to '$(ANDROID_NDK_HOME)' but it doesn't seem to be a valid NDK directory.")
-    else
-        NDK_PATH := $(ANDROID_NDK_HOME)
-    endif
-endif
-
-ifeq ($(NDK_PATH),)
-    SDK_PATH :=
-    ifneq ($(ANDROID_HOME),)
-        SDK_PATH := $(ANDROID_HOME)
-    else ifneq ($(ANDROID_SDK_ROOT),)
-        SDK_PATH := $(ANDROID_SDK_ROOT)
-    endif
-
-    ifneq ($(SDK_PATH),)
-        LATEST_NDK_DIR := $(lastword $(sort $(wildcard $(SDK_PATH)/ndk/*)))
-        ifneq ($(LATEST_NDK_DIR),)
-            NDK_PATH := $(LATEST_NDK_DIR)
-        endif
-    endif
-endif
-
-ifeq ($(NDK_PATH),)
-    DEFAULT_SDK_PATH :=
-    ifeq ($(UNAME_S),Linux)
-        DEFAULT_SDK_PATH := $(HOME)/Android/Sdk
-    else ifeq ($(UNAME_S),Darwin)
-        DEFAULT_SDK_PATH := $(HOME)/Library/Android/sdk
-    endif
-
-    ifneq ("$(wildcard $(DEFAULT_SDK_PATH))", "")
-        LATEST_NDK_DIR := $(lastword $(sort $(wildcard $(DEFAULT_SDK_PATH)/ndk/*)))
-        ifneq ($(LATEST_NDK_DIR),)
-            NDK_PATH := $(LATEST_NDK_DIR)
-        endif
-    endif
-endif
-
-ifeq ($(NDK_PATH),)
-    $(error "Android NDK path could not be found. Please set ANDROID_NDK_HOME environment variable, or install NDK via Android Studio.")
+ifeq ($(NEED_ANDROID),)
+    $(info "Skipping Android NDK lookup (not building Android targets)")
 else
-    $(info "Using Android NDK at: $(NDK_PATH)")
+    NDK_PATH :=
+    ifneq ($(ANDROID_NDK_HOME),)
+        ifeq ("$(wildcard $(ANDROID_NDK_HOME)/source.properties)","")
+            $(warning "Warning: ANDROID_NDK_HOME is set to '$(ANDROID_NDK_HOME)' but it doesn't seem to be a valid NDK directory.")
+        else
+            NDK_PATH := $(ANDROID_NDK_HOME)
+        endif
+    endif
+
+    ifeq ($(NDK_PATH),)
+        SDK_PATH :=
+        ifneq ($(ANDROID_HOME),)
+            SDK_PATH := $(ANDROID_HOME)
+        else ifneq ($(ANDROID_SDK_ROOT),)
+            SDK_PATH := $(ANDROID_SDK_ROOT)
+        endif
+
+        ifneq ($(SDK_PATH),)
+            LATEST_NDK_DIR := $(lastword $(sort $(wildcard $(SDK_PATH)/ndk/*)))
+            ifneq ($(LATEST_NDK_DIR),)
+                NDK_PATH := $(LATEST_NDK_DIR)
+            endif
+        endif
+    endif
+
+    ifeq ($(NDK_PATH),)
+        DEFAULT_SDK_PATH :=
+        ifeq ($(UNAME_S),Linux)
+            DEFAULT_SDK_PATH := $(HOME)/Android/Sdk
+        else ifeq ($(UNAME_S),Darwin)
+            DEFAULT_SDK_PATH := $(HOME)/Library/Android/sdk
+        endif
+
+        ifneq ("$(wildcard $(DEFAULT_SDK_PATH))", "")
+            LATEST_NDK_DIR := $(lastword $(sort $(wildcard $(DEFAULT_SDK_PATH)/ndk/*)))
+            ifneq ($(LATEST_NDK_DIR),)
+                NDK_PATH := $(LATEST_NDK_DIR)
+            endif
+        endif
+    endif
+
+    ifeq ($(NDK_PATH),)
+        $(error "Android NDK path could not be found. Please set ANDROID_NDK_HOME environment variable, or install NDK via Android Studio.")
+    else
+        $(info "Using Android NDK at: $(NDK_PATH)")
+    endif
 endif
 
 ANDROID_API_LEVEL=28
@@ -142,6 +147,9 @@ android: android-arm64
 all: ios android
 	cd ./wrappers/vcknots_wallet_dart_wrapper; dart run ffigen --config ffigen.yaml
 
+format:
+	go fmt ./...
+
 clean:
 		rm -rf ${IOS_OUT_DIR}
 		rm -rf ${OUT_DIR}
@@ -161,3 +169,4 @@ lint:
 	clean
 	test
 	lint
+	format

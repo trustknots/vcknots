@@ -4,9 +4,7 @@
 	"description": "A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) and OpenID for Verifiable Presentations (OID4VP).",
 	"main": "lib/index.js",
 	"types": "lib/index.d.ts",
-	"files": [
-		"lib"
-	],
+	"files": ["lib"],
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/trustknots/vcknots.git",
@@ -26,6 +24,7 @@
 		"format": "biome format --write ./src/**/*.ts",
 		"lint": "biome lint ./src/**/*.ts",
 		"test": "node --import tsx --test \"test/**/*.spec.ts\"",
+		"test:ci": "node --import tsx --test --experimental-test-coverage \"test/**/*.spec.ts\"",
 		"test:all": "node --import tsx --test --experimental-test-coverage --test-coverage-lines=80 --test-coverage-functions=80 --test-coverage-branches=80 \"test/**/*.spec.ts\"",
 		"it": "node --import tsx --test 'test/**/*.integration.spec.ts'",
 		"build:tested": "pnpm run test:all && pnpm run build",

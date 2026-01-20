@@ -3,10 +3,9 @@ name: CI google-cloud
 # google-cloud depends on issuer+verifier
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
-      - 'issuer+verifier/**'
-      - 'google-cloud/**'
+      - google-cloud/**
 
 jobs:
   core:
@@ -28,25 +27,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # prefer control dependencies by pnpm
-      # - name: Run lint issuer+verifier
-      #   run: |
-      #     pnpm --filter @trustknots/vcknots lint
-
-      - name: Run lint google-cloud
+      - name: Run format
         run: |
-          pnpm --filter @trustknots/google-cloud lint
-
-      # - name: Run tests issuer+verifier
-      #   run: |
-      #     node --import tsx --test --experimental-test-coverage "issuer+verifier/test/**/*.spec.ts"
-
-      - name: Run tests google-cloud
+          pnpm --filter ...@trustknots/google-cloud format
+      - name: Run lint
         run: |
-          node --import tsx --test --experimental-test-coverage "google-cloud/test/**/*.spec.ts"
+          pnpm --filter ...@trustknots/google-cloud lint
 
-      # - name: Build issuer+verifier
-      #   run: pnpm --filter @trustknots/vcknots build
-
-      - name: Build google-cloud
-        run: pnpm --filter @trustknots/google-cloud build
+      - name: Build
+        run: pnpm --filter ...@trustknots/google-cloud... build

@@ -6,6 +6,7 @@
 	"scripts": {
 		"build": "tsc",
 		"format": "biome format --write ./src/**/*.ts",
+		"lint": "biome lint ./src/**/*.ts",
 		"test": "node --import tsx --test test/**/*.spec.ts",
 		"typecheck": "tsc --noEmit"
 	},
@@ -15,7 +16,7 @@
 	"packageManager": "pnpm@10.17.1",
 	"dependencies": {
 		"@google-cloud/kms": "^5.2.0",
-		"@trustknots/vcknots": "workspace:../issuer+verifier",
+		"@trustknots/vcknots": "workspace:*",
 		"firebase-admin": "^13.5.0",
 		"zod": "^4.1.11"
 	}

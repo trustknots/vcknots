@@ -64,7 +64,7 @@ importers:
         specifier: ^5.2.0
         version: 5.2.1
       '@trustknots/vcknots':
-        specifier: workspace:../issuer+verifier
+        specifier: workspace:*
         version: link:../issuer+verifier
       firebase-admin:
         specifier: ^13.5.0
@@ -113,7 +113,7 @@ importers:
         specifier: ^1.19.5
         version: 1.19.5(hono@4.10.4)
       '@trustknots/vcknots':
-        specifier: workspace:../../issuer+verifier
+        specifier: workspace:*
         version: link:../../issuer+verifier
       hono:
         specifier: ^4.9.9
@@ -125,7 +125,7 @@ importers:
         specifier: ^1.19.5
         version: 1.19.5(hono@4.10.4)
       '@trustknots/vcknots':
-        specifier: workspace:../../issuer+verifier
+        specifier: workspace:*
         version: link:../../issuer+verifier
       dotenv:
         specifier: ^17.2.3

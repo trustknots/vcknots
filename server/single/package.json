@@ -8,6 +8,7 @@
 	"scripts": {
 		"build": "tsc",
 		"format": "biome format --write ./src/**/*.ts",
+		"lint": "biome lint ./src/**/*.ts",
 		"test": "node --import tsx --test test/**/*.spec.ts",
 		"start": "tsx src/example.ts",
 		"typecheck": "tsc --noEmit"
@@ -18,7 +19,7 @@
 	"packageManager": "pnpm@10.17.1",
 	"dependencies": {
 		"@hono/node-server": "^1.19.5",
-		"@trustknots/vcknots": "workspace:../../issuer+verifier",
+		"@trustknots/vcknots": "workspace:*",
 		"dotenv": "^17.2.3",
 		"hono": "^4.9.9"
 	}
