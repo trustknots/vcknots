@@ -5,7 +5,10 @@ import { ClientId } from './client-id.types'
 import { Dcql } from './dcql.type'
 import { err, raise } from './errors/vcknots.error'
 import { PresentationExchange } from './presentation-exchange.types'
-import { CredentialQueryGenerationOptions } from './providers'
+import {
+  CredentialQueryGenerationOptions,
+  VerifyVerifiablePresentationVerifyOptions,
+} from './providers'
 import { selectProvider } from './providers/provider.utils'
 import { RequestObject } from './request-object.types'
 import { DeepPartialUnknown } from './type.utils'
@@ -413,8 +416,8 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
 
       const format = response.presentation_submission.descriptor_map[0].format
-      const options = { kind: format, isKbJwt: isKbJwt }
-      // const isKbJwt = options?.kind === 'dc+sd-jwt' ? options.isKbJwt : false
+      const options: VerifyVerifiablePresentationVerifyOptions =
+        format === 'dc+sd-jwt' ? { kind: 'dc+sd-jwt', isKbJwt: isKbJwt } : { kind: 'jwt_vp_json' }
       const vpValid = await selectProvider(verifiablePresentation$, format).verify(
         response.vp_token,
         options

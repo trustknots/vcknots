@@ -52,7 +52,7 @@ describe('sd-jwt provider', () => {
     const sdJwt = await issueSdJwt(issuer)
     const fetchSpy = mockFetch({ issuer, jwks: { keys: [publicJwk] } })
 
-    const result = await provider.verify(sdJwt, { kind: 'dc+sd-jwt', specifiedDisclosures: [''] })
+    const result = await provider.verify(sdJwt, { kind: 'dc+sd-jwt', specifiedDisclosures: [] })
 
     assert.equal(result, true)
     assert.equal(fetchSpy.mock.callCount(), 1)
