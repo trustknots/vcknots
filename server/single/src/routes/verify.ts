@@ -171,6 +171,33 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     }
   })
 
+  verifyApp.post('/callback-kbjwt', async (c) => {
+    try {
+      const verifierId = VerifierClientId(baseUrl)
+      console.log('Form data received:', await c.req.formData())
+      const parsed = parseFormPayload(await c.req.formData())
+      if (!parsed.ok) {
+        return c.json(parsed.error, 400)
+      }
+
+      // Validate it using the AuthorizationResponse
+      const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
+      const isKbjwt: boolean = true
+
+      // Add additional validation as needed
+      await verifierFlow.verifyPresentations(verifierId, authorizationResponse, isKbjwt)
+      return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
+
+      // return c.json({
+      //   message: 'Callback received successfully',
+      //   authorization_response: authorizationResponse,
+      // })
+    } catch (err) {
+      return c.json(handleError(err), 400)
+    }
+  })
+
+
   const presentationDefinitionJwtVC = {
     id: randomUUID(),
     name: 'Test Name',
