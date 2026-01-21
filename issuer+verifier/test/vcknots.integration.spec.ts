@@ -8,12 +8,14 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
   ClientId,
+  Cnonce,
   VerifierMetadata,
 } from '../src'
 import { CredentialConfigurationId, CredentialIssuerMetadata } from '../src/credential-issuer.types'
 import { PreAuthorizedCode } from '../src/pre-authorized-code.types'
 import { GrantType, TokenRequest, TokenResponse } from '../src/token-request.types'
 import { Vcknots, vcknots } from '../src/vcknots'
+import { inMemoryCnonceStore } from '../src/providers/in-memory/in-memory-cnonce-store.provider'
 
 type JwtHeader = {
   alg: 'ES256'
@@ -438,7 +440,7 @@ describe('Vcknots', () => {
       mock.reset()
     })
 
-    it('should verify presentations (dc+sd-jwt)', async () => {
+    it('should verify presentations (dc+sd-jwt not kbjwt)', async () => {
       const authzRequest = await vk.verifier.createAuthzRequest(
         verifierId,
         'vp_token',
@@ -495,6 +497,39 @@ describe('Vcknots', () => {
         }
       })
       await vk.verifier.verifyPresentations(verifierId, response)
+
+      mock.reset()
+    })
+    it('should verify presentations (dc+sd-jwt with kbjwt)', async () => {
+      const cnonceStore = inMemoryCnonceStore({ c_nonce_expire_in: 300000 })
+      const test_nonce = '07cc78df02924028995d94544d22b75b'
+      await cnonceStore.save(Cnonce(test_nonce))
+      const sampleDcSdJwtVp =
+        'eyJ4NWMiOlsiTUlJQ0hqQ0NBY09nQXdJQkFnSVVaWDlCUzVDRE9KUlcydDFGSzFVRE10L1F3TUV3Q2dZSUtvWkl6ajBFQXdJd0lURUxNQWtHQTFVRUJoTUNSMEl4RWpBUUJnTlZCQU1NQ1U5SlJFWWdWR1Z6ZERBZUZ3MHlOREV4TWpVd09ETTJNRFJhRncwek5ERXhNak13T0RNMk1EUmFNQ0V4Q3pBSkJnTlZCQVlUQWtkQ01SSXdFQVlEVlFRRERBbFBTVVJHSUZSbGMzUXdXVEFUQmdjcWhrak9QUUlCQmdncWhrak9QUU1CQndOQ0FBVFQvZExzZDUxTExCckdWNlIyM282dnltUnhIWGVGQm9JOHlxMzF5NWtGVjJWVjBnaTl4NVp6RUZpcThETWlBSHVjTEFDRm5keEx0Wm9yQ2hhOXp6blFvNEhZTUlIVk1CMEdBMVVkRGdRV0JCUzVjYmRnQWVNQmk1d3hwYnB3SVNHaFNoQVdFVEFmQmdOVkhTTUVHREFXZ0JTNWNiZGdBZU1CaTV3eHBicHdJU0doU2hBV0VUQVBCZ05WSFJNQkFmOEVCVEFEQVFIL01JR0JCZ05WSFJFRWVqQjRnaEIzZDNjdWFHVmxibUZ1TG0xbExuVnJnaDFrWlcxdkxtTmxjblJwWm1sallYUnBiMjR1YjNCbGJtbGtMbTVsZElJSmJHOWpZV3hvYjNOMGdoWnNiMk5oYkdodmMzUXVaVzF2WW1sNExtTnZMblZyZ2lKa1pXMXZMbkJwWkMxcGMzTjFaWEl1WW5WdVpHVnpaSEoxWTJ0bGNtVnBMbVJsTUFvR0NDcUdTTTQ5QkFNQ0Ewa0FNRVlDSVFDUGJuTHhDSStXUjF2aE9XK0E4S3puQVd2MU1KbytZRWIxTUk0NU5LVy9WUUloQUx6c3FveDhWdUJSd04yZGw1TGtwbnhQNG9IOXA2SDBBT1ptS1ArWTduWFMiXSwidHlwIjoiZGMrc2Qtand0IiwiYWxnIjoiRVMyNTYifQ.eyJfc2QiOlsiMHBzU1pmUEpWVUNDZkZFSy0wc241TEV3UjA5RkZXdWFpTHMzQld0ZWpBdyIsIk5qa1l6RVdDRUxiSG9LTlhkdUsxYVgxRW91SW9kemJmNFJ2NXVucnRmdTAiLCJPV04xMnUzZFRkTFNOZ3hWRlBVQzN1eUdleEFiSWN0QWU2SUQwWlVYbGtvIiwiUWN4ZmhHOGR4RXdsNUZVRnAxUEt1T0hEOHJQZzBsX1RnS0VEZE5qb1lhQSIsImQwSXhiVEwtR0s1RTk0aGpQNi1HcEhYSGN1dllSNEIwV2Q5MFZvMUU3YkkiLCJmTU9ybXhFRWJ2emRXendZdkFhVmtuNjlSVUsyMXN3NzA4TVZFYmpvSkNJIiwiaU4xZnRJOWozZlRubGViaGVzSHZUeFVEYmI2UGdiaUUzazBjaGFWUG5vdyIsInhGdjJpT3dPY2tNYVU5d0tXX3k3QmFEaEowSHoxUXZaSFRIX1B6NnVnX3MiXSwidmN0IjoidXJuOmV1ZGk6cGlkOjEiLCJpc3MiOiJodHRwczovL2RlbW8uY2VydGlmaWNhdGlvbi5vcGVuaWQubmV0L3Rlc3QvYS9ob2dldGVzdCIsImNuZiI6eyJqd2siOnsia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsIngiOiJWbmx3bFRvNmZqWmlxU0phOEI5ZlY0Z3hyZzZ3X1ZPbmgxZ2FaQ0pPbEcwIiwieSI6IjVyMVM5Vm9rWmRTQTU0RG9UNVNxYWxHLThIY2cyVWJMZ2hRWGUwY2VQbkUifX0sImV4cCI6MTc3MDE3MzAzNSwiaWF0IjoxNzY4OTYzNDM1fQ.R4fKWZ_jaUZB5giiVGx2fJxwXoNrhKY7mDWPjTOLEuZC6u3nsUTJ0BcvrNEnX_XGddMuqj-fyw3GKlf-D2wGxA~WyJRSTRNdzZDbmkzc1NXaVRoQmhHMXJ3IiwiZ2l2ZW5fbmFtZSIsIkplYW4iXQ~WyJ4QmN0YkhScXRNVmEzc216YmhMeUJBIiwiZmFtaWx5X25hbWUiLCJEdXBvbnQiXQ~WyJxRGZGbDlwc2FQOFZZc0tDblNvcDd3IiwiYmlydGhkYXRlIiwiMTk4MC0wNS0yMyJd~WyJQVjZsM2V3OWFJZkUyRnVzNEZmdGl3IiwiRlIiXQ~WyJXZVc3UU9UVUdzd3hGcEh0VE0xS2JnIiwibmF0aW9uYWxpdGllcyIsW3siLi4uIjoiOFBSZm92MlJUSGNYX1g4YWN3b1ZWV3Q4LWVfUWtUbnh0Z0h3c3dQNzd0SSJ9XV0~WyJubTBLc2pMQUt0Nm1kdWh0WDVoZE9nIiwiY291bnRyeSIsIkREIl0~WyJwQ2JLUllxTFkyRGQxeWVaLWowenB3IiwicGxhY2Vfb2ZfYmlydGgiLHsiX3NkIjpbInhmUVRHZFlLYnNrZExfZ1F2bGtCUDZRRk55bzhyUTJmWWxSc0x2MUN4YzAiXX1d~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJzZF9oYXNoIjoiLUx0R09tNFZKUk1YbEI2amNEQzlqMGU0QlBSeVdvbFlGdFNaNkZXeDdRTSIsImF1ZCI6Ing1MDlfc2FuX2RuczpweHY3Y2g5ci04MDgwLmFzc2UuZGV2dHVubmVscy5tcyIsImlhdCI6MTc2ODk2MzQzNSwibm9uY2UiOiIwN2NjNzhkZjAyOTI0MDI4OTk1ZDk0NTQ0ZDIyYjc1YiJ9.m0AVZJBNfmWWrmJieWThPRIe91JfNB4q7vmDZ7dHopsfNm7OatLQvGxZwMr3GTYv2-cczY8eZpA0Pe93lSv2lw'
+
+      const vkWithPreSavedNonce = vcknots({
+        providers: [cnonceStore],
+      })
+      await vkWithPreSavedNonce.verifier
+        .createVerifierMetadata(verifierId, metadata)
+        .catch(() => {})
+
+      const response: AuthorizationResponse = AuthorizationResponse({
+        presentation_submission: {
+          id: '1',
+          definition_id: presentationDefinition.id,
+          descriptor_map: [
+            {
+              id: '2',
+              format: 'dc+sd-jwt',
+              path: '$',
+            },
+          ],
+        },
+        vp_token: sampleDcSdJwtVp,
+      })
+
+      await vkWithPreSavedNonce.verifier.verifyPresentations(verifierId, response, true)
 
       mock.reset()
     })
