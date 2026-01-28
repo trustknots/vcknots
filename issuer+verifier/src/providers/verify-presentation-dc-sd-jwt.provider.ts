@@ -50,14 +50,21 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
           })
         }
         let metadataUrl: string
-        if (issUri.pathname !== '/') {
-          metadataUrl = new URL(
-            `.well-known/jwt-vc-issuer/${issUri.pathname.replace(/^\/+/, '')}`,
-            issUri
-          ).toString()
+        // Remove any terminating / from pathname as per spec
+        const pathname = issUri.pathname.replace(/\/+$/, '')
+        if (pathname === '' || pathname === '/') {
+          // Use origin to ensure pathname is replaced, not appended
+          metadataUrl = new URL('.well-known/jwt-vc-issuer', issUri.origin).toString()
         } else {
-          metadataUrl = new URL('.well-known/jwt-vc-issuer', issUri).toString()
+          // Remove leading / and insert between host and path component
+          const pathWithoutLeadingSlash = pathname.replace(/^\/+/, '')
+          // Use origin to ensure pathname is replaced, not appended
+          metadataUrl = new URL(
+            `.well-known/jwt-vc-issuer/${pathWithoutLeadingSlash}`,
+            issUri.origin
+          ).toString()
         }
+        console.log('jwt-vc-issuer metadataUrl:', metadataUrl)
         const metadataResponse = await fetch(metadataUrl)
         if (!metadataResponse.ok) {
           throw err('INVALID_SD_JWT', {

@@ -87,7 +87,7 @@ describe('sd-jwt provider', () => {
   })
 
   it('fetches metadata for issuer with path segment', async () => {
-    const issuerWithPath = `${issuer}/tenant`
+    const issuerWithPath = `${issuer}/tenant/1234`
     const sdJwtWithPath = await issueSdJwt(issuerWithPath)
     const fetchSpy = mockFetch({ issuer: issuerWithPath, jwks: { keys: [publicJwk] } })
 
@@ -97,7 +97,8 @@ describe('sd-jwt provider', () => {
 
     assert.equal(result, true)
     const call = fetchSpy.mock.calls[0]
-    assert.equal(call.arguments[0], `${issuer}/.well-known/jwt-vc-issuer/tenant`)
+    // https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-13#section-5.1
+    assert.equal(call.arguments[0], `${issuer}/.well-known/jwt-vc-issuer/tenant/1234`)
   })
 
   it('verifies SD-JWT using jwks_uri in issuer metadata', async () => {
