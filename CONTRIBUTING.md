@@ -104,7 +104,7 @@ We follow a simple branching strategy to keep the development process smooth and
    - Recommended naming: `feat/issue-number-description` or `fix/issue-number`
 3. **Commit your changes**: You are free to commit as often as you like during development. However,  please write clear and descriptive commit messages by following [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
 4. **Open a Pull Request**: Once your work is ready, create a PR to the `main` branch. 
-   - Ensure your PR is reviewed by at least one maintainer.
+   - If possible, having your PR reviewed by at least one maintainer is encouraged.   
 5. **Squash and Merge**: All PRs will be merged using **Squash Merge**. This keeps our `main` branch history clean by combining all your commits into a single, meaningful commit.
 6. **Branch Deletion**: Once the Pull Request is merged, the maintainer will delete the branch on the remote repository. Please make sure to delete your local branch as well to keep your environment tidy.
 
