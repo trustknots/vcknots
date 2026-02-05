@@ -8,12 +8,15 @@ sidebar_position: 2
 
 ## 1. 前提条件
 
-- OpenID for Verifiable Credential Issuance - draft 13 に対応([OpenID for Verifiable Credential Issuance - draft 13](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html))
+- OpenID for Verifiable Credential Issuance - draft 13 に対応([OpenID for Verifiable Credential Issuance - draft 13](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html))  
+なお、以下は現時点では未実装ですが、今後対応予定です。
+  - 現在対応しているフローは 事前認可コードフロー（Pre-Authorized Code Flow）のみです
+  - Credential Offerの`tx_code`は未対応（今後対応予定）
+  - Credential Requestの`credential_response_encryption`は未対応（今後対応予定）
 - Node.js v14以降がインストールされていること
 - TypeScriptが設定されていること
 - 本ドキュメントはserverのサンプル実装に基づいて説明します
 - HonoのWebフレームワークを使用していますが、他のフレームワークでも利用可能です
-- 現在対応しているフローは事前認可コードフローです
 
 ## 2. 初期設定
 

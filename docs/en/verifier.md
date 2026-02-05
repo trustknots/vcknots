@@ -9,7 +9,11 @@ This guide explains how to set up and use the Verifier feature of VCKnots.
 
 ## 1. Prerequisites
 
-- Supports OpenID for Verifiable Presentations - draft 24 ([OpenID for Verifiable Presentations - draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html))
+- Supports OpenID for Verifiable Presentations - draft 24 ([OpenID for Verifiable Presentations - draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html))  
+The following items are not implemented yet and are planned for future support:
+  - `response_mode` supports `direct_post`, but `direct_post.jwt` is not supported yet (planned for future support).
+  - `presentation_definition_uri` is not supported yet.
+  - vp_token is supported only as a single string value (JSON-based VP formats are not supported yet).
 - Assumes the cross-device flow
 - Node.js v14 or later is installed
 - TypeScript is configured
@@ -327,8 +331,9 @@ verifyApp.post('/verify/callback', async (c) => {
     const json = await c.req.json()
 
     const authorizationResponse = VerifierAuthorizationResponse(json)
+    const isKbjwt: boolean = true
 
-    await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
+    await verifierFlow.verifyPresentations(verifierId, authorizationResponse, isKbjwt)
 
     return c.json({
       message: 'Callback received successfully',
@@ -650,12 +655,16 @@ Verifies the VP token.
 verifyPresentations(
   id: ClientId,
   response: AuthorizationResponse
+  isKbjwt: boolean
 ): Promise<void>
 ```
 
 **Parameters**:
 - `id`: Identifier of the Verifier ([VerifierClientId](#VerifierClientId))
 - `response`: Information used for verification ([Verifierauthorizationresponse](#Verifierauthorizationresponse))
+- `isKbJwt`： Flag indicating whether to verify the Key Binding JWT when validating an SD-JWT.
+  - `isKbJwt = true`  → Verify the Key Binding JWT
+  - `isKbJwt = false` → Do not verify the Key Binding JWT
 
 **Return value**:
 - None
@@ -669,7 +678,8 @@ verifyPresentations(
 - `INVALID_PRESENTATION_SUBMISSION`: Invalid presentation_submission
 - `HOLDER_BINDING_FAILED`: Holder binding verification failed
 
-
+**Notes**:
+- If `isKbJwt` is not specified, `false` is used by default (this behavior may change in future implementations).
 
 
 ### findVerifierCertificate
