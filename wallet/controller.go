@@ -367,6 +367,25 @@ func (c *Controller) ReceiveCredential(req ReceiveCredentialRequest) (*SavedCred
 	}, nil
 }
 
+// convertEntryToSavedCredential converts a CredentialEntry to SavedCredential.
+// Returns error if conversion fails (invalid flavor or deserialization error).
+func (c *Controller) convertEntryToSavedCredential(entry types.CredentialEntry) (*SavedCredential, error) {
+	f, err := entry.SerializationFlavor()
+	if err != nil {
+		return nil, fmt.Errorf("invalid serialization flavor: %w", err)
+	}
+
+	cred, err := c.serializer.DeserializeCredential(f, entry.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("deserialization failed: %w", err)
+	}
+
+	return &SavedCredential{
+		Credential: cred,
+		Entry:      &entry,
+	}, nil
+}
+
 func (c *Controller) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfile, nonce *string, aud string) (string, error) {
 	header := map[string]interface{}{
 		"alg": "ES256",
@@ -417,18 +436,9 @@ func (c *Controller) GetCredentialEntries(req GetCredentialEntriesRequest) ([]*S
 		var filteredCredentials []*SavedCredential
 		if result.Entries != nil {
 			for _, entry := range *result.Entries {
-				f, err := entry.SerializationFlavor()
+				savedCred, err := c.convertEntryToSavedCredential(entry)
 				if err != nil {
-					continue
-				}
-				credential, err := c.serializer.DeserializeCredential(f, entry.Raw)
-				if err != nil {
-					continue
-				}
-
-				savedCred := &SavedCredential{
-					Credential: credential,
-					Entry:      &entry,
+					continue // Skip invalid entries
 				}
 
 				if req.Filter(savedCred) {
@@ -458,19 +468,11 @@ func (c *Controller) GetCredentialEntries(req GetCredentialEntriesRequest) ([]*S
 	var savedCredentials []*SavedCredential
 	if result.Entries != nil {
 		for _, entry := range *result.Entries {
-			f, err := entry.SerializationFlavor()
+			savedCred, err := c.convertEntryToSavedCredential(entry)
 			if err != nil {
-				continue
+				continue // Skip invalid entries
 			}
-			credential, err := c.serializer.DeserializeCredential(f, entry.Raw)
-			if err != nil {
-				continue
-			}
-
-			savedCredentials = append(savedCredentials, &SavedCredential{
-				Credential: credential,
-				Entry:      &entry,
-			})
+			savedCredentials = append(savedCredentials, savedCred)
 		}
 	}
 
@@ -491,19 +493,12 @@ func (c *Controller) GetCredentialEntry(id string) (*SavedCredential, error) {
 		return nil, nil
 	}
 
-	f, err := entry.SerializationFlavor()
+	savedCred, err := c.convertEntryToSavedCredential(*entry)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse credential: %w", err)
-	}
-	credential, err := c.serializer.DeserializeCredential(f, entry.Raw)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse credential: %w", err)
+		return nil, fmt.Errorf("failed to convert credential: %w", err)
 	}
 
-	return &SavedCredential{
-		Credential: credential,
-		Entry:      entry,
-	}, nil
+	return savedCred, nil
 }
 
 func (c *Controller) PresentCredential(uriString string, key IKeyEntry, options serializerTypes.SerializePresentationOptions) error {

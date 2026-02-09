@@ -18,39 +18,62 @@ import (
 
 type Oid4vciReceiver struct{}
 
+// doRequest performs an HTTP request and unmarshals the JSON response into target.
+// It handles common patterns: URL construction, status checking, body reading, and JSON parsing.
+func (o *Oid4vciReceiver) doRequest(method string, endpoint common.URIField, path string, body io.Reader, target interface{}) error {
+	endpointURL := url.URL(endpoint)
+	if !strings.HasSuffix(endpointURL.Path, path) {
+		endpointURL.Path = endpointURL.Path + path
+	}
+
+	var resp *http.Response
+	var err error
+
+	switch method {
+	case "GET":
+		resp, err = http.Get(endpointURL.String())
+	case "POST":
+		if body == nil {
+			return fmt.Errorf("POST request requires a body")
+		}
+		resp, err = http.Post(endpointURL.String(), "application/x-www-form-urlencoded", body)
+	default:
+		return fmt.Errorf("unsupported HTTP method: %s", method)
+	}
+
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if len(bodyBytes) == 0 {
+		return fmt.Errorf("empty response body")
+	}
+
+	if err := json.Unmarshal(bodyBytes, target); err != nil {
+		return fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	return nil
+}
+
 func (o *Oid4vciReceiver) FetchIssuerMetadata(endpoint common.URIField, receivingTypes types.SupportedReceivingTypes) (*types.CredentialIssuerMetadata, error) {
 	if receivingTypes != types.Oid4vci {
 		return nil, fmt.Errorf("unsupported serialization flavor")
 	}
 
-	metadataPath := "/.well-known/openid-credential-issuer"
-	endpointURL := url.URL(endpoint)
-	if !strings.HasSuffix(endpointURL.Path, metadataPath) {
-		endpointURL.Path = endpointURL.Path + metadataPath
-	}
-
-	resp, err := http.Get(endpointURL.String())
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to fetch metadata")
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(bodyBytes) == 0 {
-		return nil, fmt.Errorf("metadata is empty")
-	}
-
 	var metadata types.CredentialIssuerMetadata
-	if err := json.Unmarshal(bodyBytes, &metadata); err != nil {
-		return nil, err
+	if err := o.doRequest("GET", endpoint, "/.well-known/openid-credential-issuer", nil, &metadata); err != nil {
+		return nil, fmt.Errorf("failed to fetch issuer metadata: %w", err)
 	}
 
 	return &metadata, nil
@@ -61,34 +84,9 @@ func (o *Oid4vciReceiver) FetchAuthorizationServerMetadata(endpoint common.URIFi
 		return nil, fmt.Errorf("unsupported flavor: %v", receivingTypes)
 	}
 
-	metadataPath := "/.well-known/oauth-authorization-server"
-	endpointURL := url.URL(endpoint)
-	if !strings.HasSuffix(endpointURL.Path, metadataPath) {
-		endpointURL.Path = endpointURL.Path + metadataPath
-	}
-
-	resp, err := http.Get(endpointURL.String())
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to fetch authorization server metadata")
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(bodyBytes) == 0 {
-		return nil, fmt.Errorf("authorization server metadata is empty")
-	}
-
 	var metadata types.AuthorizationServerMetadata
-	if err := json.Unmarshal(bodyBytes, &metadata); err != nil {
-		return nil, err
+	if err := o.doRequest("GET", endpoint, "/.well-known/oauth-authorization-server", nil, &metadata); err != nil {
+		return nil, fmt.Errorf("failed to fetch authorization server metadata: %w", err)
 	}
 
 	return &metadata, nil
@@ -99,39 +97,14 @@ func (o *Oid4vciReceiver) FetchAccessToken(receivingTypes types.SupportedReceivi
 		return nil, fmt.Errorf("unsupported flavor: %v", receivingTypes)
 	}
 
-	tokenPath := "/token"
-	endpointURL := url.URL(endpoint)
-	if !strings.HasSuffix(endpointURL.Path, tokenPath) {
-		endpointURL.Path = endpointURL.Path + tokenPath
-	}
-
 	// Prepare form data for token request
 	formData := url.Values{}
 	formData.Set("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
 	formData.Set("pre-authorized_code", authzCode)
 
-	resp, err := http.PostForm(endpointURL.String(), formData)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to fetch access token; status: %d", resp.StatusCode)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(bodyBytes) == 0 {
-		return nil, fmt.Errorf("access token response is empty")
-	}
-
 	var accessToken types.CredentialIssuanceAccessToken
-	if err := json.Unmarshal(bodyBytes, &accessToken); err != nil {
-		return nil, err
+	if err := o.doRequest("POST", endpoint, "/token", strings.NewReader(formData.Encode()), &accessToken); err != nil {
+		return nil, fmt.Errorf("failed to fetch access token: %w", err)
 	}
 
 	return &accessToken, nil
