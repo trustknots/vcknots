@@ -36,16 +36,16 @@ import (
 	"strings"
 
 	"github.com/go-jose/go-jose/v4"
-	"github.com/trustknots/vcknots/wallet/internal/credstore"
-	"github.com/trustknots/vcknots/wallet/internal/idprof"
-	"github.com/trustknots/vcknots/wallet/internal/presenter"
-	"github.com/trustknots/vcknots/wallet/internal/presenter/plugins/oid4vp"
-	"github.com/trustknots/vcknots/wallet/internal/receiver"
-	"github.com/trustknots/vcknots/wallet/internal/receiver/types"
-	"github.com/trustknots/vcknots/wallet/internal/serializer"
-	"github.com/trustknots/vcknots/wallet/internal/serializer/plugins/sdjwtvc"
-	"github.com/trustknots/vcknots/wallet/internal/verifier"
-	"github.com/trustknots/vcknots/wallet/pkg/vcknots_wallet"
+	"github.com/trustknots/vcknots/wallet"
+	"github.com/trustknots/vcknots/wallet/credstore"
+	"github.com/trustknots/vcknots/wallet/idprof"
+	"github.com/trustknots/vcknots/wallet/presenter"
+	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
+	"github.com/trustknots/vcknots/wallet/receiver"
+	"github.com/trustknots/vcknots/wallet/receiver/types"
+	"github.com/trustknots/vcknots/wallet/serializer"
+	"github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
+	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
 // MockKeyEntry implements IKeyEntry interface for demo purposes
@@ -127,7 +127,7 @@ func (m *MockKeyEntry) Sign(payload []byte) ([]byte, error) {
 	return signature, nil
 }
 
-func receiveCredential(controller *vcknots_wallet.Controller, key *MockKeyEntry, logger *slog.Logger) *vcknots_wallet.SavedCredential {
+func receiveCredential(controller *wallet.Controller, key *MockKeyEntry, logger *slog.Logger) *wallet.SavedCredential {
 	logger.Info("Fetching credential offer from server...")
 
 	// Fetch credential offer from the server
@@ -198,11 +198,11 @@ func receiveCredential(controller *vcknots_wallet.Controller, key *MockKeyEntry,
 	}
 
 	// Extract grants
-	grants := make(map[string]*vcknots_wallet.CredentialOfferGrant)
+	grants := make(map[string]*wallet.CredentialOfferGrant)
 	if grantsData, ok := offerData["grants"].(map[string]interface{}); ok {
 		for grantType, grantValue := range grantsData {
 			if grantMap, ok := grantValue.(map[string]interface{}); ok {
-				grant := &vcknots_wallet.CredentialOfferGrant{}
+				grant := &wallet.CredentialOfferGrant{}
 				if preAuthCode, ok := grantMap["pre-authorized_code"].(string); ok {
 					grant.PreAuthorizedCode = preAuthCode
 				}
@@ -211,7 +211,7 @@ func receiveCredential(controller *vcknots_wallet.Controller, key *MockKeyEntry,
 		}
 	}
 
-	credentialOffer := &vcknots_wallet.CredentialOffer{
+	credentialOffer := &wallet.CredentialOffer{
 		CredentialIssuer:           credentialIssuerURL,
 		CredentialConfigurationIDs: configIDs,
 		Grants:                     grants,
@@ -223,7 +223,7 @@ func receiveCredential(controller *vcknots_wallet.Controller, key *MockKeyEntry,
 		"grants", len(grants))
 
 	// Create ReceiveCredentialRequest using OID4VCI
-	receiveReq := vcknots_wallet.ReceiveCredentialRequest{
+	receiveReq := wallet.ReceiveCredentialRequest{
 		CredentialOffer: credentialOffer,
 		Type:            types.Oid4vci,
 		Key:             key,
@@ -258,7 +258,7 @@ func receiveCredential(controller *vcknots_wallet.Controller, key *MockKeyEntry,
 	}
 
 	// Display stored credentials
-	getEntriesReq := vcknots_wallet.GetCredentialEntriesRequest{}
+	getEntriesReq := wallet.GetCredentialEntriesRequest{}
 
 	credentials, totalCount, err := controller.GetCredentialEntries(getEntriesReq)
 	if err != nil {
@@ -271,7 +271,7 @@ func receiveCredential(controller *vcknots_wallet.Controller, key *MockKeyEntry,
 	return savedCredential
 }
 
-func presentation(controller *vcknots_wallet.Controller, key *MockKeyEntry, receivedCredential *vcknots_wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
+func presentation(controller *wallet.Controller, key *MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
 	// Example verifier details
 	verifierURL := "http://localhost:8080"
 
@@ -490,7 +490,7 @@ func main() {
 		panic(err)
 	}
 
-	config := vcknots_wallet.ControllerConfig{
+	config := wallet.ControllerConfig{
 		CredStore:  credStore,
 		IDProfiler: idProf,
 		Receiver:   receiver,
@@ -499,7 +499,7 @@ func main() {
 		Presenter:  presenter,
 	}
 
-	controller, err := vcknots_wallet.NewController(config)
+	controller, err := wallet.NewController(config)
 	if err != nil {
 		panic(err)
 	}
