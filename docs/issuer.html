@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.1">
 <title data-rh="true">How to Set Up and Use the Issuer Feature | trustknots/vcknots</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://trustknots.github.io/vcknots/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://trustknots.github.io/vcknots/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://trustknots.github.io/vcknots/docs/issuer"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" property="og:locale:alternate" content="ja"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="How to Set Up and Use the Issuer Feature | trustknots/vcknots"><meta data-rh="true" name="description" content="This guide explains how to set up and use the Issuer feature of VCKnots."><meta data-rh="true" property="og:description" content="This guide explains how to set up and use the Issuer feature of VCKnots."><link data-rh="true" rel="icon" href="/vcknots/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://trustknots.github.io/vcknots/docs/issuer"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/docs/issuer" hreflang="en"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/ja/docs/issuer" hreflang="ja"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/docs/issuer" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"How to Set Up and Use the Issuer Feature","item":"https://trustknots.github.io/vcknots/docs/issuer"}]}</script><link rel="stylesheet" href="/vcknots/assets/css/styles.a17968be.css">
-<script src="/vcknots/assets/js/runtime~main.b969a7fe.js" defer="defer"></script>
+<script src="/vcknots/assets/js/runtime~main.90fcafe4.js" defer="defer"></script>
 <script src="/vcknots/assets/js/main.8d0f3cb8.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -15,12 +15,18 @@
 <p>This guide explains how to set up and use the Issuer feature of VCKnots.</p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="1-prerequisites">1. Prerequisites<a href="#1-prerequisites" class="hash-link" aria-label="Direct link to 1. Prerequisites" title="Direct link to 1. Prerequisites" translate="no">​</a></h2>
 <ul>
-<li>Supports OpenID for Verifiable Credential Issuance - draft 13 (<a href="https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html" target="_blank" rel="noopener noreferrer">OpenID for Verifiable Credential Issuance - draft 13</a>)</li>
+<li>Supports OpenID for Verifiable Credential Issuance - draft 13 (<a href="https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html" target="_blank" rel="noopener noreferrer">OpenID for Verifiable Credential Issuance - draft 13</a>)<br>
+<!-- -->The following items are not implemented yet and are planned for future support:<!-- -->
+<ul>
+<li>Only the Pre-Authorized Code Flow is supported at this time.</li>
+<li><code>tx_code</code> in the Credential Offer is not supported yet.</li>
+<li><code>credential_response_encryption</code> in the Credential Request is not supported yet.</li>
+</ul>
+</li>
 <li>Node.js v14 or later is installed</li>
 <li>TypeScript is configured</li>
 <li>This document is based on the sample implementation of the server</li>
 <li>The Hono web framework is used, but other frameworks can also be used</li>
-<li>The Pre-Authorized Code Flow is the flow currently supported.</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="2-initial-setup">2. Initial Setup<a href="#2-initial-setup" class="hash-link" aria-label="Direct link to 2. Initial Setup" title="Direct link to 2. Initial Setup" translate="no">​</a></h2>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="installing-required-dependencies">Installing Required Dependencies<a href="#installing-required-dependencies" class="hash-link" aria-label="Direct link to Installing Required Dependencies" title="Direct link to Installing Required Dependencies" translate="no">​</a></h3>
