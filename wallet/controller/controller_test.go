@@ -1,4 +1,4 @@
-package wallet
+package controller
 
 import (
 	"crypto/ecdsa"
@@ -98,7 +98,7 @@ func TestNewController_WithValidConfig(t *testing.T) {
 		t.Fatalf("Failed to create presenter: %v", err)
 	}
 
-	config := ControllerConfig{
+	config := Config{
 		CredStore: credStore,
 		Receiver:  receiver,
 		Verifier:  verifier,
@@ -119,13 +119,13 @@ func TestNewController_WithValidConfig(t *testing.T) {
 func TestNewController_MissingComponents(t *testing.T) {
 	tests := []struct {
 		name        string
-		config      func() ControllerConfig
+		config      func() Config
 		expectError bool
 	}{
 		{
 			name: "empty config uses defaults",
-			config: func() ControllerConfig {
-				return ControllerConfig{
+			config: func() Config {
+				return Config{
 					// All components are nil - should use defaults
 				}
 			},
@@ -133,9 +133,9 @@ func TestNewController_MissingComponents(t *testing.T) {
 		},
 		{
 			name: "partial config uses defaults for missing components",
-			config: func() ControllerConfig {
+			config: func() Config {
 				credStore, _ := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
-				return ControllerConfig{
+				return Config{
 					CredStore: credStore,
 					// Other components are nil - should use defaults
 				}

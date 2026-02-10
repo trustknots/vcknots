@@ -1,4 +1,14 @@
-package wallet
+// Package controller provides the main orchestration layer for wallet operations.
+//
+// The Controller type in this package implements high-level workflows for
+// verifiable credentials, such as receiving credentials from issuers (OID4VCI)
+// and presenting them to verifiers (OID4VP). It coordinates multiple infrastructure
+// components (called dispatchers) to execute these multi-step protocols.
+//
+// Most applications should use the wallet package's convenience functions
+// (wallet.NewWallet) rather than importing this package directly. This package
+// is exposed for advanced use cases requiring custom dispatcher configurations.
+package controller
 
 import (
 	"encoding/base64"
@@ -26,7 +36,18 @@ import (
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
-// Controller orchestrates wallet operations.
+// Controller implements high-level wallet operations for verifiable credentials.
+//
+// It coordinates multiple dispatcher components to execute complete workflows:
+//   - ReceivingDispatcher: handles credential issuance protocols (e.g., OID4VCI)
+//   - PresentationDispatcher: handles credential presentation protocols (e.g., OID4VP)
+//   - SerializationDispatcher: handles credential serialization (JWT, SD-JWT)
+//   - CredStoreDispatcher: manages credential storage
+//   - IdentityProfileDispatcher: manages DIDs and identity profiles
+//   - VerificationDispatcher: handles cryptographic signature verification
+//
+// Each workflow method (ReceiveCredential, PresentCredential) orchestrates
+// multiple dispatchers to implement the complete protocol flow.
 type Controller struct {
 	credStore  *credstore.CredStoreDispatcher
 	idProf     *idprof.IdentityProfileDispatcher
@@ -36,8 +57,15 @@ type Controller struct {
 	presenter  *presenter.PresentationDispatcher
 }
 
-// ControllerConfig holds dispatcher dependencies for Controller.
-type ControllerConfig struct {
+// Config specifies the dispatcher components used by a Controller.
+//
+// Each field represents an infrastructure component responsible for a specific
+// aspect of wallet functionality. All fields are optional; if nil, a default
+// implementation will be created automatically.
+//
+// This configuration is primarily used for dependency injection in testing
+// or when custom plugin implementations are required.
+type Config struct {
 	CredStore  *credstore.CredStoreDispatcher
 	IDProfiler *idprof.IdentityProfileDispatcher
 	Receiver   *receiver.ReceivingDispatcher
@@ -46,7 +74,17 @@ type ControllerConfig struct {
 	Presenter  *presenter.PresentationDispatcher
 }
 
-// NewControllerWithDefaults creates a new controller with default plugin configurations.
+// NewControllerWithDefaults creates a Controller with default dispatcher configurations.
+//
+// This initializes all dispatcher components with their built-in plugin implementations:
+//   - Credential storage using local file system
+//   - OID4VCI for credential receiving
+//   - OID4VP for credential presentation
+//   - JWT and SD-JWT serialization support
+//   - ES256 signature verification
+//   - DID:key and DID:jwk identity profiles
+//
+// Returns an error if any dispatcher initialization fails.
 func NewControllerWithDefaults() (*Controller, error) {
 	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
 	if err != nil {
@@ -78,7 +116,7 @@ func NewControllerWithDefaults() (*Controller, error) {
 		return nil, fmt.Errorf("failed to create identity profiler: %w", err)
 	}
 
-	config := ControllerConfig{
+	config := Config{
 		CredStore:  credStore,
 		IDProfiler: idProf,
 		Receiver:   receiver,
@@ -90,9 +128,19 @@ func NewControllerWithDefaults() (*Controller, error) {
 	return NewController(config)
 }
 
-// NewController creates a new controller with provided dependencies.
-// If any component is nil, a default instance is created.
-func NewController(config ControllerConfig) (*Controller, error) {
+// NewController creates a Controller with custom dispatcher configurations.
+//
+// This allows injection of custom dispatcher implementations or configurations.
+// Any dispatcher field left nil in the config will be initialized with a default
+// implementation automatically.
+//
+// This constructor is primarily used when:
+//   - Testing with mock dispatchers
+//   - Registering custom protocol plugins
+//   - Using non-default storage backends
+//
+// For typical usage, prefer NewControllerWithDefaults instead.
+func NewController(config Config) (*Controller, error) {
 	if config.CredStore == nil {
 		credStore, err := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
 		if err != nil {
