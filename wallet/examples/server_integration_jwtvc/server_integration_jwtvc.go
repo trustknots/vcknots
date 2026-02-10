@@ -48,6 +48,9 @@ import (
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
+// Default certificate path relative to server_integration_jwtvc/ directory
+const defaultCertPath = "../../../server/samples/certificate-openid-test/certificate_openid.pem"
+
 // MockKeyEntry implements IKeyEntry interface for demo purposes
 type MockKeyEntry struct {
 	id         string
@@ -127,7 +130,7 @@ func (m *MockKeyEntry) Sign(payload []byte) ([]byte, error) {
 	return signature, nil
 }
 
-func receiveCredential(controller *wallet.Controller, key *MockKeyEntry, logger *slog.Logger) *wallet.SavedCredential {
+func receiveCredential(ctrl *wallet.Controller, key *MockKeyEntry, logger *slog.Logger) *wallet.SavedCredential {
 	logger.Info("Fetching credential offer from server...")
 
 	// Fetch credential offer from the server
@@ -229,14 +232,14 @@ func receiveCredential(controller *wallet.Controller, key *MockKeyEntry, logger 
 		Key:             key,
 	}
 
-	// Use controller.ReceiveCredential with proper parameters
-	savedCredential, err := controller.ReceiveCredential(receiveReq)
+	// Use ctrl.ReceiveCredential with proper parameters
+	savedCredential, err := ctrl.ReceiveCredential(receiveReq)
 	if err != nil {
 		logger.Error("Failed to receive credential via controller", "error", err)
 		panic(err)
 	}
 
-	logger.Info("Successfully imported demo credential via controller.ReceiveCredential",
+	logger.Info("Successfully imported demo credential via wallet.ReceiveCredential",
 		"entry_id", savedCredential.Entry.Id,
 		"raw_length", len(savedCredential.Entry.Raw),
 	)
@@ -260,7 +263,7 @@ func receiveCredential(controller *wallet.Controller, key *MockKeyEntry, logger 
 	// Display stored credentials
 	getEntriesReq := wallet.GetCredentialEntriesRequest{}
 
-	credentials, totalCount, err := controller.GetCredentialEntries(getEntriesReq)
+	credentials, totalCount, err := ctrl.GetCredentialEntries(getEntriesReq)
 	if err != nil {
 		logger.Error("Failed to get credential entries", "error", err)
 		panic(err)
@@ -271,7 +274,7 @@ func receiveCredential(controller *wallet.Controller, key *MockKeyEntry, logger 
 	return savedCredential
 }
 
-func presentation(controller *wallet.Controller, key *MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
+func presentation(ctrl *wallet.Controller, key *MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
 	// Example verifier details
 	verifierURL := "http://localhost:8080"
 
@@ -432,7 +435,7 @@ func presentation(controller *wallet.Controller, key *MockKeyEntry, receivedCred
 	logger.Info("Request URI is valid", "scheme", urlParsed.Scheme)
 
 	// Present demo credential to the verifier
-	err = controller.PresentCredential(string(body), key, options)
+	err = ctrl.PresentCredential(string(body), key, options)
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
 		panic(err)
@@ -468,7 +471,11 @@ func main() {
 
 	// Create presenter with default config
 	// Load the server's certificate for TLS verification
-	certFile, err := os.ReadFile("../server/samples/certificate-openid-test/certificate_openid.pem")
+	certPath := os.Getenv("VCKNOTS_CERT_PATH")
+	if certPath == "" {
+		certPath = defaultCertPath
+	}
+	certFile, err := os.ReadFile(certPath)
 	if err != nil {
 		panic(err)
 	}
@@ -490,7 +497,7 @@ func main() {
 		panic(err)
 	}
 
-	config := wallet.ControllerConfig{
+	config := wallet.Config{
 		CredStore:  credStore,
 		IDProfiler: idProf,
 		Receiver:   receiver,
@@ -499,7 +506,7 @@ func main() {
 		Presenter:  presenter,
 	}
 
-	controller, err := wallet.NewController(config)
+	ctrl, err := wallet.NewWalletWithConfig(config)
 	if err != nil {
 		panic(err)
 	}
@@ -507,8 +514,8 @@ func main() {
 	logger.Info("Starting server integration check...")
 
 	mockKey := NewMockKeyEntry()
-	receivedCredential := receiveCredential(controller, mockKey, logger)
+	receivedCredential := receiveCredential(ctrl, mockKey, logger)
 
 	// Tests - Use the received credential for presentation
-	presentation(controller, mockKey, receivedCredential, nil, logger)
+	presentation(ctrl, mockKey, receivedCredential, nil, logger)
 }

@@ -104,17 +104,19 @@ The test script below also uses this URL.
 
 ### Step 2: Run the integration test script
 
-Open a new terminal, return to the wallet directory, and run the server integration script:
+Open a new terminal, navigate to each test directory, and run the server integration script:
 
 ```bash
-cd /path/to/vcknots/wallet
+# JWT-VC integration test
+cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
+go run server_integration_jwtvc.go
 
-# jwtvc
-go run examples/server_integration_jwtvc/server_integration_jwtvc.go
-
-# sd-jwt
-go run examples/server_integration_sdjwt/server_integration_sdjwt.go
+# SD-JWT integration test
+cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
+go run server_integration_sdjwt.go
 ```
+
+
 
 ### Step 3: Check the results
 
@@ -132,7 +134,23 @@ If `Credential presented successfully` appears, the sample succeeded.
 
 ```
 examples/
-├── server_integration.go    # Main source code
-├── example_vc_jwt.txt       # Sample VC
-└── README.md                # This file
+├── server_integration_jwtvc/
+│   └── server_integration_jwtvc.go   # JWT-VC integration test
+├── server_integration_sdjwt/
+│   ├── server_integration_sdjwt.go   # SD-JWT integration test
+│   └── example_sd_jwt.txt            # Sample SD-JWT credential
+├── custom_dispatcher/                 # Example: custom dispatcher implementation
+├── custom_plugin/                     # Example: custom plugin implementation
+└── README.md                          # This file
+```
+
+**Note**: The certificate file and SD-JWT sample file are loaded using relative paths from each test directory. By default:
+- Certificate: `../../../server/samples/certificate-openid-test/certificate_openid.pem`
+- SD-JWT sample: `example_sd_jwt.txt` (in server_integration_sdjwt/)
+
+If you need to use a different certificate, set the `VCKNOTS_CERT_PATH` environment variable:
+
+```bash
+cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
+VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
 ```

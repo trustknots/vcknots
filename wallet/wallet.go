@@ -30,7 +30,7 @@
 //	}
 //
 // For advanced use cases such as custom protocol plugins or storage backends,
-// see the wallet/controller package.
+// use NewWalletWithConfig to provide custom dispatcher implementations.
 package wallet
 
 import (
@@ -38,8 +38,31 @@ import (
 )
 
 // Controller provides the main wallet operations.
-// This type is re-exported from wallet/controller for convenience.
 type Controller = controller.Controller
+
+// Config holds dispatcher dependencies for Controller.
+type Config = controller.Config
+
+// ReceiveCredentialRequest contains parameters for receiving a credential.
+type ReceiveCredentialRequest = controller.ReceiveCredentialRequest
+
+// CredentialOffer represents an OID4VCI credential offer.
+type CredentialOffer = controller.CredentialOffer
+
+// CredentialOfferGrant contains grant information in a credential offer.
+type CredentialOfferGrant = controller.CredentialOfferGrant
+
+// GetCredentialEntriesRequest contains query parameters for stored credentials.
+type GetCredentialEntriesRequest = controller.GetCredentialEntriesRequest
+
+// SavedCredential represents a stored credential with its metadata.
+type SavedCredential = controller.SavedCredential
+
+// DIDCreateOptions contains options for DID generation.
+type DIDCreateOptions = controller.DIDCreateOptions
+
+// IKeyEntry represents a key entry interface for cryptographic operations.
+type IKeyEntry = controller.IKeyEntry
 
 // NewWallet creates a wallet instance with default configuration.
 //
@@ -69,7 +92,7 @@ func NewWallet() (*Controller, error) {
 //
 // Example:
 //
-//	config := controller.Config{
+//	config := wallet.Config{
 //		Receiver: customReceiverDispatcher,
 //	}
 //	w, err := wallet.NewWalletWithConfig(config)

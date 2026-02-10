@@ -6,8 +6,8 @@
 
 ### 1. mise のインストール
 
-Walletのパッケージは開発環境管理に[mise](https://mise.jdx.dev/)を使用しています．
-miseがインストールされていない場合はまずインストールしてください．
+Walletのパッケージは開発環境管理に[mise](https://mise.jdx.dev/)を使用しています。
+miseがインストールされていない場合はまずインストールしてください。
 
 例えば:
 ```bash
@@ -27,8 +27,8 @@ cd /path/to/vcknots/wallet
 mise install
 ```
 
-これにより，`mise.toml`に基づいてGo 1.24.5が自動的にインストールされ，必要な環境変数が設定されます．
-miseを利用しない場合は，Go 1.24.5を手動でインストールし，`GOPRIVATE`環境変数を設定してください：
+これにより、`mise.toml`に基づいてGo 1.24.5が自動的にインストールされ、必要な環境変数が設定されます。
+miseを利用しない場合は、Go 1.24.5を手動でインストールし、`GOPRIVATE`環境変数を設定してください：
 
 ```bash
 export GOPRIVATE="github.com/trustknots/vcknots/wallet"
@@ -46,7 +46,7 @@ go mod download
 
 ### ステップ1: Issuer、Verifierサーバーの起動
 
-サンプルを実行するためには，verifierサーバーが動作している必要があります．サーバーディレクトリに移動してサーバーを起動します：
+サンプルを実行するためには、verifierサーバーが動作している必要があります。サーバーディレクトリに移動してサーバーを起動します：
 
 ```bash
 # walletディレクトリから、vcknotsルートディレクトリへ移動(/path/to/vcknots)
@@ -99,17 +99,24 @@ Issuer metadata initialized
 Authz metadata initialized
 ```
 
-サーバーはデフォルトで`http://localhost:8080`で起動します．
-テスト用スクリプトも上記のURLを使用します．
+サーバーはデフォルトで`http://localhost:8080`で起動します。
+テスト用スクリプトも上記のURLを使用します。
 
 ### ステップ2: 統合テスト用のスクリプト実行
 
-新しいターミナルで，walletディレクトリに戻ってサーバー統合テスト用のスクリプトを実行します：
+新しいターミナルで、各テストディレクトリに移動してサーバー統合テスト用のスクリプトを実行します：
 
 ```bash
-cd /path/to/vcknots/wallet
-go run examples/server_integration.go
+# JWT-VC 統合テスト
+cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
+go run server_integration_jwtvc.go
+
+# SD-JWT 統合テスト
+cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
+go run server_integration_sdjwt.go
 ```
+
+
 
 ### ステップ3: 結果の確認
 
@@ -139,13 +146,29 @@ time=2025-11-27T14:03:25.155+09:00 level=INFO msg="Request URI is valid" scheme=
 time=2025-11-27T14:03:25.174+09:00 level=INFO msg="Credential presented successfully"
 ```
 
-`Credential presented successfully`と表示されれば，成功です．
+`Credential presented successfully`と表示されれば、成功です。
 
 ## ファイル構成
 
 ```
 examples/
-├── server_integration.go    # メインのソースコード
-├── example_vc_jwt.txt      # サンプルVC
-└── README.md               # このファイル
+├── server_integration_jwtvc/
+│   └── server_integration_jwtvc.go   # JWT-VC 統合テスト
+├── server_integration_sdjwt/
+│   ├── server_integration_sdjwt.go   # SD-JWT 統合テスト
+│   └── example_sd_jwt.txt            # サンプル SD-JWT クレデンシャル
+├── custom_dispatcher/                 # カスタムディスパッチャー実装例
+├── custom_plugin/                     # カスタムプラグイン実装例
+└── README.md                          # このファイル
+```
+
+**注意**: 証明書ファイルと SD-JWT サンプルファイルは、各テストディレクトリからの相対パスで読み込まれます。デフォルトでは：
+- 証明書: `../../../server/samples/certificate-openid-test/certificate_openid.pem`
+- SD-JWT サンプル: `example_sd_jwt.txt` (server_integration_sdjwt/ 内)
+
+別の証明書を使用する場合は、`VCKNOTS_CERT_PATH` 環境変数を設定してください：
+
+```bash
+cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
+VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
 ```

@@ -49,6 +49,9 @@ import (
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
+// Default certificate path relative to server_integration_sdjwt/ directory
+const defaultCertPath = "../../../server/samples/certificate-openid-test/certificate_openid.pem"
+
 // MockKeyEntry implements IKeyEntry interface for demo purposes
 type MockKeyEntry struct {
 	id         string
@@ -129,7 +132,7 @@ func (m *MockKeyEntry) Sign(payload []byte) ([]byte, error) {
 }
 
 
-func presentation(controller *wallet.Controller, key *MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
+func presentation(ctrl *wallet.Controller, key *MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
 	// Example verifier details
 	verifierURL := "http://localhost:8080"
 
@@ -278,7 +281,7 @@ func presentation(controller *wallet.Controller, key *MockKeyEntry, receivedCred
 	logger.Info("Request URI is valid", "scheme", urlParsed.Scheme)
 
 	// Present demo credential to the verifier
-	err = controller.PresentCredential(string(body), key, options)
+	err = ctrl.PresentCredential(string(body), key, options)
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
 		panic(err)
@@ -295,8 +298,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
 	// Save example sd-jwt credential
-	sdJwtCredFile, err := os.ReadFile("./examples/server_integration_sdjwt/example_sd_jwt.txt")
+	sdJwtCredFile, err := os.ReadFile("example_sd_jwt.txt")
 	if err != nil {
 		panic(err)
 	}
@@ -309,6 +313,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
 	savedSdJwtCredEntry, err := credStore.GetCredentialEntry("sample-sdjwt", credstore.SupportedCredStoreTypes(0))
 	if err != nil {
 		panic(err)
@@ -333,7 +338,11 @@ func main() {
 
 	// Create presenter with default config
 	// Load the server's certificate for TLS verification
-	certFile, err := os.ReadFile("../server/samples/certificate-openid-test/certificate_openid.pem")
+	certPath := os.Getenv("VCKNOTS_CERT_PATH")
+	if certPath == "" {
+		certPath = defaultCertPath
+	}
+	certFile, err := os.ReadFile(certPath)
 	if err != nil {
 		panic(err)
 	}
@@ -355,7 +364,7 @@ func main() {
 		panic(err)
 	}
 
-	config := wallet.ControllerConfig{
+	config := wallet.Config{
 		CredStore:  credStore,
 		IDProfiler: idProf,
 		Receiver:   receiver,
@@ -364,7 +373,7 @@ func main() {
 		Presenter:  presenter,
 	}
 
-	controller, err := wallet.NewController(config)
+	ctrl, err := wallet.NewWalletWithConfig(config)
 	if err != nil {
 		panic(err)
 	}
@@ -388,5 +397,5 @@ func main() {
 		SelectedClaims:    []string{"given_name"},
 		RequireKeyBinding: false,
 	}
-	presentation(controller, mockKey, &savedSdJwtCred, &options, logger)
+	presentation(ctrl, mockKey, &savedSdJwtCred, &options, logger)
 }
