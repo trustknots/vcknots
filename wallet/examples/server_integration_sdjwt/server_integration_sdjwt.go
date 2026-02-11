@@ -132,7 +132,7 @@ func (m *MockKeyEntry) Sign(payload []byte) ([]byte, error) {
 }
 
 
-func presentation(ctrl *wallet.Controller, key *MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
+func presentation(w *wallet.Wallet, key *MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
 	// Example verifier details
 	verifierURL := "http://localhost:8080"
 
@@ -281,7 +281,7 @@ func presentation(ctrl *wallet.Controller, key *MockKeyEntry, receivedCredential
 	logger.Info("Request URI is valid", "scheme", urlParsed.Scheme)
 
 	// Present demo credential to the verifier
-	err = ctrl.PresentCredential(string(body), key, options)
+	err = w.PresentCredential(string(body), key, options)
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
 		panic(err)
@@ -373,7 +373,7 @@ func main() {
 		Presenter:  presenter,
 	}
 
-	ctrl, err := wallet.NewWalletWithConfig(config)
+	w, err := wallet.NewWalletWithConfig(config)
 	if err != nil {
 		panic(err)
 	}
@@ -397,5 +397,5 @@ func main() {
 		SelectedClaims:    []string{"given_name"},
 		RequireKeyBinding: false,
 	}
-	presentation(ctrl, mockKey, &savedSdJwtCred, &options, logger)
+	presentation(w, mockKey, &savedSdJwtCred, &options, logger)
 }

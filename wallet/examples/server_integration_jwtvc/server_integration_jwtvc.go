@@ -130,7 +130,7 @@ func (m *MockKeyEntry) Sign(payload []byte) ([]byte, error) {
 	return signature, nil
 }
 
-func receiveCredential(ctrl *wallet.Controller, key *MockKeyEntry, logger *slog.Logger) *wallet.SavedCredential {
+func receiveCredential(w *wallet.Wallet, key *MockKeyEntry, logger *slog.Logger) *wallet.SavedCredential {
 	logger.Info("Fetching credential offer from server...")
 
 	// Fetch credential offer from the server
@@ -232,8 +232,8 @@ func receiveCredential(ctrl *wallet.Controller, key *MockKeyEntry, logger *slog.
 		Key:             key,
 	}
 
-	// Use ctrl.ReceiveCredential with proper parameters
-	savedCredential, err := ctrl.ReceiveCredential(receiveReq)
+	// Use w.ReceiveCredential with proper parameters
+	savedCredential, err := w.ReceiveCredential(receiveReq)
 	if err != nil {
 		logger.Error("Failed to receive credential via controller", "error", err)
 		panic(err)
@@ -263,7 +263,7 @@ func receiveCredential(ctrl *wallet.Controller, key *MockKeyEntry, logger *slog.
 	// Display stored credentials
 	getEntriesReq := wallet.GetCredentialEntriesRequest{}
 
-	credentials, totalCount, err := ctrl.GetCredentialEntries(getEntriesReq)
+	credentials, totalCount, err := w.GetCredentialEntries(getEntriesReq)
 	if err != nil {
 		logger.Error("Failed to get credential entries", "error", err)
 		panic(err)
@@ -274,7 +274,7 @@ func receiveCredential(ctrl *wallet.Controller, key *MockKeyEntry, logger *slog.
 	return savedCredential
 }
 
-func presentation(ctrl *wallet.Controller, key *MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
+func presentation(w *wallet.Wallet, key *MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
 	// Example verifier details
 	verifierURL := "http://localhost:8080"
 
@@ -435,7 +435,7 @@ func presentation(ctrl *wallet.Controller, key *MockKeyEntry, receivedCredential
 	logger.Info("Request URI is valid", "scheme", urlParsed.Scheme)
 
 	// Present demo credential to the verifier
-	err = ctrl.PresentCredential(string(body), key, options)
+	err = w.PresentCredential(string(body), key, options)
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
 		panic(err)
@@ -506,7 +506,7 @@ func main() {
 		Presenter:  presenter,
 	}
 
-	ctrl, err := wallet.NewWalletWithConfig(config)
+	w, err := wallet.NewWalletWithConfig(config)
 	if err != nil {
 		panic(err)
 	}
@@ -514,8 +514,8 @@ func main() {
 	logger.Info("Starting server integration check...")
 
 	mockKey := NewMockKeyEntry()
-	receivedCredential := receiveCredential(ctrl, mockKey, logger)
+	receivedCredential := receiveCredential(w, mockKey, logger)
 
 	// Tests - Use the received credential for presentation
-	presentation(ctrl, mockKey, receivedCredential, nil, logger)
+	presentation(w, mockKey, receivedCredential, nil, logger)
 }

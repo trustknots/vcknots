@@ -1,4 +1,4 @@
-package controller
+package wallet
 
 import (
 	"crypto/ecdsa"
@@ -61,22 +61,22 @@ func newMockKeyEntry() *mockKeyEntry {
 }
 
 // createTestControllerWithDefaults uses default configurations for integration testing
-func createTestControllerWithDefaults(t *testing.T) *Controller {
-	controller, err := NewControllerWithDefaults()
+func createTestControllerWithDefaults(t *testing.T) *Wallet {
+	controller, err := NewWallet()
 	if err != nil {
 		t.Fatalf("Failed to create controller with defaults: %v", err)
 	}
 	return controller
 }
 
-func TestNewControllerWithDefaults(t *testing.T) {
+func TestNewWallet(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 	if controller == nil {
 		t.Error("expected non-nil controller")
 	}
 }
 
-func TestNewController_WithValidConfig(t *testing.T) {
+func TestNewWalletWithConfig_WithValidConfig(t *testing.T) {
 	// Create individual components with default configs
 	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
 	if err != nil {
@@ -107,7 +107,7 @@ func TestNewController_WithValidConfig(t *testing.T) {
 	}
 
 	// This test should pass with default IDProfiler
-	controller, err := NewController(config)
+	controller, err := NewWalletWithConfig(config)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestNewController_WithValidConfig(t *testing.T) {
 	}
 }
 
-func TestNewController_MissingComponents(t *testing.T) {
+func TestNewWalletWithConfig_MissingComponents(t *testing.T) {
 	tests := []struct {
 		name        string
 		config      func() Config
@@ -146,7 +146,7 @@ func TestNewController_MissingComponents(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			controller, err := NewController(tt.config())
+			controller, err := NewWalletWithConfig(tt.config())
 			if tt.expectError {
 				if err == nil {
 					t.Error("expected error")

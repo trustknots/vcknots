@@ -3,7 +3,7 @@ package main
 // Custom Dispatcher Configuration Example
 //
 // This example demonstrates how external packages can configure each
-// dispatcher independently and compose them into a custom Controller
+// dispatcher independently and compose them into a custom wallet
 // configuration.
 //
 // Usage:
@@ -68,8 +68,8 @@ func main() {
 		log.Fatalf("Failed to create credstore: %v", err)
 	}
 
-	// Create controller with custom dispatcher configuration
-	controller, err := wallet.NewController(wallet.ControllerConfig{
+	// Create wallet with custom dispatcher configuration
+	w, err := wallet.NewWalletWithConfig(wallet.Config{
 		Serializer: serializerDisp,
 		IDProfiler: idProfDisp,
 		Verifier:   verifierDisp,
@@ -79,13 +79,13 @@ func main() {
 	})
 
 	if err != nil {
-		log.Fatalf("Failed to create controller: %v", err)
+		log.Fatalf("Failed to create wallet: %v", err)
 	}
 
-	fmt.Println("✓ Controller successfully created with custom dispatcher configuration!")
-	fmt.Printf("  - Controller: %p\n", controller)
+	fmt.Println("✓ Wallet successfully created with custom dispatcher configuration!")
+	fmt.Printf("  - Wallet: %p\n", w)
 	fmt.Println("\nThis demonstrates that external packages can:")
 	fmt.Println("  1. Access all dispatcher constructors")
 	fmt.Println("  2. Configure each dispatcher independently")
-	fmt.Println("  3. Compose custom Controller configurations")
+	fmt.Println("  3. Compose custom wallet configurations")
 }
