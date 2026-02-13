@@ -327,10 +327,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     return c.json({ message: "DONE!!" }, 200);
   });
 
-  verifyApp.post("/dummy", async (c) => {
-    console.log("dummy request");
-    return c.json({ redirect_uri: `${baseUrl}/verified` }, 200);
-  });
 
 
   return verifyApp
