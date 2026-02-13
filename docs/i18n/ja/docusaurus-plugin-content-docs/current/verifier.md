@@ -222,7 +222,7 @@ openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&
 **リクエスト**
 
 ```bash
-curl --location 'http://localhost:8080/verify/request-object' \
+curl --location 'https://9pnzpbbg-8080.asse.devtunnels.ms/verify/request-object' \
 --header 'Content-Type: application/json' \
 --data '{
  "query": {
@@ -237,32 +237,54 @@ curl --location 'http://localhost:8080/verify/request-object' \
         "name": "Example",
         "purpose": "to verify your UniversityDegree Credential",
         "format": {
-            "jwt_vc_json":{
-                "alg":["RS256"]
-            }
+          "dc+sd-jwt": {
+            "sd-jwt_alg_values": [
+              "ES256"
+            ],
+            "kb-jwt_alg_values": [
+              "ES256"
+            ]
+          }
         },
         "constraints": {
-          "fields": [
-            {
-              "path": ["$.type"],
-              "filter": {
-                "type": "array",
-                "contains":{
-                    "type":"string",
-                    "const":"UniversityDegreeCredential"
-                }
-              }
-            }
-          ]
+						"fields": [
+							{
+								"path": [
+									"$.vct"
+								],
+								"filter": {
+									"type": "string",
+									"const": "urn:eudi:pid:1"
+								}
+							},
+							{
+								"path": [
+									"$.family_name"
+								],
+								"intent_to_retain": false
+							},
+							{
+								"path": [
+									"$.given_name"
+								],
+								"intent_to_retain": false
+							},
+							{
+								"path": [
+									"$.age_equal_or_over.18"
+								],
+								"intent_to_retain": false
+							}
+						]
         }
       }
     ]
   }
   },
   "state": "example-state",
-  "response_uri": "http://localhost:8080/verify/callback",
-  "client_id": "x509_san_dns:localhost"
-}'
+  "client_id": "x509_san_dns:9pnzpbbg-8080.asse.devtunnels.ms",
+  "is_transaction_data":false,
+  "response_uri":"https://9pnzpbbg-8080.asse.devtunnels.ms/callback-kbjwt"}'
 ```
 
 **レスポンス**

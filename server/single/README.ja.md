@@ -1,6 +1,6 @@
 # Single Server
 
-シングルテナント用のサーバー実装です。VCKnotsライブラリを使用して、Credential Issuer、Authorization Server、Verifier の機能を統合したサーバーを提供します。
+シングルテナント用のサーバー実装です。VCKnotsライブラリを使用して、Issuer、Authorization Server、Verifier の機能を統合したサーバーを提供します。
 
 ## 概要
 
@@ -8,7 +8,7 @@
 
 ## 実際のAPI仕様について
 
-Credential Issuer・Authorization Server および Verifier の**実際のAPI仕様・パラメータ・型定義**は、以下の公式ドキュメントを参照してください。
+Issuer・Authorization Server および Verifier の**実際のAPI仕様・パラメータ・型定義・実行例**は、以下の公式ドキュメントを参照してください。
 
 - **Issuer**: [Issuer機能のセットアップと使用方法](https://trustknots.github.io/vcknots/ja/docs/issuer)
 - **Verifier**: [Verifier機能のセットアップと使用方法](https://trustknots.github.io/vcknots/ja/docs/verifier)
@@ -24,7 +24,7 @@ single/
 │   ├── example.ts      
 │   ├── routes/
 │   │   ├── authz.ts    # Authorization Server のエンドポイント
-│   │   ├── issue.ts    # Credential Issuer のエンドポイント
+│   │   ├── issue.ts    # Issuer のエンドポイント
 │   │   └── verify.ts   # Verifier のエンドポイント
 │   └── utils/
 │       └── error-handler.ts  # エラーハンドリングユーティリティ
@@ -39,7 +39,7 @@ single/
 
 ### エンドポイント一覧
 
-#### Credential Issuer
+#### Issuer
 - [`POST /configurations/:configuration/offer`](#post-configurationsconfigurationoffer) - クレデンシャルオファーの作成
 - [`POST /credentials`](#post-credentials) - クレデンシャルの発行
 - [`GET /.well-known/openid-credential-issuer`](#get-well-knownopenid-credential-issuer) - Issuer メタデータの取得
@@ -50,17 +50,16 @@ single/
 - [`GET /.well-known/oauth-authorization-server`](#get-well-knownoauth-authorization-server) - Authorization Server メタデータの取得
 
 #### Verifier
-- [`POST /request`](#post-request) - 認証リクエストの作成
-- [`POST /request-object`](#post-request-object) - Request Object の作成
-- [`POST /callback`](#post-callback) - 認証レスポンスのコールバック
-- [`POST /callback-kbjwt`](#post-callback-kbjwt) - Key Binding JWT を使用したコールバック
-- [`GET /verified`](#get-verified) - 検証結果の取得
+- [`POST /request`](#post-request) - 認可リクエストの作成
+- [`POST /request-object`](#post-request-object) - 認可リクエストの作成（参照渡し方式）
 - [`GET /request.jwt/:request-object-Id`](#get-requestjwtrequest-object-id) - Request Object JWT の取得
-- [`GET /.well-known/openid-verifier-configuration`](#get-well-knownopenid-verifier-configuration) - Verifier メタデータの取得
+- [`POST /callback`](#post-callback) - VP検証エンドポイント
+- [`POST /callback-kbjwt`](#post-callback-kbjwt) - dc+sd-jwt 形式のKey Binding JWT を使用したVP検証エンドポイント
+- [`GET /verified`](#get-verified) - VP検証完了後のリダイレクト先エンドポイント
 
 ---
 
-### Credential Issuer
+### Issuer
 
 <a id="post-configurationsconfigurationoffer"></a>
 #### `POST /configurations/:configuration/offer`
@@ -119,7 +118,7 @@ single/
 Issuer メタデータの取得
 
 **レスポンス:**
-- `200 OK` - Credential Issuer メタデータ（JSON形式）
+- `200 OK` - Issuer メタデータ（JSON形式）
 - `404 Not Found` - メタデータが見つからない場合
 
 <a id="get-well-knownjwt-vc-issuer"></a>
@@ -144,16 +143,8 @@ Pre-Authorized Code Grant:
 ```
 grant_type=urn:ietf:params:oauth:grant-type:pre-authorized_code
 pre-authorized_code={pre_authorized_code}
-tx_code={tx_code} (オプション)
 ```
 
-Authorization Code Grant:
-```
-grant_type=authorization_code
-code={authorization_code}
-redirect_uri={redirect_uri} (オプション)
-code_verifier={code_verifier} (オプション)
-```
 
 **レスポンス:**
 ```json
@@ -176,18 +167,28 @@ Authorization Server メタデータの取得
 **レスポンス:**
 - `200 OK` - Authorization Server メタデータ（JSON形式）
 - `404 Not Found` - メタデータが見つからない場合
+```json
+{
+  "issuer": "https://authz.example.com",
+  "authorization_endpoint": "https://authz.example.com/authorize",
+  "token_endpoint": "https://authz.example.com/token",
+  "scopes_supported": ["openid"],
+  "response_types_supported": ["code"],
+  "pre-authorized_grant_anonymous_access_supported": true
+}
+```
 
 ### Verifier
 
 <a id="post-request"></a>
 #### `POST /request`
 
-認証リクエストの作成。Presentation Definition を含む認証リクエストを生成し、`openid4vp://` スキームのURIを返します。
+認証リクエストの作成。Presentation Definition を含む認可リクエストを生成し、`openid4vp://` スキームのURIを返します。
 
 **リクエストボディ (JSON):**
 ```json
 {
-  "credentialId": string (必須),
+  "credentialId": string (必須, 例: "UniversityDegreeCredential"),
   "client_id"?: string (オプション、デフォルト: "x509_san_dns:localhost")
 }
 ```
@@ -265,9 +266,3 @@ Request Object JWT の取得。
 - `200 OK` - Request Object JWT（Content-Type: application/oauth-authz-req+jwt）
 - `400 Bad Request` - Request Object が見つからない場合
 
-<a id="get-well-knownopenid-verifier-configuration"></a>
-#### `GET /.well-known/openid-verifier-configuration`
-
-Verifier メタデータの取得。
-
-**レスポンス:** `200 OK` - Verifier メタデータ（JSON形式）
