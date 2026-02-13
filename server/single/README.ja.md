@@ -10,8 +10,8 @@
 
 Credential Issuer・Authorization Server および Verifier の**実際のAPI仕様・パラメータ・型定義**は、以下の公式ドキュメントを参照してください。
 
-- **Issuer（クレデンシャル発行・認可サーバー）**: [Issuer機能のセットアップと使用方法](https://trustknots.github.io/vcknots/ja/docs/issuer)
-- **Verifier（証明提示検証）**: [Verifier機能のセットアップと使用方法](https://trustknots.github.io/vcknots/ja/docs/verifier)
+- **Issuer**: [Issuer機能のセットアップと使用方法](https://trustknots.github.io/vcknots/ja/docs/issuer)
+- **Verifier**: [Verifier機能のセットアップと使用方法](https://trustknots.github.io/vcknots/ja/docs/verifier)
 
 本READMEのエンドポイント一覧は、このサンプルサーバーで利用しているパスの概要です。詳細なリクエスト/レスポンス形式やエラーコードは上記ドキュメントに従います。
 
