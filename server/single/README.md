@@ -33,6 +33,97 @@ single/
 └── tsconfig.json       
 ```
 
+## Compilation and Server Startup
+
+To start this server, follow the steps below.
+
+### Prerequisites
+
+- Node.js is installed
+- pnpm is installed
+- Dependencies are installed in the VCKnots root directory
+
+### Steps
+
+1. **Configure Environment Variables**
+
+   ```bash
+   # Navigate to server/single directory
+   cd server/single
+   
+   # Copy .env.example to create .env
+   cp .env.example .env
+   
+   # Edit .env file and set appropriate values
+   # BASE_URL: Server base URL (e.g., http://localhost:8080)
+   # PORT: Server port number (default: 8080)
+   # PRIVATE_KEY_PATH: Path to private key file (default: ../samples/certificate-openid-test/private_key_openid.pem)
+   # CERTIFICATE_PATH: Path to certificate file (default: ../samples/certificate-openid-test/certificate_openid.pem)
+   ```
+
+2. **Install Dependencies** (Run from root directory)
+
+   ```bash
+   # Navigate to vcknots root directory
+   cd /path/to/vcknots
+   
+   # Install dependencies (if not already done)
+   pnpm install
+   ```
+
+3. **Build Modules**
+
+   ```bash
+   # Build issuer+verifier module
+   pnpm -F @trustknots/vcknots build
+   
+   # Build server module
+   pnpm -F @trustknots/server build
+   ```
+
+4. **Start Server**
+
+   ```bash
+   # Start the server
+   pnpm -F @trustknots/server start
+   ```
+
+### Server Startup Confirmation
+
+When the server starts successfully, you will see output similar to the following:
+
+```
+> @trustknots/server@0.1.0 start /path/to/vcknots/server/single
+> tsx src/example.ts
+
+POST  /configurations/:configuration/offer
+        [handler]
+POST  /credentials
+        [handler]
+GET   /.well-known/openid-credential-issuer
+        [handler]
+GET   /.well-known/jwt-vc-issuer
+        [handler]
+POST  /token
+        [handler]
+GET   /.well-known/oauth-authorization-server
+        [handler]
+POST  /request
+        [handler]
+POST  /callback
+        [handler]
+POST  /request-object
+        [handler]
+GET   /request.jwt/:request-object-Id
+        [handler]
+Server is running on http://localhost:8080
+Verifier metadata initialized for http://localhost:8080
+Issuer metadata initialized
+Authz metadata initialized
+```
+
+The server starts on `http://localhost:8080` by default.
+
 ## Endpoints
 
 > For detailed API specifications (parameters, types, errors), please refer to the official documentation for [Issuer](https://trustknots.github.io/vcknots/docs/issuer) and [Verifier](https://trustknots.github.io/vcknots/docs/verifier).

@@ -33,6 +33,97 @@ single/
 └── tsconfig.json       
 ```
 
+## コンパイルとサーバーの起動
+
+このサーバーを起動するには、以下の手順を実行してください。
+
+### 前提条件
+
+- Node.js がインストールされていること
+- pnpm がインストールされていること
+- VCKnots のルートディレクトリで依存関係がインストール済みであること
+
+### 手順
+
+1. **環境変数の設定**
+
+   ```bash
+   # server/single ディレクトリに移動
+   cd server/single
+   
+   # .env.example をコピーして .env を作成
+   cp .env.example .env
+   
+   # .env ファイルを編集して適切な値を設定
+   # BASE_URL: サーバーのベースURL（例: http://localhost:8080）
+   # PORT: サーバーのポート番号（デフォルト: 8080）
+   # PRIVATE_KEY_PATH: 秘密鍵ファイルのパス（デフォルト: ../samples/certificate-openid-test/private_key_openid.pem）
+   # CERTIFICATE_PATH: 証明書ファイルのパス（デフォルト: ../samples/certificate-openid-test/certificate_openid.pem）
+   ```
+
+2. **依存関係のインストール**（ルートディレクトリで実行）
+
+   ```bash
+   # vcknotsルートディレクトリへ移動
+   cd /path/to/vcknots
+   
+   # 依存関係をインストール（未実施の場合）
+   pnpm install
+   ```
+
+3. **モジュールのビルド**
+
+   ```bash
+   # issuer+verifierモジュールのビルド
+   pnpm -F @trustknots/vcknots build
+   
+   # サーバーモジュールのビルド
+   pnpm -F @trustknots/server build
+   ```
+
+4. **サーバーの起動**
+
+   ```bash
+   # サーバーを起動
+   pnpm -F @trustknots/server start
+   ```
+
+### サーバー起動確認
+
+サーバーが正常に起動すると、以下のようなメッセージが表示されます：
+
+```
+> @trustknots/server@0.1.0 start /path/to/vcknots/server/single
+> tsx src/example.ts
+
+POST  /configurations/:configuration/offer
+        [handler]
+POST  /credentials
+        [handler]
+GET   /.well-known/openid-credential-issuer
+        [handler]
+GET   /.well-known/jwt-vc-issuer
+        [handler]
+POST  /token
+        [handler]
+GET   /.well-known/oauth-authorization-server
+        [handler]
+POST  /request
+        [handler]
+POST  /callback
+        [handler]
+POST  /request-object
+        [handler]
+GET   /request.jwt/:request-object-Id
+        [handler]
+Server is running on http://localhost:8080
+Verifier metadata initialized for http://localhost:8080
+Issuer metadata initialized
+Authz metadata initialized
+```
+
+サーバーはデフォルトで `http://localhost:8080` で起動します。
+
 ## エンドポイント
 
 > 詳細なAPI仕様（パラメータ・型・エラー）は [Issuer](https://trustknots.github.io/vcknots/ja/docs/issuer) および [Verifier](https://trustknots.github.io/vcknots/ja/docs/verifier) の公式ドキュメントを参照してください。
