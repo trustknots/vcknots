@@ -6,6 +6,7 @@ This directory contains sample code that demonstrates two key testing scenarios 
 2. **Conformance Test**: Tests against external OID4VP conformance test services
 
 Both modes are supported by the same program (`server_integration_sdjwt.go`) and are selected based on command-line arguments.
+Both follow the same flow: seed credential → build wallet → get OID4VP request URI → present.
 
 ## Prerequisites
 
@@ -150,8 +151,8 @@ Tests against external OID4VP conformance test services.
 #### How to Run
 
 ```bash
-cd /path/to/vcknots/wallet
-go run examples/server_integration_sdjwt/server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_uri=..."
+cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
+go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_uri=..."
 ```
 
 **Important**: Providing an OID4VP URI as an argument automatically uses Conformance Test mode.
@@ -160,156 +161,10 @@ go run examples/server_integration_sdjwt/server_integration_sdjwt.go "openid4vp:
 
 Conformance Test mode automatically applies the following settings:
 
-- **Certificate Verification**: Uses system root certificate pool with relaxed verification (`InsecureSkipX509Verify: true`)
+- **Certificate Verification**: Uses system root certificate pool
 - **Selected Claims**: Selects `given_name` and `family_name`
 - **Key Binding**: Required (`RequireKeyBinding: true`)
 - **Audience/Nonce**: Automatically extracted from the request URI
-
----
-
-## About OID4VP Conformance Tests
-
-### Enhanced client_id Validation
-
-This wallet library implements strict `client_id` validation to comply with OID4VP conformance tests (https://openid.net/certification/).
-
-#### Implemented Validation Logic
-
-1. **Early Validation**
-   - Validates `client_id` format **before** fetching the request object from `request_uri`
-   - Returns an error immediately if invalid format is detected, without sending network requests
-   - This prevents unnecessary network traffic and enhances security
-
-2. **Duplicate Prefix Detection**
-   - Rejects invalid formats like `x509_san_dns:x509_san_dns:demo.example.com`
-   - Error message: `"invalid client_id: duplicate prefix detected"`
-
-3. **Trailing Whitespace Trimming**
-   - Normalizes `client_id` containing URL-encoded spaces (`%20`)
-   - Example: `"x509_san_dns:demo.example.com "` → `"x509_san_dns:demo.example.com"`
-
-4. **Certificate SAN Matching**
-   - For `x509_san_dns:` scheme, extracts certificates from request JWT's `x5c` header
-   - Matches certificate's Subject Alternative Name (SAN) DNS field with `client_id` value
-   - Returns error on mismatch: `"SAN of the certificate and client_id did not match"`
-
-5. **Certificate Verification Flexibility (for Conformance Tests)**
-   - `InsecureSkipX509Verify` option allows skipping certificate chain verification in test environments
-   - Supports conformance tests with self-signed certificates or non-standard certificate structures
-   - ⚠️ **Warning**: This option should **NEVER** be used in production environments
-
-#### Conformance Test Compliance
-
-Conformance tests intentionally send invalid `client_id` values to test wallet validation logic:
-
-```
-client_id=x509_san_dns:x509_san_dns:demo.certification.openid.net 
-```
-
-In this example:
-- The prefix `x509_san_dns:` is repeated twice
-- Trailing whitespace (`%20`) is included
-
-The updated wallet **correctly rejects** such invalid `client_id` values, thereby passing conformance tests.
-
-#### Implementation Files
-
-- Validation Logic: [internal/presenter/plugins/oid4vp/oid4vp.go](../internal/presenter/plugins/oid4vp/oid4vp.go)
-  - `parseOID4VPClientID()` function (lines 528-565)
-  - Early validation (lines 33-41): `client_id` validation before `request_uri` fetch
-  - `x509_san_dns` validation (lines 339-410)
-- Test Code: [internal/presenter/plugins/oid4vp/oid4vp_test.go](../internal/presenter/plugins/oid4vp/oid4vp_test.go)
-  - `TestOid4vpPresenter_ClientIDParsingAndRedirectMismatch()`
-
-#### Running Conformance Tests
-
-To run conformance tests (https://openid.net/certification/):
-
-1. Navigate to the wallet directory:
-```bash
-cd /path/to/vcknots/wallet
-```
-
-2. Run with the OID4VP URI obtained from the conformance test site:
-```bash
-go run examples/server_integration_sdjwt/server_integration_sdjwt.go "openid4vp://authorize?request_uri=https://demo.certification.openid.net/test/a/...&client_id=..."
-```
-
-**Note:** Providing an OID4VP URI as an argument automatically uses Conformance Test mode. Running without arguments uses Server Integration Test mode.
-
-3. **Expected Behavior (Negative Test):**
-   - For invalid `client_id` (e.g., duplicate prefix), the wallet immediately returns an error
-   - Example error message: `invalid client_id in initial request: invalid client_id: duplicate prefix detected`
-   - No network requests are sent
-   - Conformance test confirms the wallet correctly rejected the request and marks it as PASS
-
-#### Conformance Test Troubleshooting
-
-##### `CheckIfClientIdInX509CertSanDns` Test Failure
-
-**Error:**
-```
-FAILURE CheckIfClientIdInX509CertSanDns: x509_san_dns client_id is not present in the x5c certificate SAN
-```
-
-**Cause:**
-- `X509TrustChainRoots` was set to `nil`
-- Certificate verification was skipped, unable to detect invalid certificates
-
-**Solution:**
-Implemented in the `conformanceTestMode` function in [server_integration_sdjwt/server_integration_sdjwt.go](server_integration_sdjwt/server_integration_sdjwt.go):
-```go
-// Use system root certificate pool
-systemRoots, err := x509.SystemCertPool()
-if err != nil {
-    logger.Warn("Failed to load system cert pool, creating empty pool", "error", err)
-    systemRoots = x509.NewCertPool()
-}
-
-p := &oid4vp.Oid4vpPresenter{
-    X509TrustChainRoots:    systemRoots,  // Use system roots, not nil
-    InsecureSkipX509Verify: true,          // Relax certificate verification for conformance tests
-}
-```
-
-**Note**: Use `InsecureSkipX509Verify: true` only in conformance test environments. Always set to `false` (or omit this field) in production.
-
-##### Non-Standards Compliant Certificate Error
-
-**Symptom:**
-```
-x509: "OIDF Test" certificate is not standards compliant
-```
-
-**Cause:**
-- Conformance test server uses self-signed certificates
-- Certificate structure does not strictly comply with x509 standards (for testing purposes)
-
-**Solution:**
-1. Enable `InsecureSkipX509Verify` option to skip certificate chain verification
-2. This setting extracts certificates directly from x5c header and only validates SANs
-3. ⚠️ **Warning**: Never use this setting in production environments
-
-**How it Works:**
-- `InsecureSkipX509Verify: false` (default): Full certificate chain verification using Go standard library
-- `InsecureSkipX509Verify: true` (test only): Parse certificates directly from x5c, only validate SAN against `client_id`
-
-##### Test Timeout or 400 Error
-
-**Symptom:**
-```
-FAILURE: Got an HTTP request to '' that wasn't expected
-INTERRUPTED: Test was interrupted before it could complete
-```
-
-**Cause:**
-- Test session expired
-- Ran the same URI multiple times
-
-**Solution:**
-1. Start a **new test session** on the conformance test site
-2. Obtain a new URI with a new `request_uri`
-3. Re-run the test with the new URI
 
 ---
 

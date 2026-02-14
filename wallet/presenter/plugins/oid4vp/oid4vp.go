@@ -90,6 +90,7 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 	if err != nil {
 		return fmt.Errorf("failed to send presentation to verifier: %w", err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		respBody, _ := io.ReadAll(resp.Body)
