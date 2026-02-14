@@ -5,7 +5,10 @@ import { ClientId } from './client-id.types'
 import { Dcql } from './dcql.type'
 import { err, raise } from './errors/vcknots.error'
 import { PresentationExchange } from './presentation-exchange.types'
-import { CredentialQueryGenerationOptions } from './providers'
+import {
+  CredentialQueryGenerationOptions,
+  VerifyVerifiablePresentationVerifyOptions,
+} from './providers'
 import { selectProvider } from './providers/provider.utils'
 import { RequestObject } from './request-object.types'
 import { DeepPartialUnknown } from './type.utils'
@@ -41,7 +44,13 @@ export type CreateAuthzRequestOptions = {
   request_uri?: string
   transaction_data?: { type: string; transaction_data_hashes_alg?: string[] }
 }
-
+export type VerifyPresentationOptions = {
+  specifiedDisclosures?: string[]
+  isKbJwt?: boolean
+  expectedAud?: string
+  expectedNonce?: string
+  expectedTransactionDataHashes?: string[]
+}
 export type FindRequestObjectOptions = {
   alg?: string
   // https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.11 is not supported
@@ -70,7 +79,11 @@ export type VerifierFlow = {
     objectId: RequestObjectId,
     options?: FindRequestObjectOptions
   ): Promise<string>
-  verifyPresentations: (id: ClientId, response: AuthorizationResponse) => Promise<boolean>
+  verifyPresentations: (
+    id: ClientId,
+    response: AuthorizationResponse,
+    isKbJwt?: boolean
+  ) => Promise<boolean>
 }
 
 const isPresentationExchange = (query: unknown): query is PresentationExchange =>
@@ -370,7 +383,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       return `${encode(header)}.${encode(payload)}.${signature}`
     },
-    async verifyPresentations(id, response) {
+    async verifyPresentations(id, response, isKbJwt) {
       const verifier = await verifierMetadata$.fetch(id)
       if (!verifier) {
         throw raise('VERIFIER_NOT_FOUND', {
@@ -403,8 +416,11 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
 
       const format = response.presentation_submission.descriptor_map[0].format
+      const options: VerifyVerifiablePresentationVerifyOptions =
+        format === 'dc+sd-jwt' ? { kind: 'dc+sd-jwt', isKbJwt: isKbJwt } : { kind: 'jwt_vp_json' }
       const vpValid = await selectProvider(verifiablePresentation$, format).verify(
-        response.vp_token
+        response.vp_token,
+        options
       )
 
       return vpValid

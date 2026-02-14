@@ -2,14 +2,21 @@ import { err } from '../errors/vcknots.error'
 import { VerifyVerifiablePresentationProvider } from './provider.types'
 const { SDJwtInstance } = require('@sd-jwt/core')
 import { ES256, digest } from '@sd-jwt/crypto-nodejs'
-import { decodeSdJwt } from '@sd-jwt/decode'
+import { decodeSdJwt, splitSdJwt } from '@sd-jwt/decode'
 import * as jose from 'jose'
+import { X509Certificate } from 'node:crypto'
+import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
+import { KbJwtJsonPayload } from '../keyBindingJwt.types'
+import { Cnonce } from '../cnonce.types'
 
-export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentationProvider => {
+export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentationProvider &
+  WithProviderRegistry => {
   return {
     kind: 'verify-verifiable-presentation-provider',
     name: 'verify-verifiable-presentation-dc-sd-jwt-provider',
     single: false,
+
+    ...withProviderRegistry,
 
     async verify(vp, options): Promise<boolean> {
       if (options && options.kind !== 'dc+sd-jwt') {
@@ -31,7 +38,11 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       const sdJwtHeader = decodedSdJwt.jwt.header
 
       let publicJwk: jose.JWK | undefined
-      if (decodedSdJwt.jwt.payload.iss && typeof decodedSdJwt.jwt.payload.iss === 'string') {
+      if (
+        !sdJwtHeader.x5c &&
+        decodedSdJwt.jwt.payload.iss &&
+        typeof decodedSdJwt.jwt.payload.iss === 'string'
+      ) {
         const issUri = new URL(decodedSdJwt.jwt.payload.iss)
         if (issUri.hostname !== 'localhost' && issUri.protocol !== 'https:') {
           throw err('INVALID_SD_JWT', {
@@ -39,14 +50,21 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
           })
         }
         let metadataUrl: string
-        if (issUri.pathname !== '/') {
-          metadataUrl = new URL(
-            `.well-known/jwt-vc-issuer/${issUri.pathname.replace(/^\/+/, '')}`,
-            issUri
-          ).toString()
+        // Remove any terminating / from pathname as per spec
+        const pathname = issUri.pathname.replace(/\/+$/, '')
+        if (pathname === '' || pathname === '/') {
+          // Use origin to ensure pathname is replaced, not appended
+          metadataUrl = new URL('.well-known/jwt-vc-issuer', issUri.origin).toString()
         } else {
-          metadataUrl = new URL('.well-known/jwt-vc-issuer', issUri).toString()
+          // Remove leading / and insert between host and path component
+          const pathWithoutLeadingSlash = pathname.replace(/^\/+/, '')
+          // Use origin to ensure pathname is replaced, not appended
+          metadataUrl = new URL(
+            `.well-known/jwt-vc-issuer/${pathWithoutLeadingSlash}`,
+            issUri.origin
+          ).toString()
         }
+        console.log('jwt-vc-issuer metadataUrl:', metadataUrl)
         const metadataResponse = await fetch(metadataUrl)
         if (!metadataResponse.ok) {
           throw err('INVALID_SD_JWT', {
@@ -91,10 +109,17 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
           })
         }
       } else if (sdJwtHeader.x5c && Array.isArray(sdJwtHeader.x5c) && sdJwtHeader.x5c.length > 0) {
-        // TODO: implement x5c to JWK conversion
-        throw err('INTERNAL_SERVER_ERROR', {
-          message: 'x5c header handling not implemented yet',
-        })
+        const leafCert = sdJwtHeader.x5c[0]
+        try {
+          const cert = leafCert.includes('BEGIN CERTIFICATE')
+            ? new X509Certificate(leafCert)
+            : new X509Certificate(Buffer.from(leafCert, 'base64'))
+          publicJwk = await jose.exportJWK(cert.publicKey)
+        } catch (error) {
+          throw err('INVALID_SD_JWT', {
+            message: 'Invalid x5c certificate in SD-JWT header',
+          })
+        }
       } else {
         throw err('INVALID_SD_JWT', {
           message: 'No method to obtain public JWK for SD-JWT verification',
@@ -107,14 +132,50 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
         })
       }
       const verifier = await ES256.getVerifier(publicJwk)
+      // cnf only support jwk
+      const cnf = decodedSdJwt.jwt.payload.cnf as { jwk: jose.JWK }
+      if (isKbJwt) {
+        if (!cnf || !cnf.jwk) {
+          throw err('INVALID_SD_JWT', {
+            message: 'Key binding JWT verification failed: cnf claim with jwk is missing',
+          })
+        }
+      }
+      const kbVerifier = isKbJwt ? await ES256.getVerifier(cnf.jwk) : undefined
       const sdJwtInst = new SDJwtInstance({
         verifier,
         hasher: digest,
+        kbVerifier: kbVerifier,
       })
       await sdJwtInst.validate(vp)
-      const { payload: claims } = await sdJwtInst.verify(vp, specifiedDisclosures, isKbJwt)
+      let nonce: string | undefined
+      if (isKbJwt) {
+        const { kbJwt } = splitSdJwt(vp)
+        if (!kbJwt) {
+          throw err('INVALID_SD_JWT', {
+            message: 'Key binding JWT is missing in SD-JWT VP',
+          })
+        }
+        const kbSdJwtDecoded = KbJwtJsonPayload(await jose.decodeJwt(kbJwt))
+        nonce = kbSdJwtDecoded.nonce
+      }
+      if (nonce) {
+        const nonceStore$ = this.providers.get('cnonce-store-provider')
+        const nonceValid = await nonceStore$.validate(Cnonce(nonce))
+        if (!nonceValid) {
+          throw err('INVALID_NONCE', {
+            message: 'nonce is not valid.',
+          })
+        }
+        await nonceStore$.revoke(Cnonce(nonce))
+      }
+      const { payload: claims, kb } = await sdJwtInst.verify(vp, {
+        requiredClaimKeys: specifiedDisclosures,
+        keyBindingNonce: nonce,
+      })
+      // fix: response
       console.log('Verified claims:', claims)
-
+      console.log('KB JWT:', kb)
       return true
     },
     canHandle(format: string): boolean {

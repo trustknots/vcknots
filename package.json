@@ -12,12 +12,15 @@
 		"doc": "pnpm --filter docusaurus",
 		"typecheck": "pnpm -r --filter @trustknots/* typecheck",
 		"pack:vcknots": "cd issuer+verifier && npm pack",
-		"publish:vcknots": "cd issuer+verifier && npm publish --access public"
+		"publish:vcknots": "cd issuer+verifier && npm publish --access public",
+		"prepare": "husky"
 	},
 	"keywords": [],
 	"author": "trustknots",
 	"license": "Apache-2.0",
-	"files": ["issuer+verifier/"],
+	"files": [
+		"issuer+verifier/"
+	],
 	"engines": {
 		"pnpm": "10.11.0",
 		"npm": "please_use_pnpm_instead"
@@ -25,7 +28,10 @@
 	"packageManager": "pnpm@10.11.0",
 	"devDependencies": {
 		"@biomejs/biome": "1.9.4",
+		"@commitlint/cli": "^20.4.0",
+		"@commitlint/config-conventional": "^20.4.0",
 		"@types/node": "^22.18.12",
+		"husky": "^9.1.7",
 		"tsx": "^4.20.6",
 		"typescript": "^5.9.3"
 	}

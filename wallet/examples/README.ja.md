@@ -1,13 +1,18 @@
-# vcknots-wallet サーバー統合サンプル
+# vcknots-wallet サーバー統合・コンフォーマンステストサンプル
 
-このディレクトリには、vcknots-walletとverifierサーバーとの統合を実演するサンプルコードが含まれています。
+このディレクトリには、vcknots-walletの2つの主要なテストシナリオを実演するサンプルコードが含まれています：
+
+1. **サーバー統合テスト**: ローカルのvckotsサーバーとの統合をテスト
+2. **コンフォーマンステスト**: 外部のOID4VP準拠性テストサービスとの統合をテスト
+
+どちらのモードも、同じプログラム（`server_integration_sdjwt.go`）でコマンドライン引数の有無により切り替わります。
 
 ## 前提条件
 
 ### 1. mise のインストール
 
-Walletのパッケージは開発環境管理に[mise](https://mise.jdx.dev/)を使用しています．
-miseがインストールされていない場合はまずインストールしてください．
+Walletのパッケージは開発環境管理に[mise](https://mise.jdx.dev/)を使用しています。
+miseがインストールされていない場合はまずインストールしてください。
 
 例えば:
 ```bash
@@ -27,8 +32,8 @@ cd /path/to/vcknots/wallet
 mise install
 ```
 
-これにより，`mise.toml`に基づいてGo 1.24.5が自動的にインストールされ，必要な環境変数が設定されます．
-miseを利用しない場合は，Go 1.24.5を手動でインストールし，`GOPRIVATE`環境変数を設定してください：
+これにより、`mise.toml`に基づいてGo 1.24.5が自動的にインストールされ、必要な環境変数が設定されます。
+miseを利用しない場合は、Go 1.24.5を手動でインストールし、`GOPRIVATE`環境変数を設定してください：
 
 ```bash
 export GOPRIVATE="github.com/trustknots/vcknots/wallet"
@@ -44,9 +49,15 @@ go mod download
 
 ## サンプルの実行方法
 
-### ステップ1: Issuer、Verifierサーバーの起動
+このサンプルプログラムは2つのモードで動作します。
 
-サンプルを実行するためには，verifierサーバーが動作している必要があります．サーバーディレクトリに移動してサーバーを起動します：
+### モード1: サーバー統合テスト（推奨：初回実行）
+
+ローカルのvckotsサーバーとの統合をテストします。
+
+#### ステップ1: Issuer、Verifierサーバーの起動
+
+サンプルを実行するためには、verifierサーバーが動作している必要があります。サーバーディレクトリに移動してサーバーを起動します：
 
 ```bash
 # walletディレクトリから、vcknotsルートディレクトリへ移動(/path/to/vcknots)
@@ -65,7 +76,7 @@ pnpm -F @trustknots/server build
 pnpm -F @trustknots/server start
 ```
 
-### サーバー起動確認
+#### サーバー起動確認
 
 サーバーを起動すると以下のメッセージが出力されます：
 
@@ -99,17 +110,24 @@ Issuer metadata initialized
 Authz metadata initialized
 ```
 
-サーバーはデフォルトで`http://localhost:8080`で起動します．
-テスト用スクリプトも上記のURLを使用します．
+サーバーはデフォルトで`http://localhost:8080`で起動します。
+テスト用スクリプトも上記のURLを使用します。
 
-### ステップ2: 統合テスト用のスクリプト実行
+#### ステップ2: 統合テスト用のスクリプト実行（引数なし）
 
-新しいターミナルで，walletディレクトリに戻ってサーバー統合テスト用のスクリプトを実行します：
+新しいターミナルで、各テストディレクトリに移動してサーバー統合テスト用のスクリプトを実行します：
 
 ```bash
-cd /path/to/vcknots/wallet
-go run examples/server_integration.go
+# JWT-VC 統合テスト
+cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
+go run server_integration_jwtvc.go
+
+# SD-JWT 統合テスト
+cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
+go run server_integration_sdjwt.go
 ```
+
+
 
 ### ステップ3: 結果の確認
 
@@ -139,13 +157,222 @@ time=2025-11-27T14:03:25.155+09:00 level=INFO msg="Request URI is valid" scheme=
 time=2025-11-27T14:03:25.174+09:00 level=INFO msg="Credential presented successfully"
 ```
 
-`Credential presented successfully`と表示されれば，成功です．
+`Credential presented successfully`と表示されれば、成功です。
 
-## ファイル構成
+---
+
+### モード2: コンフォーマンステスト（外部URL使用）
+
+外部のOID4VP準拠性テストサービスに対してテストを実行します。
+
+#### 実行方法
+
+```bash
+cd /path/to/vcknots/wallet
+go run examples/server_integration_sdjwt/server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_uri=..."
+```
+
+**重要**: OID4VP URIを引数に指定すると、自動的にコンフォーマンステストモードで動作します。
+
+#### 動作の違い
+
+コンフォーマンステストモードでは、以下の設定が自動的に適用されます：
+
+- **証明書検証**: システムルート証明書プールを使用し、`InsecureSkipX509Verify: true`で検証を緩和
+- **選択クレーム**: `given_name`と`family_name`を選択
+- **キーバインディング**: 必須（`RequireKeyBinding: true`）
+- **Audience/Nonce**: リクエストURIから自動的に抽出
+
+---
+
+## OID4VP コンフォーマンステストについて
+
+### client_id 検証の強化
+
+このWalletライブラリは、OID4VPコンフォーマンステスト（https://openid.net/certification/）に対応するため、`client_id`の厳格な検証を実装しています。
+
+#### 実装された検証ロジック
+
+1. **早期検証（Early Validation）**
+   - `request_uri`からリクエストオブジェクトを取得する**前に**、`client_id`の形式を検証
+   - 不正な形式を検出した場合、ネットワークリクエストを送信せずに即座にエラーを返す
+   - これにより、不必要なネットワークトラフィックを防ぎ、セキュリティを強化
+
+2. **重複プレフィックスの検出**
+   - `x509_san_dns:x509_san_dns:demo.example.com`のような不正な形式を拒否
+   - エラーメッセージ: `"invalid client_id: duplicate prefix detected"`
+
+3. **末尾の空白文字のトリミング**
+   - URLエンコードされた空白（`%20`）を含む`client_id`を正規化
+   - `"x509_san_dns:demo.example.com "` → `"x509_san_dns:demo.example.com"`
+
+4. **証明書SANとの照合**
+   - `x509_san_dns:`スキームの場合、リクエストJWTの`x5c`ヘッダーから証明書を抽出
+   - 証明書のSubject Alternative Name (SAN) DNS フィールドと`client_id`の値を照合
+   - 不一致の場合はエラー: `"SAN of the certificate and client_id did not match"`
+
+5. **証明書検証の柔軟性（コンフォーマンステスト用）**
+   - `InsecureSkipX509Verify`オプションにより、テスト環境では証明書チェーンの検証をスキップ可能
+   - 自己署名証明書や非標準的な証明書構造を持つコンフォーマンステストに対応
+   - ⚠️ **警告**: このオプションは本番環境では**絶対に**使用しないでください
+
+#### コンフォーマンステストへの対応
+
+コンフォーマンステストは、意図的に不正な`client_id`を送信してWalletの検証ロジックをテストします：
+
+```
+client_id=x509_san_dns:x509_san_dns:demo.certification.openid.net 
+```
+
+この例では：
+- プレフィックス`x509_san_dns:`が2回繰り返されている
+- 末尾に空白文字（`%20`）が含まれている
+
+修正後のWalletは、このような不正な`client_id`を**正しく拒否**するため、コンフォーマンステストに合格します。
+
+#### 実装ファイル
+
+- 検証ロジック: [internal/presenter/plugins/oid4vp/oid4vp.go](../internal/presenter/plugins/oid4vp/oid4vp.go)
+  - `parseOID4VPClientID()` 関数（528-565行目）
+  - 早期検証（33-41行目）：`request_uri`取得前の`client_id`検証
+  - `x509_san_dns`検証（339-410行目）
+- テストコード: [internal/presenter/plugins/oid4vp/oid4vp_test.go](../internal/presenter/plugins/oid4vp/oid4vp_test.go)
+  - `TestOid4vpPresenter_ClientIDParsingAndRedirectMismatch()`
+
+#### コンフォーマンステストの実行方法
+
+コンフォーマンステスト（https://openid.net/certification/）を実行するには：
+
+1. Walletディレクトリに移動：
+```bash
+cd /path/to/vcknots/wallet
+```
+
+2. コンフォーマンステストサイトから取得したOID4VP URIを引数に指定して実行：
+```bash
+go run examples/server_integration_sdjwt/server_integration_sdjwt.go "openid4vp://authorize?request_uri=https://demo.certification.openid.net/test/a/...&client_id=..."
+```
+
+**注意:** 引数にOID4VP URIを指定すると、自動的にコンフォーマンステストモードで動作します。引数なしで実行すると、ローカルサーバー統合テストモードになります。
+
+3. **期待される動作（ネガティブテスト）：**
+   - 不正な`client_id`（重複プレフィックスなど）の場合、Walletは即座にエラーを返す
+   - エラーメッセージ例：`invalid client_id in initial request: invalid client_id: duplicate prefix detected`
+   - ネットワークリクエストは送信されない
+   - コンフォーマンステストは、Walletが正しく拒否したことを確認し、PASSとなる
+
+#### コンフォーマンステストのトラブルシューティング
+
+##### `CheckIfClientIdInX509CertSanDns` テスト失敗
+
+**エラー:**
+```
+FAILURE CheckIfClientIdInX509CertSanDns: x509_san_dns client_id is not present in the x5c certificate SAN
+```
+
+**原因:**
+- `X509TrustChainRoots`が`nil`に設定されていた
+- 証明書検証がスキップされ、不正な証明書を検出できなかった
+
+**解決策:**
+[server_integration_sdjwt/server_integration_sdjwt.go](server_integration_sdjwt/server_integration_sdjwt.go) の `conformanceTestMode` 関数で以下のように実装されています：
+```go
+// システムのルート証明書プールを使用
+systemRoots, err := x509.SystemCertPool()
+if err != nil {
+    logger.Warn("Failed to load system cert pool, creating empty pool", "error", err)
+    systemRoots = x509.NewCertPool()
+}
+
+p := &oid4vp.Oid4vpPresenter{
+    X509TrustChainRoots:    systemRoots,  // nilではなくシステムルートを使用
+    InsecureSkipX509Verify: true,          // コンフォーマンステスト用に証明書検証を緩和
+}
+```
+
+**注意**: `InsecureSkipX509Verify: true`は、コンフォーマンステスト環境でのみ使用してください。本番環境では必ず`false`（またはこのフィールドを設定しない）にしてください。
+
+##### 証明書の非標準準拠エラー
+
+**症状:**
+```
+x509: "OIDF Test" certificate is not standards compliant
+```
+
+**原因:**
+- コンフォーマンステストサーバーが自己署名証明書を使用している
+- 証明書の構造が厳密なx509標準に準拠していない（テスト目的）
+
+**解決策:**
+1. `InsecureSkipX509Verify`オプションを有効にして、証明書チェーンの検証をスキップ
+2. この設定により、x5cヘッダーから証明書を直接抽出し、SANの検証のみを実行
+3. ⚠️ **警告**: この設定は本番環境では絶対に使用しないでください
+
+**動作の仕組み:**
+- `InsecureSkipX509Verify: false`（デフォルト）: Go標準ライブラリによる完全な証明書チェーン検証
+- `InsecureSkipX509Verify: true`（テスト用）: x5cから証明書を直接パースし、SANと`client_id`の照合のみ実行
+
+##### テストタイムアウトまたは400エラー
+
+**症状:**
+```
+FAILURE: Got an HTTP request to '' that wasn't expected
+INTERRUPTED: Test was interrupted before it could complete
+```
+
+**原因:**
+- テストセッションの有効期限切れ
+- 同じURIで複数回テストを実行した
+
+**解決策:**
+1. コンフォーマンステストサイトで**新しいテストセッション**を開始
+2. 新しい`request_uri`を含む新しいURIを取得
+3. 新しいURIでテストを再実行
+
+## ファイル構成と使用方法
+
+### 統合テストプログラム
+
+`server_integration_sdjwt/server_integration_sdjwt.go` は2つのモードで動作します：
+
+**モード1: サーバー統合テスト（引数なし）**
+```bash
+go run examples/server_integration_sdjwt/server_integration_sdjwt.go
+```
+- ローカルのvckotsサーバーとの統合をテスト
+- 厳格な証明書検証（特定の証明書ファイルを使用）
+- サーバーは http://localhost:8080 で起動している必要があります
+
+**モード2: コンフォーマンステスト（OID4VP URI引数あり）**
+```bash
+go run examples/server_integration_sdjwt/server_integration_sdjwt.go "openid4vp://authorize?..."
+```
+- 外部のコンフォーマンステストサービスに対してテスト
+- 証明書検証を緩和（テスト環境向け）
+- システムルート証明書プールを使用
+
+### ファイル構成
 
 ```
 examples/
-├── server_integration.go    # メインのソースコード
-├── example_vc_jwt.txt      # サンプルVC
-└── README.md               # このファイル
+├── server_integration_jwtvc/
+│   └── server_integration_jwtvc.go   # JWT-VC 統合テスト
+├── server_integration_sdjwt/
+│   ├── server_integration_sdjwt.go   # SD-JWT 統合テスト
+│   └── example_sd_jwt.txt            # サンプル SD-JWT クレデンシャル
+├── custom_dispatcher/                 # カスタムディスパッチャー実装例
+├── custom_plugin/                     # カスタムプラグイン実装例
+└── README.md                          # このファイル
 ```
+
+**注意**: 証明書ファイルと SD-JWT サンプルファイルは、各テストディレクトリからの相対パスで読み込まれます。デフォルトでは：
+- 証明書: `../../../server/samples/certificate-openid-test/certificate_openid.pem`
+- SD-JWT サンプル: `example_sd_jwt.txt` (server_integration_sdjwt/ 内)
+
+別の証明書を使用する場合は、`VCKNOTS_CERT_PATH` 環境変数を設定してください：
+
+```bash
+cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
+VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
+```
+

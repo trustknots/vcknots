@@ -12,7 +12,10 @@ This document outlines our guidelines for contributions. Please take a moment to
   - [Suggesting Enhancements](#suggesting-enhancements)
   - [Pull Requests](#pull-requests)
 - [Development Setup](#development-setup)
-- [Pull Request Process](#pull-request-process)
+- [Development Workflow](#development-workflow)
+  - [Main Branch](#main-branch)
+  - [Branching Strategy](#branching-strategy)
+  - [Pull Request Process](#pull-request-process)
 - [Coding Standards](#coding-standards)
 - [License](#license)
 
@@ -26,7 +29,7 @@ There are many ways to contribute, from writing code and documentation to report
 
 ### Reporting Bugs
 
-If you find a bug, please ensure it hasn't already been reported by searching our [GitHub Issues]([https://github.com/trustknots/vcknots/issues]).
+If you find a bug, please ensure it hasn't already been reported by searching our [GitHub Issues](https://github.com/trustknots/vcknots/issues).
 
 If you can't find an existing issue, please open a new one. Be sure to include:
 - A clear and descriptive title.
@@ -67,7 +70,8 @@ Ready to contribute code? Here’s how to set up VC Knots for local development.
 
 ### Wallet Setup
 
-TODO
+Please refer to the [Wallet Setup](https://trustknots.github.io/vcknots/docs/wallet) documentation for detailed instructions.
+
 
 ### Issuer and Verifier Setup
 
@@ -81,8 +85,30 @@ TODO
   ```bash
   pnpm test
   ```
+## Development Workflow
 
-## Pull Request Process
+We follow a simple branching strategy to keep the development process smooth and the history clean.
+
+### Main Branch
+- **`main`**: This is our production-ready branch. All new features and bug fixes are integrated here via Pull Requests.
+
+<p align="center">
+<img src="./images/devflow.png" width="600" alt="Development Workflow Example">
+<br>
+*Example: Overview of the development lifecycle from feature branching to squash merging.*
+</p>
+
+### Branching Strategy
+1. **Fork the repository**: Create your own copy of the repository on GitHub.
+2. **Create a branch**: Create a new branch for each backlog item (Issue) from the `main` branch.
+   - Recommended naming: `feat/issue-number-description` or `fix/issue-number`
+3. **Commit your changes**: You are free to commit as often as you like during development. However,  please write clear and descriptive commit messages by following [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
+4. **Open a Pull Request**: Once your work is ready, create a PR to the `main` branch. 
+   - If possible, having your PR reviewed by at least one maintainer is encouraged.   
+5. **Squash and Merge**: All PRs will be merged using **Squash Merge**. This keeps our `main` branch history clean by combining all your commits into a single, meaningful commit.
+6. **Branch Deletion**: Once the Pull Request is merged, the maintainer will delete the branch on the remote repository. Please make sure to delete your local branch as well to keep your environment tidy.
+
+### Pull Request Process
 
 1. **Create a new branch** from the `main` (or `master`) branch.
   (Make sure to pull the latest changes from `upstream` first: `git pull upstream main`)

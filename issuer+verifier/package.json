@@ -44,9 +44,9 @@
 	"license": "Apache-2.0",
 	"packageManager": "pnpm@10.11.0",
 	"dependencies": {
-		"@sd-jwt/core": "^0.17.0",
-		"@sd-jwt/crypto-nodejs": "^0.17.0",
-		"@sd-jwt/decode": "^0.17.0",
+		"@sd-jwt/core": "^0.18.1",
+		"@sd-jwt/crypto-nodejs": "^0.18.0",
+		"@sd-jwt/decode": "^0.18.1",
 		"base64url": "^3.0.1",
 		"did-resolver": "^4.1.0",
 		"jose": "^6.1.0",

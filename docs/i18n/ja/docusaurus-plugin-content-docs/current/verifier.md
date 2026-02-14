@@ -9,7 +9,11 @@ sidebar_position: 3
 
 ## 1. 前提条件
 
-- OpenID for Verifiable Presentations - draft 24 に対応（[OpenID for Verifiable Presentations - draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html)）
+- OpenID for Verifiable Presentations - draft 24 に対応（[OpenID for Verifiable Presentations - draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html)）　　
+以下は現時点では未実装ですが、今後対応予定です。
+  - `response_mode`は`direct_post`は対応していますが、`direct_post.jwt`は未対応です（現時点では未実装／今後対応予定）。
+  - `presentation_definition_uri`に未対応（今後対応予定）
+  - vp_token は単一の String 型のみ対応（JSON VP 形式は未対応／今後対応予定）
 - クロスデバイスフローを前提としています
 - Node.js v14以降がインストールされていること
 - TypeScriptが設定されていること
@@ -329,8 +333,9 @@ verifyApp.post('/verify/callback', async (c) => {
     const json = await c.req.json()
 
     const authorizationResponse = VerifierAuthorizationResponse(json)
+    const isKbjwt: boolean = true
 
-    await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
+    await verifierFlow.verifyPresentations(verifierId, authorizationResponse, isKbjwt)
 
     return c.json({
       message: 'Callback received successfully',
@@ -658,13 +663,17 @@ VP Tokenを検証します。
 ```typescript
 verifyPresentations(
   id: ClientId,
-  response: AuthorizationResponse
+  response: AuthorizationResponse,
+  isKbJwt: boolean
 ): Promise<void>
 ```
 
 **パラメータ**:
 - `id`: Verifierの識別子（[VerifierClientId](#VerifierClientId)）
 - `response`: 検証に利用する情報（[Verifierauthorizationresponse](#Verifierauthorizationresponse)）
+- `isKbJwt`： SD-JWT検証の場合、Key Binding JWTを検証するかどうかのフラグ
+  - `isKbJwt = true` → Key Binding JWTを検証
+  - `isKbJwt = false`　→ Key Binding JWTを検証しない
 
 **戻り値**:
 - なし  
@@ -678,6 +687,8 @@ verifyPresentations(
 - `INVALID_PRESENTATION_SUBMISSION`: 無効なpresentation_submission
 - `HOLDER_BINDING_FAILED`: Holder binding検証失敗
 
+**注意事項**:
+- `isKbJwt`が指定されない場合、デフォルトで`false`が使用されます（今後の実装で変更される可能性があります）
 
 
 

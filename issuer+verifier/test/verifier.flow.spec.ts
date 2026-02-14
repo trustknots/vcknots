@@ -623,7 +623,7 @@ describe('VerifierFlow', () => {
   })
 
   describe('verifyPresentations', () => {
-    it('should verify a presentation', async () => {
+    it('should verify a presentation(jwt_vp_json)', async () => {
       const verifierId = ClientId('https://example.com')
       const holderDid = 'did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRoAnwWsdvktH'
       const vpToken = makeJwt(

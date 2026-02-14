@@ -8,12 +8,15 @@ This guide explains how to set up and use the Issuer feature of VCKnots.
 
 ## 1. Prerequisites
 
-- Supports OpenID for Verifiable Credential Issuance - draft 13 ([OpenID for Verifiable Credential Issuance - draft 13](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html))
+- Supports OpenID for Verifiable Credential Issuance - draft 13 ([OpenID for Verifiable Credential Issuance - draft 13](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html))  
+The following items are not implemented yet and are planned for future support:
+  - Only the Pre-Authorized Code Flow is supported at this time.
+  - `tx_code` in the Credential Offer is not supported yet.
+  - `credential_response_encryption` in the Credential Request is not supported yet.
 - Node.js v14 or later is installed
 - TypeScript is configured
 - This document is based on the sample implementation of the server
 - The Hono web framework is used, but other frameworks can also be used
-- The Pre-Authorized Code Flow is the flow currently supported.
 
 ## 2. Initial Setup
 
