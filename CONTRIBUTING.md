@@ -6,18 +6,19 @@ This document outlines our guidelines for contributions. Please take a moment to
 
 ## Table of Contents
 
-- [Code of Conduct](#code-of-conduct)
-- [How Can I Contribute?](#how-can-i-contribute)
-  - [Reporting Bugs](#reporting-bugs)
-  - [Suggesting Enhancements](#suggesting-enhancements)
-  - [Pull Requests](#pull-requests)
-- [Development Setup](#development-setup)
-- [Development Workflow](#development-workflow)
-  - [Main Branch](#main-branch)
-  - [Branching Strategy](#branching-strategy)
-  - [Pull Request Process](#pull-request-process)
-- [Coding Standards](#coding-standards)
-- [License](#license)
+  - [Code of Conduct](#code-of-conduct)
+  - [How Can I Contribute?](#how-can-i-contribute)
+    - [Reporting Bugs](#reporting-bugs)
+    - [Suggesting Enhancements](#suggesting-enhancements)
+    - [Pull Requests](#pull-requests)
+  - [Development Setup](#development-setup)
+  - [Development Workflow](#development-workflow)
+    - [Main Branch](#main-branch)
+    - [Branching Strategy](#branching-strategy)
+    - [Pull Request Process](#pull-request-process)
+  - [Coding Standards](#coding-standards)
+  - [Automated dependency updates](#automated-dependency-updates)
+  - [License](#license)
 
 ## Code of Conduct
 
@@ -149,6 +150,26 @@ To maintain code consistency, we use [Biome](https://biomejs.dev/). Please run t
 pnpm run lint
 pnpm run format
 ```
+
+## Automated dependency updates
+
+We use Renovate to automate dependency updates and open pull requests based on the configuration in renovate.json.
+- Schedule:Sundays 19:00–24:00 JST
+- Release age delay: PRs are created only after a release has been out for 5 day
+- Branch: Renovate branches are prefixed with build/
+- Auto-merge: Patch updates only are eligible for auto-merge, and only within Sundays 00:00–05:00 JST
+- Commit messages:
+  - the commit type is always build
+  - Format: build: update(<topic>)
+    - <topic> rules: If a groupName applies, the topic is (<groupName>) (e.g., (wallet), (server-multi)); otherwise, it uses the dependency name (depName)
+    - Groups: Each group uses rangeStrategy: pin
+      - issuer+verifier
+      - server-multi
+      - server-single
+      - wallet
+      - google-cloud
+      - docusaurus
+      - node-version
 
 ## License
 

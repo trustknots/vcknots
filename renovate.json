@@ -5,7 +5,7 @@
 	"schedule": ["* 19-23 * * 0", "0 0 * * 1"],
 	"minimumReleaseAge": "5 days",
 	"baseBranchPatterns": ["$default"],
-	"automergeSchedule": ["* 0-4 * * 0"],
+	"automergeSchedule": ["* 0-4 * * 0", "0 5 * * 0"],
 	"lockFileMaintenance": { "enabled": true },
 	"semanticCommits": "enabled",
 	"branchPrefix": "build/",
