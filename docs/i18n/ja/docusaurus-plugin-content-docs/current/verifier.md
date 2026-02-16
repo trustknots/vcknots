@@ -222,7 +222,7 @@ openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&
 **リクエスト**
 
 ```bash
-curl --location 'https://9pnzpbbg-8080.asse.devtunnels.ms/verify/request-object' \
+curl --location 'http://localhost:8080/verify/request-object' \
 --header 'Content-Type: application/json' \
 --data '{
  "query": {
@@ -282,9 +282,9 @@ curl --location 'https://9pnzpbbg-8080.asse.devtunnels.ms/verify/request-object'
   }
   },
   "state": "example-state",
-  "client_id": "x509_san_dns:9pnzpbbg-8080.asse.devtunnels.ms",
+  "client_id": "x509_san_dns:localhost",
   "is_transaction_data":false,
-  "response_uri":"https://9pnzpbbg-8080.asse.devtunnels.ms/callback-kbjwt"}'
+  "response_uri":"http://localhost:8080/callback-kbjwt"}'
 ```
 
 **レスポンス**
