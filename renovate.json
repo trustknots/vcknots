@@ -1,0 +1,75 @@
+{
+	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
+	"extends": ["config:recommended", ":semanticCommitTypeAll(build)"],
+	"timezone": "Asia/Tokyo",
+	"schedule": ["* 19-23 * * 0"],
+	"minimumReleaseAge": "5 days",
+	"baseBranchPatterns": ["$default"],
+	"automergeSchedule": ["* 0-4 * * 0"],
+	"lockFileMaintenance": { "enabled": true },
+	"semanticCommits": "enabled",
+	"branchPrefix": "build/",
+	"packageRules": [
+		{
+			"matchManagers": ["gradle"],
+			"matchPaths": [
+				"wallet/wrappers/vcknots_wallet_dart_wrapper/example/android/**"
+			],
+			"enabled": false
+		},
+		{
+			"matchFileNames": ["issuer+verifier/**"],
+			"groupName": "issuer+verifier",
+			"rangeStrategy": "pin"
+		},
+		{
+			"matchFileNames": ["server/multi/**"],
+			"groupName": "server-multi",
+			"rangeStrategy": "pin"
+		},
+		{
+			"matchFileNames": ["server/single/**"],
+			"groupName": "server-single",
+			"rangeStrategy": "pin"
+		},
+		{
+			"matchFileNames": ["wallet/**"],
+			"groupName": "wallet",
+			"rangeStrategy": "pin"
+		},
+		{
+			"matchFileNames": ["google-cloud/**"],
+			"groupName": "google-cloud",
+			"rangeStrategy": "pin"
+		},
+		{
+			"matchFileNames": ["docusaurus/**"],
+			"groupName": "docusaurus",
+			"rangeStrategy": "pin"
+		},
+		{
+			"matchManagers": ["nvm"],
+			"groupName": "node-version",
+			"rangeStrategy": "pin"
+		},
+
+		{
+			"matchUpdateTypes": [
+				"pin",
+				"pinDigest",
+				"lockFileMaintenance",
+				"major",
+				"minor",
+				"patch"
+			],
+			"commitMessagePrefix": "build:",
+			"commitMessageAction": "update",
+			"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{depName}}{{/if}}"
+		},
+
+		{
+			"matchUpdateTypes": ["patch"],
+			"automerge": true
+		}
+	]
+}
