@@ -262,6 +262,7 @@ func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger
 	if err != nil {
 		panic(err)
 	}
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -274,18 +275,19 @@ func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger
 		panic(err)
 	}
 
-	logger.Info("Authorization RequestURI", "status", resp.Status, "body", string(body))
+	bodyStr := strings.TrimSpace(string(body))
+	logger.Info("Authorization RequestURI", "status", resp.Status, "body", bodyStr)
 
 	// Check if the response is an error (non-2xx status code)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		logger.Error("Server returned error response", "status", resp.StatusCode, "body", string(body))
-		panic(fmt.Sprintf("server error: %s - %s", resp.Status, string(body)))
+		logger.Error("Server returned error response", "status", resp.StatusCode, "body", bodyStr)
+		panic(fmt.Sprintf("server error: %s - %s", resp.Status, bodyStr))
 	}
 
 	// check if the body is the OID4VP request URI
-	urlParsed, err := url.Parse(string(body))
+	urlParsed, err := url.Parse(bodyStr)
 	if err != nil {
-		logger.Error("Failed to parse response as URL", "error", err, "body", string(body))
+		logger.Error("Failed to parse response as URL", "error", err, "body", bodyStr)
 		panic(err)
 	}
 
@@ -294,7 +296,7 @@ func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger
 	}
 
 	logger.Info("Request URI is valid", "scheme", urlParsed.Scheme)
-	return string(body)
+	return bodyStr
 }
 
 // buildCertPool creates the appropriate certificate pool based on the mode.
