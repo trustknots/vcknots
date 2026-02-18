@@ -2,7 +2,7 @@
 
 このディレクトリには、vcknots-walletの2つの主要なテストシナリオを実演するサンプルコードが含まれています：
 
-1. **サーバー統合テスト**: ローカルのvckotsサーバーとの統合をテスト
+1. **サーバー統合テスト**: ローカルのvcknotsサーバーとの統合をテスト
 2. **コンフォーマンステスト**: 外部のOID4VPコンフォーマンステストサービスとの統合をテスト
 
 どちらのモードも、同じプログラム（`server_integration_sdjwt.go`）でコマンドライン引数の有無により切り替わります。
@@ -54,7 +54,7 @@ go mod download
 
 ### モード1: サーバー統合テスト（推奨：初回実行）
 
-ローカルのvckotsサーバーとの統合をテストします。
+ローカルのvcknotsサーバーとの統合をテストします。
 
 #### ステップ1: Issuer、Verifierサーバーの起動
 
@@ -199,7 +199,7 @@ go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go
 ```
-- ローカルのvckotsサーバーとの統合をテスト
+- ローカルのvcknotsサーバーとの統合をテスト
 - 厳格な証明書検証（特定の証明書ファイルを使用）
 - サーバーは http://localhost:8080 で起動している必要があります
 

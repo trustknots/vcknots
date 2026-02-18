@@ -148,8 +148,13 @@ func (m *MockKeyEntry) Sign(payload []byte) ([]byte, error) {
 func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger *slog.Logger) string {
 	verifierURL := "http://localhost:8080"
 
+	// Print the verifier details
 	logger.Info("Verifier Details", "URL", verifierURL)
+
+	// Verify that the received credential is available in the store
 	logger.Info("Using received credential for presentation", "credential_id", receivedCredential.Entry.Id)
+
+	// For SD-JWT format, extract claims directly from deserialized credential
 	logger.Info("Decoding received credential")
 
 	// Extract available claims from the credential
@@ -271,11 +276,13 @@ func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger
 
 	logger.Info("Authorization RequestURI", "status", resp.Status, "body", string(body))
 
+	// Check if the response is an error (non-2xx status code)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		logger.Error("Server returned error response", "status", resp.StatusCode, "body", string(body))
 		panic(fmt.Sprintf("server error: %s - %s", resp.Status, string(body)))
 	}
 
+	// check if the body is the OID4VP request URI
 	urlParsed, err := url.Parse(string(body))
 	if err != nil {
 		logger.Error("Failed to parse response as URL", "error", err, "body", string(body))
@@ -331,10 +338,17 @@ func main() {
 	}
 
 	// Step 1: Clean up existing credential store
-	appDir, _ := os.UserConfigDir()
+	appDir, err := os.UserConfigDir()
+	if err != nil {
+		logger.Error("Failed to resolve user config dir", "error", err)
+		os.Exit(1)
+	}
 	credStorePath := fmt.Sprintf("%s/vcknots/wallet/.local_credstore.db", appDir)
-	os.Remove(credStorePath)
-	logger.Info("Cleaned up existing credential store", "path", credStorePath)
+	if err := os.Remove(credStorePath); err != nil && !os.IsNotExist(err) {
+		logger.Warn("Failed to remove credential store", "path", credStorePath, "error", err)
+	} else {
+		logger.Info("Cleaned up existing credential store", "path", credStorePath)
+	}
 
 	// Step 2: Create credential store and seed credential
 	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
@@ -342,6 +356,7 @@ func main() {
 		panic(err)
 	}
 
+	// Save example sd-jwt credential
 	sdJwtCredFile, err := os.ReadFile("example_sd_jwt.txt")
 	if err != nil {
 		panic(err)
@@ -390,6 +405,7 @@ func main() {
 		panic(err)
 	}
 
+	// Create identity profiler dispatcher with default config
 	idProf, err := idprof.NewIdentityProfileDispatcher(idprof.WithDefaultConfig())
 	if err != nil {
 		panic(err)
@@ -406,6 +422,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	logger.Info("Starting server integration check...")
 
 	mockKey := NewMockKeyEntry()
 
