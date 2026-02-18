@@ -165,6 +165,8 @@ time=2025-11-27T14:03:25.174+09:00 level=INFO msg="Credential presented successf
 ### モード2: コンフォーマンステスト（外部URL使用）
 
 外部のOID4VPコンフォーマンステストサービスに対してテストを実行します。
+コンフォーマンステスト用のURLは、[OIDF Conformance Testing for OpenID for Verifiable Presentations](https://openid.net/certification/conformance-testing-for-openid-for-verifiable-presentations/) ページから取得できます。
+`Testing a wallet` ボタンをクリックしてください。
 
 #### 実行方法
 
