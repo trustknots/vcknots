@@ -2,12 +2,13 @@
 	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
 	"extends": ["config:recommended", ":semanticCommitTypeAll(build)"],
 	"timezone": "Asia/Tokyo",
-	"schedule": ["* 19-23 * * 0"],
 	"minimumReleaseAge": "5 days",
 	"baseBranchPatterns": ["$default"],
 	"automergeSchedule": ["* 0-4 * * 0"],
 	"lockFileMaintenance": { "enabled": true },
 	"semanticCommits": "enabled",
+	"recreateWhen": "always",
+	"internalChecksFilter": "none",
 	"branchPrefix": "build/",
 	"packageRules": [
 		{
