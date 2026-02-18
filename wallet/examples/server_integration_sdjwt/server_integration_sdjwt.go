@@ -304,8 +304,7 @@ func buildCertPool(isConformanceMode bool, logger *slog.Logger) *x509.CertPool {
 	if isConformanceMode {
 		systemRoots, err := x509.SystemCertPool()
 		if err != nil {
-			logger.Warn("Failed to load system cert pool, creating empty pool", "error", err)
-			return x509.NewCertPool()
+			panic(fmt.Sprintf("failed to load system cert pool: %v", err))
 		}
 		return systemRoots
 	}
