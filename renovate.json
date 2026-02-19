@@ -3,7 +3,7 @@
 	"extends": [
 		"config:recommended",
 		":semanticCommitTypeAll(build)",
-		":dependencyDashboard"
+		":disableDependencyDashboard"
 	],
 	"timezone": "Asia/Tokyo",
 	"schedule": ["* 19-23 * * 0"],
@@ -13,7 +13,6 @@
 	"lockFileMaintenance": { "enabled": true },
 	"semanticCommits": "enabled",
 	"branchPrefix": "build/",
-	"dependencyDashboard": false,
 	"packageRules": [
 		{
 			"matchManagers": ["gradle"],
