@@ -11,6 +11,7 @@
 		"lint": "biome lint ./src/**/*.ts",
 		"test": "node --import tsx --test test/**/*.spec.ts",
 		"start": "tsx src/example.ts",
+		"start:google": "tsx src/example-google.ts",
 		"typecheck": "tsc --noEmit"
 	},
 	"keywords": [],
@@ -19,8 +20,10 @@
 	"packageManager": "pnpm@10.17.1",
 	"dependencies": {
 		"@hono/node-server": "^1.19.5",
+		"@trustknots/google-cloud": "workspace:*",
 		"@trustknots/vcknots": "workspace:*",
 		"dotenv": "^17.2.3",
+		"firebase-admin": "^13.5.0",
 		"hono": "^4.9.9"
 	}
 }
