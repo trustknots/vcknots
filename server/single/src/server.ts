@@ -107,13 +107,15 @@ export const createServer = (options?: VcknotsOptions) => {
         ? resolve(process.env.PRIVATE_KEY_PATH)
         : defaultPrivateKeyPath
 
-      const privateKey = process.env.PRIVATE_KEY ?? readFileSync(privateKeyPath, 'utf-8')
+      const privateKeyEnv = process.env.PRIVATE_KEY?.replace(/\\n/g, '\n')
+      const privateKey = privateKeyEnv ?? readFileSync(privateKeyPath, 'utf-8')
 
       const certificatePath = process.env.CERTIFICATE_PATH
         ? resolve(process.env.CERTIFICATE_PATH)
         : defaultCertPath
 
-      const certificate = process.env.CERTIFICATE ?? readFileSync(certificatePath, 'utf-8')
+      const certificateEnv = process.env.CERTIFICATE?.replace(/\\n/g, '\n')
+      const certificate = certificateEnv ?? readFileSync(certificatePath, 'utf-8')
 
       const option = { privateKey, certificate, format: 'pem', alg: 'ES256' } as const
 
