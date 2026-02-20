@@ -3,6 +3,10 @@
 	"version": "0.1.0",
 	"description": "",
 	"main": "lib/index.js",
+	"types": "lib/index.d.ts",
+	"exports": {
+		".": "./lib/index.js"
+	},
 	"scripts": {
 		"build": "tsc",
 		"format": "biome format --write ./src/**/*.ts",
