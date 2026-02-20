@@ -1,5 +1,5 @@
 import { cert, initializeApp } from 'firebase-admin/app'
-import { firestoreIssuerMetadataStore } from '@trustknots/google-cloud'
+import { firestore } from '@trustknots/google-cloud'
 import { createServer } from './server.js'
 
 // Reference:
@@ -23,7 +23,7 @@ const firebaseApp = initializeApp({
 // Create a server with Firestore Providers
 createServer({
   providers: [
-    firestoreIssuerMetadataStore({
+    firestore({
       app: firebaseApp,
       databaseId: process.env.FIRESTORE_DATABASE_ID,
     }),
