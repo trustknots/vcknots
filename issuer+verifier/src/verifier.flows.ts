@@ -418,12 +418,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       const format = response.presentation_submission.descriptor_map[0].format
       const options: VerifyVerifiablePresentationVerifyOptions =
         format === 'dc+sd-jwt' ? { kind: 'dc+sd-jwt', isKbJwt: isKbJwt } : { kind: 'jwt_vp_json' }
-      const vpValid = await selectProvider(verifiablePresentation$, format).verify(
+      const responsePresentation = await selectProvider(verifiablePresentation$, format).verify(
         response.vp_token,
         options
       )
+      console.log('responsePresentation:', responsePresentation)
 
-      return vpValid
+      return true
     },
   }
 }

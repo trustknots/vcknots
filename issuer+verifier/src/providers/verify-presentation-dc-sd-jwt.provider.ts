@@ -8,6 +8,7 @@ import { X509Certificate } from 'node:crypto'
 import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
 import { KbJwtJsonPayload } from '../keyBindingJwt.types'
 import { Cnonce } from '../cnonce.types'
+import { JwtVpOrSdJwtPayload } from '../presentation.types'
 
 export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentationProvider &
   WithProviderRegistry => {
@@ -18,7 +19,7 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
 
     ...withProviderRegistry,
 
-    async verify(vp, options): Promise<boolean> {
+    async verify(vp, options): Promise<JwtVpOrSdJwtPayload | null> {
       if (options && options.kind !== 'dc+sd-jwt') {
         throw err('ILLEGAL_ARGUMENT', {
           message: `${options.kind} is not supported.`,
@@ -176,7 +177,7 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       // fix: response
       console.log('Verified claims:', claims)
       console.log('KB JWT:', kb)
-      return true
+      return claims as JwtVpOrSdJwtPayload
     },
     canHandle(format: string): boolean {
       return format === 'dc+sd-jwt'
