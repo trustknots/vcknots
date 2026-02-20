@@ -13,6 +13,16 @@
 	"lockFileMaintenance": { "enabled": true },
 	"semanticCommits": "enabled",
 	"branchPrefix": "build/",
+	"pin": {
+		"group": {
+		"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
+		}
+	},
+	"pinDigest": {
+		"group": {
+		"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
+		}
+	},
 	"packageRules": [
 		{
 			"matchManagers": ["gradle"],
@@ -68,7 +78,7 @@
 			],
 			"commitMessagePrefix": "build:",
 			"commitMessageAction": "update",
-			"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{depName}}{{/if}}"
+    		"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
 		},
 
 		{
