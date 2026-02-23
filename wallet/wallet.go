@@ -755,6 +755,7 @@ func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentat
 	if len(req.TransactionData) > 0 {
 		if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok {
 			sdOpts.TransactionData = req.TransactionData
+			sdOpts.TransactionDataHashesAlg = req.TransactionDataHashesAlg
 		}
 	}
 

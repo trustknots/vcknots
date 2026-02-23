@@ -1,6 +1,8 @@
 package jose
 
 import (
+	"bytes"
+	"crypto"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
@@ -48,6 +50,20 @@ func ParseAlgorithm(algStr string) (jose.SignatureAlgorithm, error) {
 	default:
 		return "", fmt.Errorf("unsupported algorithm %s: %w", algStr, types.ErrUnsupportedAlgorithm)
 	}
+}
+
+// EqualPublicKey reports whether two JWKs represent the same public key
+// using RFC 7638 thumbprint comparison.
+func EqualPublicKey(a, b jose.JSONWebKey) (bool, error) {
+	tpA, err := a.Thumbprint(crypto.SHA256)
+	if err != nil {
+		return false, fmt.Errorf("failed to compute thumbprint: %w", err)
+	}
+	tpB, err := b.Thumbprint(crypto.SHA256)
+	if err != nil {
+		return false, fmt.Errorf("failed to compute thumbprint: %w", err)
+	}
+	return bytes.Equal(tpA, tpB), nil
 }
 
 // NewHashFromAlgorithm returns a hash.Hash instance based on the given signature algorithm

@@ -270,6 +270,8 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 			b.req.TransactionData = v
 		}
 	}
+
+	b.req.TransactionDataHashesAlg = getParam("transaction_data_hashes_alg", false)
 }
 
 // WithQueryParams populates the CredentialPresentationRequest fields from URL query parameters.
