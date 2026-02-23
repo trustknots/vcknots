@@ -258,7 +258,18 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 		b.errValidation = fmt.Errorf("missing required parameters: %s", strings.Join(missing, ", "))
 	}
 
-	// TODO: support transaction_data and verifier_info
+	if td, exists := params["transaction_data"]; exists && td != nil {
+		switch v := td.(type) {
+		case []interface{}:
+			for _, item := range v {
+				if str, ok := item.(string); ok {
+					b.req.TransactionData = append(b.req.TransactionData, str)
+				}
+			}
+		case []string:
+			b.req.TransactionData = v
+		}
+	}
 }
 
 // WithQueryParams populates the CredentialPresentationRequest fields from URL query parameters.

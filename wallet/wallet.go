@@ -40,6 +40,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/receiver"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer"
+	sdjwtvc "github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 	serializerTypes "github.com/trustknots/vcknots/wallet/serializer/types"
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
@@ -751,6 +752,12 @@ func (w *Wallet) buildPresentation(credentials []*SavedCredential, flavor *crede
 
 // submitPresentation serializes and submits the presentation to the verifier.
 func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentation, flavor *credential.SupportedSerializationFlavor, endpoint *url.URL, descriptorMap []presenterTypes.DescriptorMapItem, req *oid4vp.CredentialPresentationRequest, key IKeyEntry, options serializerTypes.SerializePresentationOptions) error {
+	if len(req.TransactionData) > 0 {
+		if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok {
+			sdOpts.TransactionData = req.TransactionData
+		}
+	}
+
 	bytes, _, err := w.serializer.SerializePresentation(
 		*flavor,
 		presentation,

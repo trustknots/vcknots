@@ -751,6 +751,132 @@ func TestSerializeCredential(t *testing.T) {
 	})
 }
 
+func TestSerializePresentationWithTransactionData(t *testing.T) {
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
+	testSDJWT := createTestSDJWT()
+
+	key, err := newMockKeyEntry()
+	if err != nil {
+		t.Fatalf("failed to create mock key: %v", err)
+	}
+
+	presentation := &credential.CredentialPresentation{
+		Types:       []string{"VerifiablePresentation"},
+		Credentials: [][]byte{[]byte(testSDJWT)},
+	}
+
+	transactionData := []string{"dGVzdC10cmFuc2FjdGlvbi1kYXRh", "YW5vdGhlci10cmFuc2FjdGlvbg"}
+	opts := &SdJwtVcPresentationOptions{
+		RequireKeyBinding: true,
+		Audience:          "https://verifier.example.com",
+		Nonce:             "test-nonce",
+		TransactionData:   transactionData,
+	}
+
+	serialized, _, err := serializer.SerializePresentation(credential.SDJwtVC, presentation, key, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cf := ParseCombinedFormatForPresentation(string(serialized))
+	if cf.KeyBindingJWT == "" {
+		t.Fatal("expected KB-JWT to be present")
+	}
+
+	kbParts := strings.Split(cf.KeyBindingJWT, ".")
+	if len(kbParts) != 3 {
+		t.Fatalf("expected 3 parts in KB-JWT, got %d", len(kbParts))
+	}
+
+	kbBodyData, err := base64.RawURLEncoding.DecodeString(kbParts[1])
+	if err != nil {
+		t.Fatalf("failed to decode KB-JWT body: %v", err)
+	}
+
+	var kbBody KeyBindingJWT
+	if err := json.Unmarshal(kbBodyData, &kbBody); err != nil {
+		t.Fatalf("failed to unmarshal KB-JWT body: %v", err)
+	}
+
+	if len(kbBody.TransactionDataHashes) != len(transactionData) {
+		t.Fatalf("expected %d transaction_data_hashes, got %d", len(transactionData), len(kbBody.TransactionDataHashes))
+	}
+
+	for i, td := range transactionData {
+		h := sha256.New()
+		h.Write([]byte(td))
+		expected := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+		if kbBody.TransactionDataHashes[i] != expected {
+			t.Errorf("transaction_data_hashes[%d]: expected %q, got %q", i, expected, kbBody.TransactionDataHashes[i])
+		}
+	}
+}
+
+func TestSerializePresentationWithoutTransactionData(t *testing.T) {
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
+	testSDJWT := createTestSDJWT()
+
+	key, err := newMockKeyEntry()
+	if err != nil {
+		t.Fatalf("failed to create mock key: %v", err)
+	}
+
+	presentation := &credential.CredentialPresentation{
+		Types:       []string{"VerifiablePresentation"},
+		Credentials: [][]byte{[]byte(testSDJWT)},
+	}
+
+	opts := &SdJwtVcPresentationOptions{
+		RequireKeyBinding: true,
+		Audience:          "https://verifier.example.com",
+		Nonce:             "test-nonce",
+	}
+
+	serialized, _, err := serializer.SerializePresentation(credential.SDJwtVC, presentation, key, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cf := ParseCombinedFormatForPresentation(string(serialized))
+	if cf.KeyBindingJWT == "" {
+		t.Fatal("expected KB-JWT to be present")
+	}
+
+	kbParts := strings.Split(cf.KeyBindingJWT, ".")
+	if len(kbParts) != 3 {
+		t.Fatalf("expected 3 parts in KB-JWT, got %d", len(kbParts))
+	}
+
+	kbBodyData, err := base64.RawURLEncoding.DecodeString(kbParts[1])
+	if err != nil {
+		t.Fatalf("failed to decode KB-JWT body: %v", err)
+	}
+
+	var kbBody KeyBindingJWT
+	if err := json.Unmarshal(kbBodyData, &kbBody); err != nil {
+		t.Fatalf("failed to unmarshal KB-JWT body: %v", err)
+	}
+
+	if len(kbBody.TransactionDataHashes) != 0 {
+		t.Errorf("expected no transaction_data_hashes, got %d", len(kbBody.TransactionDataHashes))
+	}
+
+	var rawBody map[string]interface{}
+	if err := json.Unmarshal(kbBodyData, &rawBody); err != nil {
+		t.Fatalf("failed to unmarshal KB-JWT body as map: %v", err)
+	}
+
+	if _, exists := rawBody["transaction_data_hashes"]; exists {
+		t.Error("expected transaction_data_hashes to be absent from KB-JWT when TransactionData is empty")
+	}
+}
+
 func TestSerializeDeserializeRoundTrip(t *testing.T) {
 	serializer, err := NewSdJwtVcSerializer()
 	if err != nil {

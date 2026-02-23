@@ -36,6 +36,9 @@ type SdJwtVcPresentationOptions struct {
 	Audience string
 	// Nonce is the nonce value for the Key Binding JWT (required if RequireKeyBinding is true)
 	Nonce string
+	// TransactionData contains base64url-encoded transaction data strings from the authorization request.
+	// Each entry is hashed with SHA-256 and included in the KB-JWT as transaction_data_hashes.
+	TransactionData []string
 }
 
 // IsSerializePresentationOptions implements the marker interface
@@ -177,15 +180,15 @@ func computeDisclosureHash(disclosure string, algorithm string) (string, error) 
 
 // KeyBindingJWT represents the structure of a Key Binding JWT
 type KeyBindingJWT struct {
-	Iat    int64  `json:"iat"`
-	Aud    string `json:"aud"`
-	Nonce  string `json:"nonce"`
-	SdHash string `json:"sd_hash"`
+	Iat                   int64    `json:"iat"`
+	Aud                   string   `json:"aud"`
+	Nonce                 string   `json:"nonce"`
+	SdHash                string   `json:"sd_hash"`
+	TransactionDataHashes []string `json:"transaction_data_hashes,omitempty"`
 }
 
 // createKeyBindingJWT creates a Key Binding JWT
-func createKeyBindingJWT(sdJwtWithDisclosures string, key keystore.KeyEntry, alg jose.SignatureAlgorithm, audience, nonce string, sdAlg string) (string, error) {
-	// Compute sd_hash
+func createKeyBindingJWT(sdJwtWithDisclosures string, key keystore.KeyEntry, alg jose.SignatureAlgorithm, audience, nonce string, sdAlg string, transactionData []string) (string, error) {
 	var h hash.Hash
 	switch strings.ToLower(sdAlg) {
 	case "sha-256":
@@ -200,12 +203,19 @@ func createKeyBindingJWT(sdJwtWithDisclosures string, key keystore.KeyEntry, alg
 	h.Write([]byte(sdJwtWithDisclosures))
 	sdHash := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 
-	// Create KB-JWT claims
+	var transactionDataHashes []string
+	for _, td := range transactionData {
+		tdh := sha256.New()
+		tdh.Write([]byte(td))
+		transactionDataHashes = append(transactionDataHashes, base64.RawURLEncoding.EncodeToString(tdh.Sum(nil)))
+	}
+
 	kbClaims := KeyBindingJWT{
-		Iat:    time.Now().Unix(),
-		Aud:    audience,
-		Nonce:  nonce,
-		SdHash: sdHash,
+		Iat:                   time.Now().Unix(),
+		Aud:                   audience,
+		Nonce:                 nonce,
+		SdHash:                sdHash,
+		TransactionDataHashes: transactionDataHashes,
 	}
 
 	// Create KB-JWT header
@@ -528,7 +538,7 @@ func (s *SdJwtVcSerializer) SerializePresentation(
 		// Remove trailing ~ if KB-JWT will be added
 		sdJwtWithDisclosures = strings.TrimSuffix(sdJwtWithDisclosures, "~") + "~"
 
-		kbJwt, err := createKeyBindingJWT(sdJwtWithDisclosures, key, alg, sdOpts.Audience, sdOpts.Nonce, sdAlg)
+		kbJwt, err := createKeyBindingJWT(sdJwtWithDisclosures, key, alg, sdOpts.Audience, sdOpts.Nonce, sdAlg, sdOpts.TransactionData)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create key binding JWT:  %w", err)
 		}
