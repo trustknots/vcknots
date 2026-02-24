@@ -19,7 +19,7 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
 
     ...withProviderRegistry,
 
-    async verify(vp, options): Promise<JwtVpOrSdJwtPayload | null> {
+    async verify(vp, options): Promise<JwtVpOrSdJwtPayload> {
       if (options && options.kind !== 'dc+sd-jwt') {
         throw err('ILLEGAL_ARGUMENT', {
           message: `${options.kind} is not supported.`,

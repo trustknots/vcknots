@@ -146,7 +146,7 @@ export type VerifyVerifiablePresentationProvider = {
   verify(
     vp: string,
     options?: VerifyVerifiablePresentationVerifyOptions
-  ): Promise<JwtVpOrSdJwtPayload | null>
+  ): Promise<JwtVpOrSdJwtPayload>
   canHandle(format: string): boolean
 }
 

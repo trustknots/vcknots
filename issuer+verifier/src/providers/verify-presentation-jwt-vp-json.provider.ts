@@ -16,7 +16,7 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
 
     ...withProviderRegistry,
 
-    async verify(vp, options): Promise<JwtVpOrSdJwtPayload | null> {
+    async verify(vp, options): Promise<JwtVpOrSdJwtPayload> {
       if (options && options.kind !== 'jwt_vp_json') {
         throw err('ILLEGAL_ARGUMENT', {
           message: `${options.kind} is not supported.`,
