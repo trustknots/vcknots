@@ -131,16 +131,16 @@ importers:
   server/single:
     dependencies:
       '@hono/node-server':
-        specifier: ^1.19.5
+        specifier: 1.19.9
         version: 1.19.9(hono@4.11.4)
       '@trustknots/vcknots':
         specifier: workspace:*
         version: link:../../issuer+verifier
       dotenv:
-        specifier: ^17.2.3
+        specifier: 17.2.3
         version: 17.2.3
       hono:
-        specifier: ^4.9.9
+        specifier: 4.11.4
         version: 4.11.4
 
 packages:
