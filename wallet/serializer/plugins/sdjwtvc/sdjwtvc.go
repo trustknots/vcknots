@@ -191,7 +191,17 @@ type KeyBindingJWT struct {
 	TransactionDataHashesAlg string   `json:"transaction_data_hashes_alg,omitempty"`
 }
 
-// createKeyBindingJWT creates a Key Binding JWT
+// createKeyBindingJWT creates a Key Binding JWT containing the hash of the provided
+// SD-JWT-with-disclosures and optional per-item transaction data hashes, signs it
+// using the provided key, and returns the compact JWT string.
+//
+// The function computes `sd_hash` by hashing `sdJwtWithDisclosures` using `sdAlg`
+// (defaults to SHA-256 when empty or unrecognized), and computes each entry of
+// `transactionData` using `transactionDataHashesAlg` (defaults to SHA-256 when
+// empty). If `transactionDataHashesAlg` is unsupported the function returns an error.
+// The JWT header uses `typ: "kb+jwt"` and the provided `alg`. The signature is
+// produced by `key.Sign`; DER signatures are converted to raw format when required
+// by the algorithm before being base64url-encoded and appended to form the compact JWT.
 func createKeyBindingJWT(sdJwtWithDisclosures string, key keystore.KeyEntry, alg jose.SignatureAlgorithm, audience, nonce string, sdAlg string, transactionData []string, transactionDataHashesAlg string) (string, error) {
 	var h hash.Hash
 	switch strings.ToLower(sdAlg) {
