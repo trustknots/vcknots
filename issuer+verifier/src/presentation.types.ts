@@ -1,4 +1,5 @@
 import { verifiableCredentialSchema, jwtVcJsonSchema } from './credential.types'
+import { jwkSchema } from './jwk.type'
 import { z } from 'zod'
 
 export enum ProofTypes {
@@ -11,15 +12,21 @@ export const jwtVpJsonHeaderSchema = z.object({
   kid: z.string().optional(),
 })
 
+// RFC 7519 (JWT) registered claim names
+export const jwtPayloadBaseSchema = z.object({
+  iss: z.string().optional(), // issuer
+  sub: z.string().optional(), // subject
+  aud: z.union([z.string(), z.array(z.string())]).optional(), // audience
+  exp: z.number().optional(), // expiration time
+  nbf: z.number().optional(), // not before
+  iat: z.number().optional(), // issued at
+  jti: z.string().optional(), // JWT ID
+})
+
 export const jwtVpJsonPayloadSchema = <T extends z.ZodType>(t: T) =>
-  z.object({
+  jwtPayloadBaseSchema.extend({
     vp: verifiablePresentationSchema(t),
-    iss: z.string().optional(), // issuer
-    aud: z.string().optional(), // audience
-    nbf: z.number().optional(), // issuanceDate
-    exp: z.number().optional(), // expirationDate
-    jti: z.string().optional(), // id of the verifiable credential
-    nonce: z.string(), // TODO: we have to discuss whether this should be optional or not (not compliant with the spec)
+    nonce: z.string(),
   })
 
 export const jwtVpJsonSchema = <T extends z.ZodType>(t: T) =>
@@ -61,27 +68,40 @@ export const sdJwtPayloadValueSchema: z.ZodType = z.lazy(() =>
   ])
 )
 
-export const sdJwtPayloadSchema = z.record(z.string(), sdJwtPayloadValueSchema).and(
-  z.object({
-    _sd: z.array(z.string()).optional(),
-    // RFC 9901 4.1.1: hash algorithm used for disclosure digest creation
-    _sd_alg: z.string().optional(),
-    // RFC 9901 4.1.2: key binding confirmation claim (RFC 7800)
-    cnf: z
-      .object({
-        jwk: z.record(z.string(), sdJwtPayloadValueSchema).optional(),
-      })
-      .catchall(sdJwtPayloadValueSchema)
-      .optional(),
-  })
-)
+export const tokenStatusListEntrySchema = z.object({
+  idx: z.number().int().nonnegative(),
+  uri: z.string().url(),
+})
+
+// draft-ietf-oauth-status-list-18
+export const sdJwtVcStatusSchema = z.object({
+  status_list: tokenStatusListEntrySchema.optional(),
+})
+
+export const sdJwtPayloadSchema = () =>
+  jwtPayloadBaseSchema
+    .extend({
+      // RFC9901
+      _sd: z.array(z.string()).optional(),
+      _sd_alg: z.string().optional(),
+      cnf: z
+        .object({
+          jwk: jwkSchema.optional(),
+        })
+        .optional(),
+      // draft-ietf-oauth-sd-jwt-vc-14
+      vct: z.string(),
+      'vct#integrity': z.string().optional(),
+      status: sdJwtVcStatusSchema.optional(),
+    })
+    .catchall(sdJwtPayloadValueSchema)
 
 export type SdJwtArrayDisclosureDigest = z.infer<typeof sdJwtArrayDisclosureDigestSchema>
 export type SdJwtPayloadValue = z.infer<typeof sdJwtPayloadValueSchema>
-export type SdJwtPayload = z.infer<typeof sdJwtPayloadSchema>
+export type SdJwtPayload = z.infer<ReturnType<typeof sdJwtPayloadSchema>>
 
 export const jwtVpOrSdJwtPayloadSchema = <T extends z.ZodType>(t: T) =>
-  z.union([jwtVpJsonPayloadSchema(t), sdJwtPayloadValueSchema])
+  z.union([jwtVpJsonPayloadSchema(t), sdJwtPayloadSchema()])
 
 export type JwtVpOrSdJwtPayload<T extends Record<string, unknown> = Record<string, unknown>> =
   z.infer<ReturnType<typeof jwtVpOrSdJwtPayloadSchema<z.ZodType<T>>>>

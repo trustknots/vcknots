@@ -671,13 +671,27 @@ describe('VerifierFlow', () => {
         })
       )
       mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
-      mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => true)
+      mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({
+        vp: {
+          '@context': ['https://www.w3.org/2018/credentials/v1'],
+          type: ['VerifiablePresentation'],
+          verifiableCredential: [makeJwt({ alg: 'ES256', typ: 'JWT' }, minimalVc)],
+        },
+        nonce: 'nonce-123',
+      }))
 
       const result = await verifierFlow.verifyPresentations(verifierId, response)
       assert.equal(result, true)
 
       assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
       assert.equal(mockVerifyVerifiablePresentationProvider.verify.mock.callCount(), 1)
+      assert.equal(
+        mockVerifyVerifiablePresentationProvider.verify.mock.calls[0].arguments[0],
+        vpToken
+      )
+      assert.deepEqual(mockVerifyVerifiablePresentationProvider.verify.mock.calls[0].arguments[1], {
+        kind: 'jwt_vp_json',
+      })
     })
   })
 })

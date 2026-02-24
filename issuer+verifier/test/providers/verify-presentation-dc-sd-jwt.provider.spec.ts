@@ -80,7 +80,7 @@ describe('sd-jwt provider', () => {
 
     const result = await provider.verify(sdJwt, { kind: 'dc+sd-jwt', specifiedDisclosures: [] })
 
-    assert.equal(result, true)
+    assert.ok(result)
     assert.equal(fetchSpy.mock.callCount(), 1)
     const call = fetchSpy.mock.calls[0]
     assert.equal(call.arguments[0], `${issuer}/.well-known/jwt-vc-issuer`)
@@ -95,7 +95,7 @@ describe('sd-jwt provider', () => {
       kind: 'dc+sd-jwt',
     })
 
-    assert.equal(result, true)
+    assert.ok(result)
     const call = fetchSpy.mock.calls[0]
     // https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-13#section-5.1
     assert.equal(call.arguments[0], `${issuer}/.well-known/jwt-vc-issuer/tenant/1234`)
@@ -125,7 +125,7 @@ describe('sd-jwt provider', () => {
 
     const result = await provider.verify(sdJwt, { kind: 'dc+sd-jwt', specifiedDisclosures: [] })
 
-    assert.equal(result, true)
+    assert.ok(result)
     assert.equal(fetchSpy.mock.callCount(), 2)
     assert.equal(fetchSpy.mock.calls[0].arguments[0], `${issuer}/.well-known/jwt-vc-issuer`)
     assert.equal(fetchSpy.mock.calls[1].arguments[0], jwksUri)
@@ -245,7 +245,7 @@ describe('sd-jwt provider', () => {
     const sampleSdJwtVp = sampleSdJwt + sampleKbJwt
 
     const result = await provider.verify(sampleSdJwtVp, { kind: 'dc+sd-jwt', isKbJwt: true })
-    assert.equal(result, true)
+    assert.ok(result)
     // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     assert.equal((mockCnonceStore.validate as any).mock.callCount(), 1)
     // biome-ignore lint/suspicious/noExplicitAny: <explanation>
