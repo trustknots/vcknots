@@ -211,21 +211,26 @@ func createKeyBindingJWT(sdJwtWithDisclosures string, key keystore.KeyEntry, alg
 	if tdAlg == "" {
 		tdAlg = "sha-256"
 	}
+	// Validate algorithm eagerly, independent of whether transactionData is empty.
+	switch strings.ToLower(tdAlg) {
+	case "sha-256", "sha-384", "sha-512":
+		// valid
+	default:
+		return "", fmt.Errorf("unsupported transaction_data_hashes_alg: %s", tdAlg)
+	}
 	var transactionDataHashes []string
 	for _, td := range transactionData {
-		var tdh hash.Hash
-		switch strings.ToLower(tdAlg) {
-		case "sha-256":
-			tdh = sha256.New()
-		case "sha-384":
-			tdh = sha512.New384()
-		case "sha-512":
-			tdh = sha512.New()
-		default:
-			return "", fmt.Errorf("unsupported transaction_data_hashes_alg: %s", tdAlg)
+		h, err := computeDisclosureHash(td, tdAlg)
+		if err != nil {
+			return "", fmt.Errorf("failed to hash transaction data: %w", err)
 		}
-		tdh.Write([]byte(td))
-		transactionDataHashes = append(transactionDataHashes, base64.RawURLEncoding.EncodeToString(tdh.Sum(nil)))
+		transactionDataHashes = append(transactionDataHashes, h)
+	}
+
+	// Only include the alg claim when there are actual hashes to qualify.
+	var tdHashesAlg string
+	if len(transactionDataHashes) > 0 {
+		tdHashesAlg = transactionDataHashesAlg
 	}
 
 	kbClaims := KeyBindingJWT{
@@ -234,7 +239,7 @@ func createKeyBindingJWT(sdJwtWithDisclosures string, key keystore.KeyEntry, alg
 		Nonce:                    nonce,
 		SdHash:                   sdHash,
 		TransactionDataHashes:    transactionDataHashes,
-		TransactionDataHashesAlg: transactionDataHashesAlg, // 空文字 → omitempty で省略
+		TransactionDataHashesAlg: tdHashesAlg,
 	}
 
 	// Create KB-JWT header

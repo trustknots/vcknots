@@ -1071,6 +1071,97 @@ func TestSerializePresentationWithTransactionDataHashesAlg(t *testing.T) {
 	}
 }
 
+func TestSerializePresentationWithUnsupportedTransactionDataHashesAlg(t *testing.T) {
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
+
+	key, err := newMockKeyEntry()
+	if err != nil {
+		t.Fatalf("failed to create mock key: %v", err)
+	}
+	testSDJWT := createTestSDJWTWithKey(key)
+
+	presentation := &credential.CredentialPresentation{
+		Types:       []string{"VerifiablePresentation"},
+		Credentials: [][]byte{[]byte(testSDJWT)},
+	}
+
+	// Unsupported algorithm should error even when transactionData is empty
+	opts := &SdJwtVcPresentationOptions{
+		RequireKeyBinding:        true,
+		Audience:                 "https://verifier.example.com",
+		Nonce:                    "test-nonce",
+		TransactionData:          nil,
+		TransactionDataHashesAlg: "sha-1",
+	}
+
+	_, _, err = serializer.SerializePresentation(credential.SDJwtVC, presentation, key, opts)
+	if err == nil {
+		t.Fatal("expected error for unsupported algorithm, got nil")
+	}
+}
+
+func TestSerializePresentationTransactionDataHashesAlgOmittedWhenNoHashes(t *testing.T) {
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
+
+	key, err := newMockKeyEntry()
+	if err != nil {
+		t.Fatalf("failed to create mock key: %v", err)
+	}
+	testSDJWT := createTestSDJWTWithKey(key)
+
+	presentation := &credential.CredentialPresentation{
+		Types:       []string{"VerifiablePresentation"},
+		Credentials: [][]byte{[]byte(testSDJWT)},
+	}
+
+	// No transactionData but explicit alg — alg claim must not appear in KB-JWT
+	opts := &SdJwtVcPresentationOptions{
+		RequireKeyBinding:        true,
+		Audience:                 "https://verifier.example.com",
+		Nonce:                    "test-nonce",
+		TransactionData:          nil,
+		TransactionDataHashesAlg: "sha-384",
+	}
+
+	serialized, _, err := serializer.SerializePresentation(credential.SDJwtVC, presentation, key, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cf := ParseCombinedFormatForPresentation(string(serialized))
+	if cf.KeyBindingJWT == "" {
+		t.Fatal("expected KB-JWT to be present")
+	}
+
+	kbParts := strings.Split(cf.KeyBindingJWT, ".")
+	if len(kbParts) != 3 {
+		t.Fatalf("expected 3 parts in KB-JWT, got %d", len(kbParts))
+	}
+
+	kbBodyData, err := base64.RawURLEncoding.DecodeString(kbParts[1])
+	if err != nil {
+		t.Fatalf("failed to decode KB-JWT body: %v", err)
+	}
+
+	var kbBody KeyBindingJWT
+	if err := json.Unmarshal(kbBodyData, &kbBody); err != nil {
+		t.Fatalf("failed to unmarshal KB-JWT body: %v", err)
+	}
+
+	if kbBody.TransactionDataHashesAlg != "" {
+		t.Errorf("expected transaction_data_hashes_alg to be omitted when no hashes, got %q", kbBody.TransactionDataHashesAlg)
+	}
+	if len(kbBody.TransactionDataHashes) != 0 {
+		t.Errorf("expected no transaction_data_hashes, got %v", kbBody.TransactionDataHashes)
+	}
+}
+
 func TestSerializeDeserializeRoundTrip(t *testing.T) {
 	serializer, err := NewSdJwtVcSerializer()
 	if err != nil {
