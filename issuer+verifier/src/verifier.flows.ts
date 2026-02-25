@@ -19,6 +19,7 @@ import { RequestObjectId } from './request-object-id.types'
 import { Certificate, JwkTmp } from './signature-key.types'
 import { exportJWK, importSPKI } from 'jose'
 import { ClientIdentifier } from './client-id-scheme.types'
+import { vpTokenPayload } from './presentation.types'
 
 type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
@@ -83,7 +84,7 @@ export type VerifierFlow = {
     id: ClientId,
     response: AuthorizationResponse,
     isKbJwt?: boolean
-  ) => Promise<boolean>
+  ) => Promise<vpTokenPayload>
 }
 
 const isPresentationExchange = (query: unknown): query is PresentationExchange =>
@@ -422,9 +423,8 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         response.vp_token,
         options
       )
-      console.log('responsePresentation:', responsePresentation)
 
-      return true
+      return responsePresentation
     },
   }
 }

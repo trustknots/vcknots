@@ -681,7 +681,14 @@ describe('VerifierFlow', () => {
       }))
 
       const result = await verifierFlow.verifyPresentations(verifierId, response)
-      assert.equal(result, true)
+      assert.deepEqual(result, {
+        vp: {
+          '@context': ['https://www.w3.org/2018/credentials/v1'],
+          type: ['VerifiablePresentation'],
+          verifiableCredential: [makeJwt({ alg: 'ES256', typ: 'JWT' }, minimalVc)],
+        },
+        nonce: 'nonce-123',
+      })
 
       assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
       assert.equal(mockVerifyVerifiablePresentationProvider.verify.mock.callCount(), 1)

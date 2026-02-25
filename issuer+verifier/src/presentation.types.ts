@@ -100,8 +100,9 @@ export type SdJwtArrayDisclosureDigest = z.infer<typeof sdJwtArrayDisclosureDige
 export type SdJwtPayloadValue = z.infer<typeof sdJwtPayloadValueSchema>
 export type SdJwtPayload = z.infer<ReturnType<typeof sdJwtPayloadSchema>>
 
-export const jwtVpOrSdJwtPayloadSchema = <T extends z.ZodType>(t: T) =>
+export const vpTokenPayloadSchema = <T extends z.ZodType>(t: T) =>
   z.union([jwtVpJsonPayloadSchema(t), sdJwtPayloadSchema()])
 
-export type JwtVpOrSdJwtPayload<T extends Record<string, unknown> = Record<string, unknown>> =
-  z.infer<ReturnType<typeof jwtVpOrSdJwtPayloadSchema<z.ZodType<T>>>>
+export type vpTokenPayload<T extends Record<string, unknown> = Record<string, unknown>> = z.infer<
+  ReturnType<typeof vpTokenPayloadSchema<z.ZodType<T>>>
+>
