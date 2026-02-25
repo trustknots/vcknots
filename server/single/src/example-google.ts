@@ -11,12 +11,20 @@ import { createServer } from './server.js'
 //   debug: process.env.NODE_ENV !== "production",
 // });
 
+// Environment variables are required
+const { GOOGLE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL } = process.env
+if (!GOOGLE_PROJECT_ID || !FIREBASE_PRIVATE_KEY || !FIREBASE_CLIENT_EMAIL) {
+  throw new Error(
+    'Missing Firebase env vars: GOOGLE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL'
+  )
+}
+
 // Initialize Firebase App
 const firebaseApp = initializeApp({
   credential: cert({
-    projectId: process.env.GOOGLE_PROJECT_ID!,
-    privateKey: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
+    projectId: GOOGLE_PROJECT_ID,
+    privateKey: FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    clientEmail: FIREBASE_CLIENT_EMAIL,
   }),
 })
 
