@@ -1,6 +1,7 @@
 # Single Server
 
 シングルテナント用のサーバー実装です。VCKnotsライブラリを使用して、Issuer、Authorization Server、Verifier の機能を統合したサーバーを提供します。
+共有の app/routes/util 実装は、`@trustknots/server-core`を利用します。
 
 ## 概要
 
@@ -19,18 +20,12 @@ Issuer・Authorization Server および Verifier の**実際のAPI仕様・パ�
 
 ```
 single/
-├── src/
-│   ├── app.ts          
-│   ├── example.ts      
-│   ├── routes/
-│   │   ├── authz.ts    # Authorization Server のエンドポイント
-│   │   ├── issue.ts    # Issuer のエンドポイント
-│   │   └── verify.ts   # Verifier のエンドポイント
-│   └── utils/
-│       └── error-handler.ts  # エラーハンドリングユーティリティ
-├── .env.example        # 環境変数のサンプル設定
-├── package.json        
-└── tsconfig.json       
+├─ src/
+│  ├─ example.ts       # In-memory provider 起動エントリー
+│  └─ server.ts        # サーバーブートストラップ (@trustknots/server-core  createAppを利用)
+├─ .env.example        # 環境変数のサンプル設定
+├─ package.json        
+└─ tsconfig.json       
 ```
 
 ## コンパイルとサーバーの起動
@@ -76,7 +71,11 @@ single/
    ```bash
    # issuer+verifierモジュールのビルド
    pnpm -F @trustknots/vcknots build
-   
+
+
+   # server-coreモジュールのビルド
+   pnpm -F @trustknots/server-core build
+
    # サーバーモジュールのビルド
    pnpm -F @trustknots/server build
    ```
@@ -123,6 +122,10 @@ Authz metadata initialized
 ```
 
 サーバーはデフォルトで `http://localhost:8080` で起動します。
+
+## 補足
+- `server/single`はworkspaceパッケージ`@trustknots/server-core`に依存します。
+- workspaceパッケージや依存を変更した後は、`pnpm install`を再実行してリンクを更新してください。
 
 ## エンドポイント
 

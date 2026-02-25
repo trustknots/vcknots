@@ -116,6 +116,39 @@ importers:
         specifier: ^9.0.10
         version: 9.0.10
 
+  server/core:
+    dependencies:
+      '@trustknots/vcknots':
+        specifier: workspace:*
+        version: link:../../issuer+verifier
+      hono:
+        specifier: ^4.9.9
+        version: 4.11.4
+
+  server/google-cloud:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^1.19.5
+        version: 1.19.9(hono@4.11.4)
+      '@trustknots/google-cloud':
+        specifier: workspace:*
+        version: link:../../google-cloud
+      '@trustknots/server-core':
+        specifier: workspace:*
+        version: link:../core
+      '@trustknots/vcknots':
+        specifier: workspace:*
+        version: link:../../issuer+verifier
+      dotenv:
+        specifier: ^17.2.3
+        version: 17.2.3
+      firebase-admin:
+        specifier: ^13.5.0
+        version: 13.6.0
+      hono:
+        specifier: ^4.9.9
+        version: 4.11.4
+
   server/multi:
     dependencies:
       '@hono/node-server':
@@ -133,21 +166,15 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.5
         version: 1.19.9(hono@4.11.4)
-      '@trustknots/google-cloud':
+      '@trustknots/server-core':
         specifier: workspace:*
-        version: link:../../google-cloud
+        version: link:../core
       '@trustknots/vcknots':
         specifier: workspace:*
         version: link:../../issuer+verifier
       dotenv:
         specifier: ^17.2.3
         version: 17.2.3
-      firebase-admin:
-        specifier: ^13.5.0
-        version: 13.6.0
-      hono:
-        specifier: ^4.9.9
-        version: 4.11.4
 
 packages:
 
