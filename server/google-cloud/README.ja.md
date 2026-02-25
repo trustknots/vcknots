@@ -24,7 +24,7 @@ Issuer / Authorization Server / Verifier の実際の API 仕様（パラメー�
 ```text
 google-cloud/
 ├─ src/
-│  ├─ example-google.ts   # Google Cloud / Firebase 起動エントリ
+│  ├─ example.ts          # Google Cloud / Firebase 起動エントリ
 │  └─ server.ts           # サーバーブートストラップ（@trustknots/server-core の createApp を利用）
 ├─ .env.example           # 環境変数設定のサンプル
 ├─ package.json
@@ -32,17 +32,6 @@ google-cloud/
 ```
 
 共有実装は `server/core` にあります。
-
-```text
-core/
-├─ src/app.ts
-├─ src/routes/
-│  ├─ authz.ts
-│  ├─ issue.ts
-│  └─ verify.ts
-└─ src/utils/
-   └─ error-handler.ts
-```
 
 ## コンパイルとサーバー起動
 
@@ -67,7 +56,7 @@ core/
    cp .env.example .env
    ```
 
-   `src/example-google.ts` で必須の環境変数:
+   `src/example.ts` で必須の環境変数:
 
    - `GOOGLE_PROJECT_ID`
    - `FIREBASE_PRIVATE_KEY`
@@ -117,7 +106,7 @@ core/
 
 ```text
 > @trustknots/server-google-cloud@0.1.0 start:google /path/to/vcknots/server/google-cloud
-> tsx src/example-google.ts
+> tsx src/example.ts
 
 POST  /configurations/:configuration/offer
         [handler]

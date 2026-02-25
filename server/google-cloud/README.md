@@ -56,7 +56,7 @@ To start this server, follow the steps below.
    cp .env.example .env
    ```
 
-   Required variables for `src/example-google.ts`:
+   Required variables for `src/example.ts`:
 
    - `GOOGLE_PROJECT_ID`
    - `FIREBASE_PRIVATE_KEY`
@@ -106,7 +106,7 @@ When the server starts successfully, you will see output similar to the followin
 
 ```text
 > @trustknots/server-google-cloud@0.1.0 start:google /path/to/vcknots/server/google-cloud
-> tsx src/example-google.ts
+> tsx src/example.ts
 
 POST  /configurations/:configuration/offer
         [handler]
