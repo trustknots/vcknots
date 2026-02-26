@@ -5,7 +5,7 @@ import { VerifyVerifiablePresentationProvider } from './provider.types'
 import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
 import { VerifiableCredential, parseVerifiableCredentialBase } from '../credential.types'
 import { selectProvider } from './provider.utils'
-import { jwtVpJsonPayloadSchema, vpTokenPayload } from '../presentation.types'
+import { jwtVpJsonPayloadSchema, VpTokenPayload } from '../presentation.types'
 import { z } from 'zod'
 import { Cnonce } from '../cnonce.types'
 
@@ -18,7 +18,7 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
 
     ...withProviderRegistry,
 
-    async verify(vp, options): Promise<vpTokenPayload> {
+    async verify(vp, options): Promise<VpTokenPayload> {
       if (options && options.kind !== 'jwt_vp_json') {
         throw err('ILLEGAL_ARGUMENT', {
           message: `${options.kind} is not supported.`,

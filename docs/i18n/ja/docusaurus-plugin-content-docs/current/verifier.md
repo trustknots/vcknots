@@ -521,7 +521,7 @@ VP Tokenやプレゼンテーション提出情報を含み、プレゼンテー
 定義は [issuer+verifier/src/authorization-response.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-response.types.ts) を参照してください。
 
 
-### vpTokenPayload {#vpTokenPayload}
+### VpTokenPayload {#VpTokenPayload}
 `verifyPresentations` が返す検証済みペイロードを表す型です。
 VP フォーマット（例: `jwt_vp_json` / `dc+sd-jwt`）に応じたユニオン型です。
 
@@ -692,7 +692,7 @@ verifyPresentations(
   id: ClientId,
   response: AuthorizationResponse,
   isKbJwt: boolean
-): Promise<vpTokenPayload>
+): Promise<VpTokenPayload>
 ```
 
 **パラメータ**:
@@ -703,7 +703,7 @@ verifyPresentations(
   - `isKbJwt = false`　→ Key Binding JWTを検証しない
 
 **戻り値**:
-- 型 [vpTokenPayload](#vpTokenPayload) の検証済み VP トークンペイロードを返します。
+- 型 [VpTokenPayload](#VpTokenPayload) の検証済み VP トークンペイロードを返します。
 - 具体的には、サポートする VP フォーマット（例: `jwt_vp_json` / `dc+sd-jwt`）に対応したユニオン型のペイロードです。
 - いずれの場合も、標準的な JWT クレーム（例: `iss`, `sub`, `aud`, `exp`, `iat`）を含むことがあります。
 

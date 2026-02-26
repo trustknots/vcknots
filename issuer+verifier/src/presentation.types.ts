@@ -103,6 +103,6 @@ export type SdJwtPayload = z.infer<ReturnType<typeof sdJwtPayloadSchema>>
 export const vpTokenPayloadSchema = <T extends z.ZodType>(t: T) =>
   z.union([jwtVpJsonPayloadSchema(t), sdJwtPayloadSchema()])
 
-export type vpTokenPayload<T extends Record<string, unknown> = Record<string, unknown>> = z.infer<
+export type VpTokenPayload<T extends Record<string, unknown> = Record<string, unknown>> = z.infer<
   ReturnType<typeof vpTokenPayloadSchema<z.ZodType<T>>>
 >
