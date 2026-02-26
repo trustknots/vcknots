@@ -16,7 +16,8 @@ export const createApp = (context: VcknotsContext, baseUrl: string) => {
   app.notFound((c) => c.json({ error: 'Not Found' }, 404))
   app.onError((err, c) => {
     if (err instanceof HTTPException) return err.getResponse()
-    return c.json({ error: err.message }, 500)
+    console.error(err)
+    return c.json({ error: 'internal_server_error' }, 500)
   })
 
   showRoutes(app, { verbose: true })

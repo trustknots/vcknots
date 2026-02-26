@@ -45,21 +45,27 @@ export const createServer = (options?: VcknotsOptions) => {
   const app = createApp(context, baseUrl)
 
   serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, async (info) => {
-    console.log(`Server is running on http://localhost:${info.port}`)
+    console.log(`Server is running on ${baseUrl}`)
 
-    await initializeVerifierMetadata(baseUrl, verifierMetadataConfig)
+    if (!(await initializeVerifierMetadata(baseUrl, verifierMetadataConfig))) {
+      throw new Error('Failed to initialize verifier metadata')
+    }
 
     issuerMetadataConfig.credential_issuer = CredentialIssuer(`${baseUrl}`)
     issuerMetadataConfig.authorization_servers = [`${baseUrl}`]
     issuerMetadataConfig.credential_endpoint = `${baseUrl}/credentials`
     issuerMetadataConfig.batch_credential_endpoint = `${baseUrl}/batch_credential`
     issuerMetadataConfig.deferred_credential_endpoint = `${baseUrl}/deferred_credential`
-    await initializeIssuerMetadata(issuerMetadataConfig)
+    if (!(await initializeIssuerMetadata(issuerMetadataConfig))) {
+      throw new Error('Failed to initialize issuer metadata')
+    }
 
     authorizationMetadataConfig.issuer = AuthorizationServerIssuer(`${baseUrl}`)
     authorizationMetadataConfig.authorization_endpoint = `${baseUrl}/authorize`
     authorizationMetadataConfig.token_endpoint = `${baseUrl}/token`
-    await initializeAuthzMetadata(authorizationMetadataConfig)
+    if (!(await initializeAuthzMetadata(authorizationMetadataConfig))) {
+      throw new Error('Failed to initialize authz metadata')
+    }
   })
 
   async function initializeIssuerMetadata(issuerMetadata: CredentialIssuerMetadata) {
