@@ -521,6 +521,12 @@ VP Tokenやプレゼンテーション提出情報を含み、プレゼンテー
 定義は [issuer+verifier/src/authorization-response.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-response.types.ts) を参照してください。
 
 
+### vpTokenPayload {#vpTokenPayload}
+`verifyPresentations` が返す検証済みペイロードを表す型です。
+VP フォーマット（例: `jwt_vp_json` / `dc+sd-jwt`）に応じたユニオン型です。
+
+定義は [issuer+verifier/src/presentation.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/presentation.types.ts) を参照してください。
+
 ## 7. VerifierFlowの各メソッド
 
 ### createVerifierMetadata
@@ -697,12 +703,30 @@ verifyPresentations(
   - `isKbJwt = false`　→ Key Binding JWTを検証しない
 
 **戻り値**:
-- 検証済みの VP トークンペイロードを返します（[vpTokenPayload](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/presentation.types.ts)）。
-- 返却されるペイロードの形式は VP フォーマットによって異なります。
-- `jwt_vp_json`: JWT VP のペイロード（`vp` や `nonce` などを含む）
-- `dc+sd-jwt`: SD-JWT のペイロード（`vct`、必要に応じて `_sd`、`cnf`、`status` などを含む）
+- 型 [vpTokenPayload](#vpTokenPayload) の検証済み VP トークンペイロードを返します。
+- 具体的には、サポートする VP フォーマット（例: `jwt_vp_json` / `dc+sd-jwt`）に対応したユニオン型のペイロードです。
+- いずれの場合も、標準的な JWT クレーム（例: `iss`, `sub`, `aud`, `exp`, `iat`）を含むことがあります。
 
+  - 例（`jwt_vp_json`）:
+  ```typescript
+  {
+    iss?: string,
+    vp: {
+      type: string[],
+      verifiableCredential: (string | object)[]
+    },
+    nonce: string
+  }
+  ```
 
+  - 例（`dc+sd-jwt`）:
+  ```typescript
+  {
+    iss?: string,
+    vct: string
+    // _sd、cnf、status などの SD-JWT ペイロードクレームを含む場合があります
+  }
+  ```
 **エラーケース**:
 - `VERIFIER_NOT_FOUND`: Verifierが存在しない
 - `UNSUPPORTED_VP_TOKEN`: サポートされていないVP Token形式

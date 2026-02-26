@@ -516,6 +516,12 @@ Contains the VP token and presentation submission information and is used for pr
 
 For the definition, see [issuer+verifier/src/authorization-response.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-response.types.ts).
 
+### vpTokenPayload {#vpTokenPayload}
+Represents the verified payload returned from `verifyPresentations`.
+This is a union type whose shape depends on the VP format (for example, `jwt_vp_json` or `dc+sd-jwt`).
+
+For the definition, see [issuer+verifier/src/presentation.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/presentation.types.ts).
+
 
 ## 7. Methods of VerifierFlow
 
@@ -689,10 +695,30 @@ verifyPresentations(
   - `isKbJwt = false` → Do not verify the Key Binding JWT
 
 **Return value**:
-- Returns the verified VP token payload ([vpTokenPayload](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/presentation.types.ts)).
-- The returned payload shape depends on the VP format:
-- `jwt_vp_json`: JWT VP payload (includes claims such as `vp` and `nonce`)
-- `dc+sd-jwt`: SD-JWT payload (includes claims such as `vct`, and may include `_sd`, `cnf`, `status`, etc.)
+- Returns a verified VP token payload of type [vpTokenPayload](#vpTokenPayload).
+- Concretely, the return value is a union payload for supported VP formats (for example, `jwt_vp_json` or `dc+sd-jwt`).
+- In both cases, standard JWT claims (for example, `iss`, `sub`, `aud`, `exp`, `iat`) may also be present.
+
+  - Example (`jwt_vp_json`):
+  ```typescript
+  {
+    iss?: string,
+    vp: {
+      type: string[],
+      verifiableCredential: (string | object)[]
+    },
+    nonce: string
+  }
+  ```
+
+  - Example (`dc+sd-jwt`):
+  ```typescript
+  {
+    iss?: string,
+    vct: string
+    // may include _sd, cnf, status, and other SD-JWT payload claims
+  }
+  ```
 
 
 **Error cases**:
