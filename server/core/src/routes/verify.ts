@@ -155,7 +155,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       }
 
       const formData = await c.req.formData()
-      console.log('Form data received:', formData)
       const parsed = parseFormPayload(formData)
 
       if (!parsed.ok) {
@@ -190,7 +189,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         )
       }
       const formData = await c.req.formData()
-      console.log('Form data received:', formData)
       const parsed = parseFormPayload(formData)
       if (!parsed.ok) {
         return c.json(parsed.error, 400)
@@ -268,8 +266,8 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         typeof input.query === 'object' && input.query !== null
           ? input.query
           : {
-              presentation_definition: presentationDefinitionJwtVC,
-            },
+            presentation_definition: presentationDefinitionJwtVC,
+          },
       state:
         typeof input.state === 'string' && input.state.trim() !== ''
           ? input.state

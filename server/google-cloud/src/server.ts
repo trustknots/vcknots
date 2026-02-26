@@ -44,9 +44,7 @@ export const createServer = (options?: VcknotsOptions) => {
   const baseUrl = process.env.BASE_URL ?? 'http://localhost:8080'
   const app = createApp(context, baseUrl)
 
-  serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, async (info) => {
-    console.log(`Server is running on ${baseUrl}`)
-
+  async function main() {
     if (!(await initializeVerifierMetadata(baseUrl, verifierMetadataConfig))) {
       throw new Error('Failed to initialize verifier metadata')
     }
@@ -66,6 +64,14 @@ export const createServer = (options?: VcknotsOptions) => {
     if (!(await initializeAuthzMetadata(authorizationMetadataConfig))) {
       throw new Error('Failed to initialize authz metadata')
     }
+    serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, async (info) => {
+      console.log(`Server is running on ${baseUrl}`)
+    })
+  }
+
+  main().catch((error) => {
+    console.error('Fatal: Server startup failed', error)
+    process.exit(1)
   })
 
   async function initializeIssuerMetadata(issuerMetadata: CredentialIssuerMetadata) {

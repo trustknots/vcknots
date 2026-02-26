@@ -7,8 +7,8 @@
 	"private": true,
 	"scripts": {
 		"build": "tsc",
-		"format": "biome format --write ./src/**/*.ts",
-		"lint": "biome lint ./src/**/*.ts",
+		"format": "biome format --write ./src",
+		"lint": "biome lint ./src",
 		"test": "node --import tsx --test test/**/*.spec.ts",
 		"start": "tsx src/example.ts",
 		"typecheck": "tsc --noEmit"

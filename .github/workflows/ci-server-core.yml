@@ -1,0 +1,38 @@
+name: CI server core
+
+# server depends on issuer+verifier
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - server/core/**
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run format
+        run: |
+          pnpm --filter ...@trustknots/server-core format
+
+      - name: Run lint
+        run: |
+          pnpm --filter ...@trustknots/server-core lint
+
+      - name: Build
+        run: pnpm --filter ...@trustknots/server-core... build
