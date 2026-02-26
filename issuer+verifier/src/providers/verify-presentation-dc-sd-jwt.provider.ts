@@ -8,7 +8,7 @@ import { X509Certificate } from 'node:crypto'
 import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
 import { KbJwtJsonPayload } from '../keyBindingJwt.types'
 import { Cnonce } from '../cnonce.types'
-import { vpTokenPayload } from '../presentation.types'
+import { sdJwtPayloadSchema, vpTokenPayload } from '../presentation.types'
 
 export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentationProvider &
   WithProviderRegistry => {
@@ -177,7 +177,13 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       // fix: response
       console.log('Verified claims:', claims)
       console.log('KB JWT:', kb)
-      return claims as vpTokenPayload
+      const parseResult = sdJwtPayloadSchema().safeParse(claims)
+      if (!parseResult.success) {
+        throw err('INVALID_SD_JWT', {
+          message: `SD-JWT payload does not match expected schema: ${parseResult.error.message}`,
+        })
+      }
+      return parseResult.data
     },
     canHandle(format: string): boolean {
       return format === 'dc+sd-jwt'

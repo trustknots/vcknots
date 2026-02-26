@@ -678,7 +678,7 @@ verifyPresentations(
   id: ClientId,
   response: AuthorizationResponse
   isKbjwt: boolean
-): Promise<void>
+): Promise<vpTokenPayload>
 ```
 
 **Parameters**:
@@ -689,7 +689,10 @@ verifyPresentations(
   - `isKbJwt = false` → Do not verify the Key Binding JWT
 
 **Return value**:
-- None
+- Returns the verified VP token payload ([vpTokenPayload](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/presentation.types.ts)).
+- The returned payload shape depends on the VP format:
+- `jwt_vp_json`: JWT VP payload (includes claims such as `vp` and `nonce`)
+- `dc+sd-jwt`: SD-JWT payload (includes claims such as `vct`, and may include `_sd`, `cnf`, `status`, etc.)
 
 
 **Error cases**:

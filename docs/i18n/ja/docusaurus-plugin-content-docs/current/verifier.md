@@ -686,7 +686,7 @@ verifyPresentations(
   id: ClientId,
   response: AuthorizationResponse,
   isKbJwt: boolean
-): Promise<void>
+): Promise<vpTokenPayload>
 ```
 
 **パラメータ**:
@@ -697,7 +697,10 @@ verifyPresentations(
   - `isKbJwt = false`　→ Key Binding JWTを検証しない
 
 **戻り値**:
-- なし  
+- 検証済みの VP トークンペイロードを返します（[vpTokenPayload](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/presentation.types.ts)）。
+- 返却されるペイロードの形式は VP フォーマットによって異なります。
+- `jwt_vp_json`: JWT VP のペイロード（`vp` や `nonce` などを含む）
+- `dc+sd-jwt`: SD-JWT のペイロード（`vct`、必要に応じて `_sd`、`cnf`、`status` などを含む）
 
 
 **エラーケース**:
