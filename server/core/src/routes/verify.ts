@@ -165,7 +165,8 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
 
       // Add additional validation as needed
-      await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
+      const vppayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
+      console.log('Verified VP Payload:', vppayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
       const errorResponse = handleError(err)
@@ -199,7 +200,12 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       const isKbjwt: boolean = true
 
       // Add additional validation as needed
-      await verifierFlow.verifyPresentations(verifierId, authorizationResponse, isKbjwt)
+      const vpPayload = await verifierFlow.verifyPresentations(
+        verifierId,
+        authorizationResponse,
+        isKbjwt
+      )
+      console.log('Verified KBJWT VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
       const errorResponse = handleError(err)
@@ -266,8 +272,8 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         typeof input.query === 'object' && input.query !== null
           ? input.query
           : {
-            presentation_definition: presentationDefinitionJwtVC,
-          },
+              presentation_definition: presentationDefinitionJwtVC,
+            },
       state:
         typeof input.state === 'string' && input.state.trim() !== ''
           ? input.state
