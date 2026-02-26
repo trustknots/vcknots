@@ -170,13 +170,10 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
         }
         await nonceStore$.revoke(Cnonce(nonce))
       }
-      const { payload: claims, kb } = await sdJwtInst.verify(vp, {
+      const { payload: claims } = await sdJwtInst.verify(vp, {
         requiredClaimKeys: specifiedDisclosures,
         keyBindingNonce: nonce,
       })
-      // fix: response
-      console.log('Verified claims:', claims)
-      console.log('KB JWT:', kb)
       const parseResult = sdJwtPayloadSchema().safeParse(claims)
       if (!parseResult.success) {
         throw err('INVALID_SD_JWT', {
