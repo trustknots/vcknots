@@ -10,7 +10,4 @@ test:
 lint:
 	${GOPATH}/bin/staticcheck ./...
 
-.PHONY:
-	format
-	test
-	lint
+.PHONY: format test lint

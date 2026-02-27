@@ -160,10 +160,4 @@ clean:
 		rm -rf ${OUT_DIR}
 
 
-.PHONY:
-	ios-arm64
-	ios-simulator
-	ios
-	android-arm64
-	android
-	clean
+.PHONY: ios-arm64 ios-simulator ios android-arm64 android clean
