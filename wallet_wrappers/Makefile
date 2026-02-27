@@ -1,3 +1,5 @@
+.DEFAULT_GOAL := all
+
 LIB_NAME=libvcknots_wallet
 THIS_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 ROOT_DIR := $(abspath $(THIS_DIR)/..)
