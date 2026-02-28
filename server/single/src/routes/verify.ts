@@ -321,7 +321,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
   })
 
   verifyApp.get('/verified', async (c) => {
-    console.log('Verified received from get request')
     return c.json({ message: 'DONE!!' }, 200)
   })
 

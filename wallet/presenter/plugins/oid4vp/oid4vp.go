@@ -130,7 +130,10 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 		}
 	}
 
-	resp, err := http.Post(endpoint.String(), "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	resp, err := client.Post(endpoint.String(), "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
 	if err != nil {
 		return fmt.Errorf("failed to send presentation to verifier: %w", err)
 	}
@@ -683,7 +686,9 @@ func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMetho
 		return b
 	}
 
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		b.errValidation = fmt.Errorf("failed to send %s request to %s: %w", method, uri, err)
