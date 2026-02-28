@@ -94,21 +94,23 @@ const (
 // VerifierMetadata represents the Verifier Metadata (Client Metadata) in OID4VP.
 // These fields are defined in RFC7591 and the OID4VP specification, and stated as optional.
 type VerifierMetadata struct {
-	RedirectURIs            []string           `json:"redirect_uris,omitempty"`
-	TokenEndpointAuthMethod string             `json:"token_endpoint_auth_method,omitempty"`
-	GrantTypes              []string           `json:"grant_types,omitempty"`
-	ResponseTypes           []string           `json:"response_types,omitempty"`
-	ClientName              string             `json:"client_name,omitempty"`
-	ClientURI               string             `json:"client_uri,omitempty"`
-	LogoURI                 string             `json:"logo_uri,omitempty"`
-	Scope                   string             `json:"scope,omitempty"`
-	Contacts                []string           `json:"contacts,omitempty"`
-	ToSURI                  string             `json:"tos_uri,omitempty"`
-	PolicyURI               string             `json:"policy_uri,omitempty"`
-	JwksURI                 string             `json:"jwks_uri,omitempty"`
-	Jwks                    jose.JSONWebKeySet `json:"jwks,omitempty"`
-	SoftwareID              string             `json:"software_id,omitempty"`
-	SoftwareVersion         string             `json:"software_version,omitempty"`
+	RedirectURIs                      []string           `json:"redirect_uris,omitempty"`
+	TokenEndpointAuthMethod           string             `json:"token_endpoint_auth_method,omitempty"`
+	GrantTypes                        []string           `json:"grant_types,omitempty"`
+	ResponseTypes                     []string           `json:"response_types,omitempty"`
+	ClientName                        string             `json:"client_name,omitempty"`
+	ClientURI                         string             `json:"client_uri,omitempty"`
+	LogoURI                           string             `json:"logo_uri,omitempty"`
+	Scope                             string             `json:"scope,omitempty"`
+	Contacts                          []string           `json:"contacts,omitempty"`
+	ToSURI                            string             `json:"tos_uri,omitempty"`
+	PolicyURI                         string             `json:"policy_uri,omitempty"`
+	JwksURI                           string             `json:"jwks_uri,omitempty"`
+	Jwks                              jose.JSONWebKeySet `json:"jwks,omitempty"`
+	SoftwareID                        string             `json:"software_id,omitempty"`
+	SoftwareVersion                   string             `json:"software_version,omitempty"`
+	AuthorizationEncryptedResponseAlg string             `json:"authorization_encrypted_response_alg,omitempty"`
+	AuthorizationEncryptedResponseEnc string             `json:"authorization_encrypted_response_enc,omitempty"`
 }
 
 func (v *VerifierMetadata) FetchKeyWithKID(kid string) (jose.JSONWebKey, error) {

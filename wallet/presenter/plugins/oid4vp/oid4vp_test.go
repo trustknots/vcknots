@@ -89,7 +89,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 				endpoint = *presenterURL
 			}
 			p := &Oid4vpPresenter{}
-			err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testSubmission)
+			err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testSubmission, nil)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Oid4vpPresenter.Present() error = %v, wantErr %v", err, tt.wantErr)
@@ -113,7 +113,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		hijackURL, _ := url.Parse(hijackServer.URL() + "/present")
 
 		p := &Oid4vpPresenter{}
-		err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testSubmission)
+		err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testSubmission, nil)
 
 		if err == nil {
 			t.Error("Expected error for hijacked connection, got nil")
@@ -648,6 +648,31 @@ func TestOid4vpPresenter_ClientIDParsingAndRedirectMismatch(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "redirect_uri mismatch") {
 			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("client_id with duplicate prefix", func(t *testing.T) {
+		// Duplicate prefix: x509_san_dns:x509_san_dns:demo.example.com
+		uri := "openid4vp://present?client_id=x509_san_dns:x509_san_dns:demo.example.com&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=fragment"
+		_, err := p.ParsePresentationRequest(uri)
+		if err == nil {
+			t.Fatal("expected error for duplicate prefix in client_id")
+		}
+		if !strings.Contains(err.Error(), "duplicate prefix") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("client_id with trailing whitespace", func(t *testing.T) {
+		// Trailing whitespace should be trimmed
+		uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb%20&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&response_uri=http://example.com/cb"
+		req, err := p.ParsePresentationRequest(uri)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Should successfully parse after trimming
+		if req.ClientID != "redirect_uri:http://example.com/cb" {
+			t.Fatalf("expected trimmed client_id, got: %s", req.ClientID)
 		}
 	})
 }

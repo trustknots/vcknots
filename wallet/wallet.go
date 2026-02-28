@@ -767,5 +767,15 @@ func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentat
 		DescriptorMap: descriptorMap,
 	}
 
-	return w.presenter.Present(presenterTypes.Oid4vp, *endpoint, bytes, presentationSubmission)
+	presentationRequest := &presenterTypes.PresentationRequest{
+		State:          req.State,
+		ClientMetadata: req.ClientMetadata,
+	}
+
+	if req.ClientMetadata != nil {
+		presentationRequest.AuthorizationEncryptedRespAlg = req.ClientMetadata.AuthorizationEncryptedResponseAlg
+		presentationRequest.AuthorizationEncryptedRespEnc = req.ClientMetadata.AuthorizationEncryptedResponseEnc
+	}
+
+	return w.presenter.Present(presenterTypes.Oid4vp, *endpoint, bytes, presentationSubmission, presentationRequest)
 }
