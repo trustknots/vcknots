@@ -473,4 +473,4 @@ vcknots/wallet ライブラリの Controller とのインタラクションに�
     }
     ```
   * ⚠️ **警告**: 本番環境では必ず`false`（またはこのフィールドを設定しない）にしてください。
-  * 詳細は [examples/README.ja.md](../../wallet/examples/README.ja.md) の「コンフォーマンステストのトラブルシューティング」セクションを参照してください。
+  * 詳細は [examples/README.ja.md](https://github.com/trustknots/vcknots/blob/main/wallet/examples/README.ja.md) の「コンフォーマンステストのトラブルシューティング」セクションを参照してください。
