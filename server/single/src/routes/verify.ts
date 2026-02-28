@@ -38,7 +38,8 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       }
     }
     const vpToken = form.getAll('vp_token').filter((v): v is string => typeof v === 'string')
-    payload.vp_token = vpToken.length === 0 ? undefined : vpToken.length === 1 ? vpToken[0] : vpToken
+    payload.vp_token =
+      vpToken.length === 0 ? undefined : vpToken.length === 1 ? vpToken[0] : vpToken
     const state = form.get('state')
     if (typeof state === 'string') {
       payload.state = state
@@ -137,7 +138,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   // Receive the vp_token from the request and verify it
   verifyApp.post('/callback', async (c) => {
-
     try {
       const verifierId = VerifierClientId(baseUrl)
       const contentType = normalizeContentType(c.req.header('content-type') ?? '')
@@ -146,7 +146,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       if (contentType === 'application/json') {
         parsed = { ok: true, payload: await c.req.json() }
       } else if (contentType === 'application/x-www-form-urlencoded') {
-        console.log("Form data received:", await c.req.formData());
+        console.log('Form data received:', await c.req.formData())
         parsed = parseFormPayload(await c.req.formData())
       } else {
         parsed = { ok: true, payload: {} }
@@ -160,7 +160,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
       // Add additional validation as needed
       await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
-      return c.json({ redirect_uri: `${baseUrl}/verified` }, 200);
+      return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
 
       // return c.json({
       //   message: 'Callback received successfully',
@@ -196,7 +196,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       return c.json(handleError(err), 400)
     }
   })
-
 
   const presentationDefinitionJwtVC = {
     id: randomUUID(),
@@ -322,12 +321,15 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     }
   })
 
-  verifyApp.get("/verified", async (c) => {
-    console.log("Verified received from get request");
-    return c.json({ message: "DONE!!" }, 200);
-  });
+  verifyApp.get('/verified', async (c) => {
+    console.log('Verified received from get request')
+    return c.json({ message: 'DONE!!' }, 200)
+  })
 
-
+  verifyApp.post('/dummy', async (c) => {
+    console.log('dummy request')
+    return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
+  })
 
   return verifyApp
 }

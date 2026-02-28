@@ -182,9 +182,12 @@ go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_
 Conformance Test mode automatically applies the following settings:
 
 - **Certificate Verification**: Uses system root certificate pool
+- **Certificate Chain Verification Skip**: `InsecureSkipX509Verify: true` is automatically set, enabling communication with conformance test servers that use self-signed or non-standard certificates
 - **Selected Claims**: Selects `given_name` and `family_name`
 - **Key Binding**: Required (`RequireKeyBinding: true`)
 - **Audience/Nonce**: Automatically extracted from the request URI
+
+> ⚠️ **Warning**: `InsecureSkipX509Verify: true` should only be used in conformance tests and local development. **Never** use this in production environments.
 
 ---
 
@@ -210,6 +213,7 @@ go run server_integration_sdjwt.go "openid4vp://authorize?..."
 ```
 - Tests against external OID4VP conformance test services
 - Uses system root certificate pool
+- `InsecureSkipX509Verify: true` is automatically set (supports non-standard certificates)
 
 ### File Structure
 
@@ -235,3 +239,23 @@ If you need to use a different certificate, set the `VCKNOTS_CERT_PATH` environm
 cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
 ```
+
+---
+
+## Troubleshooting
+
+### `client_id` Validation Errors (Conformance Test)
+
+The conformance test suite intentionally sends malformed `client_id` values to test the wallet's validation logic.
+
+- **Example errors**:
+  - `invalid client_id: duplicate prefix detected` (e.g., `x509_san_dns:x509_san_dns:...`)
+  - `SAN of the certificate and client_id did not match`
+- These errors are **expected behavior** and indicate the wallet is correctly enforcing security checks.
+
+### `x509: certificate is not standards compliant` Error
+
+Conformance test servers may use self-signed or non-standard certificate structures for testing purposes.
+
+- **When running server integration test (no arguments)**: Check that the certificate file is correctly placed at `../../../server/samples/certificate-openid-test/certificate_openid.pem`, or specify it via `VCKNOTS_CERT_PATH`.
+- **When running conformance test (with URI argument)**: `InsecureSkipX509Verify: true` is set automatically, so this error should not appear.

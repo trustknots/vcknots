@@ -182,9 +182,12 @@ go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_
 コンフォーマンステストモードでは、以下の設定が自動的に適用されます：
 
 - **証明書検証**: システムルート証明書プールを使用
+- **証明書チェーン検証スキップ**: `InsecureSkipX509Verify: true` が自動設定され、自己署名証明書や非標準証明書を使用するコンフォーマンステストサーバーとの通信を可能にします
 - **選択クレーム**: `given_name`と`family_name`を選択
 - **キーバインディング**: 必須（`RequireKeyBinding: true`）
 - **Audience/Nonce**: リクエストURIから自動的に抽出
+
+> ⚠️ **警告**: `InsecureSkipX509Verify: true` はコンフォーマンステストやローカル開発時のみ有効です。本番環境では**絶対に**使用しないでください。
 
 ---
 
@@ -210,6 +213,7 @@ go run server_integration_sdjwt.go "openid4vp://authorize?..."
 ```
 - 外部のOID4VPコンフォーマンステストサービスに対してテスト
 - システムルート証明書プールを使用
+- `InsecureSkipX509Verify: true` を自動設定（非標準証明書に対応）
 
 ### ファイル構成
 
@@ -235,4 +239,25 @@ examples/
 cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
 ```
+
+---
+
+## トラブルシューティング
+
+### `client_id` 検証エラー（コンフォーマンステスト）
+
+コンフォーマンステストは、意図的に不正な `client_id` を送信してウォレットの検証ロジックをテストします。
+
+- **エラー例**:
+  - `invalid client_id: duplicate prefix detected`（例: `x509_san_dns:x509_san_dns:...`）
+  - `SAN of the certificate and client_id did not match`
+- これらのエラーは**期待される動作**であり、ウォレットが正しくセキュリティチェックを実施していることを示します。
+
+### `x509: certificate is not standards compliant` エラー
+
+コンフォーマンステストサーバーは、テスト目的で自己署名証明書や非標準的な証明書構造を使用することがあります。
+
+- **状況**: サーバー統合テスト（`引数なしモード`）で発生する場合、証明書ファイルが正しく設定されていない可能性があります。
+- **状況**: コンフォーマンステスト（`引数ありモード`）では `InsecureSkipX509Verify: true` が自動設定されるため、通常は発生しません。
+- **解決策（サーバー統合テスト向け）**: 正しい証明書ファイルが `../../../server/samples/certificate-openid-test/certificate_openid.pem` に配置されていることを確認するか、`VCKNOTS_CERT_PATH` で指定してください。
 
