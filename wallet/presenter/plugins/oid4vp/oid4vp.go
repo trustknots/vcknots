@@ -130,12 +130,6 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 		}
 	}
 
-	// Debug: Log the request details
-	fmt.Printf("DEBUG: Sending POST to %s\n", endpoint.String())
-	fmt.Printf("DEBUG: Content-Type: application/x-www-form-urlencoded\n")
-	fmt.Printf("DEBUG: Using JARM: %v\n", useJARM)
-	fmt.Printf("DEBUG: Form data keys: %v\n", formData)
-
 	resp, err := http.Post(endpoint.String(), "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
 	if err != nil {
 		return fmt.Errorf("failed to send presentation to verifier: %w", err)
@@ -751,7 +745,7 @@ func parseOID4VPClientID(clientID string) (*OID4VPClientID, error) {
 	origin := strings.TrimSpace(parts[1])
 
 	// Detect duplicate prefix (e.g., "x509_san_dns:x509_san_dns:...")
-	if strings.Contains(origin, prefix+":") {
+	if strings.HasPrefix(origin, prefix+":") {
 		return nil, fmt.Errorf("invalid client_id: duplicate prefix detected")
 	}
 

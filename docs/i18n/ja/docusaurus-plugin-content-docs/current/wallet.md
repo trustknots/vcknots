@@ -433,7 +433,7 @@ vcknots/wallet ライブラリの Controller とのインタラクションに�
     - このWalletは、OID4VPコンフォーマンステストに準拠するため、`client_id`の厳格な検証を実装しています。
     - 重複プレフィックス（例: `x509_san_dns:x509_san_dns:...`）や不正な形式は自動的に拒否されます。
     - `x509_san_dns:`スキームの場合、リクエストJWTの`x5c`ヘッダーから証明書を抽出し、証明書のSubject Alternative Name (SAN) DNSフィールドと`client_id`の値を照合します。
-    - 詳細は `internal/presenter/plugins/oid4vp/oid4vp.go` の `parseOID4VPClientID()` 関数と `x509_san_dns` 検証ロジックを参照してください。
+    - 詳細は `wallet/presenter/plugins/oid4vp/oid4vp.go` の `parseOID4VPClientID()` 関数と `x509_san_dns` 検証ロジックを参照してください。
 
 6. **証明書検証のテスト設定（`InsecureSkipX509Verify`）:**
     - `Oid4vpPresenter`構造体は、テスト環境用に`InsecureSkipX509Verify`オプションを提供しています。

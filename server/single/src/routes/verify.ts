@@ -146,7 +146,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       if (contentType === 'application/json') {
         parsed = { ok: true, payload: await c.req.json() }
       } else if (contentType === 'application/x-www-form-urlencoded') {
-        console.log('Form data received:', await c.req.formData())
         parsed = parseFormPayload(await c.req.formData())
       } else {
         parsed = { ok: true, payload: {} }
@@ -327,6 +326,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
   })
 
   verifyApp.post('/dummy', async (c) => {
+    if (process.env.NODE_ENV !== 'test') {
+      return c.notFound()
+    }
     console.log('dummy request')
     return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
   })

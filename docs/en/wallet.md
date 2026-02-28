@@ -29,9 +29,9 @@ cd wallet
 mise install
 ```
 
-* **GOPRIVATE 環境変数:** 
-    - もしmise を使用しない場合、`go mod download` が失敗します。
-    - これを回避するため、以下の環境変数を手動で設定する必要があります。
+* **GOPRIVATE environment variable:**
+    - If you are not using mise, `go mod download` will fail.
+    - To work around this, you need to set the following environment variable manually.
 
 ```bash
 export GOPRIVATE="github.com/trustknots/vcknots/wallet"
@@ -430,6 +430,19 @@ This section explains the main Go type definitions used when interacting with th
     - `credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())` uses `go.etcd.io/bbolt` (an embedded KVS) by default and attempts to persist data to a local file such as `wallet.db`.
     - Make sure that you have write permissions for the execution directory.
 
+5. **Strict validation of OID4VP `client_id`:**
+    - This Wallet implements strict validation of `client_id` to conform to OID4VP conformance tests.
+    - Duplicate prefixes (for example, `x509_san_dns:x509_san_dns:...`) and malformed values are automatically rejected.
+    - For the `x509_san_dns:` scheme, the certificate is extracted from the `x5c` header of the request JWT, and the Subject Alternative Name (SAN) DNS field of the certificate is matched against the `client_id` value.
+    - See the `parseOID4VPClientID()` function and `x509_san_dns` validation logic in `wallet/presenter/plugins/oid4vp/oid4vp.go` for details.
+
+6. **Test configuration for certificate validation (`InsecureSkipX509Verify`):**
+    - The `Oid4vpPresenter` struct provides the `InsecureSkipX509Verify` option for test environments.
+    - **Default behavior (production):** Full certificate chain validation is performed. Certificates must chain to a trusted root CA.
+    - **Test configuration (`InsecureSkipX509Verify: true`):** Skips certificate chain validation and extracts the certificate directly from the `x5c` header. Only SAN-to-`client_id` matching is performed.
+    - ⚠️ **Critical warning:** `InsecureSkipX509Verify: true` should only be used for conformance testing or local development environments. **Never** use this in production. It introduces a security risk.
+    - Conformance tests may intentionally use non-standard certificates (self-signed, CA:TRUE settings, etc.), which is why this option is necessary.
+
 ## 7. Troubleshooting
 
 * **Q: `go mod download` fails with `package... is private` or `404 Not Found`.**  
@@ -445,3 +458,19 @@ This section explains the main Go type definitions used when interacting with th
 
 * **Q: `controller.ReceiveCredential` fails with `issuer metadata not found`.**  
   * **A:** The Node.js server may be running, but the `/.well-known/openid-credential-issuer` endpoint might not be functioning correctly. Run `curl http://localhost:8080/.well-known/openid-credential-issuer` (or the Issuer base URL specified in “4. Registering Wallet Metadata”) and confirm that JSON metadata is returned.
+* **Q: A `client_id` validation error occurs during OID4VP conformance testing.**
+  * **A:** Conformance tests intentionally send malformed `client_id` values (such as duplicate prefixes or trailing whitespace) to test the Wallet's validation logic. The updated Wallet correctly rejects such invalid `client_id` values.
+  * Example errors: `"invalid client_id: duplicate prefix detected"` or `"SAN of the certificate and client_id did not match"`
+  * These errors are **expected behavior** and indicate that the Wallet is correctly enforcing its security checks.
+
+* **Q: An `x509: certificate is not standards compliant` error occurs during OID4VP conformance testing.**
+  * **A:** Conformance test servers may use self-signed certificates or non-standard certificate structures for testing purposes.
+  * **Solution:** Set `InsecureSkipX509Verify: true` only in test environments:
+    ```go
+    p := &oid4vp.Oid4vpPresenter{
+        X509TrustChainRoots:    systemRoots,
+        InsecureSkipX509Verify: true,  // Test environments only
+    }
+    ```
+  * ⚠️ **Warning:** Always set this to `false` (or leave the field unset) in production.
+  * See the "Conformance Test Troubleshooting" section of [examples/README.md](https://github.com/trustknots/vcknots/blob/main/wallet/examples/README.md) for details.
