@@ -59,6 +59,7 @@ google-cloud/
    `src/example.ts` で必須の環境変数:
 
    - `GOOGLE_PROJECT_ID`
+   - `GOOGLE_PROJECT_LOCATION`
    - `FIREBASE_PRIVATE_KEY`
    - `FIREBASE_CLIENT_EMAIL`
 

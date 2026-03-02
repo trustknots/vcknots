@@ -76,6 +76,11 @@ export const createServer = (options?: VcknotsOptions) => {
 
   async function initializeIssuerMetadata(issuerMetadata: CredentialIssuerMetadata) {
     try {
+      const issuer = await issuerFlow.findIssuerMetadata(issuerMetadata.credential_issuer)
+      if (issuer) {
+        console.log('Issuer metadata already exists, skipping initialization')
+        return true
+      }
       await issuerFlow.createIssuerMetadata(issuerMetadata)
       console.log('Issuer metadata initialized')
       return true
@@ -87,6 +92,11 @@ export const createServer = (options?: VcknotsOptions) => {
 
   async function initializeAuthzMetadata(authzMetadata: AuthorizationServerMetadata) {
     try {
+      const authzServer = await authzFlow.findAuthzServerMetadata(authzMetadata.issuer)
+      if (authzServer) {
+        console.log('Authz metadata already exists, skipping initialization')
+        return true
+      }
       await authzFlow.createAuthzServerMetadata(authzMetadata)
       console.log('Authz metadata initialized')
       return true
@@ -99,6 +109,12 @@ export const createServer = (options?: VcknotsOptions) => {
   async function initializeVerifierMetadata(verifierId: string, metadata: VerifierMetadata) {
     try {
       const clientId = VerifierClientId(verifierId)
+      const verifierertificate = await verifierFlow.findVerifierCertificate(clientId)
+      console.log('Existing verifier certificate:', verifierertificate)
+      if (verifierertificate && verifierertificate.length > 0) {
+        console.log('Verifier metadata already exists, skipping initialization')
+        return true
+      }
 
       const __dirname = dirname(fileURLToPath(import.meta.url))
       const defaultPrivateKeyPath = join(

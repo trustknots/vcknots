@@ -59,6 +59,7 @@ To start this server, follow the steps below.
    Required variables for `src/example.ts`:
 
    - `GOOGLE_PROJECT_ID`
+   - `GOOGLE_PROJECT_LOCATION`
    - `FIREBASE_PRIVATE_KEY`
    - `FIREBASE_CLIENT_EMAIL`
 
