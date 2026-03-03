@@ -70,16 +70,16 @@ importers:
   google-cloud:
     dependencies:
       '@google-cloud/kms':
-        specifier: ^5.2.0
+        specifier: 5.4.0
         version: 5.4.0
       '@trustknots/vcknots':
         specifier: workspace:*
         version: link:../issuer+verifier
       firebase-admin:
-        specifier: ^13.5.0
+        specifier: 13.6.1
         version: 13.6.1
       zod:
-        specifier: ^4.1.11
+        specifier: 4.3.6
         version: 4.3.6
 
   issuer+verifier:
@@ -3399,6 +3399,7 @@ packages:
   git-raw-commits@4.0.0:
     resolution: {integrity: sha512-ICsMM1Wk8xSGMowkOmPrzo2Fgmfo4bMHLNX6ytHjajRJUqvHOw/TFapQ+QG75c3X/tTDDhOSRPGC52dDbNM8FQ==}
     engines: {node: '>=16'}
+    deprecated: This package is no longer maintained. For the JavaScript API, please use @conventional-changelog/git-client instead.
     hasBin: true
 
   github-slugger@1.5.0:
@@ -8841,7 +8842,7 @@ snapshots:
   '@types/request@2.48.12':
     dependencies:
       '@types/caseless': 0.12.5
-      '@types/node': 25.3.0
+      '@types/node': 22.19.11
       '@types/tough-cookie': 4.0.5
       form-data: 2.5.3
 
@@ -8849,7 +8850,7 @@ snapshots:
 
   '@types/sax@1.2.7':
     dependencies:
-      '@types/node': 17.0.45
+      '@types/node': 22.19.11
 
   '@types/send@0.17.4':
     dependencies:
@@ -10846,7 +10847,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 25.3.0
+      '@types/node': 22.19.11
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
@@ -12346,7 +12347,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.0
-      '@types/node': 25.3.0
+      '@types/node': 22.19.11
       long: 5.3.2
 
   proxy-addr@2.0.7:
