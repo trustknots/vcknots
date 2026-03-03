@@ -38,6 +38,7 @@
 		"lint": "biome lint ./src"
 	},
 	"dependencies": {
+		"@hono/node-server": "^1.19.5",
 		"@trustknots/vcknots": "workspace:*",
 		"hono": "^4.9.9"
 	}

@@ -1,7 +1,7 @@
 # Single Server
 
 シングルテナント用のサーバー実装です。VCKnotsライブラリを使用して、Issuer、Authorization Server、Verifier の機能を統合したサーバーを提供します。
-共有の app/routes/util 実装は、`@trustknots/server-core`を利用します。
+共有の app/routes/server/util 実装は、`@trustknots/server-core`を利用します。
 
 ## 概要
 
@@ -20,9 +20,8 @@ Issuer・Authorization Server および Verifier の**実際のAPI仕様・パ�
 
 ```
 single/
-├─ src/
-│  ├─ example.ts       # In-memory provider 起動エントリー
-│  └─ server.ts        # サーバーブートストラップ (@trustknots/server-core  createAppを利用)
+├─ src/    
+│  └─ example.ts       # In-memory provider 起動エントリー
 ├─ .env.example        # 環境変数のサンプル設定
 ├─ package.json        
 └─ tsconfig.json       

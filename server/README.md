@@ -9,6 +9,7 @@ This directory contains sample server implementations using the VCKnots library.
 Shared server components used by `single/` and `google-cloud/`.
 
 - Common Hono app factory (`createApp`)
+- Shared server bootstrap (`createServer`)
 - Shared routes (`authz`, `issue`, `verify`)
 - Shared utilities (e.g. error handling)
 

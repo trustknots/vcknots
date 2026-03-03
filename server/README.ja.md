@@ -9,6 +9,7 @@
 `single/` と `google-cloud/` で共有するサーバーの共通実装です。
 
 - 共通 Hono アプリ作成 (`createApp`)
+- 共通サーバーブートストラップ (`createServer`)
 - 共通ルート (`authz`, `issue`, `verify`)
 - 共通ユーティリティ (e.g. error handling)
 

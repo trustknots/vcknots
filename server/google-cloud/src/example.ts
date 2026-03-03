@@ -1,6 +1,7 @@
+import 'dotenv/config'
 import { cert, initializeApp } from 'firebase-admin/app'
 import { firestore } from '@trustknots/google-cloud'
-import { createServer } from './server.js'
+import { createServer } from '@trustknots/server-core'
 
 // Reference:
 // const vk = vcknots({

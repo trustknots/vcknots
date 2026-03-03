@@ -2,7 +2,7 @@
 
 Google Cloud / Firebase 連携付きのシングルテナントサーバー実装です。VCKnots ライブラリを利用して Issuer、Authorization Server、Verifier の機能を統合したサーバーを提供します。
 
-共有の `app/routes/utils` 実装は `@trustknots/server-core` を利用します。
+共有の `app/routes/server/utils` 実装は `@trustknots/server-core` を利用します。
 
 ## 概要
 
@@ -23,9 +23,8 @@ Issuer / Authorization Server / Verifier の実際の API 仕様（パラメー�
 
 ```text
 google-cloud/
-├─ src/
-│  ├─ example.ts          # Google Cloud / Firebase 起動エントリ
-│  └─ server.ts           # サーバーブートストラップ（@trustknots/server-core の createApp を利用）
+├─ src/        
+│  └─ example.ts          # Google Cloud / Firebase 起動エントリ
 ├─ .env.example           # 環境変数設定のサンプル
 ├─ package.json
 └─ tsconfig.json
@@ -106,7 +105,7 @@ google-cloud/
 サーバーが正常に起動すると、以下のような出力が表示されます。
 
 ```text
-> @trustknots/server-google-cloud@0.1.0 start:google /path/to/vcknots/server/google-cloud
+> @trustknots/server-google-cloud@0.1.0 start /path/to/vcknots/server/google-cloud
 > tsx src/example.ts
 
 POST  /configurations/:configuration/offer

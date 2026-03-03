@@ -1,4 +1,5 @@
 export { createApp } from './app.js'
+export { createServer } from './server.js'
 export { createAuthzRouter } from './routes/authz.js'
 export { createIssueRouter } from './routes/issue.js'
 export { createVerifierRouter } from './routes/verify.js'

@@ -1,8 +1,8 @@
-# Google Cloud Server
+﻿# Google Cloud Server
 
 Single-tenant server implementation with Google Cloud / Firebase integration. Provides a server that integrates Issuer, Authorization Server, and Verifier functionality using the VCKnots library.
 
-Shared app/routes/util implementations are provided by `@trustknots/server-core`.
+Shared app/routes/server/util implementations are provided by `@trustknots/server-core`.
 
 ## Overview
 
@@ -24,9 +24,8 @@ The endpoint list in this README is an overview of the paths used in this sample
 ```text
 google-cloud/
 ├─ src/
-│  ├─ example.ts          # Google Cloud / Firebase startup entrypoint
-│  └─ server.ts           # Server bootstrap (imports createApp from @trustknots/server-core)
-├─ .env.example           # Sample environment variable configuration
+│  └─ example.ts      # Google Cloud / Firebase startup entrypoint (uses createServer from @trustknots/server-core)
+├─ .env.example       # Sample environment variable configuration
 ├─ package.json
 └─ tsconfig.json
 ```
@@ -106,7 +105,7 @@ To start this server, follow the steps below.
 When the server starts successfully, you will see output similar to the following:
 
 ```text
-> @trustknots/server-google-cloud@0.1.0 start:google /path/to/vcknots/server/google-cloud
+> @trustknots/server-google-cloud@0.1.0 start /path/to/vcknots/server/google-cloud
 > tsx src/example.ts
 
 POST  /configurations/:configuration/offer

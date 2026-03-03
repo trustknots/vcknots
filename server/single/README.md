@@ -1,7 +1,7 @@
 ﻿# Single Server
 
 Single-tenant server implementation. Provides a server that integrates Issuer, Authorization Server, and Verifier functionality using the VCKnots library.
-Shared app/routes/util implementations are provided by `@trustknots/server-core`.
+Shared app/routes/server/util implementations are provided by `@trustknots/server-core`.
 
 ## Overview
 
@@ -21,8 +21,7 @@ The endpoint list in this README is an overview of the paths used in this sample
 ```
 single/
 ├─ src/
-│  ├─ example.ts      # In-memory provider startup entrypoint
-│  └─ server.ts       # Server bootstrap (imports createApp from @trustknots/server-core)
+│  └─ example.ts      # In-memory provider startup entrypoint (uses createServer from @trustknots/server-core)
 ├─ .env.example       # Sample environment variable configuration
 ├─ package.json
 └─ tsconfig.json

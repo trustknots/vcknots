@@ -1,7 +1,12 @@
-import 'dotenv/config'
+import { readFileSync } from 'node:fs'
 import { serve } from '@hono/node-server'
 import { initializeContext } from '@trustknots/vcknots'
 import type { VcknotsOptions } from '@trustknots/vcknots'
+import {
+  AuthorizationServerIssuer,
+  AuthorizationServerMetadata,
+  initializeAuthzFlow,
+} from '@trustknots/vcknots/authz'
 import {
   CredentialIssuer,
   CredentialIssuerMetadata,
@@ -9,25 +14,26 @@ import {
 } from '@trustknots/vcknots/issuer'
 import {
   initializeVerifierFlow,
-  VerifierMetadata,
   VerifierClientId,
+  VerifierMetadata,
 } from '@trustknots/vcknots/verifier'
-import {
-  AuthorizationServerIssuer,
-  initializeAuthzFlow,
-  AuthorizationServerMetadata,
-} from '@trustknots/vcknots/authz'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { readFileSync } from 'node:fs'
-import issuerMetadataConfigRaw from '../../samples/issuer_metadata.json' with { type: 'json' }
-import authorizationMetadataConfigRaw from '../../samples/authorization_metadata.json' with {
-  type: 'json',
-}
-import verifierMetadataConfigRaw from '../../samples/verifier_metadata.json' with { type: 'json' }
-import { createApp } from '@trustknots/server-core'
+import { createApp } from './app.js'
 
 export const createServer = (options?: VcknotsOptions) => {
+  const __dirname = dirname(fileURLToPath(import.meta.url))
+  const samplesDir = join(__dirname, '../../samples')
+  const issuerMetadataConfigRaw = JSON.parse(
+    readFileSync(join(samplesDir, 'issuer_metadata.json'), 'utf-8')
+  )
+  const authorizationMetadataConfigRaw = JSON.parse(
+    readFileSync(join(samplesDir, 'authorization_metadata.json'), 'utf-8')
+  )
+  const verifierMetadataConfigRaw = JSON.parse(
+    readFileSync(join(samplesDir, 'verifier_metadata.json'), 'utf-8')
+  )
+
   const issuerMetadataConfig = CredentialIssuerMetadata(issuerMetadataConfigRaw)
   const authorizationMetadataConfig = AuthorizationServerMetadata(authorizationMetadataConfigRaw)
   const verifierMetadataConfig = VerifierMetadata(verifierMetadataConfigRaw)
@@ -49,8 +55,8 @@ export const createServer = (options?: VcknotsOptions) => {
       throw new Error('Failed to initialize verifier metadata')
     }
 
-    issuerMetadataConfig.credential_issuer = CredentialIssuer(`${baseUrl}`)
-    issuerMetadataConfig.authorization_servers = [`${baseUrl}`]
+    issuerMetadataConfig.credential_issuer = CredentialIssuer(baseUrl)
+    issuerMetadataConfig.authorization_servers = [baseUrl]
     issuerMetadataConfig.credential_endpoint = `${baseUrl}/credentials`
     issuerMetadataConfig.batch_credential_endpoint = `${baseUrl}/batch_credential`
     issuerMetadataConfig.deferred_credential_endpoint = `${baseUrl}/deferred_credential`
@@ -58,13 +64,14 @@ export const createServer = (options?: VcknotsOptions) => {
       throw new Error('Failed to initialize issuer metadata')
     }
 
-    authorizationMetadataConfig.issuer = AuthorizationServerIssuer(`${baseUrl}`)
+    authorizationMetadataConfig.issuer = AuthorizationServerIssuer(baseUrl)
     authorizationMetadataConfig.authorization_endpoint = `${baseUrl}/authorize`
     authorizationMetadataConfig.token_endpoint = `${baseUrl}/token`
     if (!(await initializeAuthzMetadata(authorizationMetadataConfig))) {
       throw new Error('Failed to initialize authz metadata')
     }
-    serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, async (info) => {
+
+    serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, async () => {
       console.log(`Server is running on ${baseUrl}`)
     })
   }
@@ -81,6 +88,7 @@ export const createServer = (options?: VcknotsOptions) => {
         console.log('Issuer metadata already exists, skipping initialization')
         return true
       }
+
       await issuerFlow.createIssuerMetadata(issuerMetadata)
       console.log('Issuer metadata initialized')
       return true
@@ -97,6 +105,7 @@ export const createServer = (options?: VcknotsOptions) => {
         console.log('Authz metadata already exists, skipping initialization')
         return true
       }
+
       await authzFlow.createAuthzServerMetadata(authzMetadata)
       console.log('Authz metadata initialized')
       return true
@@ -109,14 +118,12 @@ export const createServer = (options?: VcknotsOptions) => {
   async function initializeVerifierMetadata(verifierId: string, metadata: VerifierMetadata) {
     try {
       const clientId = VerifierClientId(verifierId)
-      const verifierertificate = await verifierFlow.findVerifierCertificate(clientId)
-      console.log('Existing verifier certificate:', verifierertificate)
-      if (verifierertificate && verifierertificate.length > 0) {
+      const verifierCertificate = await verifierFlow.findVerifierCertificate(clientId)
+      if (verifierCertificate && verifierCertificate.length > 0) {
         console.log('Verifier metadata already exists, skipping initialization')
         return true
       }
 
-      const __dirname = dirname(fileURLToPath(import.meta.url))
       const defaultPrivateKeyPath = join(
         __dirname,
         '../../samples/certificate-openid-test/private_key_openid.pem'
@@ -129,19 +136,16 @@ export const createServer = (options?: VcknotsOptions) => {
       const privateKeyPath = process.env.PRIVATE_KEY_PATH
         ? resolve(process.env.PRIVATE_KEY_PATH)
         : defaultPrivateKeyPath
-
-      const privateKeyEnv = process.env.PRIVATE_KEY?.replace(/\\n/g, '\n')
-      const privateKey = privateKeyEnv ?? readFileSync(privateKeyPath, 'utf-8')
-
       const certificatePath = process.env.CERTIFICATE_PATH
         ? resolve(process.env.CERTIFICATE_PATH)
         : defaultCertPath
 
+      const privateKeyEnv = process.env.PRIVATE_KEY?.replace(/\\n/g, '\n')
       const certificateEnv = process.env.CERTIFICATE?.replace(/\\n/g, '\n')
+      const privateKey = privateKeyEnv ?? readFileSync(privateKeyPath, 'utf-8')
       const certificate = certificateEnv ?? readFileSync(certificatePath, 'utf-8')
 
       const option = { privateKey, certificate, format: 'pem', alg: 'ES256' } as const
-
       await verifierFlow.createVerifierMetadata(clientId, metadata, option)
 
       console.log(`Verifier metadata initialized for ${clientId}`)

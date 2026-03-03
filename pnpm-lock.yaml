@@ -118,6 +118,9 @@ importers:
 
   server/core:
     dependencies:
+      '@hono/node-server':
+        specifier: ^1.19.5
+        version: 1.19.9(hono@4.11.4)
       '@trustknots/vcknots':
         specifier: workspace:*
         version: link:../../issuer+verifier
@@ -127,9 +130,6 @@ importers:
 
   server/google-cloud:
     dependencies:
-      '@hono/node-server':
-        specifier: ^1.19.5
-        version: 1.19.9(hono@4.11.4)
       '@trustknots/google-cloud':
         specifier: workspace:*
         version: link:../../google-cloud
@@ -160,9 +160,6 @@ importers:
 
   server/single:
     dependencies:
-      '@hono/node-server':
-        specifier: ^1.19.5
-        version: 1.19.9(hono@4.11.4)
       '@trustknots/server-core':
         specifier: workspace:*
         version: link:../core
