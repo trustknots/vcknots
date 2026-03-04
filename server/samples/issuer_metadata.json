@@ -2,6 +2,7 @@
 	"credential_issuer": "https://issuer.example.com",
 	"authorization_servers": ["https://authz.example.com"],
 	"credential_endpoint": "https://issuer.example.com/credential",
+	"nonce_endpoint": "https://credential-issuer.example.com/nonce",
 	"batch_credential_endpoint": "https://issuer.example.com/batch_credential",
 	"deferred_credential_endpoint": "https://issuer.example.com/deferred_credential",
 	"credential_response_encryption": {

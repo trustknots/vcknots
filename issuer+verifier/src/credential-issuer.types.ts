@@ -279,6 +279,11 @@ const credentialIssuerMetadataSchema = z.object({
   deferred_credential_endpoint: z.string().url().optional(),
 
   /**
+   * (Optional) URL of the Nonce Endpoint.
+   */
+  nonce_endpoint: z.string().url().optional(),
+
+  /**
    * (Optional) A JSON array of strings representing supported JWA [RFC7518]
    * encryption algorithm (alg values) for encrypting credential responses.
    */
@@ -345,6 +350,7 @@ export const CredentialIssuerMetadata = (value?: {
   credential_endpoint?: string
   batch_credential_endpoint?: string
   deferred_credential_endpoint?: string
+  nonce_endpoint?: string
   credential_response_encryption_alg_values_supported?: string[]
   credential_response_encryption_enc_values_supported?: string[]
   require_credential_response_encryption?: boolean
