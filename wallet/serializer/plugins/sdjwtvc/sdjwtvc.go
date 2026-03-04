@@ -18,6 +18,8 @@ import (
 	"github.com/trustknots/vcknots/wallet/serializer/types"
 )
 
+const defaultHashAlgorithm = "sha-256"
+
 // SdJwtVcSerializer implements Serializer for SD-JWT VC format
 type SdJwtVcSerializer struct{}
 
@@ -39,8 +41,8 @@ type SdJwtVcPresentationOptions struct {
 	// TransactionData contains base64url-encoded transaction data strings from the authorization request.
 	// Each entry is hashed and included in the KB-JWT as transaction_data_hashes.
 	TransactionData []string
-	// TransactionDataHashesAlg specifies the hash algorithm for transaction_data_hashes.
-	// When empty, "sha-256" is used as default and the claim is omitted from KB-JWT.
+	// TransactionDataHashesAlg specifies the hash algorithm used for transaction_data_hashes.
+	// This value is expected to be resolved by the caller.
 	TransactionDataHashesAlg string
 }
 
@@ -181,6 +183,17 @@ func computeDisclosureHash(disclosure string, algorithm string) (string, error) 
 	return base64.RawURLEncoding.EncodeToString(hashBytes), nil
 }
 
+// normalizeSDHashAlgorithm applies RFC 9901 defaulting behavior for _sd_alg.
+// Unknown or empty values fall back to sha-256.
+func normalizeSDHashAlgorithm(algorithm string) string {
+	switch strings.ToLower(algorithm) {
+	case "sha-256", "sha-384", "sha-512":
+		return strings.ToLower(algorithm)
+	default:
+		return defaultHashAlgorithm
+	}
+}
+
 // KeyBindingJWT represents the structure of a Key Binding JWT
 type KeyBindingJWT struct {
 	Iat                      int64    `json:"iat"`
@@ -197,40 +210,43 @@ type KeyBindingJWT struct {
 //
 // The function computes `sd_hash` by hashing `sdJwtWithDisclosures` using `sdAlg`
 // (defaults to SHA-256 when empty or unrecognized), and computes each entry of
-// `transactionData` using `transactionDataHashesAlg` (defaults to SHA-256 when
-// empty). If `transactionDataHashesAlg` is unsupported the function returns an error.
+// `transactionData` using `transactionDataHashesAlg`.
+// If `transactionData` is provided and `transactionDataHashesAlg` is empty or unsupported,
+// the function returns an error.
 // The JWT header uses `typ: "kb+jwt"` and the provided `alg`. The signature is
 // produced by `key.Sign`; DER signatures are converted to raw format when required
 // by the algorithm before being base64url-encoded and appended to form the compact JWT.
-func createKeyBindingJWT(sdJwtWithDisclosures string, key keystore.KeyEntry, alg jose.SignatureAlgorithm, audience, nonce string, sdAlg string, transactionData []string, transactionDataHashesAlg string) (string, error) {
-	var h hash.Hash
-	switch strings.ToLower(sdAlg) {
-	case "sha-256":
-		h = sha256.New()
-	case "sha-384":
-		h = sha512.New384()
-	case "sha-512":
-		h = sha512.New()
-	default:
-		h = sha256.New()
+func createKeyBindingJWT(
+	sdJwtWithDisclosures string,
+	key keystore.KeyEntry,
+	alg jose.SignatureAlgorithm,
+	audience, nonce string,
+	sdAlg string,
+	transactionData []string,
+	transactionDataHashesAlg string,
+) (string, error) {
+	sdHash, err := computeDisclosureHash(sdJwtWithDisclosures, normalizeSDHashAlgorithm(sdAlg))
+	if err != nil {
+		return "", fmt.Errorf("failed to hash SD-JWT for sd_hash: %w", err)
 	}
-	h.Write([]byte(sdJwtWithDisclosures))
-	sdHash := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 
-	tdAlg := transactionDataHashesAlg
-	if tdAlg == "" {
-		tdAlg = "sha-256"
+	tdComputeAlg := strings.ToLower(transactionDataHashesAlg)
+	if tdComputeAlg == "" {
+		if len(transactionData) > 0 {
+			return "", fmt.Errorf("transaction_data_hashes_alg is required when transaction_data is present")
+		}
+	} else {
+		switch tdComputeAlg {
+		case "sha-256", "sha-384", "sha-512":
+			// valid
+		default:
+			return "", fmt.Errorf("unsupported transaction_data_hashes_alg: %s", transactionDataHashesAlg)
+		}
 	}
-	// Validate algorithm eagerly, independent of whether transactionData is empty.
-	switch strings.ToLower(tdAlg) {
-	case "sha-256", "sha-384", "sha-512":
-		// valid
-	default:
-		return "", fmt.Errorf("unsupported transaction_data_hashes_alg: %s", tdAlg)
-	}
+
 	var transactionDataHashes []string
 	for _, td := range transactionData {
-		h, err := computeDisclosureHash(td, tdAlg)
+		h, err := computeDisclosureHash(td, tdComputeAlg)
 		if err != nil {
 			return "", fmt.Errorf("failed to hash transaction data: %w", err)
 		}
@@ -601,7 +617,16 @@ func (s *SdJwtVcSerializer) SerializePresentation(
 		// Remove trailing ~ if KB-JWT will be added
 		sdJwtWithDisclosures = strings.TrimSuffix(sdJwtWithDisclosures, "~") + "~"
 
-		kbJwt, err := createKeyBindingJWT(sdJwtWithDisclosures, key, alg, sdOpts.Audience, sdOpts.Nonce, sdAlg, sdOpts.TransactionData, sdOpts.TransactionDataHashesAlg)
+		kbJwt, err := createKeyBindingJWT(
+			sdJwtWithDisclosures,
+			key,
+			alg,
+			sdOpts.Audience,
+			sdOpts.Nonce,
+			sdAlg,
+			sdOpts.TransactionData,
+			sdOpts.TransactionDataHashesAlg,
+		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create key binding JWT:  %w", err)
 		}

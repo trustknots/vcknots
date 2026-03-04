@@ -16,8 +16,8 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-	"github.com/trustknots/vcknots/wallet/presenter/types"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
+	"github.com/trustknots/vcknots/wallet/presenter/types"
 )
 
 func TestOid4vpPresenter_Present(t *testing.T) {

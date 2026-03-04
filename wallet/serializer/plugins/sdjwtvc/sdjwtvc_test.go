@@ -816,10 +816,11 @@ func TestSerializePresentationWithTransactionData(t *testing.T) {
 
 	transactionData := []string{"dGVzdC10cmFuc2FjdGlvbi1kYXRh", "YW5vdGhlci10cmFuc2FjdGlvbg"}
 	opts := &SdJwtVcPresentationOptions{
-		RequireKeyBinding: true,
-		Audience:          "https://verifier.example.com",
-		Nonce:             "test-nonce",
-		TransactionData:   transactionData,
+		RequireKeyBinding:        true,
+		Audience:                 "https://verifier.example.com",
+		Nonce:                    "test-nonce",
+		TransactionData:          transactionData,
+		TransactionDataHashesAlg: "sha-256",
 	}
 
 	serialized, _, err := serializer.SerializePresentation(credential.SDJwtVC, presentation, key, opts)
@@ -849,6 +850,10 @@ func TestSerializePresentationWithTransactionData(t *testing.T) {
 
 	if len(kbBody.TransactionDataHashes) != len(transactionData) {
 		t.Fatalf("expected %d transaction_data_hashes, got %d", len(transactionData), len(kbBody.TransactionDataHashes))
+	}
+
+	if kbBody.TransactionDataHashesAlg != "sha-256" {
+		t.Errorf("expected transaction_data_hashes_alg=sha-256, got %q", kbBody.TransactionDataHashesAlg)
 	}
 
 	for i, td := range transactionData {
@@ -1100,6 +1105,36 @@ func TestSerializePresentationWithUnsupportedTransactionDataHashesAlg(t *testing
 	_, _, err = serializer.SerializePresentation(credential.SDJwtVC, presentation, key, opts)
 	if err == nil {
 		t.Fatal("expected error for unsupported algorithm, got nil")
+	}
+}
+
+func TestSerializePresentationWithTransactionDataAndMissingTransactionDataHashesAlg(t *testing.T) {
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
+
+	key, err := newMockKeyEntry()
+	if err != nil {
+		t.Fatalf("failed to create mock key: %v", err)
+	}
+	testSDJWT := createTestSDJWTWithKey(key)
+
+	presentation := &credential.CredentialPresentation{
+		Types:       []string{"VerifiablePresentation"},
+		Credentials: [][]byte{[]byte(testSDJWT)},
+	}
+
+	opts := &SdJwtVcPresentationOptions{
+		RequireKeyBinding: true,
+		Audience:          "https://verifier.example.com",
+		Nonce:             "test-nonce",
+		TransactionData:   []string{"dGVzdA"},
+	}
+
+	_, _, err = serializer.SerializePresentation(credential.SDJwtVC, presentation, key, opts)
+	if err == nil {
+		t.Fatal("expected error when transaction_data_hashes_alg is missing while transaction_data is present")
 	}
 }
 

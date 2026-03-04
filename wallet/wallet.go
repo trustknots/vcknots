@@ -345,6 +345,7 @@ func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfil
 	b64Signature := base64.RawURLEncoding.EncodeToString(signature)
 	return signingInput + "." + b64Signature, nil
 }
+
 // GetCredentialEntries retrieves credential entries with optional filtering.
 func (w *Wallet) GetCredentialEntries(req GetCredentialEntriesRequest) ([]*SavedCredential, int, error) {
 	if req.Filter != nil {
@@ -754,8 +755,14 @@ func (w *Wallet) buildPresentation(credentials []*SavedCredential, flavor *crede
 func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentation, flavor *credential.SupportedSerializationFlavor, endpoint *url.URL, descriptorMap []presenterTypes.DescriptorMapItem, req *oid4vp.CredentialPresentationRequest, key IKeyEntry, options serializerTypes.SerializePresentationOptions) error {
 	if len(req.TransactionData) > 0 {
 		if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok {
+			transactionDataHashesAlg := req.TransactionDataHashesAlg
+			if transactionDataHashesAlg == "" {
+				// OID4VP transaction_data_hashes_alg default when omitted.
+				transactionDataHashesAlg = "sha-256"
+			}
+
 			sdOpts.TransactionData = req.TransactionData
-			sdOpts.TransactionDataHashesAlg = req.TransactionDataHashesAlg
+			sdOpts.TransactionDataHashesAlg = transactionDataHashesAlg
 		}
 	}
 
