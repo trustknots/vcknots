@@ -2,11 +2,10 @@ name: CI docs check build(on PR changed)
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: ["main"]
     paths:
-      - 'docs/**'
-      - 'docusaurus/**'
+      - "docs/**"
+      - "docusaurus/**"
   workflow_dispatch:
 
 jobs:
