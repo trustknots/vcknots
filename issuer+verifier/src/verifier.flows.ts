@@ -94,8 +94,8 @@ const isPresentationExchange = (query: unknown): query is PresentationExchange =
   ('presentation_definition' in query || 'presentation_definition_uri' in query)
 
 export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow => {
-  const cnonce$ = context.providers.get('cnonce-provider')
-  const nonceStore$ = context.providers.get('cnonce-store-provider')
+  const cnonce$ = context.providers.get('nonce-provider')
+  const nonceStore$ = context.providers.get('nonce-store-provider')
   const query$ = context.providers.get('credential-query-provider')
   const verifierMetadata$ = context.providers.get('verifier-metadata-store-provider')
   const key$ = context.providers.get('verifier-signature-key-provider')

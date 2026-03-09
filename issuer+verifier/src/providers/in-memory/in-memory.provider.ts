@@ -1,6 +1,6 @@
 import { inMemoryAuthzServerMetadata } from './in-memory-authz-metadata-store.provider'
 import { inMemoryAuthzSignatureKeyStore } from './in-memory-authz-signature-key-store.provider'
-import { inMemoryCnonceStore } from './in-memory-cnonce-store.provider'
+import { inMemoryNonceStore } from './in-memory-nonce-store.provider'
 import { inMemoryIssuerMetadataStore } from './in-memory-issuer-metadata-store.provider'
 import { inMemoryIssuerSignatureKeyStore } from './in-memory-issuer-signature-key-store.provider'
 import { inMemoryPreAuthorizedCodeStore } from './in-memory-pre-authorized-code-store.provider'
@@ -17,7 +17,7 @@ export const inMemory = () => {
     inMemoryIssuerSignatureKeyStore(),
     inMemoryAuthzServerMetadata(),
     inMemoryAuthzSignatureKeyStore(),
-    inMemoryCnonceStore(),
+    inMemoryNonceStore(),
     inMemoryRequestObjectStore(),
     inMemoryVerifierSignatureKeyStore(),
     inMemoryVerifierCertificateStore(),

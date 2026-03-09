@@ -6,15 +6,15 @@ import {
   AuthorizationServerMetadata,
 } from '../src/authorization-server.types'
 import { AuthzFlow, initializeAuthzFlow } from '../src/authz.flows'
-import { Cnonce } from '../src/cnonce.types'
+import { Nonce } from '../src/nonce.types'
 import { PreAuthorizedCode } from '../src/pre-authorized-code.types'
 import {
   AccessTokenProvider,
   AuthzServerMetadataStoreProvider,
   AuthzSignatureKeyProvider,
   AuthzSignatureKeyStoreProvider,
-  CnonceProvider,
-  CnonceStoreProvider,
+  NonceProvider,
+  NonceStoreProvider,
   PreAuthorizedCodeStoreProvider,
 } from '../src/providers'
 import { GrantType, TokenRequest, TokenResponse } from '../src/token-request.types'
@@ -42,21 +42,21 @@ describe('AuthzFlows', () => {
     save: mock.fn(),
   } satisfies PreAuthorizedCodeStoreProvider
 
-  const mockCnonceProvider = {
-    kind: 'cnonce-provider',
-    name: 'mock-cnonce-provider',
+  const mockNonceProvider = {
+    kind: 'nonce-provider',
+    name: 'mock-nonce-provider',
     single: true,
     generate: mock.fn(),
-  } satisfies CnonceProvider
+  } satisfies NonceProvider
 
-  const mockCnonceStoreProvider = {
-    kind: 'cnonce-store-provider',
-    name: 'mock-cnonce-store-provider',
+  const mockNonceStoreProvider = {
+    kind: 'nonce-store-provider',
+    name: 'mock-nonce-store-provider',
     single: true,
     revoke: mock.fn(),
     validate: mock.fn(),
     save: mock.fn(),
-  } satisfies CnonceStoreProvider
+  } satisfies NonceStoreProvider
 
   const mockAccessTokenProvider = {
     kind: 'access-token-provider',
@@ -103,10 +103,10 @@ describe('AuthzFlows', () => {
               return mockAuthzMetadataProvider
             case 'pre-authorized-code-store-provider':
               return mockCodeStoreProvider
-            case 'cnonce-provider':
-              return mockCnonceProvider
-            case 'cnonce-store-provider':
-              return mockCnonceStoreProvider
+            case 'nonce-provider':
+              return mockNonceProvider
+            case 'nonce-store-provider':
+              return mockNonceStoreProvider
             case 'access-token-provider':
               return mockAccessTokenProvider
             case 'authz-signature-key-store-provider':
@@ -193,7 +193,7 @@ describe('AuthzFlows', () => {
     const privateKey = { kty: 'EC', crv: 'P-256', alg: 'ES256', d: 'private-d-value' }
     const samplePayload = { iss: sampleIssuer, sub: preAuthCode }
     const sampleSignature = 'signed-jwt-signature-part'
-    const sampleCnonce = Cnonce('test-cnonce-value')
+    const sampleNonce = Nonce('test-nonce-value')
 
     describe('Pre-Authorized Code Flow', () => {
       beforeEach(() => {
@@ -206,7 +206,7 @@ describe('AuthzFlows', () => {
         mock.method(mockAuthzSignatureKeyProvider, 'canHandle', async () => true)
         mock.method(mockAuthzSignatureKeyProvider, 'sign', async () => sampleSignature)
         mock.method(mockAccessTokenProvider, 'createTokenPayload', () => samplePayload)
-        mock.method(mockCnonceProvider, 'generate', async () => sampleCnonce)
+        mock.method(mockNonceProvider, 'generate', async () => sampleNonce)
       })
 
       it('should successfully create an access token with default expiry', async () => {
@@ -218,8 +218,8 @@ describe('AuthzFlows', () => {
         assert.strictEqual(mockAuthzSignatureKeyProvider.canHandle.mock.callCount(), 1)
         assert.strictEqual(mockAuthzSignatureKeyProvider.sign.mock.callCount(), 1)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 1)
-        assert.strictEqual(mockCnonceProvider.generate.mock.callCount(), 1)
-        assert.strictEqual(mockCnonceStoreProvider.save.mock.callCount(), 1)
+        assert.strictEqual(mockNonceProvider.generate.mock.callCount(), 1)
+        assert.strictEqual(mockNonceStoreProvider.save.mock.callCount(), 1)
 
         const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
         const expectedHeader = { alg: privateKey.alg, typ: 'JWT' }
@@ -229,7 +229,7 @@ describe('AuthzFlows', () => {
 
         assert.strictEqual(response.access_token, expectedAccessToken)
         assert.strictEqual(response.token_type, 'bearer')
-        assert.strictEqual(response.c_nonce, sampleCnonce)
+        assert.strictEqual(response.c_nonce, sampleNonce)
         assert.strictEqual(response.expires_in, 86400) // Default value
         assert.strictEqual(response.c_nonce_expires_in, 300000) // Default value (5 minutes)
       })

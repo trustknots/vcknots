@@ -1,5 +1,5 @@
 import { base64url } from 'jose'
-import { Cnonce } from './cnonce.types'
+import { Nonce } from './nonce.types'
 import {
   CredentialConfigurationId,
   CredentialIssuer,
@@ -56,8 +56,8 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const offer$ = context.providers.get('credential-offer-provider')
   const codeStore$ = context.providers.get('pre-authorized-code-store-provider')
   const issueCredential$ = context.providers.get('issue-credential-provider')
-  const cnonce$ = context.providers.get('cnonce-provider')
-  const cnonceStore$ = context.providers.get('cnonce-store-provider')
+  const cnonce$ = context.providers.get('nonce-provider')
+  const cnonceStore$ = context.providers.get('nonce-store-provider')
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
   const key$ = context.providers.get('issuer-signature-key-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
@@ -211,15 +211,15 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       let nonce = undefined
       if (options?.cnonce) {
         if (typeof verifyProof.payload.nonce === 'string') {
-          const code = await cnonceStore$.validate(Cnonce(verifyProof.payload.nonce))
+          const code = await cnonceStore$.validate(Nonce(verifyProof.payload.nonce))
           if (!code) {
             throw err('INVALID_PROOF', {
               message: 'Nonce not found.',
             })
           }
-          await cnonceStore$.revoke(Cnonce(verifyProof.payload.nonce))
+          await cnonceStore$.revoke(Nonce(verifyProof.payload.nonce))
           nonce = await cnonce$.generate()
-          await cnonceStore$.save(Cnonce(nonce))
+          await cnonceStore$.save(Nonce(nonce))
         }
       }
 

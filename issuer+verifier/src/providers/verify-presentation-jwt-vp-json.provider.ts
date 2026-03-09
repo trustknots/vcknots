@@ -7,7 +7,7 @@ import { VerifiableCredential, parseVerifiableCredentialBase } from '../credenti
 import { selectProvider } from './provider.utils'
 import { jwtVpJsonPayloadSchema, VpTokenPayload } from '../presentation.types'
 import { z } from 'zod'
-import { Cnonce } from '../cnonce.types'
+import { Nonce } from '../nonce.types'
 
 export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProvider &
   WithProviderRegistry => {
@@ -57,8 +57,8 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
       }
       const vpPayload = parseResult.data
 
-      const nonce = Cnonce(vpPayload.nonce)
-      const nonceStore$ = this.providers.get('cnonce-store-provider')
+      const nonce = Nonce(vpPayload.nonce)
+      const nonceStore$ = this.providers.get('nonce-store-provider')
       const nonceValid = await nonceStore$.validate(nonce)
       if (!nonceValid) {
         throw err('INVALID_NONCE', {

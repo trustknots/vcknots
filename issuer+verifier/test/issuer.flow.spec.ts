@@ -9,8 +9,8 @@ import { CredentialOffer } from '../src/credential-offer.types'
 import { CredentialFormats, CredentialRequest, ProofTypes } from '../src/credential-request.types'
 import { IssuerFlow, initializeIssuerFlow } from '../src/issuer.flows'
 import {
-  CnonceProvider,
-  CnonceStoreProvider,
+  NonceProvider,
+  NonceStoreProvider,
   CredentialOfferProvider,
   CredentialProofProvider,
   IssueCredentialProvider,
@@ -92,21 +92,21 @@ describe('IssuerFlow', () => {
     canHandle: mock.fn(),
   } satisfies CredentialProofProvider
 
-  const mockCnonceProvider = {
-    kind: 'cnonce-provider',
-    name: 'mock-cnonce-provider',
+  const mockNonceProvider = {
+    kind: 'nonce-provider',
+    name: 'mock-nonce-provider',
     single: true,
     generate: mock.fn(),
-  } satisfies CnonceProvider
+  } satisfies NonceProvider
 
-  const mockCnonceStoreProvider = {
-    kind: 'cnonce-store-provider',
-    name: 'mock-cnonce-store-provider',
+  const mockNonceStoreProvider = {
+    kind: 'nonce-store-provider',
+    name: 'mock-nonce-store-provider',
     single: true,
     save: mock.fn(),
     validate: mock.fn(),
     revoke: mock.fn(),
-  } satisfies CnonceStoreProvider
+  } satisfies NonceStoreProvider
 
   before(() => {
     context = initializeContext({
@@ -119,8 +119,8 @@ describe('IssuerFlow', () => {
         mockIssuerSignatureKeyProvider,
         mockCredentialOfferProvider,
         mockCredentialProofProvider,
-        mockCnonceProvider,
-        mockCnonceStoreProvider,
+        mockNonceProvider,
+        mockNonceStoreProvider,
       ],
     })
     issuerFlow = initializeIssuerFlow(context)
@@ -855,10 +855,10 @@ describe('IssuerFlow', () => {
 
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
-      mock.method(mockCnonceStoreProvider, 'validate', async () => true) // Nonce is valid
-      mock.method(mockCnonceStoreProvider, 'revoke', async () => {})
-      mock.method(mockCnonceProvider, 'generate', async () => newNonce)
-      mock.method(mockCnonceStoreProvider, 'save', async () => {})
+      mock.method(mockNonceStoreProvider, 'validate', async () => true) // Nonce is valid
+      mock.method(mockNonceStoreProvider, 'revoke', async () => {})
+      mock.method(mockNonceProvider, 'generate', async () => newNonce)
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
       mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
       mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signed.credential.jwt')
@@ -879,10 +879,10 @@ describe('IssuerFlow', () => {
       // 3. Assert
       assert.ok(response)
       assert.equal(response.c_nonce, newNonce)
-      assert.equal(mockCnonceStoreProvider.validate.mock.callCount(), 1)
-      assert.equal(mockCnonceStoreProvider.revoke.mock.callCount(), 1)
-      assert.equal(mockCnonceProvider.generate.mock.callCount(), 1)
-      assert.equal(mockCnonceStoreProvider.save.mock.callCount(), 1)
+      assert.equal(mockNonceStoreProvider.validate.mock.callCount(), 1)
+      assert.equal(mockNonceStoreProvider.revoke.mock.callCount(), 1)
+      assert.equal(mockNonceProvider.generate.mock.callCount(), 1)
+      assert.equal(mockNonceStoreProvider.save.mock.callCount(), 1)
     })
 
     it('should throw "INVALID_PROOF" if cnonce is invalid', async () => {
@@ -910,7 +910,7 @@ describe('IssuerFlow', () => {
 
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
-      mock.method(mockCnonceStoreProvider, 'validate', async () => false) // Nonce is invalid
+      mock.method(mockNonceStoreProvider, 'validate', async () => false) // Nonce is invalid
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )

@@ -7,7 +7,7 @@ import { Jwk } from '../../src/jwk.type'
 import { VcknotsError } from '../../src/errors/vcknots.error'
 import { verifyVerifiablePresentationDcSdJwt } from '../../src/providers/verify-presentation-dc-sd-jwt.provider'
 // import { VerifyVerifiablePresentationProvider } from '../../src/providers/provider.types'
-import { CnonceStoreProvider } from '../../src/providers/provider.types'
+import { NonceStoreProvider } from '../../src/providers/provider.types'
 
 const issuer = 'https://issuer.example.com'
 const kid = 'test-kid'
@@ -15,7 +15,7 @@ const kid = 'test-kid'
 describe('sd-jwt provider', () => {
   // let provider: VerifyVerifiablePresentationProvider
   let provider: ReturnType<typeof verifyVerifiablePresentationDcSdJwt>
-  let mockCnonceStore: CnonceStoreProvider
+  let mockCnonceStore: NonceStoreProvider
   let publicJwk: Jwk
   let privateJwk: Jwk
 
@@ -46,7 +46,7 @@ describe('sd-jwt provider', () => {
     publicJwk = { ...keyPair.publicKey, kid }
     privateJwk = { ...keyPair.privateKey, kid }
     mockCnonceStore = {
-      kind: 'cnonce-store-provider',
+      kind: 'nonce-store-provider',
       name: 'mock-cnonce-store',
       single: true,
       validate: mock.fn(async (nonce: string) => nonce === 'bcb201b7e186ed380127b9158a9d57a6'),
@@ -57,7 +57,7 @@ describe('sd-jwt provider', () => {
     Object.defineProperty(provider, 'providers', {
       value: {
         get: (kind: string) => {
-          if (kind === 'cnonce-store-provider') {
+          if (kind === 'nonce-store-provider') {
             return mockCnonceStore
           }
           return undefined

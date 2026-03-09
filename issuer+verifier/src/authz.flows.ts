@@ -39,8 +39,8 @@ export type AuthzFlow = {
 export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   const authz$ = context.providers.get('authz-server-metadata-store-provider')
   const codeStore$ = context.providers.get('pre-authorized-code-store-provider')
-  const cnonce$ = context.providers.get('cnonce-provider')
-  const cnonceStore$ = context.providers.get('cnonce-store-provider')
+  const cnonce$ = context.providers.get('nonce-provider')
+  const cnonceStore$ = context.providers.get('nonce-store-provider')
   const accessToken$ = context.providers.get('access-token-provider')
   const authzKey$ = context.providers.get('authz-signature-key-store-provider')
   const authzSignatureKey$ = context.providers.get('authz-signature-key-provider')
