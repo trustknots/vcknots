@@ -7,7 +7,7 @@ import { createFirestoreTestMock } from './firestore-test-mock'
 
 const { store, mockApp } = createFirestoreTestMock()
 
-describe('firestoreVerifier', () => {
+describe('firestoreVerifierMetadataStore', () => {
   const md5 = (value: string) => createHash('md5').update(value).digest('base64url')
 
   const verifier = VerifierClientId('https://example.com/verifier')
