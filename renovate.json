@@ -15,12 +15,12 @@
 	"branchPrefix": "build/",
 	"pin": {
 		"group": {
-		"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
+			"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
 		}
 	},
 	"pinDigest": {
 		"group": {
-		"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
+			"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
 		}
 	},
 	"packageRules": [
@@ -44,6 +44,16 @@
 		{
 			"matchFileNames": ["server/single/**"],
 			"groupName": "server-single",
+			"rangeStrategy": "pin"
+		},
+		{
+			"matchFileNames": ["server/core/**"],
+			"groupName": "server-core",
+			"rangeStrategy": "pin"
+		},
+		{
+			"matchFileNames": ["server/google-cloud/**"],
+			"groupName": "server-google-cloud",
 			"rangeStrategy": "pin"
 		},
 		{
@@ -78,7 +88,7 @@
 			],
 			"commitMessagePrefix": "build:",
 			"commitMessageAction": "update",
-    		"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
+			"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
 		},
 
 		{
