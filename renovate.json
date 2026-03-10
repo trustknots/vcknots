@@ -27,7 +27,7 @@
 		{
 			"matchManagers": ["gradle"],
 			"matchPaths": [
-				"wallet/wrappers/vcknots_wallet_dart_wrapper/example/android/**"
+				"wallet_wrappers/vcknots_wallet_dart_wrapper/example/android/**"
 			],
 			"enabled": false
 		},
@@ -49,6 +49,11 @@
 		{
 			"matchFileNames": ["wallet/**"],
 			"groupName": "wallet",
+			"rangeStrategy": "pin"
+		},
+		{
+			"matchFileNames": ["wallet_wrappers/**"],
+			"groupName": "wallet-wrappers",
 			"rangeStrategy": "pin"
 		},
 		{
