@@ -239,6 +239,11 @@ const credentialConfigurationSchema = z.object({
    * If present, it's an array of claim names specifying the order in which they should be displayed.
    */
   order: z.array(z.string()).optional(),
+
+  /**
+   * (Optional) Verifiable Credential Type for dc+sd-jwt format credentials.
+   */
+  vct: z.string().optional(),
 })
 
 const credentialIssuerSchema = z.string().url().brand('CredentialIssuer')

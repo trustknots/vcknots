@@ -1,4 +1,6 @@
-import { base64url } from 'jose'
+import { base64url, calculateJwkThumbprint } from 'jose'
+import { SDJwtInstance } from '@sd-jwt/core'
+import { ES256, digest, generateSalt } from '@sd-jwt/crypto-nodejs'
 import { Cnonce } from './cnonce.types'
 import {
   CredentialConfigurationId,
@@ -75,13 +77,25 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const jwtVcIssuerMetadata: JwtVcIssuerResponse = {
         issuer: metadata.credential_issuer,
       }
+      // Enrich JWKS keys with kid (JWK thumbprint) so verifiers can match
+      // the kid in SD-JWT headers to the correct issuer public key
       const issuerKeys = await keyStore$.fetch(id)
       if (issuerKeys && issuerKeys.length > 0) {
         jwtVcIssuerMetadata.jwks = {
-          keys: issuerKeys.map((keypair) => {
-            const { publicKey } = keypair
-            return publicKey
-          }),
+          keys: await Promise.all(
+            issuerKeys.map(async (keypair) => {
+              const { publicKey } = keypair
+              if (publicKey.kid) {
+                return publicKey
+              }
+              try {
+                const kid = await calculateJwkThumbprint(publicKey)
+                return { ...publicKey, kid }
+              } catch {
+                return publicKey
+              }
+            })
+          ),
         }
       }
       return jwtVcIssuerMetadata
@@ -155,7 +169,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: 'Credential request format is not specified.',
         })
       }
-      const issueCredentialProvider = selectProvider(issueCredential$, format)
 
       // https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html#name-credential-request-2
       const credentialConfiguration = metadata.credential_configurations_supported
@@ -202,7 +215,9 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: 'Failed to verify Proof.',
         })
       }
-      if (!verifyProof.header.kid) {
+      // Accept kid (DID-based) or jwk (raw public key) as proof of possession.
+      // dc+sd-jwt proofs use jwk for the cnf claim; jwt_vc_json proofs use kid.
+      if (!verifyProof.header.kid && !verifyProof.header.jwk) {
         throw err('INVALID_PROOF', {
           message: 'Unsupported proof header.',
         })
@@ -223,12 +238,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         }
       }
 
-      const verifiableCredential = issueCredentialProvider.createCredential(
-        issuer,
-        configuration,
-        verifyProof,
-        options?.claims
-      )
       const keyAlg = options?.alg ?? 'ES256'
       if (
         !configuration.credential_signing_alg_values_supported ||
@@ -238,6 +247,80 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: 'Unsupported key algorithm.',
         })
       }
+
+      const issuerKeys = await keyStore$.fetch(issuer)
+      const keys = issuerKeys.find((keypair) => keypair.privateKey.alg === keyAlg)
+      if (!keys) {
+        throw err('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+          message: 'Issuer key not found.',
+        })
+      }
+
+      // dc+sd-jwt: issue as SD-JWT with cnf claim for key binding
+      if (format === 'dc+sd-jwt') {
+        const holderJwk = verifyProof.header.jwk
+        const vct = configuration.vct ?? 'VerifiableCredential'
+
+        // Build claims from credential definition, coercing values by declared type
+        const sdJwtClaims: Record<string, unknown> = {}
+        const credentialSubject = configuration.credential_definition.credentialSubject
+        if (credentialSubject && Object.keys(credentialSubject).length > 0 && options?.claims) {
+          for (const [key, value] of Object.entries(credentialSubject)) {
+            if (value.mandatory === true && !(key in options.claims)) {
+              throw err('INVALID_CLAIMS', {
+                message: `Mandatory claim "${key}" is missing.`,
+              })
+            }
+            if (key in options.claims) {
+              if (value.value_type === 'string') {
+                sdJwtClaims[key] = String(options.claims[key])
+              } else if (value.value_type === 'number') {
+                sdJwtClaims[key] = Number(options.claims[key])
+              } else {
+                sdJwtClaims[key] = options.claims[key]
+              }
+            }
+          }
+        }
+
+        const kid = await calculateJwkThumbprint(keys.publicKey)
+        const signer = await ES256.getSigner(keys.privateKey)
+        const sdJwtInstance = new SDJwtInstance({
+          hasher: digest,
+          signer,
+          saltGenerator: () => generateSalt(8),
+          signAlg: ES256.alg,
+        })
+
+        const sdJwtPayload = {
+          iss: issuer,
+          vct,
+          iat: Math.floor(Date.now() / 1000),
+          sub: verifyProof.header.kid,
+          ...(holderJwk ? { cnf: { jwk: holderJwk } } : {}),
+          ...sdJwtClaims,
+        }
+
+        const sdJwt = await sdJwtInstance.issue(sdJwtPayload, undefined, {
+          header: { kid },
+        })
+
+        return {
+          credential: sdJwt,
+          c_nonce: nonce,
+          c_nonce_expires_in: options?.cnonce?.c_nonce_expires_in ?? 86400,
+        }
+      }
+
+      // jwt_vc_json: wrap credential in JWT envelope using format-specific provider.
+      // selectProvider is called here (not earlier) because no provider handles dc+sd-jwt.
+      const issueCredentialProvider = selectProvider(issueCredential$, format)
+      const verifiableCredential = issueCredentialProvider.createCredential(
+        issuer,
+        configuration,
+        verifyProof,
+        options?.claims
+      )
       const jwtHeader = {
         alg: keyAlg,
         typ: 'JWT',
@@ -246,13 +329,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         vc: verifiableCredential,
         iss: verifiableCredential.issuer,
         sub: verifyProof.header.kid,
-      }
-      const issuerKeys = await keyStore$.fetch(issuer)
-      const keys = issuerKeys.find((keypair) => keypair.privateKey.alg === keyAlg)
-      if (!keys) {
-        throw err('AUTHZ_ISSUER_KEY_NOT_FOUND', {
-          message: 'Issuer key not found.',
-        })
       }
       const keyProvider = selectProvider(key$, keyAlg)
       const signature = await keyProvider.sign(keys.privateKey, keyAlg, jwtPayload, jwtHeader)

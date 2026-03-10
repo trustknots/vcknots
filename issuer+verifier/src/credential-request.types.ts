@@ -5,6 +5,7 @@ export enum CredentialFormats {
   JWT_VC_JSON = 'jwt_vc_json',
   JWT_VC_JSON_LD = 'jwt_vc_json-ld',
   LDP_VC = 'ldp_vc',
+  DC_SD_JWT = 'dc+sd-jwt',
 }
 
 export enum ProofTypes {
