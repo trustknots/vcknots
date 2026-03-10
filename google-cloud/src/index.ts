@@ -1,3 +1,4 @@
 export * from './providers/firestore-issuer-metadata-store.provider'
 export * from './providers/firestore-verifier-metadata-store.provider'
+export * from './providers/firestore-authz-metadata-store.provider'
 export { FirestoreProviderOptions, firestore } from './providers/firestore.provider'
