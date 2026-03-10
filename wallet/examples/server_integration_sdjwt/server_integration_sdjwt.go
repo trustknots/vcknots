@@ -1,14 +1,25 @@
 package main
 
-// Server Integration Example
+// Server Integration and Conformance Test Example
 //
-// This example demonstrates how to integrate the wallet with the vcknots server.
+// This example supports two modes of operation:
 //
-// Server Setup:
-// 1. Start the server: pnpm -F @trustknots/server start
-// 2. Server runs on: http://localhost:8080
+// Mode 1: Server Integration Test (no arguments)
+//   - Tests integration with local vcknots server
+//   - Server Setup:
+//     1. Start the server: pnpm -F @trustknots/server start
+//     2. Server runs on: http://localhost:8080
+//   - Usage: go run server_integration_sdjwt.go
 //
-// Available Endpoints:
+// Mode 2: Conformance Test (with OID4VP URI argument)
+//   - Tests against external conformance test services
+//   - Usage: go run server_integration_sdjwt.go "<OID4VP_URI>"
+//   - Example: go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_uri=..."
+//
+// Both modes follow the same flow: seed credential → build wallet → get OID4VP request URI → present.
+// The only differences are runtime inputs (request URI source, certificate pool, selected claims).
+//
+// Available Endpoints (for Mode 1):
 // - Offer Endpoint: http://localhost:8080/configurations/:configurationId/offer
 // - Token Endpoint: http://localhost:8080/token
 // - Credential Endpoint: http://localhost:8080/credentials
@@ -132,8 +143,9 @@ func (m *MockKeyEntry) Sign(payload []byte) ([]byte, error) {
 }
 
 
-func presentation(w *wallet.Wallet, key *MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
-	// Example verifier details
+// fetchOID4VPURIFromServer constructs a presentation definition from the credential,
+// sends it to the local server, and returns the OID4VP authorization request URI.
+func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger *slog.Logger) string {
 	verifierURL := "http://localhost:8080"
 
 	// Print the verifier details
@@ -142,118 +154,115 @@ func presentation(w *wallet.Wallet, key *MockKeyEntry, receivedCredential *walle
 	// Verify that the received credential is available in the store
 	logger.Info("Using received credential for presentation", "credential_id", receivedCredential.Entry.Id)
 
-	// Decode the JWT to inspect the credential
-	jwtString := string(receivedCredential.Entry.Raw)
-	logger.Info("Decoding received credential JWT")
+	// For SD-JWT format, extract claims directly from deserialized credential
+	logger.Info("Decoding received credential")
 
-	// Parse JWT (format: header.payload.signature)
-	parts := strings.Split(jwtString, ".")
-	if len(parts) != 3 {
-		logger.Error("Invalid JWT format", "parts", len(parts))
-		panic(fmt.Errorf("invalid JWT format"))
-	}
-
-	// Decode the payload (second part)
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		logger.Error("Failed to decode JWT payload", "error", err)
-		panic(err)
-	}
-
-	// Parse the credential payload
-	var credential map[string]interface{}
-	if err := json.Unmarshal(payloadBytes, &credential); err != nil {
-		logger.Error("Failed to parse credential payload", "error", err)
-		panic(err)
-	}
-
-	logger.Info("Decoded credential", "credential", credential)
-
-	// Extract credential type
-	var credentialTypes []string
-	if vc, ok := credential["vc"].(map[string]interface{}); ok {
-		if types, ok := vc["type"].([]interface{}); ok {
-			for _, t := range types {
-				if typeStr, ok := t.(string); ok {
-					credentialTypes = append(credentialTypes, typeStr)
-				}
-			}
-		}
-	}
-
-	// Extract credentialSubject fields
+	// Extract available claims from the credential
 	var subjectFields []string
-	if vc, ok := credential["vc"].(map[string]interface{}); ok {
-		if credentialSubject, ok := vc["credentialSubject"].(map[string]interface{}); ok {
-			for field := range credentialSubject {
+	if receivedCredential.Credential.Claims != nil {
+		for field := range *receivedCredential.Credential.Claims {
+			// Skip system fields and metadata
+			if field != "iss" && field != "iat" && field != "exp" && field != "vct" &&
+				field != "cnf" && field != "_sd" && field != "_sd_alg" {
 				subjectFields = append(subjectFields, field)
 			}
 		}
 	}
 
-	logger.Info("Credential analysis",
-		"types", credentialTypes,
-		"subject_fields", subjectFields)
-
-	specificType := "Hoge"
-
-	// Build field constraints dynamically
-	fieldsJSON := `[
-		{
-			"path": ["$.type"],
-			"filter": {
-				"type": "array",
-				"contains": {"const": "` + specificType + `"}
+	// Extract vct from claims
+	var vctValue string
+	if receivedCredential.Credential.Claims != nil {
+		if vct, ok := (*receivedCredential.Credential.Claims)["vct"]; ok {
+			if vctStr, ok := vct.(string); ok {
+				vctValue = vctStr
 			}
-		}`
-
-	for _, field := range subjectFields {
-		if field != "id" { // Skip id field
-			fieldsJSON += `,
-		{
-			"path": ["$.credentialSubject.` + field + `"],
-			"intent_to_retain": false
-		}`
 		}
 	}
-	fieldsJSON += `
-	]`
 
-	// Create presentation definition based on the decoded credential
-	jsonBody := `{
-		"query": {
-			"presentation_definition": {
-			"id": "dynamic-presentation-` + specificType + `",
-			"input_descriptors": [
-			{
-				"id": "credential-request",
-				"name": "` + specificType + `",
-				"purpose": "Verify credential",
-				"format": {
-				"jwt_vc_json": {
-					"alg": ["ES256"]
-				}
-				},
-				"constraints": {
-				"fields": ` + fieldsJSON + `
-				}
-			}
-			]
-		}
+	logger.Info("Credential analysis",
+		"issuer", receivedCredential.Credential.Issuer,
+		"vct", vctValue,
+		"available_fields", subjectFields)
+
+	// Use vct as the type for SD-JWT
+	specificType := vctValue
+	if specificType == "" {
+		specificType = "urn:eudi:pid:1"
+	}
+
+	// Build field constraints dynamically for SD-JWT format
+	type Field struct {
+		Path           []string               `json:"path"`
+		Filter         map[string]interface{} `json:"filter,omitempty"`
+		IntentToRetain *bool                  `json:"intent_to_retain,omitempty"`
+	}
+
+	fields := []Field{
+		{
+			Path: []string{"$.vct"},
+			Filter: map[string]interface{}{
+				"type":  "string",
+				"const": specificType,
+			},
 		},
-		"state": "example-state",
-		"base_url": "http://localhost:8080",
-		"is_request_uri": true,
-		"response_uri": "http://localhost:8080/callback",
-		"client_id": "x509_san_dns:localhost"
-	}`
+	}
 
-	logger.Info("Generated presentation definition", "json", jsonBody)
-	reqBody := io.NopCloser(strings.NewReader(jsonBody))
+	for _, field := range subjectFields {
+		falseVal := false
+		fields = append(fields, Field{
+			Path:           []string{"$." + field},
+			IntentToRetain: &falseVal,
+		})
+	}
+
+	// Create presentation definition structure
+	requestBody := map[string]interface{}{
+		"query": map[string]interface{}{
+			"presentation_definition": map[string]interface{}{
+				"id": "dynamic-presentation-sdjwt",
+				"input_descriptors": []map[string]interface{}{
+					{
+						"id":      "credential-request",
+						"name":    "SD-JWT Credential",
+						"purpose": "Verify credential",
+						"format": map[string]interface{}{
+							"dc+sd-jwt": map[string]interface{}{
+								"alg": []string{"ES256"},
+							},
+						},
+						"constraints": map[string]interface{}{
+							"fields": fields,
+						},
+					},
+				},
+			},
+		},
+		"state":          "example-state",
+		"base_url":       verifierURL,
+		"is_request_uri": true,
+		"response_uri":   verifierURL + "/callback",
+		"client_id":      "x509_san_dns:localhost",
+	}
+
+	// Marshal to formatted JSON for logging
+	formattedJSON, err := json.MarshalIndent(requestBody, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+	logger.Info("Generated presentation definition:")
+	fmt.Println(string(formattedJSON))
+
+	// Marshal to compact JSON for the request
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		panic(err)
+	}
+	reqBody := io.NopCloser(strings.NewReader(string(jsonBody)))
 	req, err := http.NewRequest("POST", verifierURL+"/request-object", reqBody)
 	if err != nil {
 		panic(err)
 	}
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -266,11 +275,19 @@ func presentation(w *wallet.Wallet, key *MockKeyEntry, receivedCredential *walle
 		panic(err)
 	}
 
-	logger.Info("Authorization RequestURI", "status", resp.Status, "body", string(body))
+	bodyStr := strings.TrimSpace(string(body))
+	logger.Info("Authorization RequestURI", "status", resp.Status, "body", bodyStr)
+
+	// Check if the response is an error (non-2xx status code)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		logger.Error("Server returned error response", "status", resp.StatusCode, "body", bodyStr)
+		panic(fmt.Sprintf("server error: %s - %s", resp.Status, bodyStr))
+	}
 
 	// check if the body is the OID4VP request URI
-	urlParsed, err := url.Parse(string(body))
+	urlParsed, err := url.Parse(bodyStr)
 	if err != nil {
+		logger.Error("Failed to parse response as URL", "error", err, "body", bodyStr)
 		panic(err)
 	}
 
@@ -279,21 +296,62 @@ func presentation(w *wallet.Wallet, key *MockKeyEntry, receivedCredential *walle
 	}
 
 	logger.Info("Request URI is valid", "scheme", urlParsed.Scheme)
-
-	// Present demo credential to the verifier
-	err = w.PresentCredential(string(body), key, options)
-	if err != nil {
-		logger.Error("Failed to present credential", "error", err)
-		panic(err)
-	}
-	logger.Info("Credential presented successfully")
+	return bodyStr
 }
 
+// buildCertPool creates the appropriate certificate pool based on the mode.
+// For conformance testing, it uses the system root certificate pool.
+// For server integration, it loads the server's specific certificate.
+func buildCertPool(isConformanceMode bool, logger *slog.Logger) *x509.CertPool {
+	if isConformanceMode {
+		systemRoots, err := x509.SystemCertPool()
+		if err != nil {
+			panic(fmt.Sprintf("failed to load system cert pool: %v", err))
+		}
+		return systemRoots
+	}
+
+	certPath := os.Getenv("VCKNOTS_CERT_PATH")
+	if certPath == "" {
+		certPath = defaultCertPath
+	}
+	certFile, err := os.ReadFile(certPath)
+	if err != nil {
+		panic(fmt.Sprintf("failed to read certificate file: %v", err))
+	}
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM(certFile) {
+		panic("failed to parse certificate")
+	}
+	return certPool
+}
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	// Create credential store with default config
+	isConformanceMode := len(os.Args) >= 2
+
+	if isConformanceMode {
+		logger.Info("=== Conformance Test Mode ===")
+	} else {
+		logger.Info("=== Server Integration Test Mode ===")
+		logger.Info("Make sure the server is running on http://localhost:8080")
+	}
+
+	// Step 1: Clean up existing credential store
+	appDir, err := os.UserConfigDir()
+	if err != nil {
+		logger.Error("Failed to resolve user config dir", "error", err)
+		os.Exit(1)
+	}
+	credStorePath := fmt.Sprintf("%s/vcknots/wallet/.local_credstore.db", appDir)
+	if err := os.Remove(credStorePath); err != nil && !os.IsNotExist(err) {
+		logger.Warn("Failed to remove credential store", "path", credStorePath, "error", err)
+	} else {
+		logger.Info("Cleaned up existing credential store", "path", credStorePath)
+	}
+
+	// Step 2: Create credential store and seed credential
 	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
 	if err != nil {
 		panic(err)
@@ -304,8 +362,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	credID := "sample-sdjwt"
 	err = credStore.SaveCredentialEntry(credstore.CredentialEntry{
-		Id:         "sample-sdjwt",
+		Id:         credID,
 		ReceivedAt: time.Now(),
 		Raw:        sdJwtCredFile,
 		MimeType:   string(credential.SDJwtVC),
@@ -314,46 +374,34 @@ func main() {
 		panic(err)
 	}
 
-	savedSdJwtCredEntry, err := credStore.GetCredentialEntry("sample-sdjwt", credstore.SupportedCredStoreTypes(0))
+	savedSdJwtCredEntry, err := credStore.GetCredentialEntry(credID, credstore.SupportedCredStoreTypes(0))
 	if err != nil {
 		panic(err)
 	}
+	logger.Info("Retrieved credential entry", "mime_type", savedSdJwtCredEntry.MimeType)
 
-	// Create receiver with default config
-	receiver, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
-	if err != nil {
-		panic(err)
-	}
-
-	serializer, err := serializer.NewSerializationDispatcher(serializer.WithDefaultConfig())
-	if err != nil {
-		panic(err)
-	}
-
-	// Create verifier with default config
-	verifier, err := verifier.NewVerificationDispatcher(verifier.WithDefaultConfig())
-	if err != nil {
-		panic(err)
-	}
-
-	// Create presenter with default config
-	// Load the server's certificate for TLS verification
-	certPath := os.Getenv("VCKNOTS_CERT_PATH")
-	if certPath == "" {
-		certPath = defaultCertPath
-	}
-	certFile, err := os.ReadFile(certPath)
-	if err != nil {
-		panic(err)
-	}
-	certPool := x509.NewCertPool()
-	if !certPool.AppendCertsFromPEM(certFile) {
-		panic("Failed to parse certificate")
-	}
+	// Step 3: Build presenter with appropriate certificate pool
+	certPool := buildCertPool(isConformanceMode, logger)
 	p := &oid4vp.Oid4vpPresenter{
 		X509TrustChainRoots: certPool,
 	}
-	presenter, err := presenter.NewPresentationDispatcher(presenter.WithPlugin(presenter.Oid4vp, p))
+	presenterDisp, err := presenter.NewPresentationDispatcher(presenter.WithPlugin(presenter.Oid4vp, p))
+	if err != nil {
+		panic(err)
+	}
+
+	// Step 4: Create remaining dispatchers and wallet
+	receiverDisp, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+	if err != nil {
+		panic(err)
+	}
+
+	serializerDisp, err := serializer.NewSerializationDispatcher(serializer.WithDefaultConfig())
+	if err != nil {
+		panic(err)
+	}
+
+	verifierDisp, err := verifier.NewVerificationDispatcher(verifier.WithDefaultConfig())
 	if err != nil {
 		panic(err)
 	}
@@ -364,16 +412,14 @@ func main() {
 		panic(err)
 	}
 
-	config := wallet.Config{
+	w, err := wallet.NewWalletWithConfig(wallet.Config{
 		CredStore:  credStore,
 		IDProfiler: idProf,
-		Receiver:   receiver,
-		Serializer: serializer,
-		Verifier:   verifier,
-		Presenter:  presenter,
-	}
-
-	w, err := wallet.NewWalletWithConfig(config)
+		Receiver:   receiverDisp,
+		Serializer: serializerDisp,
+		Verifier:   verifierDisp,
+		Presenter:  presenterDisp,
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -382,20 +428,54 @@ func main() {
 
 	mockKey := NewMockKeyEntry()
 
-	// deserialized
-	deserializedSdJwtCred, err := serializer.DeserializeCredential(credential.SDJwtVC, savedSdJwtCredEntry.Raw)
+	// Step 5: Deserialize credential for analysis
+	deserializedCred, err := serializerDisp.DeserializeCredential(credential.SDJwtVC, savedSdJwtCredEntry.Raw)
 	if err != nil {
 		panic(err)
 	}
-	savedSdJwtCred := wallet.SavedCredential{
-		Credential: deserializedSdJwtCred,
+	savedCred := &wallet.SavedCredential{
+		Credential: deserializedCred,
 		Entry:      savedSdJwtCredEntry,
 	}
-	logger.Info("Deserialized credential", "credential.issuer", deserializedSdJwtCred.Issuer, "credential.claims", deserializedSdJwtCred.Claims)
+	logger.Info("Deserialized credential", "issuer", deserializedCred.Issuer, "claims", deserializedCred.Claims)
 
-	options := sdjwtvc.SdJwtVcPresentationOptions{
-		SelectedClaims:    []string{"given_name"},
-		RequireKeyBinding: false,
+	// Step 6: Get OID4VP URI and build presentation options
+	var oid4vpURI string
+	var options *sdjwtvc.SdJwtVcPresentationOptions
+
+	if isConformanceMode {
+		oid4vpURI = os.Args[1]
+		logger.Info("Using OID4VP URI from command line", "uri", oid4vpURI)
+
+		// Parse the request to extract nonce and audience for key binding
+		req, err := presenterDisp.ParseRequestURI(oid4vpURI)
+		if err != nil {
+			logger.Error("Failed to parse OID4VP request", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("Parsed OID4VP request", "nonce", req.Nonce, "client_id", req.ClientID)
+
+		options = &sdjwtvc.SdJwtVcPresentationOptions{
+			SelectedClaims:    []string{"given_name", "family_name"},
+			RequireKeyBinding: true,
+			Audience:          req.ClientID,
+			Nonce:             req.Nonce,
+		}
+	} else {
+		oid4vpURI = fetchOID4VPURIFromServer(savedCred, logger)
+
+		options = &sdjwtvc.SdJwtVcPresentationOptions{
+			SelectedClaims:    []string{"given_name"},
+			RequireKeyBinding: false,
+		}
 	}
-	presentation(w, mockKey, &savedSdJwtCred, &options, logger)
+
+	// Step 7: Present credential
+	logger.Info("Presenting credential...")
+	err = w.PresentCredential(oid4vpURI, mockKey, options)
+	if err != nil {
+		logger.Error("Failed to present credential", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("Credential presented successfully!")
 }

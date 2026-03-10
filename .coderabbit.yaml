@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: "ja-JP"
+
+early_access: true
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: true
+  review_status: true
+  review_details: false
+  auto_review:
+    base_branches:
+      - "main"
+    enabled: true
+    drafts: false
+    ignore_title_keywords:
+      - "WIP"
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "renovate[bot]"
+      - "github-actions[bot]"
+      - "ci-automation"
+  path_instructions:
+    - path: "wallet/**"
+      instructions: |
+        This is a Go project.
+        Use `stretchr/testify` for assertions.
+        Follow Go idioms and conventions.
+    - path: "issuer+verifier/**"
+      instructions: |
+        This is a TypeScript project implementing OID4VCI and OID4VP.
+        Use Node.js native test runner (`node --test`) and `tsx`.
+        Use Biome for linting and formatting.
+    - path: "server/**"
+      instructions: |
+        This is a Hono server project (TypeScript).
+        Use Node.js native test runner (`node --test`) and `tsx`.
+        Use Biome for linting and formatting.
+    - path: "google-cloud/**"
+      instructions: |
+        This is a Google Cloud integration module (TypeScript).
+        Use Node.js native test runner (`node --test`).
+        Use Biome for linting and formatting.
+    - path: "docusaurus/**"
+      instructions: |
+        This is a Docusaurus documentation site.
+        Review MDX content and React components.
+
+chat:
+  auto_reply: true

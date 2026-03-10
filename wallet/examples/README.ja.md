@@ -1,6 +1,12 @@
-# vcknots-wallet サーバー統合サンプル
+# vcknots-wallet サーバー統合・コンフォーマンステストサンプル
 
-このディレクトリには、vcknots-walletとverifierサーバーとの統合を実演するサンプルコードが含まれています。
+このディレクトリには、vcknots-walletの2つの主要なテストシナリオを実演するサンプルコードが含まれています：
+
+1. **サーバー統合テスト**: ローカルのvcknotsサーバーとの統合をテスト
+2. **コンフォーマンステスト**: 外部のOID4VPコンフォーマンステストサービスとの統合をテスト
+
+どちらのモードも、同じプログラム（`server_integration_sdjwt.go`）でコマンドライン引数の有無により切り替わります。
+両モードとも同一のフロー（クレデンシャルのシード → ウォレット構築 → OID4VPリクエストURI取得 → プレゼンテーション）に従います。
 
 ## 前提条件
 
@@ -44,7 +50,13 @@ go mod download
 
 ## サンプルの実行方法
 
-### ステップ1: Issuer、Verifierサーバーの起動
+このサンプルプログラムは2つのモードで動作します。
+
+### モード1: サーバー統合テスト（推奨：初回実行）
+
+ローカルのvcknotsサーバーとの統合をテストします。
+
+#### ステップ1: Issuer、Verifierサーバーの起動
 
 サンプルを実行するためには、verifierサーバーが動作している必要があります。サーバーディレクトリに移動してサーバーを起動します：
 
@@ -65,7 +77,7 @@ pnpm -F @trustknots/server build
 pnpm -F @trustknots/server start
 ```
 
-### サーバー起動確認
+#### サーバー起動確認
 
 サーバーを起動すると以下のメッセージが出力されます：
 
@@ -102,7 +114,7 @@ Authz metadata initialized
 サーバーはデフォルトで`http://localhost:8080`で起動します。
 テスト用スクリプトも上記のURLを使用します。
 
-### ステップ2: 統合テスト用のスクリプト実行
+#### ステップ2: 統合テスト用のスクリプト実行（引数なし）
 
 新しいターミナルで、各テストディレクトリに移動してサーバー統合テスト用のスクリプトを実行します：
 
@@ -148,7 +160,58 @@ time=2025-11-27T14:03:25.174+09:00 level=INFO msg="Credential presented successf
 
 `Credential presented successfully`と表示されれば、成功です。
 
-## ファイル構成
+---
+
+### モード2: コンフォーマンステスト（外部URL使用）
+
+外部のOID4VPコンフォーマンステストサービスに対してテストを実行します。
+コンフォーマンステスト用のURLは、[OIDF Conformance Testing for OpenID for Verifiable Presentations](https://openid.net/certification/conformance-testing-for-openid-for-verifiable-presentations/) ページから取得できます。
+`Testing a wallet` ボタンをクリックしてください。
+
+#### 実行方法
+
+```bash
+cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
+go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_uri=..."
+```
+
+**重要**: OID4VP URIを引数に指定すると、自動的にコンフォーマンステストモードで動作します。
+
+#### 動作の違い
+
+コンフォーマンステストモードでは、以下の設定が自動的に適用されます：
+
+- **証明書検証**: システムルート証明書プールを使用
+- **選択クレーム**: `given_name`と`family_name`を選択
+- **キーバインディング**: 必須（`RequireKeyBinding: true`）
+- **Audience/Nonce**: リクエストURIから自動的に抽出
+
+---
+
+## ファイル構成と使用方法
+
+### 統合テストプログラム
+
+`server_integration_sdjwt/server_integration_sdjwt.go` は2つのモードで動作します：
+
+**モード1: サーバー統合テスト（引数なし）**
+```bash
+cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
+go run server_integration_sdjwt.go
+```
+- ローカルのvcknotsサーバーとの統合をテスト
+- 厳格な証明書検証（特定の証明書ファイルを使用）
+- サーバーは http://localhost:8080 で起動している必要があります
+
+**モード2: コンフォーマンステスト（OID4VP URI引数あり）**
+```bash
+cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
+go run server_integration_sdjwt.go "openid4vp://authorize?..."
+```
+- 外部のOID4VPコンフォーマンステストサービスに対してテスト
+- システムルート証明書プールを使用
+
+### ファイル構成
 
 ```
 examples/
@@ -172,3 +235,4 @@ examples/
 cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
 ```
+

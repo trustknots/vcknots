@@ -73,23 +73,28 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 		return fmt.Errorf("plugin type mismatch")
 	}
 
-	body := map[string]any{
-		"vp_token":                string(serializedPresentation),
-		"presentation_submission": presentationSubmission,
-	}
-
-	jsonBody, err := json.Marshal(body)
+	// Convert presentation_submission to JSON string for form data
+	presentationSubmissionJSON, err := json.Marshal(presentationSubmission)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal presentation_submission: %w", err)
 	}
 
-	resp, err := http.Post(endpoint.String(), "application/json", strings.NewReader(string(jsonBody)))
+	// OID4VP direct_post requires application/x-www-form-urlencoded
+	formData := url.Values{}
+
+	// Standard response: Send vp_token and presentation_submission directly
+	formData.Set("vp_token", string(serializedPresentation))
+	formData.Set("presentation_submission", string(presentationSubmissionJSON))
+
+	resp, err := http.Post(endpoint.String(), "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
 	if err != nil {
 		return fmt.Errorf("failed to send presentation to verifier: %w", err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("verifier returned non-200 status: %d", resp.StatusCode)
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("verifier returned non-200 status: %d, body: %s", resp.StatusCode, string(respBody))
 	}
 
 	return nil

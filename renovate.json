@@ -1,6 +1,10 @@
 {
 	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
-	"extends": ["config:recommended", ":semanticCommitTypeAll(build)"],
+	"extends": [
+		"config:recommended",
+		":semanticCommitTypeAll(build)",
+		":disableDependencyDashboard"
+	],
 	"timezone": "Asia/Tokyo",
 	"schedule": ["* 19-23 * * 0"],
 	"minimumReleaseAge": "5 days",
@@ -9,6 +13,16 @@
 	"lockFileMaintenance": { "enabled": true },
 	"semanticCommits": "enabled",
 	"branchPrefix": "build/",
+	"pin": {
+		"group": {
+		"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
+		}
+	},
+	"pinDigest": {
+		"group": {
+		"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
+		}
+	},
 	"packageRules": [
 		{
 			"matchManagers": ["gradle"],
@@ -64,7 +78,7 @@
 			],
 			"commitMessagePrefix": "build:",
 			"commitMessageAction": "update",
-			"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{depName}}{{/if}}"
+    		"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
 		},
 
 		{
