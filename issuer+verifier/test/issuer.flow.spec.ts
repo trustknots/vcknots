@@ -857,7 +857,10 @@ describe('IssuerFlow', () => {
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(mockNonceStoreProvider, 'validate', async () => true) // Nonce is valid
       mock.method(mockNonceStoreProvider, 'revoke', async () => {})
-      mock.method(mockNonceProvider, 'generate', async () => newNonce)
+      mock.method(mockNonceProvider, 'generate', async () => ({
+        nonce: newNonce,
+        nonce_expires_in: 300,
+      }))
       mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
       mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])

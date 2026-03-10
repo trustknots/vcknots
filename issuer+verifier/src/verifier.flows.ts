@@ -331,7 +331,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         response_mode: response_mode || 'direct_post',
         client_id_scheme: client_id_scheme,
         client_metadata: metadata,
-        nonce,
+        nonce: nonce.nonce,
         ...parsedQuery,
         ...(transaction_data.length > 0 ? { transaction_data } : {}),
       })
@@ -365,7 +365,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         verifierId,
         requestObject,
         keyAlg,
-        nonce,
+        nonce.nonce,
         walletNonce
       )
 

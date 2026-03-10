@@ -6,7 +6,10 @@ import { inMemoryNonceStore } from '../../../src/providers/in-memory/in-memory-n
 
 describe('inMemoryNonceStore', () => {
   let nonceStoreProvider: NonceStoreProvider
-  const testNonce = Nonce('test-nonce-value')
+  const testNonce = Nonce({
+    nonce: 'test-nonce-value',
+    nonce_expires_in: 5 * 60 * 1000,
+  })
 
   describe('When initialized with no options (default behavior)', () => {
     beforeEach(() => {
@@ -26,7 +29,9 @@ describe('inMemoryNonceStore', () => {
     })
 
     it('validate should return false for a non-existent cnonce', async () => {
-      const isValid = await nonceStoreProvider.validate(Nonce('non-existent-cnonce'))
+      const isValid = await nonceStoreProvider.validate(
+        Nonce({ nonce: 'non-existent-cnonce' })
+      )
       assert.strictEqual(isValid, false)
     })
 
@@ -39,7 +44,9 @@ describe('inMemoryNonceStore', () => {
 
     it('revoke should not throw for a non-existent cnonce', async () => {
       await assert.doesNotThrow(async () => {
-        await nonceStoreProvider.revoke(Nonce('non-existent-cnonce'))
+        await nonceStoreProvider.revoke(
+          Nonce({ nonce: 'non-existent-cnonce' })
+        )
       })
     })
 
@@ -103,14 +110,15 @@ describe('inMemoryNonceStore', () => {
     })
 
     it('validate should return false for an expired cnonce after options expiration (using mocked time)', async () => {
+      // testNonce has nonce_expires_in: 5 min; nonce が option より優先されるので TTL は 5 分
       const fiveMinutesInMs = 5 * 60 * 1000
       const mocks = test.mock.timers
       mocks.enable()
       await nonceStoreProvider.save(testNonce)
       try {
-        mocks.tick(fiveMinutesInMs)
+        mocks.tick(fiveMinutesInMs + 1000)
         const isValid = await nonceStoreProvider.validate(testNonce)
-        assert.strictEqual(isValid, false, 'Cnonce should be invalid after default expiry time')
+        assert.strictEqual(isValid, false, 'Cnonce should be invalid after expiry time')
       } finally {
         mocks.reset()
       }
@@ -123,12 +131,17 @@ describe('inMemoryNonceStore', () => {
     })
 
     it('save method should return a Promise that resolves to undefined', async () => {
-      const result = await nonceStoreProvider.save(Nonce('some-cnonce-for-return-test'))
+      const result = await nonceStoreProvider.save(
+        Nonce({ nonce: 'some-cnonce-for-return-test', nonce_expires_in: 60000 })
+      )
       assert.strictEqual(result, undefined)
     })
 
     it('revoke method should return a Promise that resolves to undefined', async () => {
-      const cnonceToRevoke = Nonce('another-cnonce-for-return-test')
+      const cnonceToRevoke = Nonce({
+        nonce: 'another-cnonce-for-return-test',
+        nonce_expires_in: 60000,
+      })
       await nonceStoreProvider.save(cnonceToRevoke)
       const result = await nonceStoreProvider.revoke(cnonceToRevoke)
       assert.strictEqual(result, undefined)

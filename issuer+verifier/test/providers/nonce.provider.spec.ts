@@ -22,28 +22,37 @@ describe('NonceProvider', () => {
   })
 
   describe('generate()', () => {
-    it('should generate a Nonce string', async () => {
+    it('should generate a Nonce with nonce and default nonce_expires_in (5 min)', async () => {
       const generatedNonce = await provider.generate()
-      assert.ok(typeof generatedNonce === 'string', 'Generated nonce should be a string')
-      assert.equal(generatedNonce.length, 32, 'Generated nonce should have 32 characters')
+      assert.ok(typeof generatedNonce.nonce === 'string', 'Generated nonce should have nonce string')
+      assert.equal(generatedNonce.nonce.length, 32, 'Generated nonce should have 32 characters')
+      assert.strictEqual(
+        generatedNonce.nonce_expires_in,
+        60 * 5 * 1000,
+        'Should have default nonce_expires_in (5 minutes)'
+      )
     })
 
-    it('should generate different nonces on subsequent calls', () => {
-      const noncePromise1 = provider.generate()
-      const noncePromise2 = provider.generate()
+    it('should set nonce_expires_in when options are passed', async () => {
+      const generatedNonce = await provider.generate({ nonce_expires_in: 120000 })
+      assert.strictEqual(generatedNonce.nonce_expires_in, 120000)
+    })
+
+    it('should generate different nonces on subsequent calls', async () => {
+      const nonce1 = await provider.generate()
+      const nonce2 = await provider.generate()
       assert.notEqual(
-        noncePromise1,
-        noncePromise2,
+        nonce1.nonce,
+        nonce2.nonce,
         'Generated nonces should be different to ensure randomness'
       )
     })
 
     it('should generate a Nonce containing only hexadecimal characters', async () => {
       const generatedNonce = await provider.generate()
-      // Regular expression to check for 32 hexadecimal characters
       const hexRegex = /^[0-9a-fA-F]{32}$/
       assert.ok(
-        hexRegex.test(generatedNonce),
+        hexRegex.test(generatedNonce.nonce),
         'Generated nonce should consist of 32 hexadecimal characters'
       )
     })

@@ -1,6 +1,7 @@
 import assert from 'node:assert'
 import { afterEach, beforeEach, describe, test, mock } from 'node:test'
 import * as jose from 'jose'
+import type { Nonce } from '../../src/nonce.types'
 import {
   NonceStoreProvider,
   DidProvider,
@@ -53,7 +54,7 @@ describe('verifyVerifiablePresentation provider', () => {
       kind: 'nonce-store-provider',
       name: 'mock-cnonce-store',
       single: true,
-      validate: mock.fn(async (nonce: string) => nonce === 'test-nonce'),
+      validate: mock.fn(async (nonce: Nonce) => nonce.nonce === 'test-nonce'),
       revoke: mock.fn(async () => {}),
       save: mock.fn(async () => {}),
     }

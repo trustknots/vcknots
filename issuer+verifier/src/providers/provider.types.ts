@@ -321,7 +321,7 @@ export type NonceProvider = {
   name: string
   single: true
 
-  generate(): Promise<Nonce>
+  generate(options?: { nonce_expires_in: number }): Promise<Nonce>
 }
 
 export type NonceStoreProvider = {
@@ -329,8 +329,7 @@ export type NonceStoreProvider = {
   name: string
   single: true
 
-  save(nonce: Nonce, options?: { ttlSec: number }): Promise<void>
-  // FIXME: same above
+  save(nonce: Nonce): Promise<void>
   validate(nonce: Nonce): Promise<boolean>
   revoke(nonce: Nonce): Promise<void>
 }

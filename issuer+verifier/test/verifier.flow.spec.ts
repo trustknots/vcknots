@@ -267,7 +267,10 @@ describe('VerifierFlow', () => {
       }
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(mockNonceProvider, 'generate', async () => 'nonce-123')
+      mock.method(mockNonceProvider, 'generate', async () => ({
+  nonce: 'nonce-123',
+  nonce_expires_in: 60000,
+}))
       mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
@@ -331,7 +334,10 @@ describe('VerifierFlow', () => {
       }
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(mockNonceProvider, 'generate', async () => 'nonce-123')
+      mock.method(mockNonceProvider, 'generate', async () => ({
+  nonce: 'nonce-123',
+  nonce_expires_in: 60000,
+}))
       mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
@@ -620,7 +626,10 @@ describe('VerifierFlow', () => {
       }
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(mockNonceProvider, 'generate', async () => 'nonce-123')
+      mock.method(mockNonceProvider, 'generate', async () => ({
+  nonce: 'nonce-123',
+  nonce_expires_in: 60000,
+}))
       mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,

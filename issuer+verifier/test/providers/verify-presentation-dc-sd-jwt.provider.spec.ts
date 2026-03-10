@@ -7,6 +7,7 @@ import { Jwk } from '../../src/jwk.type'
 import { VcknotsError } from '../../src/errors/vcknots.error'
 import { verifyVerifiablePresentationDcSdJwt } from '../../src/providers/verify-presentation-dc-sd-jwt.provider'
 // import { VerifyVerifiablePresentationProvider } from '../../src/providers/provider.types'
+import type { Nonce } from '../../src/nonce.types'
 import { NonceStoreProvider } from '../../src/providers/provider.types'
 
 const issuer = 'https://issuer.example.com'
@@ -49,7 +50,9 @@ describe('sd-jwt provider', () => {
       kind: 'nonce-store-provider',
       name: 'mock-cnonce-store',
       single: true,
-      validate: mock.fn(async (nonce: string) => nonce === 'bcb201b7e186ed380127b9158a9d57a6'),
+      validate: mock.fn(
+        async (nonce: Nonce) => nonce.nonce === 'bcb201b7e186ed380127b9158a9d57a6'
+      ),
       revoke: mock.fn(async () => {}),
       save: mock.fn(async () => {}),
     }

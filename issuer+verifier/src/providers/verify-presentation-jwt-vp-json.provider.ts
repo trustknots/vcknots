@@ -57,7 +57,7 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
       }
       const vpPayload = parseResult.data
 
-      const nonce = Nonce(vpPayload.nonce)
+      const nonce = Nonce({ nonce: vpPayload.nonce })
       const nonceStore$ = this.providers.get('nonce-store-provider')
       const nonceValid = await nonceStore$.validate(nonce)
       if (!nonceValid) {

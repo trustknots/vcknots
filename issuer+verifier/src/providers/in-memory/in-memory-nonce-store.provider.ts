@@ -4,11 +4,11 @@ import { NonceStoreProvider } from '../provider.types'
 export const inMemoryNonceStore = (option?: {
   c_nonce_expire_in?: number
 }): NonceStoreProvider => {
-  type NonceStates = {
-    c_nonce: string
-    c_nonce_expires_at: number
+  type NonceState = {
+    nonce: Nonce
+    expires_at: number
   }
-  const nonceStates = new Map<Nonce, NonceStates>()
+  const nonceStates = new Map<string, NonceState>()
 
   return {
     kind: 'nonce-store-provider',
@@ -16,27 +16,26 @@ export const inMemoryNonceStore = (option?: {
     single: true,
 
     async save(nonce): Promise<void> {
-      const expiresAt = new Date().getTime() + (option?.c_nonce_expire_in ?? 60 * 5 * 1000) // 5 minutes
-      nonceStates.set(nonce, {
-        c_nonce: nonce,
-        c_nonce_expires_at: expiresAt,
-      })
+      const expiresAt =
+        new Date().getTime() +
+        (nonce.nonce_expires_in ?? option?.c_nonce_expire_in ?? 60 * 5 * 1000)
+      nonceStates.set(nonce.nonce, { nonce, expires_at: expiresAt })
       return
     },
 
     async validate(nonce): Promise<boolean> {
-      const nonceState = nonceStates.get(nonce)
+      const nonceState = nonceStates.get(nonce.nonce)
       if (!nonceState) {
         return false
       }
-      if (new Date().getTime() > nonceState.c_nonce_expires_at) {
+      if (new Date().getTime() > nonceState.expires_at) {
         return false
       }
       return true
     },
 
     async revoke(nonce): Promise<void> {
-      nonceStates.delete(nonce)
+      nonceStates.delete(nonce.nonce)
       return
     },
   }

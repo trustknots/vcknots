@@ -162,13 +162,13 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       }
       if (nonce) {
         const nonceStore$ = this.providers.get('nonce-store-provider')
-        const nonceValid = await nonceStore$.validate(Nonce(nonce))
+        const nonceValid = await nonceStore$.validate(Nonce({ nonce }))
         if (!nonceValid) {
           throw err('INVALID_NONCE', {
             message: 'nonce is not valid.',
           })
         }
-        await nonceStore$.revoke(Nonce(nonce))
+        await nonceStore$.revoke(Nonce({ nonce }))
       }
       const { payload: claims } = await sdJwtInst.verify(vp, {
         requiredClaimKeys: specifiedDisclosures,

@@ -208,18 +208,21 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         })
       }
 
-      let nonce = undefined
+      let nonce: Nonce | undefined = undefined
       if (options?.cnonce) {
         if (typeof verifyProof.payload.nonce === 'string') {
-          const code = await cnonceStore$.validate(Nonce(verifyProof.payload.nonce))
+          const lookupNonce = Nonce({ nonce: verifyProof.payload.nonce })
+          const code = await cnonceStore$.validate(lookupNonce)
           if (!code) {
             throw err('INVALID_PROOF', {
               message: 'Nonce not found.',
             })
           }
-          await cnonceStore$.revoke(Nonce(verifyProof.payload.nonce))
-          nonce = await cnonce$.generate()
-          await cnonceStore$.save(Nonce(nonce))
+          await cnonceStore$.revoke(lookupNonce)
+          nonce = await cnonce$.generate({
+            nonce_expires_in: options.cnonce.c_nonce_expires_in,
+          })
+          await cnonceStore$.save(nonce)
         }
       }
 
@@ -266,8 +269,8 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
 
       return {
         credential: credential,
-        c_nonce: nonce,
-        c_nonce_expires_in: options?.cnonce?.c_nonce_expires_in ?? 86400,
+        c_nonce: nonce?.nonce,
+        c_nonce_expires_in: nonce?.nonce_expires_in ?? options?.cnonce?.c_nonce_expires_in ?? 86400,
       }
     },
   }

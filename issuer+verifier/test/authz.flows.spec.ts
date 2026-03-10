@@ -193,7 +193,10 @@ describe('AuthzFlows', () => {
     const privateKey = { kty: 'EC', crv: 'P-256', alg: 'ES256', d: 'private-d-value' }
     const samplePayload = { iss: sampleIssuer, sub: preAuthCode }
     const sampleSignature = 'signed-jwt-signature-part'
-    const sampleNonce = Nonce('test-nonce-value')
+    const sampleNonce = Nonce({
+      nonce: 'test-nonce-value',
+      nonce_expires_in: 300000,
+    })
 
     describe('Pre-Authorized Code Flow', () => {
       beforeEach(() => {
@@ -229,13 +232,17 @@ describe('AuthzFlows', () => {
 
         assert.strictEqual(response.access_token, expectedAccessToken)
         assert.strictEqual(response.token_type, 'bearer')
-        assert.strictEqual(response.c_nonce, sampleNonce)
+        assert.strictEqual(response.c_nonce, sampleNonce.nonce)
         assert.strictEqual(response.expires_in, 86400) // Default value
         assert.strictEqual(response.c_nonce_expires_in, 300000) // Default value (5 minutes)
       })
 
       it('should use ttl and c_nonce_expires_in from options when provided', async () => {
         const options = { ttlSec: 1800, c_nonce_expire_in: 60000 }
+        mock.method(mockNonceProvider, 'generate', async () => ({
+          nonce: 'test-nonce-value',
+          nonce_expires_in: options.c_nonce_expire_in,
+        }))
         const response = (await flow.createAccessToken(
           sampleIssuer,
           tokenRequest,

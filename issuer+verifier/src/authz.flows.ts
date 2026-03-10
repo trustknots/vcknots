@@ -119,15 +119,17 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
 
           // Create cnonce
-          const cnonce = await cnonce$.generate()
+          const cnonce = await cnonce$.generate({
+            nonce_expires_in: option?.c_nonce_expire_in ?? 60 * 5 * 1000, // 5 minutes
+          })
           await cnonceStore$.save(cnonce)
           // Create Token Response
           return {
             access_token: `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`, // TODO: Implement access token generation
             token_type: 'bearer',
             expires_in: option?.ttlSec ?? 86400,
-            c_nonce: cnonce,
-            c_nonce_expires_in: option?.c_nonce_expire_in ?? 60 * 5 * 1000, // 5 minutes
+            c_nonce: cnonce.nonce,
+            c_nonce_expires_in: cnonce.nonce_expires_in,
           }
         }
         case 'authorization_code': {
