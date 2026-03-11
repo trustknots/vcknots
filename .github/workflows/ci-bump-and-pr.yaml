@@ -2,9 +2,6 @@ name: Auto bump up packages version and create PR
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: write
@@ -26,7 +23,7 @@ jobs:
           run_install: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: "pnpm"
@@ -118,4 +115,4 @@ jobs:
             --title "chore(trustknots): bump-bot-${{ env.BUMP_TS }}" \
             --body-file pr-body.md
         env:
-          GITHUB_TOKEN: ${{ secrets.AUTO_BUMP }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

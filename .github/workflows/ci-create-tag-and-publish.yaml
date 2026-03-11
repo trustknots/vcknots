@@ -25,7 +25,7 @@ jobs:
           run_install: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: "pnpm"
@@ -36,15 +36,9 @@ jobs:
       - name: Check npm auth
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" >> ~/.npmrc
-          cat ~/.npmrc
           npm whoami
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Create release tag
-        run: |
-          pnpm changeset tag
-          git push origin --follow-tags
 
       - name: Publish
         run: pnpm changeset publish
