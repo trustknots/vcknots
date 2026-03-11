@@ -969,6 +969,72 @@ func TestSerializePresentation_NoCnfWithKeyBinding(t *testing.T) {
 	}
 }
 
+func TestSerializePresentation_StringCnfWithKeyBindingFails(t *testing.T) {
+	serializer, err := NewSdJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to initialize sd-jwt serializer")
+	}
+
+	key, err := newMockKeyEntry()
+	if err != nil {
+		t.Fatalf("failed to create mock key: %v", err)
+	}
+
+	testSDJWT := createTestSDJWTWithKey(key)
+	cf := ParseCombinedFormatForPresentation(testSDJWT)
+	parts := strings.Split(cf.SDJWT, ".")
+	if len(parts) != 3 {
+		t.Fatalf("expected 3 jwt parts, got %d", len(parts))
+	}
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("failed to unmarshal payload: %v", err)
+	}
+
+	cnfMap, ok := payload["cnf"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected cnf to be an object before malformed test")
+	}
+
+	cnfBytes, err := json.Marshal(cnfMap)
+	if err != nil {
+		t.Fatalf("failed to marshal cnf: %v", err)
+	}
+	payload["cnf"] = string(cnfBytes)
+
+	updatedPayloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal updated payload: %v", err)
+	}
+
+	cf.SDJWT = parts[0] + "." + base64.RawURLEncoding.EncodeToString(updatedPayloadBytes) + "." + parts[2]
+
+	presentation := &credential.CredentialPresentation{
+		Types:       []string{"VerifiablePresentation"},
+		Credentials: [][]byte{[]byte(cf.Serialize())},
+	}
+
+	opts := &SdJwtVcPresentationOptions{
+		RequireKeyBinding: true,
+		Audience:          "https://verifier.example.com",
+		Nonce:             "test-nonce",
+	}
+
+	_, _, err = serializer.SerializePresentation(credential.SDJwtVC, presentation, key, opts)
+	if err == nil {
+		t.Fatal("expected error when cnf claim is a string")
+	}
+	if !strings.Contains(err.Error(), "cnf claim must be an object") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestSerializePresentation_CnfKeyMismatch(t *testing.T) {
 	serializer, err := NewSdJwtVcSerializer()
 	if err != nil {

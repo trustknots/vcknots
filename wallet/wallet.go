@@ -599,6 +599,8 @@ func (w *Wallet) PresentCredential(uriString string, key IKeyEntry, options seri
 		return err
 	}
 
+	applyOID4VPRequestOptions(req, options)
+
 	credentials, flavor, err := w.selectCredentialsForPresentation(req)
 	if err != nil {
 		return err
@@ -710,6 +712,22 @@ func (w *Wallet) buildDescriptorMap(credentials []*SavedCredential, flavor *cred
 	var descriptorMap []presenterTypes.DescriptorMapItem
 	for i := range credentials {
 		descriptionItemID := uuid.New().String()
+		// Temporary compatibility workaround:
+		// the current verifier/request-object flow still requires
+		// presentation_submission.descriptor_map, and dc+sd-jwt must point to the
+		// combined vp_token itself with path "$" instead of JWT-VP style nested paths.
+		// This format-specific branching does not belong in wallet core long term and
+		// should be removed or moved once the verifier/request-object flow is
+		// reorganized around DCQL.
+		if vpFormat == "dc+sd-jwt" {
+			descriptorMap = append(descriptorMap, presenterTypes.DescriptorMapItem{
+				ID:     descriptionItemID,
+				Format: vpFormat,
+				Path:   "$",
+			})
+			continue
+		}
+
 		descriptorMap = append(descriptorMap, presenterTypes.DescriptorMapItem{
 			ID:     descriptionItemID,
 			Format: vpFormat,
@@ -749,6 +767,20 @@ func (w *Wallet) buildPresentation(credentials []*SavedCredential, flavor *crede
 	}
 
 	return presentation, nil
+}
+
+func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, options serializerTypes.SerializePresentationOptions) {
+	if req == nil || req.OAuthAuthzRequest == nil {
+		return
+	}
+
+	sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions)
+	if !ok {
+		return
+	}
+
+	sdOpts.Audience = req.ClientID
+	sdOpts.Nonce = req.Nonce
 }
 
 // submitPresentation serializes and submits the presentation to the verifier.

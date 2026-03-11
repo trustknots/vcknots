@@ -15,8 +15,10 @@ import (
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
 	"github.com/trustknots/vcknots/wallet/presenter"
+	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
 	"github.com/trustknots/vcknots/wallet/receiver"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
+	"github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
@@ -1152,6 +1154,32 @@ func TestController_PresentCredential_DetailedErrorPaths_Integration(t *testing.
 				}
 				// Expected error occurred - test passes
 			})
+		}
+	})
+}
+
+func TestApplyOID4VPRequestOptions(t *testing.T) {
+	req := &oid4vp.CredentialPresentationRequest{
+		OAuthAuthzRequest: &oid4vp.OAuthAuthzRequest{
+			ClientID: "x509_san_dns:localhost",
+			Nonce:    "request-nonce",
+		},
+	}
+
+	t.Run("copies oid4vp request values into sd-jwt options", func(t *testing.T) {
+		opts := &sdjwtvc.SdJwtVcPresentationOptions{
+			RequireKeyBinding: false,
+			Audience:          "old-audience",
+			Nonce:             "old-nonce",
+		}
+
+		applyOID4VPRequestOptions(req, opts)
+
+		if opts.Audience != req.ClientID {
+			t.Fatalf("expected audience %q, got %q", req.ClientID, opts.Audience)
+		}
+		if opts.Nonce != req.Nonce {
+			t.Fatalf("expected nonce %q, got %q", req.Nonce, opts.Nonce)
 		}
 	})
 }

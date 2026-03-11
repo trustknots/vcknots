@@ -73,20 +73,16 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 		return fmt.Errorf("plugin type mismatch")
 	}
 
-	// Convert presentation_submission to JSON string for form data
 	presentationSubmissionJSON, err := json.Marshal(presentationSubmission)
 	if err != nil {
 		return fmt.Errorf("failed to marshal presentation_submission: %w", err)
 	}
 
-	// OID4VP direct_post requires application/x-www-form-urlencoded
-	formData := url.Values{}
+	form := url.Values{}
+	form.Set("vp_token", string(serializedPresentation))
+	form.Set("presentation_submission", string(presentationSubmissionJSON))
 
-	// Standard response: Send vp_token and presentation_submission directly
-	formData.Set("vp_token", string(serializedPresentation))
-	formData.Set("presentation_submission", string(presentationSubmissionJSON))
-
-	resp, err := http.Post(endpoint.String(), "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
+	resp, err := http.Post(endpoint.String(), "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("failed to send presentation to verifier: %w", err)
 	}

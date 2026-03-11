@@ -19,118 +19,23 @@ package main
 // - /.well-known/oauth-authorization-server
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"math/big"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/trustknots/vcknots/wallet"
-	"github.com/trustknots/vcknots/wallet/credstore"
-	"github.com/trustknots/vcknots/wallet/idprof"
-	"github.com/trustknots/vcknots/wallet/presenter"
-	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
-	"github.com/trustknots/vcknots/wallet/receiver"
+	"github.com/trustknots/vcknots/wallet/examples/common"
 	"github.com/trustknots/vcknots/wallet/receiver/types"
-	"github.com/trustknots/vcknots/wallet/serializer"
 	"github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
-	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
-// Default certificate path relative to server_integration_jwtvc/ directory
-const defaultCertPath = "../../../server/samples/certificate-openid-test/certificate_openid.pem"
-
-// MockKeyEntry implements IKeyEntry interface for demo purposes
-type MockKeyEntry struct {
-	id         string
-	privateKey *ecdsa.PrivateKey
-}
-
-func NewMockKeyEntry() *MockKeyEntry {
-	// Use the specified JWK key coordinates
-	// {
-	//   "kty": "EC",
-	//   "crv": "P-256",
-	//   "x": "ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ",
-	//   "y": "Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo",
-	//   "d": "jAfOh_53IRxqpEsFojZK8iHP--L8ol3ePEo3DnwiIyM"
-	// }
-
-	// Decode base64url coordinates
-	xBytes, _ := base64.RawURLEncoding.DecodeString("ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ")
-	yBytes, _ := base64.RawURLEncoding.DecodeString("Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo")
-	dBytes, _ := base64.RawURLEncoding.DecodeString("jAfOh_53IRxqpEsFojZK8iHP--L8ol3ePEo3DnwiIyM")
-
-	// Convert to big.Int
-	x := new(big.Int).SetBytes(xBytes)
-	y := new(big.Int).SetBytes(yBytes)
-	d := new(big.Int).SetBytes(dBytes)
-
-	// Create ECDSA private key
-	privateKey := &ecdsa.PrivateKey{
-		PublicKey: ecdsa.PublicKey{
-			Curve: elliptic.P256(),
-			X:     x,
-			Y:     y,
-		},
-		D: d,
-	}
-
-	return &MockKeyEntry{
-		id:         "test-key-id", // Fixed ID for consistency
-		privateKey: privateKey,
-	}
-}
-
-func (m *MockKeyEntry) ID() string {
-	return m.id
-}
-
-func (m *MockKeyEntry) PublicKey() jose.JSONWebKey {
-	return jose.JSONWebKey{
-		Key:       &m.privateKey.PublicKey,
-		Algorithm: "ES256",
-		Use:       "sig",
-	}
-}
-
-func (m *MockKeyEntry) Sign(payload []byte) ([]byte, error) {
-	// Perform actual ECDSA signing using the private key
-	hash := sha256.Sum256(payload)
-
-	// Sign the hash using ECDSA
-	r, s, err := ecdsa.Sign(rand.Reader, m.privateKey, hash[:])
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign with ECDSA: %w", err)
-	}
-
-	// Convert to IEEE P1363 format (64 bytes for P-256: 32 bytes r + 32 bytes s)
-	signature := make([]byte, 64)
-
-	// Pad r and s to 32 bytes each
-	rBytes := r.Bytes()
-	sBytes := s.Bytes()
-
-	// Copy r to first 32 bytes (with leading zeros if needed)
-	copy(signature[32-len(rBytes):32], rBytes)
-	// Copy s to last 32 bytes (with leading zeros if needed)
-	copy(signature[64-len(sBytes):64], sBytes)
-
-	return signature, nil
-}
-
-func receiveCredential(w *wallet.Wallet, key *MockKeyEntry, logger *slog.Logger) *wallet.SavedCredential {
+func receiveCredential(w *wallet.Wallet, key *common.MockKeyEntry, logger *slog.Logger) *wallet.SavedCredential {
 	logger.Info("Fetching credential offer from server...")
 
 	// Fetch credential offer from the server
@@ -274,7 +179,7 @@ func receiveCredential(w *wallet.Wallet, key *MockKeyEntry, logger *slog.Logger)
 	return savedCredential
 }
 
-func presentation(w *wallet.Wallet, key *MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
+func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
 	// Example verifier details
 	verifierURL := "http://localhost:8080"
 
@@ -446,74 +351,15 @@ func presentation(w *wallet.Wallet, key *MockKeyEntry, receivedCredential *walle
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	// Create credential store with default config
-	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
+	runtime, err := common.NewOID4VPRuntime(os.Getenv("VCKNOTS_CERT_PATH"))
 	if err != nil {
 		panic(err)
 	}
-
-	// Create receiver with default config
-	receiver, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
-	if err != nil {
-		panic(err)
-	}
-
-	serializer, err := serializer.NewSerializationDispatcher(serializer.WithDefaultConfig())
-	if err != nil {
-		panic(err)
-	}
-
-	// Create verifier with default config
-	verifier, err := verifier.NewVerificationDispatcher(verifier.WithDefaultConfig())
-	if err != nil {
-		panic(err)
-	}
-
-	// Create presenter with default config
-	// Load the server's certificate for TLS verification
-	certPath := os.Getenv("VCKNOTS_CERT_PATH")
-	if certPath == "" {
-		certPath = defaultCertPath
-	}
-	certFile, err := os.ReadFile(certPath)
-	if err != nil {
-		panic(err)
-	}
-	certPool := x509.NewCertPool()
-	if !certPool.AppendCertsFromPEM(certFile) {
-		panic("Failed to parse certificate")
-	}
-	p := &oid4vp.Oid4vpPresenter{
-		X509TrustChainRoots: certPool,
-	}
-	presenter, err := presenter.NewPresentationDispatcher(presenter.WithPlugin(presenter.Oid4vp, p))
-	if err != nil {
-		panic(err)
-	}
-
-	// Create identity profiler dispatcher with default config
-	idProf, err := idprof.NewIdentityProfileDispatcher(idprof.WithDefaultConfig())
-	if err != nil {
-		panic(err)
-	}
-
-	config := wallet.Config{
-		CredStore:  credStore,
-		IDProfiler: idProf,
-		Receiver:   receiver,
-		Serializer: serializer,
-		Verifier:   verifier,
-		Presenter:  presenter,
-	}
-
-	w, err := wallet.NewWalletWithConfig(config)
-	if err != nil {
-		panic(err)
-	}
+	w := runtime.Wallet
 
 	logger.Info("Starting server integration check...")
 
-	mockKey := NewMockKeyEntry()
+	mockKey := common.NewMockKeyEntry()
 	receivedCredential := receiveCredential(w, mockKey, logger)
 
 	// Tests - Use the received credential for presentation
