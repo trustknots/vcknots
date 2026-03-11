@@ -18,7 +18,10 @@ function createLogger(pkgName) {
   const logFile = `bump-${safeName}.log`
   const stream = fs.createWriteStream(logFile, { flags: "w" })
 
-  function log(message = "") {
+  const LOG_LEVEL = process.env.LOG_LEVEL || "info" // info / debug
+
+  function log(message = "", level = "info") {
+    if (level === "debug" && LOG_LEVEL !== "debug") return
     console.log(message)
     stream.write(message + "\n")
   }
@@ -117,15 +120,14 @@ function getCommitsSince(tag) {
 
 function parseCommit(subject) {
   const match =
-    subject.match(/^(\w+)(!)?\(([^)]+)\)(!)?:\s(.+)$/)
+    subject.match(/^(\w+)(!)?(?:\(([^)]+)\))?(!)?:\s(.+)$/)
 
   if (!match) return null
 
   return {
     type: match[1],
-    breakingBeforeScope: !!match[2],  // feat!
-    scope: match[3],
-    breakingAfterScope: !!match[4],   // feat(scope)!
+    scope: match[3] ?? null,
+    breaking: !!match[2] || !!match[4],
     subject
   }
 }
@@ -155,6 +157,11 @@ function scopeMatches(pkgName, scope) {
       "@trustknots/multi-server",
       "server/multi",
       "multi-server",
+    ],
+    "@trustknots/server-core": [
+      "@trustknots/server-core",
+      "server/core",
+      "core-server",
     ]
   }
 
@@ -167,6 +174,12 @@ function scopeMatches(pkgName, scope) {
 
 function analyzeForPackage(pkgName, commits) {
   let level = null
+
+  const bumpRules = {
+    major: [],
+    minor: ['feat'],
+    patch: ['fix', 'perf', 'refactor']
+  }
 
   const matched = {
     major: [],
@@ -198,13 +211,13 @@ function analyzeForPackage(pkgName, commits) {
       continue
     }
 
-    if (parsed.type === "feat") {
+    if (bumpRules.minor.includes(parsed.type)) {
       if (level !== "major") level = "minor"
       matched.minor.push(c)
       continue
     }
 
-    if (parsed.type === "fix") {
+    if (bumpRules.patch.includes(parsed.type)) {
       if (!level) level = "patch"
       matched.patch.push(c)
       continue
@@ -269,7 +282,8 @@ function main() {
     log(`   ignored: ${ignored.length}`)
     ignored.forEach(c =>
       log(
-        `     - ${c.hash.slice(0, 7)} ${c.subject} [${c.reason}]`
+        `     - ${c.hash.slice(0, 7)} ${c.subject} [${c.reason}]`,
+        "debug"
       )
     )
 
