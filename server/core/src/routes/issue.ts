@@ -129,10 +129,8 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   })
   issueApp.post('/nonce', async (c) => {
     try {
-      const cnonce = await issuerFlow.createNonce()
-      // OpenID4VCI Nonce Response (Section 7.2):
-      //  - body: { "c_nonce": string, "c_nonce_expires_in"?: number }
-      //  - no-store cache directive
+      const NONCE_TTL_MS = 2 * 60 * 1000 // 2 minutes
+      const cnonce = await issuerFlow.createNonce(NONCE_TTL_MS)
       c.header('Cache-Control', 'no-store')
       return c.json(
         {
