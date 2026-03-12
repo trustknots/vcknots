@@ -18,7 +18,7 @@ export const firestoreAuthzServerMetadataStore = (
 
     async fetch(issuer) {
       const id = md5(issuer)
-      const doc = await firestore.doc(`${ns}/v1/servers/${id}`).get()
+      const doc = await firestore.doc(`${ns}/v1/authServers/${id}`).get()
 
       if (!doc.exists) return null
 
@@ -26,7 +26,7 @@ export const firestoreAuthzServerMetadataStore = (
     },
     async save(metadata) {
       const id = md5(metadata.issuer)
-      const docRef = firestore.doc(`${ns}/v1/servers/${id}`)
+      const docRef = firestore.doc(`${ns}/v1/authServers/${id}`)
       await docRef.set(metadata, { merge: true })
     },
   }

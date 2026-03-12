@@ -48,7 +48,7 @@ describe('firestoreAuthzServerMetadataStore', () => {
 
     await provider.save(metadata)
 
-    assert.ok(store.has(`vcknots/v1/servers/${expectedId}`))
+    assert.ok(store.has(`vcknots/v1/authServers/${expectedId}`))
   })
 
   it('should use a custom namespace', async () => {
@@ -57,8 +57,8 @@ describe('firestoreAuthzServerMetadataStore', () => {
 
     await provider.save(metadata)
 
-    assert.ok(store.has(`custom/v1/servers/${expectedId}`))
-    assert.ok(!store.has(`vcknots/v1/servers/${expectedId}`))
+    assert.ok(store.has(`custom/v1/authServers/${expectedId}`))
+    assert.ok(!store.has(`vcknots/v1/authServers/${expectedId}`))
   })
 
   it('should strip all slashes from namespace', async () => {
@@ -67,8 +67,8 @@ describe('firestoreAuthzServerMetadataStore', () => {
 
     await provider.save(metadata)
 
-    assert.ok(store.has(`foobarbaz/v1/servers/${expectedId}`))
-    assert.ok(!store.has(`foo/bar/baz/v1/servers/${expectedId}`))
+    assert.ok(store.has(`foobarbaz/v1/authServers/${expectedId}`))
+    assert.ok(!store.has(`foo/bar/baz/v1/authServers/${expectedId}`))
   })
 
   it('should strip leading and trailing slashes from namespace', async () => {
@@ -77,7 +77,7 @@ describe('firestoreAuthzServerMetadataStore', () => {
 
     await provider.save(metadata)
 
-    assert.ok(store.has(`myns/v1/servers/${expectedId}`))
+    assert.ok(store.has(`myns/v1/authServers/${expectedId}`))
   })
 
   it('should fall back to vcknots when namespace is only slashes', async () => {
@@ -86,7 +86,7 @@ describe('firestoreAuthzServerMetadataStore', () => {
 
     await provider.save(metadata)
 
-    assert.ok(store.has(`vcknots/v1/servers/${expectedId}`))
+    assert.ok(store.has(`vcknots/v1/authServers/${expectedId}`))
   })
 
   it('should fully replace existing metadata on save', async () => {
