@@ -10,7 +10,7 @@ export const nonce = (): NonceProvider => {
     name: 'default-nonce-provider',
     single: true,
 
-    async generate(options?: { nonce_expires_in: number }): Promise<Nonce> {
+    async generate(options?: { nonce_expires_in?: number }): Promise<Nonce> {
       return Nonce({
         nonce: randomUUID().replaceAll('-', ''),
         nonce_expires_in: options?.nonce_expires_in ?? DEFAULT_NONCE_EXPIRES_IN_MS,

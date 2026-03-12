@@ -127,6 +127,38 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       return c.json(errorResponse, status)
     }
   })
+  issueApp.post('/nonce', async (c) => {
+    try {
+      const cnonce = await issuerFlow.createNonce()
+      // OpenID4VCI Nonce Response (Section 7.2):
+      //  - body: { "c_nonce": string, "c_nonce_expires_in"?: number }
+      //  - no-store cache directive
+      c.header('Cache-Control', 'no-store')
+      return c.json(
+        {
+          c_nonce: cnonce,
+        },
+        200
+      )
+    } catch (err) {
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
+    }
+  })
+
+  issueApp.get('/nonce/:nonce', async (c) => {
+    try {
+      const nonce = c.req.param('nonce')
+      const valid = await issuerFlow.validateNonce(nonce)
+      return c.json({ valid })
+    } catch (err) {
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
+    }
+  })
+
 
   return issueApp
 }

@@ -29,6 +29,7 @@ export const inMemoryNonceStore = (option?: {
         return false
       }
       if (new Date().getTime() > nonceState.expires_at) {
+        nonceStates.delete(nonce.nonce)
         return false
       }
       return true

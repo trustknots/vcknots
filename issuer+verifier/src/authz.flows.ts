@@ -119,9 +119,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
 
           // Create cnonce
-          const cnonce = await cnonce$.generate({
-            nonce_expires_in: option?.c_nonce_expire_in ?? 60 * 5 * 1000, // 5 minutes
-          })
+          const cnonce = await cnonce$.generate()
           await cnonceStore$.save(cnonce)
           // Create Token Response
           return {

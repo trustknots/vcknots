@@ -342,6 +342,57 @@ describe('IssuerFlow', () => {
     assert.equal(mockCredentialOfferProvider.create.mock.callCount(), 1)
   })
 
+  describe('createNonce', () => {
+    it('should create nonce, save to store, and return nonce string', async () => {
+      const generatedNonce = { nonce: 'abc123def456', nonce_expires_in: 300000 }
+      mock.method(mockNonceProvider, 'generate', async () => generatedNonce)
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
+
+      const result = await issuerFlow.createNonce()
+
+      assert.strictEqual(result, 'abc123def456')
+      assert.equal(mockNonceProvider.generate.mock.callCount(), 1)
+      assert.equal(mockNonceStoreProvider.save.mock.callCount(), 1)
+      assert.deepStrictEqual(mockNonceStoreProvider.save.mock.calls[0].arguments[0], generatedNonce)
+    })
+
+    it('should pass ttlMs to generate when provided', async () => {
+      const generatedNonce = { nonce: 'ttl-nonce', nonce_expires_in: 60000 }
+      mock.method(mockNonceProvider, 'generate', async () => generatedNonce)
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
+
+      await issuerFlow.createNonce(60000)
+
+      assert.equal(mockNonceProvider.generate.mock.callCount(), 1)
+      assert.deepStrictEqual(mockNonceProvider.generate.mock.calls[0].arguments[0], {
+        nonce_expires_in: 60000,
+      })
+    })
+  })
+
+  describe('validateNonce', () => {
+    it('should return true when nonce is valid', async () => {
+      mock.method(mockNonceStoreProvider, 'validate', async () => true)
+
+      const result = await issuerFlow.validateNonce('valid-nonce')
+
+      assert.strictEqual(result, true)
+      assert.equal(mockNonceStoreProvider.validate.mock.callCount(), 1)
+      assert.deepStrictEqual(mockNonceStoreProvider.validate.mock.calls[0].arguments[0], {
+        nonce: 'valid-nonce',
+      })
+    })
+
+    it('should return false when nonce is invalid', async () => {
+      mock.method(mockNonceStoreProvider, 'validate', async () => false)
+
+      const result = await issuerFlow.validateNonce('invalid-nonce')
+
+      assert.strictEqual(result, false)
+      assert.equal(mockNonceStoreProvider.validate.mock.callCount(), 1)
+    })
+  })
+
   describe('issueCredential', () => {
     it('should issue a credential for a valid request', async () => {
       // 1. Arrange

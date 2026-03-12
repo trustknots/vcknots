@@ -321,7 +321,7 @@ export type NonceProvider = {
   name: string
   single: true
 
-  generate(options?: { nonce_expires_in: number }): Promise<Nonce>
+  generate(options?: { nonce_expires_in?: number }): Promise<Nonce>
 }
 
 export type NonceStoreProvider = {

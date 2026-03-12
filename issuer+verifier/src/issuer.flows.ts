@@ -43,6 +43,8 @@ export type IssuerFlow = {
     configurations: CredentialConfigurationId[],
     options?: OfferOptions
   ): Promise<CredentialOffer>
+  createNonce(ttlMs?: number): Promise<string>
+  validateNonce(nonce: string): Promise<boolean>
   issueCredential(
     issuer: CredentialIssuer,
     credentialRequest: CredentialRequest,
@@ -141,6 +143,15 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         ...(options?.txCode && { txCode: options.txCode }),
       })
       return offer
+    },
+    async createNonce(ttlMs) {
+      const nonce = await cnonce$.generate({ nonce_expires_in: ttlMs })
+      await cnonceStore$.save(nonce)
+      return nonce.nonce
+    },
+    async validateNonce(nonce) {
+      const lookupNonce = Nonce({ nonce })
+      return cnonceStore$.validate(lookupNonce)
     },
     async issueCredential(issuer, credentialRequest, options) {
       const metadata =
