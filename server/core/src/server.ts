@@ -118,9 +118,16 @@ export const createServer = (options?: VcknotsOptions) => {
   async function initializeVerifierMetadata(verifierId: string, metadata: VerifierMetadata) {
     try {
       const clientId = VerifierClientId(verifierId)
+
+      const verifier = await verifierFlow.findVerifierMetadata(clientId)
+      if (verifier) {
+        console.log('Verifier metadata already exists, skipping initialization')
+        return true
+      }
+
       const verifierCertificate = await verifierFlow.findVerifierCertificate(clientId)
       if (verifierCertificate && verifierCertificate.length > 0) {
-        console.log('Verifier metadata already exists, skipping initialization')
+        console.log('Verifier certificate already exists, skipping initialization')
         return true
       }
 

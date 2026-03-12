@@ -3,6 +3,7 @@ name: pr-title-lint
 on:
     pull_request:
         types: [opened, edited, synchronize, reopened]
+        branches: ["main", "feat/oid4vci-1.0"]
 
 permissions:
     contents: read

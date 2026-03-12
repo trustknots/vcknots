@@ -89,6 +89,9 @@ google-cloud/
    # 共有 server-core モジュールをビルド
    pnpm -F @trustknots/server-core build
 
+   # Google Cloud モジュールをビルド
+   pnpm -F @trustknots/google-cloud build
+
    # Google Cloud サーバーモジュールをビルド
    pnpm -F @trustknots/server-google-cloud build
    ```

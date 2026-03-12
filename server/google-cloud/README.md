@@ -89,6 +89,9 @@ To start this server, follow the steps below.
    # Build shared server core module
    pnpm -F @trustknots/server-core build
 
+   # Build Google Cloud module
+   pnpm -F @trustknots/google-cloud build
+
    # Build Google Cloud server module
    pnpm -F @trustknots/server-google-cloud build
    ```

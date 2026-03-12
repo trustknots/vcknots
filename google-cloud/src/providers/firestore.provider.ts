@@ -2,6 +2,7 @@ import { Provider } from '@trustknots/vcknots/providers'
 import { App } from 'firebase-admin/app'
 import { Firestore, getFirestore } from 'firebase-admin/firestore'
 import { firestoreIssuerMetadataStore } from './firestore-issuer-metadata-store.provider'
+import { firestoreVerifierMetadataStore } from './firestore-verifier-metadata-store.provider'
 
 export type FirestoreProviderOptions = {
   app?: App // This is the Firebase app instance. If omitted, it defaults to the default app.
@@ -21,5 +22,8 @@ export const resolveFirestore = (options?: FirestoreProviderOptions): Firestore 
 
 // Returns all Firestore-backed providers.
 export const firestore = (options?: FirestoreProviderOptions): Provider[] => {
-  return [firestoreIssuerMetadataStore(options)]
+  return [
+    firestoreIssuerMetadataStore(options),
+    firestoreVerifierMetadataStore(options)
+  ]
 }

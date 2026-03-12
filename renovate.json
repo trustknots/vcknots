@@ -15,19 +15,19 @@
 	"branchPrefix": "build/",
 	"pin": {
 		"group": {
-		"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
+			"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
 		}
 	},
 	"pinDigest": {
 		"group": {
-		"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
+			"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
 		}
 	},
 	"packageRules": [
 		{
 			"matchManagers": ["gradle"],
 			"matchPaths": [
-				"wallet/wrappers/vcknots_wallet_dart_wrapper/example/android/**"
+				"wallet_wrappers/vcknots_wallet_dart_wrapper/example/android/**"
 			],
 			"enabled": false
 		},
@@ -47,8 +47,23 @@
 			"rangeStrategy": "pin"
 		},
 		{
+			"matchFileNames": ["server/core/**"],
+			"groupName": "server-core",
+			"rangeStrategy": "pin"
+		},
+		{
+			"matchFileNames": ["server/google-cloud/**"],
+			"groupName": "server-google-cloud",
+			"rangeStrategy": "pin"
+		},
+		{
 			"matchFileNames": ["wallet/**"],
 			"groupName": "wallet",
+			"rangeStrategy": "pin"
+		},
+		{
+			"matchFileNames": ["wallet_wrappers/**"],
+			"groupName": "wallet-wrappers",
 			"rangeStrategy": "pin"
 		},
 		{
@@ -78,7 +93,7 @@
 			],
 			"commitMessagePrefix": "build:",
 			"commitMessageAction": "update",
-    		"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
+			"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
 		},
 
 		{
