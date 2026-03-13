@@ -157,6 +157,23 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
     }
   })
 
+  issueApp.delete('/nonce/:nonce', async (c) => {
+    try {
+      const nonce = c.req.param('nonce')
+      const deleted = await issuerFlow.revokeNonce(nonce)
+      if (!deleted) {
+        return c.json(
+          { error: 'not_found', error_description: 'Nonce not found.' },
+          404
+        )
+      }
+      return c.json({ deleted: true }, 200)
+    } catch (err) {
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
+    }
+  })
 
   return issueApp
 }

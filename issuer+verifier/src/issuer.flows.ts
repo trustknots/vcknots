@@ -45,6 +45,7 @@ export type IssuerFlow = {
   ): Promise<CredentialOffer>
   createNonce(ttlMs?: number): Promise<string>
   validateNonce(nonce: string): Promise<boolean>
+  revokeNonce(nonce: string): Promise<boolean>
   issueCredential(
     issuer: CredentialIssuer,
     credentialRequest: CredentialRequest,
@@ -152,6 +153,10 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
     async validateNonce(nonce) {
       const lookupNonce = Nonce({ nonce })
       return cnonceStore$.validate(lookupNonce)
+    },
+    async revokeNonce(nonce) {
+      const lookupNonce = Nonce({ nonce })
+      return cnonceStore$.revoke(lookupNonce)
     },
     async issueCredential(issuer, credentialRequest, options) {
       const metadata =

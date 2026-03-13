@@ -331,7 +331,7 @@ export type NonceStoreProvider = {
 
   save(nonce: Nonce): Promise<void>
   validate(nonce: Nonce): Promise<boolean>
-  revoke(nonce: Nonce): Promise<void>
+  revoke(nonce: Nonce): Promise<boolean>
 }
 
 export type IssueCredentialProvider = {

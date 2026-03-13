@@ -55,7 +55,7 @@ describe('verifyVerifiablePresentation provider', () => {
       name: 'mock-cnonce-store',
       single: true,
       validate: mock.fn(async (nonce: Nonce) => nonce.nonce === 'test-nonce'),
-      revoke: mock.fn(async () => {}),
+      revoke: mock.fn(async () => true),
       save: mock.fn(async () => {}),
     }
 

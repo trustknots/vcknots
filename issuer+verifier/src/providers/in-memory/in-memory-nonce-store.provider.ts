@@ -35,9 +35,8 @@ export const inMemoryNonceStore = (option?: {
       return true
     },
 
-    async revoke(nonce): Promise<void> {
-      nonceStates.delete(nonce.nonce)
-      return
+    async revoke(nonce): Promise<boolean> {
+      return nonceStates.delete(nonce.nonce)
     },
   }
 }

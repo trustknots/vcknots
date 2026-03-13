@@ -71,7 +71,7 @@ describe('VerifierFlow', () => {
     single: true,
     save: mock.fn(),
     validate: mock.fn(),
-    revoke: mock.fn(),
+    revoke: mock.fn(async () => true),
   } satisfies NonceStoreProvider
 
   const mockCredentialQueryProvider = {

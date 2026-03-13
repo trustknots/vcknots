@@ -137,14 +137,21 @@ describe('inMemoryNonceStore', () => {
       assert.strictEqual(result, undefined)
     })
 
-    it('revoke method should return a Promise that resolves to undefined', async () => {
+    it('revoke method should return true when nonce existed', async () => {
       const cnonceToRevoke = Nonce({
         nonce: 'another-cnonce-for-return-test',
         nonce_expires_in: 60000,
       })
       await nonceStoreProvider.save(cnonceToRevoke)
       const result = await nonceStoreProvider.revoke(cnonceToRevoke)
-      assert.strictEqual(result, undefined)
+      assert.strictEqual(result, true)
+    })
+
+    it('revoke method should return false when nonce did not exist', async () => {
+      const result = await nonceStoreProvider.revoke(
+        Nonce({ nonce: 'non-existent-cnonce-for-return-test' })
+      )
+      assert.strictEqual(result, false)
     })
   })
 })

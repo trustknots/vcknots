@@ -105,7 +105,7 @@ describe('IssuerFlow', () => {
     single: true,
     save: mock.fn(),
     validate: mock.fn(),
-    revoke: mock.fn(),
+    revoke: mock.fn(async () => true),
   } satisfies NonceStoreProvider
 
   before(() => {
@@ -907,7 +907,7 @@ describe('IssuerFlow', () => {
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(mockNonceStoreProvider, 'validate', async () => true) // Nonce is valid
-      mock.method(mockNonceStoreProvider, 'revoke', async () => {})
+      mock.method(mockNonceStoreProvider, 'revoke', async () => true)
       mock.method(mockNonceProvider, 'generate', async () => ({
         nonce: newNonce,
         nonce_expires_in: 300,

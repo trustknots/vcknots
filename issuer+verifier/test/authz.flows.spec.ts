@@ -53,7 +53,7 @@ describe('AuthzFlows', () => {
     kind: 'nonce-store-provider',
     name: 'mock-nonce-store-provider',
     single: true,
-    revoke: mock.fn(),
+    revoke: mock.fn(async () => true),
     validate: mock.fn(),
     save: mock.fn(),
   } satisfies NonceStoreProvider
