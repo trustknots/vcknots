@@ -108,7 +108,7 @@ POST  /nonce
 GET   /nonce/:nonce
         [handler]
 DELETE  /nonce/:nonce
-          [handler]        
+        [handler]
 POST  /token
         [handler]
 GET   /.well-known/oauth-authorization-server
