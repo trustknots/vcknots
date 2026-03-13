@@ -102,6 +102,10 @@ GET   /.well-known/openid-credential-issuer
         [handler]
 GET   /.well-known/jwt-vc-issuer
         [handler]
+POST  /nonce
+        [handler]
+GET   /nonce/:nonce
+        [handler]
 POST  /token
         [handler]
 GET   /.well-known/oauth-authorization-server
@@ -137,6 +141,8 @@ Authz metadata initialized
 - [`POST /credentials`](#post-credentials) - クレデンシャルの発行
 - [`GET /.well-known/openid-credential-issuer`](#get-well-knownopenid-credential-issuer) - Issuer メタデータの取得
 - [`GET /.well-known/jwt-vc-issuer`](#get-well-knownjwt-vc-issuer) - JWT VC Issuer メタデータの取得
+- [`POST /nonce`](#post-nonce) - nonce（c_nonce）の作成
+- [`GET /nonce/:nonce`](#get-noncenonce) - nonceの有効性検証
 
 #### Authorization Server
 - [`POST /token`](#post-token) - トークンエンドポイント
@@ -222,6 +228,30 @@ JWT VC Issuer メタデータの取得
 **レスポンス:**
 - `200 OK` - JWT VC Issuer メタデータ（JSON形式）
 - `404 Not Found` - メタデータが見つからない場合
+
+<a id="post-nonce"></a>
+#### `POST /nonce`
+
+nonce（c_nonce）の作成。OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) に相当します。Wallet が credential リクエストを送る前に c_nonce を取得する際に使用します。複数の credential を取得する場合、同一の nonce を有効期限内で再利用できます。
+
+**レスポンスヘッダー:**
+- `Cache-Control: no-store` - キャッシュを無効化
+
+**レスポンス:**
+- `200 OK` - `{ "c_nonce": string }`（nonce の有効期限は 2 分）
+- `400 Bad Request` / `500 Internal Server Error` - エラー時
+
+<a id="get-noncenonce"></a>
+#### `GET /nonce/:nonce`
+
+指定された nonce の有効性を検証します。デバッグや Wallet による事前確認に利用できます。
+
+**パスパラメータ:**
+- `nonce` (string) - 検証対象の nonce 値
+
+**レスポンス:**
+- `200 OK` - `{ "valid": boolean }`
+- `400 Bad Request` / `500 Internal Server Error` - エラー時
 
 ### Authorization Server
 

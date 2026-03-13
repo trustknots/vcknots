@@ -1,4 +1,4 @@
-﻿# Single Server
+# Single Server
 
 Single-tenant server implementation. Provides a server that integrates Issuer, Authorization Server, and Verifier functionality using the VCKnots library.
 Shared app/routes/server/util implementations are provided by `@trustknots/server-core`.
@@ -103,6 +103,10 @@ GET   /.well-known/openid-credential-issuer
         [handler]
 GET   /.well-known/jwt-vc-issuer
         [handler]
+POST  /nonce
+        [handler]
+GET   /nonce/:nonce
+        [handler]
 POST  /token
         [handler]
 GET   /.well-known/oauth-authorization-server
@@ -139,6 +143,8 @@ The server starts on `http://localhost:8080` by default.
 - [`POST /credentials`](#post-credentials) - Issue credential
 - [`GET /.well-known/openid-credential-issuer`](#get-well-knownopenid-credential-issuer) - Get Issuer metadata
 - [`GET /.well-known/jwt-vc-issuer`](#get-well-knownjwt-vc-issuer) - Get JWT VC Issuer metadata
+- [`POST /nonce`](#post-nonce) - Create nonce (c_nonce)
+- [`GET /nonce/:nonce`](#get-noncenonce) - Validate nonce
 
 #### Authorization Server
 - [`POST /token`](#post-token) - Token endpoint
@@ -224,6 +230,30 @@ Get JWT VC Issuer metadata
 **Response:**
 - `200 OK` - JWT VC Issuer metadata (JSON format)
 - `404 Not Found` - Metadata not found
+
+<a id="post-nonce"></a>
+#### `POST /nonce`
+
+Create a nonce (c_nonce). Corresponds to the OID4VCI [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint). Used when a Wallet obtains a c_nonce before sending credential requests. When requesting multiple credentials, the same nonce can be reused within its validity period.
+
+**Response Headers:**
+- `Cache-Control: no-store` - Disable caching
+
+**Response:**
+- `200 OK` - `{ "c_nonce": string }` (nonce validity is 2 minutes)
+- `400 Bad Request` / `500 Internal Server Error` - On error
+
+<a id="get-noncenonce"></a>
+#### `GET /nonce/:nonce`
+
+Validate the specified nonce. Useful for debugging or Wallet pre-validation.
+
+**Path Parameters:**
+- `nonce` (string) - The nonce value to validate
+
+**Response:**
+- `200 OK` - `{ "valid": boolean }`
+- `400 Bad Request` / `500 Internal Server Error` - On error
 
 ### Authorization Server
 

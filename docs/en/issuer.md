@@ -8,7 +8,7 @@ This guide explains how to set up and use the Issuer feature of VCKnots.
 
 ## 1. Prerequisites
 
-- Supports OpenID for Verifiable Credential Issuance - draft 13 ([OpenID for Verifiable Credential Issuance - draft 13](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html))  
+- Supports OpenID for Verifiable Credential Issuance 1.0 ([OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html))  
 The following items are not implemented yet and are planned for future support:
   - Only the Pre-Authorized Code Flow is supported at this time.
   - `tx_code` in the Credential Offer is not supported yet.
@@ -98,6 +98,7 @@ serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, a
     credential_endpoint: `${baseUrl}/issue/credentials`,
     batch_credential_endpoint: `${baseUrl}/batch_credential`,
     deferred_credential_endpoint: `${baseUrl}/deferred_credential`,
+    nonce_endpoint: `${baseUrl}/nonce`,
   })
 
   await initializeIssuerMetadata(issuerMetadata);
@@ -171,6 +172,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
 	"credential_endpoint": "http://localhost:8080/issue/credentials",
 	"batch_credential_endpoint": "http://localhost:8080/issue/batch_credential",
 	"deferred_credential_endpoint": "http://localhost:8080/issue/deferred_credential",
+	"nonce_endpoint": "http://localhost:8080/nonce",
 	"credential_configurations_supported": {
 		"UniversityDegreeCredential": {
 			"format": "jwt_vc_json",
@@ -380,7 +382,78 @@ curl -X POST http://localhost:8080/authz/token \
 }
 ```
 
-### 6. Issuing a Credential
+### 6. Nonce Endpoint
+
+This endpoint corresponds to the OID4VCI [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint). It is used when a Wallet obtains a c_nonce before sending a credential request. 
+
+When `nonce_endpoint` is set in the Issuer metadata, the Wallet references the nonce endpoint URL via the metadata obtained from `/.well-known/openid-credential-issuer`.
+
+#### POST /nonce - Create nonce (c_nonce)
+
+```typescript
+app.post('/nonce', async (c) => {
+  try {
+    const NONCE_TTL_MS = 2 * 60 * 1000  // 2 minutes
+    const cnonce = await issuerFlow.createNonce(NONCE_TTL_MS)
+    c.header('Cache-Control', 'no-store')
+    return c.json({ c_nonce: cnonce }, 200)
+  } catch (err) {
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
+  }
+})
+```
+
+**Example**:
+
+**Request**
+
+```bash
+curl -X POST http://localhost:8080/nonce
+```
+
+**Response**
+
+```json
+{
+  "c_nonce": "3ccc7973abef4102ad70a871e200304b"
+}
+```
+
+#### GET /nonce/:nonce - Validate nonce
+
+```typescript
+app.get('/nonce/:nonce', async (c) => {
+  try {
+    const nonce = c.req.param('nonce')
+    const valid = await issuerFlow.validateNonce(nonce)
+    return c.json({ valid })
+  } catch (err) {
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
+  }
+})
+```
+
+**Example**:
+
+**Request**
+
+```bash
+curl http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
+```
+
+**Response**
+
+```json
+{
+  "valid": true
+}
+```
+
+### 7. Issuing a Credential
 
 Endpoint to issue a credential:
 
@@ -536,6 +609,32 @@ createIssuerMetadata(issuer: CredentialIssuerMetadata): Promise<void>
 **Error cases**:
 - `PROVIDER_NOT_FOUND`: An unsupported `alg` is configured
 
+
+### createNonce
+
+Creates a nonce (c_nonce). Used for the OID4VCI nonce endpoint.
+
+```typescript
+createNonce(ttlMs?: number): Promise<string>
+```
+
+**Parameters**:
+- `ttlMs`: Validity period of the nonce in milliseconds. Uses the provider's default when omitted.
+
+**Return value**: The generated nonce string.
+
+### validateNonce
+
+Validates whether the specified nonce is valid.
+
+```typescript
+validateNonce(nonce: string): Promise<boolean>
+```
+
+**Parameters**:
+- `nonce`: The nonce value to validate.
+
+**Return value**: `true` if the nonce is valid; `false` if invalid or not found.
 
 ### offerCredential
 Creates a credential offer.
@@ -784,7 +883,7 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
   - **A:** Make sure you are not calling an unimplemented flow. Currently, only the pre-authorized code flow is supported.
 
 - **Q: Error when issuing credential**: `INVALID_PROOF`  
-  - **A:** Check that the header of prooj.jwt in the credential request includes a kid.
+  - **A:** Check that the header of proof.jwt in the credential request includes a kid. Also verify that the `nonce` in the proof is valid.
 
 
 
