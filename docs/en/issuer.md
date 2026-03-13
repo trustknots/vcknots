@@ -453,6 +453,55 @@ curl http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
 }
 ```
 
+#### DELETE /nonce/:nonce - Revoke nonce
+
+Revokes (deletes) the specified nonce. Returns 404 if the nonce does not exist.
+
+```typescript
+app.delete('/nonce/:nonce', async (c) => {
+  try {
+    const nonce = c.req.param('nonce')
+    const deleted = await issuerFlow.revokeNonce(nonce)
+    if (!deleted) {
+      return c.json(
+        { error: 'not_found', error_description: 'Nonce not found.' },
+        404
+      )
+    }
+    return c.json({ deleted: true }, 200)
+  } catch (err) {
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
+  }
+})
+```
+
+**Example**:
+
+**Request**
+
+```bash
+curl -X DELETE http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
+```
+
+**Response (200)**
+
+```json
+{
+  "deleted": true
+}
+```
+
+**Response (404 - nonce not found)**
+
+```json
+{
+  "error": "not_found",
+  "error_description": "Nonce not found."
+}
+```
+
 ### 7. Issuing a Credential
 
 Endpoint to issue a credential:
@@ -635,6 +684,19 @@ validateNonce(nonce: string): Promise<boolean>
 - `nonce`: The nonce value to validate.
 
 **Return value**: `true` if the nonce is valid; `false` if invalid or not found.
+
+### revokeNonce
+
+Revokes (deletes) the specified nonce.
+
+```typescript
+revokeNonce(nonce: string): Promise<boolean>
+```
+
+**Parameters**:
+- `nonce`: The nonce value to revoke.
+
+**Return value**: `true` if the nonce was successfully revoked; `false` if the nonce was not found.
 
 ### offerCredential
 Creates a credential offer.

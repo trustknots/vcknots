@@ -453,6 +453,55 @@ curl http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
 }
 ```
 
+#### DELETE /nonce/:nonce - nonceの取り消し
+
+指定された nonce を取り消し（削除）します。nonce が存在しない場合は 404 を返します。
+
+```typescript
+app.delete('/nonce/:nonce', async (c) => {
+  try {
+    const nonce = c.req.param('nonce')
+    const deleted = await issuerFlow.revokeNonce(nonce)
+    if (!deleted) {
+      return c.json(
+        { error: 'not_found', error_description: 'Nonce not found.' },
+        404
+      )
+    }
+    return c.json({ deleted: true }, 200)
+  } catch (err) {
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
+  }
+})
+```
+
+**例**:
+
+**リクエスト**
+
+```bash
+curl -X DELETE http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
+```
+
+**レスポンス (200)**
+
+```json
+{
+  "deleted": true
+}
+```
+
+**レスポンス (404 - nonce が見つからない場合)**
+
+```json
+{
+  "error": "not_found",
+  "error_description": "Nonce not found."
+}
+```
+
 ### 7. クレデンシャルの発行
 
 クレデンシャルを発行するエンドポイント：
@@ -636,6 +685,19 @@ validateNonce(nonce: string): Promise<boolean>
 - `nonce`: 検証対象の nonce 値
 
 **戻り値**: nonce が有効な場合 `true`、無効または存在しない場合 `false`
+
+### revokeNonce
+
+指定された nonce を取り消し（削除）します。
+
+```typescript
+revokeNonce(nonce: string): Promise<boolean>
+```
+
+**パラメータ**:
+- `nonce`: 取り消し対象の nonce 値
+
+**戻り値**: nonce の取り消しに成功した場合 `true`、nonce が見つからない場合 `false`
 
 ### offerCredential
 クレデンシャルオファーを作成します。

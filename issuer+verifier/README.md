@@ -139,6 +139,13 @@ const valid = await issuer.validateNonce(nonce)
 // Returns: boolean
 ```
 
+**Revoke a nonce** (e.g., for `DELETE /nonce/:nonce`):
+
+```typescript
+const deleted = await issuer.revokeNonce(nonce)
+// Returns: boolean (true if revoked successfully, false if nonce not found)
+```
+
 ### Verifier Flow
 
 #### 1. Setup Verifier Metadata

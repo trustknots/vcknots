@@ -106,6 +106,8 @@ POST  /nonce
         [handler]
 GET   /nonce/:nonce
         [handler]
+DELETE  /nonce/:nonce
+          [handler]
 POST  /token
         [handler]
 GET   /.well-known/oauth-authorization-server
@@ -143,6 +145,7 @@ Authz metadata initialized
 - [`GET /.well-known/jwt-vc-issuer`](#get-well-knownjwt-vc-issuer) - JWT VC Issuer メタデータの取得
 - [`POST /nonce`](#post-nonce) - nonce（c_nonce）の作成
 - [`GET /nonce/:nonce`](#get-noncenonce) - nonceの有効性検証
+- [`DELETE /nonce/:nonce`](#delete-noncenonce) - nonceの取り消し
 
 #### Authorization Server
 - [`POST /token`](#post-token) - トークンエンドポイント
@@ -251,6 +254,19 @@ nonce（c_nonce）の作成。OID4VCI の [nonce endpoint](https://openid.net/sp
 
 **レスポンス:**
 - `200 OK` - `{ "valid": boolean }`
+- `400 Bad Request` / `500 Internal Server Error` - エラー時
+
+<a id="delete-noncenonce"></a>
+#### `DELETE /nonce/:nonce`
+
+指定された nonce を取り消し（削除）します。
+
+**パスパラメータ:**
+- `nonce` (string) - 取り消し対象の nonce 値
+
+**レスポンス:**
+- `200 OK` - `{ "deleted": true }`
+- `404 Not Found` - nonce が見つからない場合（`{ "error": "not_found", "error_description": "Nonce not found." }`）
 - `400 Bad Request` / `500 Internal Server Error` - エラー時
 
 ### Authorization Server

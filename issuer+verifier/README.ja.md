@@ -139,6 +139,13 @@ const valid = await issuer.validateNonce(nonce)
 // 戻り値: boolean
 ```
 
+**nonce の取り消し**（例: `DELETE /nonce/:nonce` 用）:
+
+```typescript
+const deleted = await issuer.revokeNonce(nonce)
+// 戻り値: boolean（取り消し成功時 true、nonce が見つからない場合 false）
+```
+
 ### Verifier フロー
 
 #### 1. Verifier メタデータのセットアップ

@@ -107,6 +107,8 @@ POST  /nonce
         [handler]
 GET   /nonce/:nonce
         [handler]
+DELETE  /nonce/:nonce
+          [handler]        
 POST  /token
         [handler]
 GET   /.well-known/oauth-authorization-server
@@ -145,6 +147,7 @@ The server starts on `http://localhost:8080` by default.
 - [`GET /.well-known/jwt-vc-issuer`](#get-well-knownjwt-vc-issuer) - Get JWT VC Issuer metadata
 - [`POST /nonce`](#post-nonce) - Create nonce (c_nonce)
 - [`GET /nonce/:nonce`](#get-noncenonce) - Validate nonce
+- [`DELETE /nonce/:nonce`](#delete-noncenonce) - Revoke nonce
 
 #### Authorization Server
 - [`POST /token`](#post-token) - Token endpoint
@@ -253,6 +256,19 @@ Validate the specified nonce. Useful for debugging or Wallet pre-validation.
 
 **Response:**
 - `200 OK` - `{ "valid": boolean }`
+- `400 Bad Request` / `500 Internal Server Error` - On error
+
+<a id="delete-noncenonce"></a>
+#### `DELETE /nonce/:nonce`
+
+Revoke (delete) the specified nonce.
+
+**Path Parameters:**
+- `nonce` (string) - The nonce value to revoke
+
+**Response:**
+- `200 OK` - `{ "deleted": true }`
+- `404 Not Found` - Nonce not found (`{ "error": "not_found", "error_description": "Nonce not found." }`)
 - `400 Bad Request` / `500 Internal Server Error` - On error
 
 ### Authorization Server
