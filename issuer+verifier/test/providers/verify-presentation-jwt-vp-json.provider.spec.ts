@@ -172,6 +172,21 @@ describe('verifyVerifiablePresentation provider', () => {
     })
   })
 
+  test('should throw INVALID_NONCE when nonce revoke returns false', async () => {
+    mock.method(mockCnonceStore, 'revoke', async () => false)
+    const vpJwt = await createVpJwt({
+      nonce: 'test-nonce',
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt],
+      },
+    })
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
+      name: 'INVALID_NONCE',
+      message: 'Nonce could not be revoked.',
+    })
+  })
+
   test('should throw an error if no verifiableCredential', async () => {
     const vpJwt = await createVpJwt({
       nonce: 'test-nonce',

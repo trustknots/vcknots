@@ -234,7 +234,12 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
               message: 'Nonce not found.',
             })
           }
-          await cnonceStore$.revoke(lookupNonce)
+          const revoked = await cnonceStore$.revoke(lookupNonce)
+          if (!revoked) {
+            throw err('INVALID_PROOF', {
+              message: 'Nonce could not be revoked.',
+            })
+          }
           nonce = await cnonce$.generate({
             nonce_expires_in: options.cnonce.c_nonce_expires_in,
           })

@@ -939,6 +939,47 @@ describe('IssuerFlow', () => {
       assert.equal(mockNonceStoreProvider.save.mock.callCount(), 1)
     })
 
+    it('should throw "INVALID_PROOF" if cnonce revoke returns false', async () => {
+      // 1. Arrange
+      const issuer = CredentialIssuer('did:example:issuer')
+      const metadata = {
+        credential_issuer: issuer,
+        credential_configurations_supported: {
+          University_Degree: {
+            format: CredentialFormats.JWT_VC_JSON,
+            credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
+            proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256K'] } },
+          },
+        },
+      }
+      const credentialRequest: CredentialRequest = {
+        format: CredentialFormats.JWT_VC_JSON,
+        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
+        proof: { proof_type: ProofTypes.JWT, jwt: 'dummy-proof-jwt' },
+      }
+      const verifiedProof = {
+        header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
+        payload: { iss: 'did:example:user', aud: issuer, nonce: 'valid-nonce' },
+      }
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+      mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
+      mock.method(mockNonceStoreProvider, 'validate', async () => true)
+      mock.method(mockNonceStoreProvider, 'revoke', async () => false)
+      mockCredentialProofProvider.canHandle.mock.mockImplementation(
+        (type) => type === ProofTypes.JWT
+      )
+
+      // 2. Act & 3. Assert
+      await assert.rejects(
+        issuerFlow.issueCredential(issuer, credentialRequest, {
+          alg: 'ES256',
+          cnonce: { c_nonce_expires_in: 300 },
+        }),
+        { name: 'INVALID_PROOF', message: 'Nonce could not be revoked.' }
+      )
+    })
+
     it('should throw "INVALID_PROOF" if cnonce is invalid', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')

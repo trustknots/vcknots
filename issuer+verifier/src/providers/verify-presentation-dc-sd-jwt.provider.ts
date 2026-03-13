@@ -168,7 +168,12 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
             message: 'nonce is not valid.',
           })
         }
-        await nonceStore$.revoke(Nonce({ nonce }))
+        const revoked = await nonceStore$.revoke(Nonce({ nonce }))
+        if (!revoked) {
+          throw err('INVALID_NONCE', {
+            message: 'Nonce could not be revoked.',
+          })
+        }
       }
       const { payload: claims } = await sdJwtInst.verify(vp, {
         requiredClaimKeys: specifiedDisclosures,

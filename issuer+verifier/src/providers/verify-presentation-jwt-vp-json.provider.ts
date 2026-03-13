@@ -65,7 +65,12 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
           message: 'nonce is not valid.',
         })
       }
-      await nonceStore$.revoke(nonce)
+      const revoked = await nonceStore$.revoke(nonce)
+      if (!revoked) {
+        throw err('INVALID_NONCE', {
+          message: 'Nonce could not be revoked.',
+        })
+      }
 
       const vcs = vpPayload.vp.verifiableCredential
       if (Array.isArray(vcs)) {
