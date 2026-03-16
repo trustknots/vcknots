@@ -27,6 +27,9 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
           store.set(path, { ...data })
         }
       },
+      delete: async () => {
+        store.delete(path)
+      },
     }),
   } as unknown as Firestore
 
