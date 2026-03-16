@@ -4,6 +4,7 @@ import { Firestore, getFirestore } from 'firebase-admin/firestore'
 import { firestoreIssuerMetadataStore } from './firestore-issuer-metadata-store.provider'
 import { firestoreVerifierMetadataStore } from './firestore-verifier-metadata-store.provider'
 import { firestoreAuthzServerMetadataStore } from './firestore-authz-metadata-store.provider'
+import { firestorePreAuthorizedCodeStore } from './firestore-pre-authorized-code-store.provider'
 
 export type FirestoreProviderOptions = {
   app?: App // This is the Firebase app instance. If omitted, it defaults to the default app.
@@ -27,5 +28,6 @@ export const firestore = (options?: FirestoreProviderOptions): Provider[] => {
     firestoreIssuerMetadataStore(options),
     firestoreVerifierMetadataStore(options),
     firestoreAuthzServerMetadataStore(options),
+    firestorePreAuthorizedCodeStore(options),
   ]
 }
