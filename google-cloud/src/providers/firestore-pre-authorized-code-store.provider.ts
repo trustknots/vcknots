@@ -1,4 +1,5 @@
 import { PreAuthorizedCodeStoreProvider } from '@trustknots/vcknots/providers'
+import { Timestamp } from 'firebase-admin/firestore'
 import { FirestoreProviderOptions, resolveFirestore } from './firestore.provider'
 
 export const firestorePreAuthorizedCodeStore = (
@@ -13,7 +14,7 @@ export const firestorePreAuthorizedCodeStore = (
     single: true,
 
     async save(code) {
-      const expiresAt = new Date().getTime() + (options?.expiresIn ?? 60 * 5 * 1000) // 5 minutes
+      const expiresAt = Timestamp.fromMillis(new Date().getTime() + (options?.expiresIn ?? 60 * 5 * 1000)) // 5 minutes
       const docRef = firestore.doc(`${ns}/v1/preCodes/${code}`)
       await docRef.set({ code, expires_at: expiresAt })
     },
@@ -22,8 +23,8 @@ export const firestorePreAuthorizedCodeStore = (
       if (!doc.exists) {
         return false
       }
-      const { expires_at } = doc.data() as { expires_at: number }
-      if (new Date().getTime() > expires_at) {
+      const { expires_at } = doc.data() as { expires_at: Timestamp }
+      if (new Date().getTime() > expires_at.toMillis()) {
         await firestore.doc(`${ns}/v1/preCodes/${code}`).delete()
         return false
       }
