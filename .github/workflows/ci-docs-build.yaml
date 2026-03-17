@@ -2,7 +2,7 @@ name: CI docs check build(on PR changed)
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "feat/oid4vci-1.0"]
     paths:
       - "docs/**"
       - "docusaurus/**"
