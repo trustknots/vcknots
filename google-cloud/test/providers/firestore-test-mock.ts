@@ -14,6 +14,7 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
 
   // Fake Firestore instance backed by the in-memory store, injected via DI.
   const mockFirestore = {
+    settings: () => {},
     doc: (path: string) => ({
       get: async () => ({
         exists: store.has(path),
