@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.1">
 <title data-rh="true">How to Set Up and Use the Wallet Feature | trustknots/vcknots</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://trustknots.github.io/vcknots/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://trustknots.github.io/vcknots/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://trustknots.github.io/vcknots/docs/wallet"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" property="og:locale:alternate" content="ja"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="How to Set Up and Use the Wallet Feature | trustknots/vcknots"><meta data-rh="true" name="description" content="This tutorial explains how to set up the VCKnots wallet library, provides sample implementations of its main features, and describes important considerations for using it in production environments."><meta data-rh="true" property="og:description" content="This tutorial explains how to set up the VCKnots wallet library, provides sample implementations of its main features, and describes important considerations for using it in production environments."><link data-rh="true" rel="icon" href="/vcknots/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://trustknots.github.io/vcknots/docs/wallet"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/docs/wallet" hreflang="en"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/ja/docs/wallet" hreflang="ja"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/docs/wallet" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"How to Set Up and Use the Wallet Feature","item":"https://trustknots.github.io/vcknots/docs/wallet"}]}</script><link rel="stylesheet" href="/vcknots/assets/css/styles.a17968be.css">
-<script src="/vcknots/assets/js/runtime~main.d2258e58.js" defer="defer"></script>
+<script src="/vcknots/assets/js/runtime~main.02644012.js" defer="defer"></script>
 <script src="/vcknots/assets/js/main.a4713579.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -27,10 +27,10 @@
 </ul>
 <div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token plain"># macOS</span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">brew install mise</span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain" style="display:inline-block"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"># Install via curl</span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">curl https://mise.jdx.dev/install.sh | sh</span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain" style="display:inline-block"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"># (From the root of the vcknots repository)</span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">cd wallet</span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">mise install</span><br></span></code></pre></div></div>
 <ul>
-<li><strong>GOPRIVATE 環境変数:</strong>
+<li><strong>GOPRIVATE environment variable:</strong>
 <ul>
-<li>もしmise を使用しない場合、<code>go mod download</code> が失敗します。</li>
-<li>これを回避するため、以下の環境変数を手動で設定する必要があります。</li>
+<li>If you are not using mise, <code>go mod download</code> will fail.</li>
+<li>To work around this, you need to set the following environment variable manually.</li>
 </ul>
 </li>
 </ul>
@@ -162,6 +162,25 @@ It includes the logic to generate ES256 signatures (SHA-256 hash) commonly requi
 <li>Make sure that you have write permissions for the execution directory.</li>
 </ul>
 </li>
+<li>
+<p><strong>Strict validation of OID4VP <code>client_id</code>:</strong></p>
+<ul>
+<li>This Wallet implements strict validation of <code>client_id</code> to conform to OID4VP conformance tests.</li>
+<li>Duplicate prefixes (for example, <code>x509_san_dns:x509_san_dns:...</code>) and malformed values are automatically rejected.</li>
+<li>For the <code>x509_san_dns:</code> scheme, the certificate is extracted from the <code>x5c</code> header of the request JWT, and the Subject Alternative Name (SAN) DNS field of the certificate is matched against the <code>client_id</code> value.</li>
+<li>See the <code>parseOID4VPClientID()</code> function and <code>x509_san_dns</code> validation logic in <code>wallet/presenter/plugins/oid4vp/oid4vp.go</code> for details.</li>
+</ul>
+</li>
+<li>
+<p><strong>Test configuration for certificate validation (<code>InsecureSkipX509Verify</code>):</strong></p>
+<ul>
+<li>The <code>Oid4vpPresenter</code> struct provides the <code>InsecureSkipX509Verify</code> option for test environments.</li>
+<li><strong>Default behavior (production):</strong> Full certificate chain validation is performed. Certificates must chain to a trusted root CA.</li>
+<li><strong>Test configuration (<code>InsecureSkipX509Verify: true</code>):</strong> Skips certificate chain validation and extracts the certificate directly from the <code>x5c</code> header. Only SAN-to-<code>client_id</code> matching is performed.</li>
+<li>⚠️ <strong>Critical warning:</strong> <code>InsecureSkipX509Verify: true</code> should only be used for conformance testing or local development environments. <strong>Never</strong> use this in production. It introduces a security risk.</li>
+<li>Conformance tests may intentionally use non-standard certificates (self-signed, CA<!-- -->:TRUE<!-- --> settings, etc.), which is why this option is necessary.</li>
+</ul>
+</li>
 </ol>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="7-troubleshooting">7. Troubleshooting<a href="#7-troubleshooting" class="hash-link" aria-label="Direct link to 7. Troubleshooting" title="Direct link to 7. Troubleshooting" translate="no">​</a></h2>
 <ul>
@@ -192,6 +211,25 @@ It includes the logic to generate ES256 signatures (SHA-256 hash) commonly requi
 <p><strong>Q: <code>controller.ReceiveCredential</code> fails with <code>issuer metadata not found</code>.</strong></p>
 <ul>
 <li><strong>A:</strong> The Node.js server may be running, but the <code>/.well-known/openid-credential-issuer</code> endpoint might not be functioning correctly. Run <code>curl http://localhost:8080/.well-known/openid-credential-issuer</code> (or the Issuer base URL specified in “4. Registering Wallet Metadata”) and confirm that JSON metadata is returned.</li>
+</ul>
+</li>
+<li>
+<p><strong>Q: A <code>client_id</code> validation error occurs during OID4VP conformance testing.</strong></p>
+<ul>
+<li><strong>A:</strong> Conformance tests intentionally send malformed <code>client_id</code> values (such as duplicate prefixes or trailing whitespace) to test the Wallet&#x27;s validation logic. The updated Wallet correctly rejects such invalid <code>client_id</code> values.</li>
+<li>Example errors: <code>&quot;invalid client_id: duplicate prefix detected&quot;</code> or <code>&quot;SAN of the certificate and client_id did not match&quot;</code></li>
+<li>These errors are <strong>expected behavior</strong> and indicate that the Wallet is correctly enforcing its security checks.</li>
+</ul>
+</li>
+<li>
+<p><strong>Q: An <code>x509: certificate is not standards compliant</code> error occurs during OID4VP conformance testing.</strong></p>
+<ul>
+<li><strong>A:</strong> Conformance test servers may use self-signed certificates or non-standard certificate structures for testing purposes.</li>
+<li><strong>Solution:</strong> Set <code>InsecureSkipX509Verify: true</code> only in test environments:<!-- -->
+<div class="language-go codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-go codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token plain">p </span><span class="token operator">:=</span><span class="token plain"> </span><span class="token operator">&amp;</span><span class="token plain">oid4vp</span><span class="token punctuation" style="color:rgb(248, 248, 242)">.</span><span class="token plain">Oid4vpPresenter</span><span class="token punctuation" style="color:rgb(248, 248, 242)">{</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">    X509TrustChainRoots</span><span class="token punctuation" style="color:rgb(248, 248, 242)">:</span><span class="token plain">    systemRoots</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">    InsecureSkipX509Verify</span><span class="token punctuation" style="color:rgb(248, 248, 242)">:</span><span class="token plain"> </span><span class="token boolean">true</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain">  </span><span class="token comment" style="color:rgb(98, 114, 164)">// Test environments only</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">}</span><br></span></code></pre></div></div>
+</li>
+<li>⚠️ <strong>Warning:</strong> Always set this to <code>false</code> (or leave the field unset) in production.</li>
+<li>See the &quot;Conformance Test Troubleshooting&quot; section of <a href="https://github.com/trustknots/vcknots/blob/main/wallet/examples/README.md" target="_blank" rel="noopener noreferrer">examples/README.md</a> for details.</li>
 </ul>
 </li>
 </ul></div></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/vcknots/docs/verifier"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">How to Set Up and Use the Verifier Feature</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#1-prerequisites" class="table-of-contents__link toc-highlight">1. Prerequisites</a><ul><li><a href="#1-1-go-environment-requirements" class="table-of-contents__link toc-highlight">1-1. Go Environment Requirements</a></li><li><a href="#1-2-requirements-for-the-sample-execution-environment-verifierissuer-server" class="table-of-contents__link toc-highlight">1-2. Requirements for the Sample Execution Environment (Verifier/Issuer Server)</a></li></ul></li><li><a href="#2-initial-setup" class="table-of-contents__link toc-highlight">2. Initial Setup</a><ul><li><a href="#2-1-installing-dependencies" class="table-of-contents__link toc-highlight">2-1. Installing Dependencies</a></li><li><a href="#2-2-initializing-the-wallet-controller" class="table-of-contents__link toc-highlight">2-2. Initializing the Wallet Controller</a></li></ul></li><li><a href="#3-sample-implementation-of-wallet-features" class="table-of-contents__link toc-highlight">3. Sample Implementation of Wallet Features</a><ul><li><a href="#3-1-preparing-test-keys-ikeyentry-interface" class="table-of-contents__link toc-highlight">3-1. Preparing Test Keys (IKeyEntry Interface)</a></li><li><a href="#3-2-receiving-a-credential" class="table-of-contents__link toc-highlight">3-2. Receiving a Credential</a></li><li><a href="#3-3-presenting-a-credential-oid4vp" class="table-of-contents__link toc-highlight">3-3. Presenting a Credential (OID4VP)</a></li><li><a href="#3-4-referencing-saved-credentials" class="table-of-contents__link toc-highlight">3-4. Referencing Saved Credentials</a></li></ul></li><li><a href="#4-registering-wallet-metadata" class="table-of-contents__link toc-highlight">4. Registering Wallet Metadata</a></li><li><a href="#5-explanation-of-type-definitions" class="table-of-contents__link toc-highlight">5. Explanation of Type Definitions</a></li><li><a href="#6-notes" class="table-of-contents__link toc-highlight">6. Notes</a></li><li><a href="#7-troubleshooting" class="table-of-contents__link toc-highlight">7. Troubleshooting</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Docs</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/vcknots/docs/issuer">vcknots</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">More</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/trustknots/vcknots" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Copyright © 2026 My Project, Inc. Built with Docusaurus.</div></div></div></footer></div>
