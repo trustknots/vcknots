@@ -16,9 +16,16 @@ const configureInstance = (firestore: Firestore): Firestore => {
   }
 
   // Running `settings` twice on the same instance will result in an error.
-  firestore.settings({
-    ignoreUndefinedProperties: true,
-  })
+  try {
+    firestore.settings({
+      ignoreUndefinedProperties: true,
+    })
+  } catch (cause) {
+    throw new Error(
+      'Failed to configure Firestore instance. This usually means the instance was obtained via getFirestore() elsewhere and already used before configuration.',
+      { cause: cause as Error }
+    )
+  }
   configuredInstances.add(firestore)
   return firestore
 }
