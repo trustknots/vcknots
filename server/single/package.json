@@ -7,8 +7,8 @@
 	"private": true,
 	"scripts": {
 		"build": "tsc",
-		"format": "biome format --write ./src/**/*.ts",
-		"lint": "biome lint ./src/**/*.ts",
+		"format": "biome format --write ./src",
+		"lint": "biome lint ./src",
 		"test": "node --import tsx --test test/**/*.spec.ts",
 		"start": "tsx src/example.ts",
 		"typecheck": "tsc --noEmit"
@@ -16,11 +16,10 @@
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@10.30.0",
+	"packageManager": "pnpm@10.30.3",
 	"dependencies": {
-		"@hono/node-server": "1.19.9",
+		"@trustknots/server-core": "workspace:*",
 		"@trustknots/vcknots": "workspace:*",
-		"dotenv": "17.2.3",
-		"hono": "4.11.4"
+		"dotenv": "17.3.1"
 	}
 }

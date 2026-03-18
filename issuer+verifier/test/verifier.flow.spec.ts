@@ -193,6 +193,43 @@ describe('VerifierFlow', () => {
     })
   })
 
+  describe('findVerifierMetadata', () => {
+    it('should find verifier metadata', async () => {
+      const verifierId = ClientId('https://example.com')
+      const metadata = VerifierMetadata({
+        client_name: 'Test Verifier',
+        vp_formats: {
+          jwt_vc_json: { alg_values_supported: ['ES256'] },
+          jwt_vp_json: { alg_values_supported: ['ES256'] },
+        },
+      })
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async (id: ClientId) => {
+        assert.equal(id, verifierId)
+        return metadata
+      })
+
+      const found = await verifierFlow.findVerifierMetadata(verifierId)
+
+      assert.deepEqual(found, metadata)
+      assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
+    })
+
+    it('should return null if verifier metadata is not found', async () => {
+      const verifierId = ClientId('https://example.com/not-found')
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async (id: ClientId) => {
+        assert.equal(id, verifierId)
+        return null
+      })
+
+      const found = await verifierFlow.findVerifierMetadata(verifierId)
+
+      assert.strictEqual(found, null)
+      assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
+    })
+  })
+
   describe('createAuthzRequest', () => {
     it('creates request for Presentation Exchange', async () => {
       const metadata = VerifierMetadata({

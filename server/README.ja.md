@@ -4,11 +4,26 @@
 
 ## ディレクトリ構成
 
+### `core/`
+
+`single/` と `google-cloud/` で共有するサーバーの共通実装です。
+
+- 共通 Hono アプリ作成 (`createApp`)
+- 共通サーバーブートストラップ (`createServer`)
+- 共通ルート (`authz`, `issue`, `verify`)
+- 共通ユーティリティ (e.g. error handling)
+
 ### `single/`
 
 シングルテナント用のサーバー実装です。すべてのエンドポイントがルートパス（`/`）にマウントされます。
+app/routes/utilの実装は `@trustknots/server-core` を利用します。
 
 詳細については、[single/README.ja.md](./single/README.ja.md) を参照してください。
+
+### `google-cloud/`
+
+Google Cloud連携のシングルテナント用のサーバー実装です。すべてのエンドポイントがルートパス（`/`）にマウントされます。
+app/routes/utilの実装は `@trustknots/server-core` を利用します。
 
 ### `multi/`
 

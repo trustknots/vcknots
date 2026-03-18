@@ -2,11 +2,10 @@ name: CI docs deploy(on merge to main)
 
 on:
   push:
-    branches:
-      - main
+    branches: ["main"]
     paths:
-      - 'docs/**'
-      - 'docusaurus/**'
+      - "docs/**"
+      - "docusaurus/**"
   workflow_dispatch:
 
 permissions:

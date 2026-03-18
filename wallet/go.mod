@@ -7,10 +7,10 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.3
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	go.etcd.io/bbolt v1.4.3
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
-	golang.org/x/text v0.3.3
+	golang.org/x/text v0.34.0
 )
 
 require (

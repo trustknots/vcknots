@@ -4,11 +4,26 @@ This directory contains sample server implementations using the VCKnots library.
 
 ## Directory Structure
 
+### `core/`
+
+Shared server components used by `single/` and `google-cloud/`.
+
+- Common Hono app factory (`createApp`)
+- Shared server bootstrap (`createServer`)
+- Shared routes (`authz`, `issue`, `verify`)
+- Shared utilities (e.g. error handling)
+
 ### `single/`
 
 Single-tenant server implementation. All endpoints are mounted at the root path (`/`).
+This package now uses `@trustknots/server-core` for shared app/routes/util logic.
 
 For details, see [single/README.md](./single/README.md).
+
+### `google-cloud/`
+
+Single-tenant server implementation with Google Cloud integration.
+This package also uses `@trustknots/server-core` for shared app/routes/util logic.
 
 ### `multi/`
 

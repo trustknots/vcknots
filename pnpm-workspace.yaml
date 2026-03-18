@@ -4,3 +4,5 @@ packages:
   - docusaurus
   - server/multi
   - server/single
+  - server/core
+  - server/google-cloud

@@ -2,7 +2,7 @@ name: CI issuer+verifier
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "feat/oid4vci-1.0"]
     paths:
       - issuer\+verifier/**
 

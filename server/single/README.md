@@ -1,6 +1,7 @@
-# Single Server
+﻿# Single Server
 
 Single-tenant server implementation. Provides a server that integrates Issuer, Authorization Server, and Verifier functionality using the VCKnots library.
+Shared app/routes/server/util implementations are provided by `@trustknots/server-core`.
 
 ## Overview
 
@@ -19,19 +20,14 @@ The endpoint list in this README is an overview of the paths used in this sample
 
 ```
 single/
-├── src/
-│   ├── app.ts          
-│   ├── example.ts      
-│   ├── routes/
-│   │   ├── authz.ts    # Authorization Server endpoints
-│   │   ├── issue.ts    # Issuer endpoints
-│   │   └── verify.ts   # Verifier endpoints
-│   └── utils/
-│       └── error-handler.ts  # Error handling utility
-├── .env.example        # Sample environment variable configuration
-├── package.json        
-└── tsconfig.json       
+├─ src/
+│  └─ example.ts      # In-memory provider startup entrypoint (uses createServer from @trustknots/server-core)
+├─ .env.example       # Sample environment variable configuration
+├─ package.json
+└─ tsconfig.json
 ```
+
+Shared implementation lives in `server/core`
 
 ## Compilation and Server Startup
 
@@ -76,8 +72,11 @@ To start this server, follow the steps below.
    ```bash
    # Build issuer+verifier module
    pnpm -F @trustknots/vcknots build
-   
-   # Build server module
+
+   # Build shared server core module
+   pnpm -F @trustknots/server-core build
+
+   # Build single server module
    pnpm -F @trustknots/server build
    ```
 
@@ -123,6 +122,11 @@ Authz metadata initialized
 ```
 
 The server starts on `http://localhost:8080` by default.
+
+## Notes
+
+- `server/single` depends on the workspace package `@trustknots/server-core`.
+- After changing workspace packages/dependencies, run `pnpm install` at the repository root to refresh links.
 
 ## Endpoints
 
@@ -356,3 +360,4 @@ Get Request Object JWT.
 **Response:**
 - `200 OK` - Request Object JWT (Content-Type: application/oauth-authz-req+jwt)
 - `400 Bad Request` - Request Object not found
+

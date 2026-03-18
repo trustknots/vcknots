@@ -61,6 +61,7 @@ export type FindRequestObjectOptions = {
 
 export type VerifierFlow = {
   findVerifierCertificate: (id: ClientId) => Promise<Certificate | null>
+  findVerifierMetadata: (verifierId: ClientId) => Promise<VerifierMetadata | null>
   createVerifierMetadata(
     verifierId: ClientId,
     metadata: VerifierMetadata,
@@ -110,6 +111,9 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   return {
     async findVerifierCertificate(id) {
       return certificateStore$.fetch(id)
+    },
+    async findVerifierMetadata(verifierId) {
+      return verifierMetadata$.fetch(verifierId)
     },
     async createVerifierMetadata(verifierId, metadata, options) {
       const current = await verifierMetadata$.fetch(verifierId)

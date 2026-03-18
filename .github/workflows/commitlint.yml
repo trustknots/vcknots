@@ -3,6 +3,7 @@ name: commitlint
 on:
     pull_request:
         types: [opened, synchronize, reopened, edited]
+        branches: ["main", "feat/oid4vci-1.0"]
 
 permissions:
     contents: read
