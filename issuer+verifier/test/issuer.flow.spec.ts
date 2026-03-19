@@ -595,7 +595,7 @@ describe('IssuerFlow', () => {
       assert.equal(mockIssuerMetadataProvider.fetch.mock.callCount(), 1)
     })
 
-    it('should throw "INVALID_REQUEST" if credential configuration id is not specified', async () => {
+    it('should throw "INVALID_CREDENTIAL_REQUEST" if credential configuration id is not specified', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
@@ -622,13 +622,13 @@ describe('IssuerFlow', () => {
       await assert.rejects(
         issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
         {
-          name: 'INVALID_REQUEST',
+          name: 'INVALID_CREDENTIAL_REQUEST',
           message: 'Credential configuration id is not specified.',
         }
       )
     })
 
-    it('should throw "UNSUPPORTED_CREDENTIAL_TYPE" if requested configuration is not supported', async () => {
+    it('should throw "UNKNOWN_CREDENTIAL_CONFIGURATION" if requested configuration is not supported', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
@@ -653,12 +653,12 @@ describe('IssuerFlow', () => {
       await assert.rejects(
         issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
         {
-          name: 'UNSUPPORTED_CREDENTIAL_TYPE',
+          name: 'UNKNOWN_CREDENTIAL_CONFIGURATION',
         }
       )
     })
 
-    it('should throw "UNSUPPORTED_CREDENTIAL_TYPE" if requested configuration id is not supported', async () => {
+    it('should throw "UNKNOWN_CREDENTIAL_CONFIGURATION" if requested configuration id is not supported', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
@@ -682,7 +682,7 @@ describe('IssuerFlow', () => {
       await assert.rejects(
         issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
         {
-          name: 'UNSUPPORTED_CREDENTIAL_TYPE',
+          name: 'UNKNOWN_CREDENTIAL_CONFIGURATION',
         }
       )
     })
@@ -946,7 +946,7 @@ describe('IssuerFlow', () => {
       assert.equal(mockNonceProvider.generate.mock.callCount(), 1)
     })
 
-    it('should throw "INVALID_PROOF" if cnonce is invalid', async () => {
+    it('should throw "INVALID_NONCE" if cnonce is invalid', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -978,7 +978,7 @@ describe('IssuerFlow', () => {
           alg: 'ES256',
           cnonce: { c_nonce_expires_in: 300 },
         }),
-        { name: 'INVALID_PROOF', message: 'Nonce not found.' }
+        { name: 'INVALID_NONCE', message: 'Nonce not found.' }
       )
     })
 

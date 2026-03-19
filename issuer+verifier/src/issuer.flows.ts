@@ -167,7 +167,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
 
       for (const configId of configurations) {
         if (metadata.credential_configurations_supported[configId] === undefined) {
-          throw err('UNSUPPORTED_CREDENTIAL_TYPE', {
+          throw err('UNKNOWN_CREDENTIAL_CONFIGURATION', {
             message: `Credential configuration ${configId} is not supported by issuer ${issuer}.`,
           })
         }
@@ -197,7 +197,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
     },
     async issueCredential(issuer, credentialRequest, options) {
       if (options?.subject && !isUri(options.subject)) {
-        throw err('INVALID_REQUEST', {
+        throw err('INVALID_CREDENTIAL_REQUEST', {
           message: 'Invalid options: subject must be a URI.',
         })
       }
@@ -208,7 +208,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         })
 
       if (!credentialRequest.credential_configuration_id) {
-        throw err('INVALID_REQUEST', {
+        throw err('INVALID_CREDENTIAL_REQUEST', {
           message: 'Credential configuration id is not specified.',
         })
       }
@@ -217,7 +217,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const credentialConfiguration = metadata.credential_configurations_supported
       const configuration = credentialConfiguration[credentialRequest.credential_configuration_id]
       if (!configuration) {
-        throw err('UNSUPPORTED_CREDENTIAL_TYPE', {
+        throw err('UNKNOWN_CREDENTIAL_CONFIGURATION', {
           message: `Credential configuration ${credentialRequest.credential_configuration_id} is not supported by issuer ${issuer}.`,
         })
       }
@@ -255,7 +255,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
             if (typeof verifyProof.payload.nonce === 'string') {
               const code = await cnonceStore$.validate(Nonce({ nonce: verifyProof.payload.nonce }))
               if (!code) {
-                throw err('INVALID_PROOF', {
+                throw err('INVALID_NONCE', {
                   message: 'Nonce not found.',
                 })
               }
