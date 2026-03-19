@@ -1,9 +1,7 @@
 import { Nonce } from '../../nonce.types'
 import { NonceStoreProvider } from '../provider.types'
 
-export const inMemoryNonceStore = (option?: {
-  c_nonce_expire_in?: number
-}): NonceStoreProvider => {
+export const inMemoryNonceStore = (): NonceStoreProvider => {
   type NonceState = {
     nonce: Nonce
     expires_at: number
@@ -16,9 +14,11 @@ export const inMemoryNonceStore = (option?: {
     single: true,
 
     async save(nonce): Promise<void> {
-      const expiresAt =
-        new Date().getTime() +
-        (nonce.nonce_expires_in ?? option?.c_nonce_expire_in ?? 60 * 5 * 1000)
+      const ttlMs = nonce.nonce_expires_in
+      if (ttlMs == null) {
+        throw new Error('nonce_expires_in is required when saving nonce')
+      }
+      const expiresAt = new Date().getTime() + ttlMs
       nonceStates.set(nonce.nonce, { nonce, expires_at: expiresAt })
       return
     },

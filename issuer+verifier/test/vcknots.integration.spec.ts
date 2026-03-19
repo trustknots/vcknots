@@ -501,7 +501,7 @@ describe('Vcknots', () => {
       mock.reset()
     })
     it('should verify presentations (dc+sd-jwt with kbjwt)', async () => {
-      const nonceStore = inMemoryNonceStore({ c_nonce_expire_in: 300000 })
+      const nonceStore = inMemoryNonceStore()
       const test_nonce = 'bcb201b7e186ed380127b9158a9d57a6'
       await nonceStore.save(Nonce({ nonce: test_nonce, nonce_expires_in: 300000 }))
       const sampleDcSdJwtVp =

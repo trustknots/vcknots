@@ -79,51 +79,6 @@ describe('inMemoryNonceStore', () => {
     })
   })
 
-  describe('When initialized with custom expiration option', () => {
-    const testExpiryMs = 3 * 60 * 1000
-    beforeEach(() => {
-      nonceStoreProvider = inMemoryNonceStore({ c_nonce_expire_in: testExpiryMs })
-    })
-
-    it('save should store the cnonce with custom expiration, valid immediately', async () => {
-      await nonceStoreProvider.save(testNonce)
-      const isValid = await nonceStoreProvider.validate(testNonce)
-      assert.strictEqual(
-        isValid,
-        true,
-        'Cnonce should be valid immediately after saving with custom expiry'
-      )
-    })
-
-    it('validate should return true for a cnonce before its options expiration time (using mocked time)', async () => {
-      const oneMinuteInMs = 1 * 60 * 1000
-      const mocks = test.mock.timers
-      mocks.enable()
-      await nonceStoreProvider.save(testNonce)
-      try {
-        mocks.tick(oneMinuteInMs)
-        const isValid = await nonceStoreProvider.validate(testNonce)
-        assert.strictEqual(isValid, true, 'Cnonce should be valid before default expiry time')
-      } finally {
-        mocks.reset()
-      }
-    })
-
-    it('validate should return false for an expired cnonce after options expiration (using mocked time)', async () => {
-      // testNonce has nonce_expires_in: 5 min; nonce が option より優先されるので TTL は 5 分
-      const fiveMinutesInMs = 5 * 60 * 1000
-      const mocks = test.mock.timers
-      mocks.enable()
-      await nonceStoreProvider.save(testNonce)
-      try {
-        mocks.tick(fiveMinutesInMs + 1000)
-        const isValid = await nonceStoreProvider.validate(testNonce)
-        assert.strictEqual(isValid, false, 'Cnonce should be invalid after expiry time')
-      } finally {
-        mocks.reset()
-      }
-    })
-  })
 
   describe('Method return types', () => {
     beforeEach(() => {
