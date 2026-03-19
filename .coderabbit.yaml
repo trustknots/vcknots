@@ -14,7 +14,7 @@ reviews:
   auto_review:
     base_branches:
       - "main"
-      - "feat/oid4vci-1.0"
+      - "feat/oid4vci-1\\.0"
     enabled: true
     drafts: false
     ignore_title_keywords:
