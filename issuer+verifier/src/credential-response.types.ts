@@ -1,11 +1,14 @@
 import { z } from 'zod'
 
+const credentialSchema = z.object({
+  credential: z.string(),
+})
+
 const credentialResponseSchema = z.object({
   // string for JWT
-  credential: z.string().or(z.array(z.string())).optional(),
+  credentials: z.array(credentialSchema).optional(),
   transaction_id: z.string().optional(),
+  interval: z.number().optional(),
   notification_id: z.string().optional(),
-  c_nonce: z.string().optional(),
-  c_nonce_expires_in: z.number().optional(),
 })
 export type CredentialResponse = z.infer<typeof credentialResponseSchema>

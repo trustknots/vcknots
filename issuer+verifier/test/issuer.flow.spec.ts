@@ -476,10 +476,12 @@ describe('IssuerFlow', () => {
 
       // 3. Assert
       assert.ok(response)
-      assert.equal(typeof response.credential, 'string')
-      assert.match(response.credential as string, /^eyJ.+\.eyJ.+\.signed\.credential\.jwt$/)
-      assert.strictEqual(response.c_nonce, undefined)
-      assert.ok(response.c_nonce_expires_in)
+      assert.equal(response.credentials?.length, 1)
+      assert.equal(typeof response.credentials?.[0]?.credential, 'string')
+      assert.match(
+        response.credentials?.[0]?.credential as string,
+        /^eyJ.+\.eyJ.+\.signed\.credential\.jwt$/
+      )
 
       // Check if mocks were called
       assert.equal(mockIssuerMetadataProvider.fetch.mock.callCount(), 1)
@@ -827,7 +829,7 @@ describe('IssuerFlow', () => {
       })
     })
 
-    it('should issue a credential with a new c_nonce when a valid one is provided', async () => {
+    it('should issue a credential when a valid c_nonce proof is provided', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -844,23 +846,16 @@ describe('IssuerFlow', () => {
       const credentialRequest = createCredentialRequest()
       const verifiedProof = {
         header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
-        payload: { iss: 'did:example:user', aud: issuer, nonce: 'valid-nonce' },
+        payload: { iss: 'did:example:user', aud: issuer, nonce: 'generated-cnonce' },
       }
       const keyPair = {
         privateKey: { alg: 'ES256' },
         publicKey: { alg: 'ES256' },
       } as SignatureKeyPair
-      const newNonce = 'new-nonce-123'
-
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(mockNonceStoreProvider, 'validate', async () => true) // Nonce is valid
       mock.method(mockNonceStoreProvider, 'revoke', async () => true)
-      mock.method(mockNonceProvider, 'generate', async () => ({
-        nonce: newNonce,
-        nonce_expires_in: 300,
-      }))
-      mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
       mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
       mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signed.credential.jwt')
@@ -871,6 +866,7 @@ describe('IssuerFlow', () => {
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
+      const nonceSaveCallCountBefore = mockNonceStoreProvider.save.mock.callCount()
 
       // 2. Act
       const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
@@ -880,11 +876,16 @@ describe('IssuerFlow', () => {
 
       // 3. Assert
       assert.ok(response)
-      assert.equal(response.c_nonce, newNonce)
+      assert.equal(response.credentials?.length, 1)
       assert.equal(mockNonceStoreProvider.validate.mock.callCount(), 1)
       assert.equal(mockNonceStoreProvider.revoke.mock.callCount(), 1)
-      assert.equal(mockNonceProvider.generate.mock.callCount(), 1)
-      assert.equal(mockNonceStoreProvider.save.mock.callCount(), 1)
+      assert.deepStrictEqual(mockNonceStoreProvider.validate.mock.calls.at(-1)?.arguments.at(0), {
+        nonce: 'generated-cnonce',
+      })
+      assert.deepStrictEqual(mockNonceStoreProvider.revoke.mock.calls.at(-1)?.arguments.at(0), {
+        nonce: 'generated-cnonce',
+      })
+      assert.equal(mockNonceStoreProvider.save.mock.callCount(), nonceSaveCallCountBefore)
     })
 
     it('should still issue a credential even if cnonce revoke returns false', async () => {
@@ -904,18 +905,13 @@ describe('IssuerFlow', () => {
       const credentialRequest = createCredentialRequest()
       const verifiedProof = {
         header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
-        payload: { iss: 'did:example:user', aud: issuer, nonce: 'valid-nonce' },
+        payload: { iss: 'did:example:user', aud: issuer, nonce: 'generated-cnonce' },
       }
 
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(mockNonceStoreProvider, 'validate', async () => true)
       mock.method(mockNonceStoreProvider, 'revoke', async () => false)
-      mock.method(mockNonceProvider, 'generate', async () => ({
-        nonce: 'new-nonce-123',
-        nonce_expires_in: 300,
-      }))
-      mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
       mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [
         {
@@ -931,6 +927,7 @@ describe('IssuerFlow', () => {
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
+      const nonceSaveCallCountBefore = mockNonceStoreProvider.save.mock.callCount()
 
       // 2. Act
       const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
@@ -940,10 +937,16 @@ describe('IssuerFlow', () => {
 
       // 3. Assert
       assert.ok(response)
-      assert.equal(response.c_nonce, 'new-nonce-123')
+      assert.equal(response.credentials?.length, 1)
       assert.equal(mockNonceStoreProvider.validate.mock.callCount(), 1)
       assert.equal(mockNonceStoreProvider.revoke.mock.callCount(), 1)
-      assert.equal(mockNonceProvider.generate.mock.callCount(), 1)
+      assert.deepStrictEqual(mockNonceStoreProvider.validate.mock.calls.at(-1)?.arguments.at(0), {
+        nonce: 'generated-cnonce',
+      })
+      assert.deepStrictEqual(mockNonceStoreProvider.revoke.mock.calls.at(-1)?.arguments.at(0), {
+        nonce: 'generated-cnonce',
+      })
+      assert.equal(mockNonceStoreProvider.save.mock.callCount(), nonceSaveCallCountBefore)
     })
 
     it('should throw "INVALID_NONCE" if cnonce is invalid', async () => {
@@ -962,7 +965,7 @@ describe('IssuerFlow', () => {
       const credentialRequest = createCredentialRequest()
       const verifiedProof = {
         header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
-        payload: { iss: 'did:example:user', aud: issuer, nonce: 'invalid-nonce' },
+        payload: { iss: 'did:example:user', aud: issuer, nonce: 'generated-cnonce' },
       }
 
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)

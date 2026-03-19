@@ -227,7 +227,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
 
       let subject: string | undefined = undefined
       let verifyProof: ProofJwt | null = null
-      let nonce = undefined
       if (credentialRequest.proofs) {
         const proofsObjects = getProofType(credentialRequest.proofs)
         if (!supports.includes(proofsObjects.proofType)) {
@@ -260,8 +259,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
                 })
               }
               await cnonceStore$.revoke(Nonce({ nonce: verifyProof.payload.nonce }))
-              nonce = await cnonce$.generate()
-              await cnonceStore$.save(Nonce(nonce))
             }
           }
         }
@@ -312,9 +309,11 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const credential = `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`
 
       return {
-        credential: credential,
-        c_nonce: nonce?.nonce,
-        c_nonce_expires_in: nonce?.nonce_expires_in ?? options?.cnonce?.c_nonce_expires_in ?? 86400,
+        credentials: [
+          {
+            credential,
+          },
+        ],
       }
     },
   }
