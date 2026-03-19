@@ -6,15 +6,12 @@ import {
   AuthorizationServerMetadata,
 } from '../src/authorization-server.types'
 import { AuthzFlow, initializeAuthzFlow } from '../src/authz.flows'
-import { Nonce } from '../src/nonce.types'
 import { PreAuthorizedCode } from '../src/pre-authorized-code.types'
 import {
   AccessTokenProvider,
   AuthzServerMetadataStoreProvider,
   AuthzSignatureKeyProvider,
   AuthzSignatureKeyStoreProvider,
-  NonceProvider,
-  NonceStoreProvider,
   PreAuthorizedCodeStoreProvider,
 } from '../src/providers'
 import { GrantType, TokenRequest, TokenResponse } from '../src/token-request.types'
@@ -41,22 +38,6 @@ describe('AuthzFlows', () => {
     delete: mock.fn(),
     save: mock.fn(),
   } satisfies PreAuthorizedCodeStoreProvider
-
-  const mockNonceProvider = {
-    kind: 'nonce-provider',
-    name: 'mock-nonce-provider',
-    single: true,
-    generate: mock.fn(),
-  } satisfies NonceProvider
-
-  const mockNonceStoreProvider = {
-    kind: 'nonce-store-provider',
-    name: 'mock-nonce-store-provider',
-    single: true,
-    revoke: mock.fn(async () => true),
-    validate: mock.fn(),
-    save: mock.fn(),
-  } satisfies NonceStoreProvider
 
   const mockAccessTokenProvider = {
     kind: 'access-token-provider',
@@ -103,10 +84,6 @@ describe('AuthzFlows', () => {
               return mockAuthzMetadataProvider
             case 'pre-authorized-code-store-provider':
               return mockCodeStoreProvider
-            case 'nonce-provider':
-              return mockNonceProvider
-            case 'nonce-store-provider':
-              return mockNonceStoreProvider
             case 'access-token-provider':
               return mockAccessTokenProvider
             case 'authz-signature-key-store-provider':
@@ -193,10 +170,6 @@ describe('AuthzFlows', () => {
     const privateKey = { kty: 'EC', crv: 'P-256', alg: 'ES256', d: 'private-d-value' }
     const samplePayload = { iss: sampleIssuer, sub: preAuthCode }
     const sampleSignature = 'signed-jwt-signature-part'
-    const sampleNonce = Nonce({
-      nonce: 'test-nonce-value',
-      nonce_expires_in: 300000,
-    })
 
     describe('Pre-Authorized Code Flow', () => {
       beforeEach(() => {
@@ -209,7 +182,6 @@ describe('AuthzFlows', () => {
         mock.method(mockAuthzSignatureKeyProvider, 'canHandle', async () => true)
         mock.method(mockAuthzSignatureKeyProvider, 'sign', async () => sampleSignature)
         mock.method(mockAccessTokenProvider, 'createTokenPayload', () => samplePayload)
-        mock.method(mockNonceProvider, 'generate', async () => sampleNonce)
       })
 
       it('should successfully create an access token with default expiry', async () => {
@@ -221,8 +193,6 @@ describe('AuthzFlows', () => {
         assert.strictEqual(mockAuthzSignatureKeyProvider.canHandle.mock.callCount(), 1)
         assert.strictEqual(mockAuthzSignatureKeyProvider.sign.mock.callCount(), 1)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 1)
-        assert.strictEqual(mockNonceProvider.generate.mock.callCount(), 1)
-        assert.strictEqual(mockNonceStoreProvider.save.mock.callCount(), 1)
 
         const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
         const expectedHeader = { alg: privateKey.alg, typ: 'JWT' }
@@ -232,17 +202,11 @@ describe('AuthzFlows', () => {
 
         assert.strictEqual(response.access_token, expectedAccessToken)
         assert.strictEqual(response.token_type, 'bearer')
-        assert.strictEqual(response.c_nonce, sampleNonce.nonce)
         assert.strictEqual(response.expires_in, 86400) // Default value
-        assert.strictEqual(response.c_nonce_expires_in, 300000) // Default value (5 minutes)
       })
 
-      it('should use ttl and c_nonce_expires_in from options when provided', async () => {
-        const options = { ttlSec: 1800, c_nonce_expire_in: 60000 }
-        mock.method(mockNonceProvider, 'generate', async () => ({
-          nonce: 'test-nonce-value',
-          nonce_expires_in: options.c_nonce_expire_in,
-        }))
+      it('should use ttl from options when provided', async () => {
+        const options = { ttlSec: 1800 }
         const response = (await flow.createAccessToken(
           sampleIssuer,
           tokenRequest,
@@ -250,7 +214,6 @@ describe('AuthzFlows', () => {
         )) as TokenResponse
 
         assert.strictEqual(response.expires_in, options.ttlSec)
-        assert.strictEqual(response.c_nonce_expires_in, options.c_nonce_expire_in)
       })
 
       it('should throw if pre-authorized code is invalid', async () => {
