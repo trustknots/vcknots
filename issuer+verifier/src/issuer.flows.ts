@@ -1,5 +1,5 @@
 import { base64url } from 'jose'
-import { Cnonce } from './cnonce.types'
+import { Nonce } from './nonce.types'
 import {
   CredentialConfigurationId,
   CredentialIssuer,
@@ -43,6 +43,9 @@ export type IssuerFlow = {
     configurations: CredentialConfigurationId[],
     options?: OfferOptions
   ): Promise<CredentialOffer>
+  createNonce(ttlMs?: number): Promise<string>
+  validateNonce(nonce: string): Promise<boolean>
+  revokeNonce(nonce: string): Promise<boolean>
   issueCredential(
     issuer: CredentialIssuer,
     credentialRequest: CredentialRequest,
@@ -56,8 +59,8 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const offer$ = context.providers.get('credential-offer-provider')
   const codeStore$ = context.providers.get('pre-authorized-code-store-provider')
   const issueCredential$ = context.providers.get('issue-credential-provider')
-  const cnonce$ = context.providers.get('cnonce-provider')
-  const cnonceStore$ = context.providers.get('cnonce-store-provider')
+  const cnonce$ = context.providers.get('nonce-provider')
+  const cnonceStore$ = context.providers.get('nonce-store-provider')
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
   const key$ = context.providers.get('issuer-signature-key-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
@@ -142,6 +145,19 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       })
       return offer
     },
+    async createNonce(ttlMs) {
+      const nonce = await cnonce$.generate({ nonce_expires_in: ttlMs })
+      await cnonceStore$.save(nonce)
+      return nonce.nonce
+    },
+    async validateNonce(nonce) {
+      const lookupNonce = Nonce({ nonce })
+      return cnonceStore$.validate(lookupNonce)
+    },
+    async revokeNonce(nonce) {
+      const lookupNonce = Nonce({ nonce })
+      return cnonceStore$.revoke(lookupNonce)
+    },
     async issueCredential(issuer, credentialRequest, options) {
       const metadata =
         (await metadataStore$.fetch(issuer)) ??
@@ -208,18 +224,26 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         })
       }
 
-      let nonce = undefined
+      let nonce: Nonce | undefined = undefined
       if (options?.cnonce) {
         if (typeof verifyProof.payload.nonce === 'string') {
-          const code = await cnonceStore$.validate(Cnonce(verifyProof.payload.nonce))
+          const lookupNonce = Nonce({ nonce: verifyProof.payload.nonce })
+          const code = await cnonceStore$.validate(lookupNonce)
           if (!code) {
             throw err('INVALID_PROOF', {
               message: 'Nonce not found.',
             })
           }
-          await cnonceStore$.revoke(Cnonce(verifyProof.payload.nonce))
-          nonce = await cnonce$.generate()
-          await cnonceStore$.save(Cnonce(nonce))
+          const revoked = await cnonceStore$.revoke(lookupNonce)
+          if (!revoked) {
+            throw err('INVALID_PROOF', {
+              message: 'Nonce could not be revoked.',
+            })
+          }
+          nonce = await cnonce$.generate({
+            nonce_expires_in: options.cnonce.c_nonce_expires_in,
+          })
+          await cnonceStore$.save(nonce)
         }
       }
 
@@ -266,8 +290,8 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
 
       return {
         credential: credential,
-        c_nonce: nonce,
-        c_nonce_expires_in: options?.cnonce?.c_nonce_expires_in ?? 86400,
+        c_nonce: nonce?.nonce,
+        c_nonce_expires_in: nonce?.nonce_expires_in ?? options?.cnonce?.c_nonce_expires_in ?? 86400,
       }
     },
   }

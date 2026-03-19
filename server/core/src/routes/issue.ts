@@ -127,6 +127,53 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       return c.json(errorResponse, status)
     }
   })
+  issueApp.post('/nonce', async (c) => {
+    try {
+      const NONCE_TTL_MS = 2 * 60 * 1000 // 2 minutes
+      const cnonce = await issuerFlow.createNonce(NONCE_TTL_MS)
+      c.header('Cache-Control', 'no-store')
+      return c.json(
+        {
+          c_nonce: cnonce,
+        },
+        200
+      )
+    } catch (err) {
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
+    }
+  })
+
+  issueApp.get('/nonce/:nonce', async (c) => {
+    try {
+      const nonce = c.req.param('nonce')
+      const valid = await issuerFlow.validateNonce(nonce)
+      return c.json({ valid })
+    } catch (err) {
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
+    }
+  })
+
+  issueApp.delete('/nonce/:nonce', async (c) => {
+    try {
+      const nonce = c.req.param('nonce')
+      const deleted = await issuerFlow.revokeNonce(nonce)
+      if (!deleted) {
+        return c.json(
+          { error: 'not_found', error_description: 'Nonce not found.' },
+          404
+        )
+      }
+      return c.json({ deleted: true }, 200)
+    } catch (err) {
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
+    }
+  })
 
   return issueApp
 }

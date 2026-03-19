@@ -5,7 +5,7 @@ import { accessToken } from './access-token.provider'
 import { authzRequestJARKid } from './authorization-request-jar-kid.provider'
 import { authzRequestJARX5c } from './authorization-request-jar-x5c.provider'
 import { authzSignatureKey } from './authz-signature-key.provider'
-import { cnonce } from './cnonce.provider'
+import { nonce } from './nonce.provider'
 import { credentialOffer } from './credential-offer.provider'
 import { credentialProofJWT } from './credential-proof-jwt.provider'
 import { verifyCredentialJwt } from './verify-credential-jwt-vc-json.provider'
@@ -57,7 +57,7 @@ const initializeDefaultProviders = (
 ): NonNullable<VcknotsOptions['providers']> => [
   inMemory(),
   credentialOffer(),
-  cnonce(),
+  nonce(),
   accessToken(),
   preAuthorizedCode(),
   issuerSignatureKey(),

@@ -7,7 +7,7 @@ import { VerifiableCredential, parseVerifiableCredentialBase } from '../credenti
 import { selectProvider } from './provider.utils'
 import { jwtVpJsonPayloadSchema, VpTokenPayload } from '../presentation.types'
 import { z } from 'zod'
-import { Cnonce } from '../cnonce.types'
+import { Nonce } from '../nonce.types'
 
 export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProvider &
   WithProviderRegistry => {
@@ -57,15 +57,20 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
       }
       const vpPayload = parseResult.data
 
-      const nonce = Cnonce(vpPayload.nonce)
-      const nonceStore$ = this.providers.get('cnonce-store-provider')
+      const nonce = Nonce({ nonce: vpPayload.nonce })
+      const nonceStore$ = this.providers.get('nonce-store-provider')
       const nonceValid = await nonceStore$.validate(nonce)
       if (!nonceValid) {
         throw err('INVALID_NONCE', {
           message: 'nonce is not valid.',
         })
       }
-      await nonceStore$.revoke(nonce)
+      const revoked = await nonceStore$.revoke(nonce)
+      if (!revoked) {
+        throw err('INVALID_NONCE', {
+          message: 'Nonce could not be revoked.',
+        })
+      }
 
       const vcs = vpPayload.vp.verifiableCredential
       if (Array.isArray(vcs)) {

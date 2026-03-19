@@ -60,6 +60,7 @@ export const createServer = (options?: VcknotsOptions) => {
     issuerMetadataConfig.credential_endpoint = `${baseUrl}/credentials`
     issuerMetadataConfig.batch_credential_endpoint = `${baseUrl}/batch_credential`
     issuerMetadataConfig.deferred_credential_endpoint = `${baseUrl}/deferred_credential`
+    issuerMetadataConfig.nonce_endpoint = `${baseUrl}/nonce`
     if (!(await initializeIssuerMetadata(issuerMetadataConfig))) {
       throw new Error('Failed to initialize issuer metadata')
     }

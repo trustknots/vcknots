@@ -3,7 +3,7 @@ import {
   AuthorizationServerMetadata,
 } from '../authorization-server.types'
 import { ClientId } from '../client-id.types'
-import { Cnonce } from '../cnonce.types'
+import { Nonce } from '../nonce.types'
 import {
   CredentialConfiguration,
   CredentialConfigurationId,
@@ -316,23 +316,22 @@ export type CredentialOfferProvider = {
   ): Promise<CredentialOffer>
 }
 
-export type CnonceProvider = {
-  kind: 'cnonce-provider'
+export type NonceProvider = {
+  kind: 'nonce-provider'
   name: string
   single: true
 
-  generate(): Promise<Cnonce>
+  generate(options?: { nonce_expires_in?: number }): Promise<Nonce>
 }
 
-export type CnonceStoreProvider = {
-  kind: 'cnonce-store-provider'
+export type NonceStoreProvider = {
+  kind: 'nonce-store-provider'
   name: string
   single: true
 
-  save(cnonce: Cnonce, options?: { ttlSec: number }): Promise<void>
-  // FIXME: same above
-  validate(cnonce: Cnonce): Promise<boolean>
-  revoke(cnonce: Cnonce): Promise<void>
+  save(nonce: Nonce): Promise<void>
+  validate(nonce: Nonce): Promise<boolean>
+  revoke(nonce: Nonce): Promise<boolean>
 }
 
 export type IssueCredentialProvider = {
@@ -415,8 +414,8 @@ export type Provider =
   | AccessTokenProvider
   | CredentialOfferProvider
   | AuthzServerMetadataStoreProvider
-  | CnonceProvider
-  | CnonceStoreProvider
+  | NonceProvider
+  | NonceStoreProvider
   | AuthzSignatureKeyStoreProvider
   | AuthzSignatureKeyProvider
   | IssuerSignatureKeyProvider

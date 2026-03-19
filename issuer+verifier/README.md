@@ -1,6 +1,6 @@
 # @trustknots/vcknots
 
-A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) Draft 13 and OpenID for Verifiable Presentations (OID4VP) Draft 24.
+A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) 1.0 and OpenID for Verifiable Presentations (OID4VP) Draft 24.
 
 This package provides the core logic for both Issuers and Verifiers, allowing you to build compliant SSI (Self-Sovereign Identity) applications. It is designed with a provider-based architecture, making it easy to swap out implementations for storage, key management, and other infrastructure dependencies.
 
@@ -10,6 +10,7 @@ This package provides the core logic for both Issuers and Verifiers, allowing yo
     *   Manage Issuer Metadata.
     *   Create Credential Offers (Pre-Authorized Code Flow).
     *   Issue Verifiable Credentials (JWT-VC format).
+    *   Nonce endpoint support for c_nonce management.
     *   Support for `did:key` and other DID methods via resolvers.
 *   **OID4VP (Verifier):**
     *   Manage Verifier Metadata.
@@ -106,6 +107,43 @@ const credential = await issuer.issueCredential(
 )
 
 console.log('Issued Credential:', credential)
+```
+
+#### 4. Nonce Management (Optional)
+
+When using the [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) (OID4VCI), Wallets can obtain a `c_nonce` before sending credential requests. This is useful when requesting multiple credentials—a single nonce can be reused within its validity period.
+
+Set `nonce_endpoint` in your issuer metadata:
+
+```typescript
+const metadata: CredentialIssuerMetadata = {
+  credential_issuer: issuerId,
+  credential_endpoint: `${base}/credentials`,
+  nonce_endpoint: `${base}/nonce`,  // Optional: enables nonce endpoint
+  // ... other metadata
+}
+```
+
+**Create a nonce** (e.g., for `POST /nonce`):
+
+```typescript
+const NONCE_TTL_MS = 2 * 60 * 1000  // 2 minutes
+const cnonce = await issuer.createNonce(NONCE_TTL_MS)
+// Returns: string (e.g., "3ccc7973abef4102ad70a871e200304b")
+```
+
+**Validate a nonce** (e.g., for `GET /nonce/:nonce` or when verifying proof):
+
+```typescript
+const valid = await issuer.validateNonce(nonce)
+// Returns: boolean
+```
+
+**Revoke a nonce** (e.g., for `DELETE /nonce/:nonce`):
+
+```typescript
+const deleted = await issuer.revokeNonce(nonce)
+// Returns: boolean (true if revoked successfully, false if nonce not found)
 ```
 
 ### Verifier Flow

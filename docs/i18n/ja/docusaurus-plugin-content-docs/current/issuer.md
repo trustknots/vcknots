@@ -8,7 +8,7 @@ sidebar_position: 2
 
 ## 1. 前提条件
 
-- OpenID for Verifiable Credential Issuance - draft 13 に対応([OpenID for Verifiable Credential Issuance - draft 13](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html))  
+- OpenID for Verifiable Credential Issuance 1.0 に対応([OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html))  
 なお、以下は現時点では未実装ですが、今後対応予定です。
   - 現在対応しているフローは 事前認可コードフロー（Pre-Authorized Code Flow）のみです
   - Credential Offerの`tx_code`は未対応（今後対応予定）
@@ -98,6 +98,7 @@ serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, a
     credential_endpoint: `${baseUrl}/issue/credentials`,
     batch_credential_endpoint: `${baseUrl}/batch_credential`,
     deferred_credential_endpoint: `${baseUrl}/deferred_credential`,
+    nonce_endpoint: `${baseUrl}/nonce`,  
   })
 
   await initializeIssuerMetadata(issuerMetadata);
@@ -171,6 +172,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
 	"credential_endpoint": "http://localhost:8080/issue/credentials",
 	"batch_credential_endpoint": "http://localhost:8080/issue/batch_credential",
 	"deferred_credential_endpoint": "http://localhost:8080/issue/deferred_credential",
+	"nonce_endpoint": "http://localhost:8080/nonce",
 	"credential_configurations_supported": {
 		"UniversityDegreeCredential": {
 			"format": "jwt_vc_json",
@@ -380,7 +382,127 @@ curl -X POST http://localhost:8080/authz/token \
 }
 ```
 
-### 6. クレデンシャルの発行
+### 6. Nonceエンドポイント
+
+OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) に相当するエンドポイントです。Wallet が credential リクエストを送る前に c_nonce を取得する際に使用します。
+
+Issuer メタデータに `nonce_endpoint` を設定すると、Wallet は `/.well-known/openid-credential-issuer` から取得したメタデータ経由で nonce エンドポイントの URL を参照します。
+
+#### POST /nonce - nonce（c_nonce）の作成
+
+```typescript
+app.post('/nonce', async (c) => {
+  try {
+    const NONCE_TTL_MS = 2 * 60 * 1000  // 2分
+    const cnonce = await issuerFlow.createNonce(NONCE_TTL_MS)
+    c.header('Cache-Control', 'no-store')
+    return c.json({ c_nonce: cnonce }, 200)
+  } catch (err) {
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
+  }
+})
+```
+
+**例**:
+
+**リクエスト**
+
+```bash
+curl -X POST http://localhost:8080/nonce
+```
+
+**レスポンス**
+
+```json
+{
+  "c_nonce": "3ccc7973abef4102ad70a871e200304b"
+}
+```
+
+#### GET /nonce/:nonce - nonceの有効性検証
+
+```typescript
+app.get('/nonce/:nonce', async (c) => {
+  try {
+    const nonce = c.req.param('nonce')
+    const valid = await issuerFlow.validateNonce(nonce)
+    return c.json({ valid })
+  } catch (err) {
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
+  }
+})
+```
+
+**例**:
+
+**リクエスト**
+
+```bash
+curl http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
+```
+
+**レスポンス**
+
+```json
+{
+  "valid": true
+}
+```
+
+#### DELETE /nonce/:nonce - nonceの取り消し
+
+指定された nonce を取り消し（削除）します。nonce が存在しない場合は 404 を返します。
+
+```typescript
+app.delete('/nonce/:nonce', async (c) => {
+  try {
+    const nonce = c.req.param('nonce')
+    const deleted = await issuerFlow.revokeNonce(nonce)
+    if (!deleted) {
+      return c.json(
+        { error: 'not_found', error_description: 'Nonce not found.' },
+        404
+      )
+    }
+    return c.json({ deleted: true }, 200)
+  } catch (err) {
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
+  }
+})
+```
+
+**例**:
+
+**リクエスト**
+
+```bash
+curl -X DELETE http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
+```
+
+**レスポンス (200)**
+
+```json
+{
+  "deleted": true
+}
+```
+
+**レスポンス (404 - nonce が見つからない場合)**
+
+```json
+{
+  "error": "not_found",
+  "error_description": "Nonce not found."
+}
+```
+
+### 7. クレデンシャルの発行
 
 クレデンシャルを発行するエンドポイント：
 
@@ -537,6 +659,45 @@ createIssuerMetadata(issuer: CredentialIssuerMetadata): Promise<void>
 **エラーケース**:
 - `PROVIDER_NOT_FOUND`: 未対応の`alg`が設定された
 
+
+### createNonce
+
+nonce（c_nonce）を作成します。OID4VCI の nonce endpoint 用です。
+
+```typescript
+createNonce(ttlMs?: number): Promise<string>
+```
+
+**パラメータ**:
+- `ttlMs`: nonce の有効期限（ミリ秒）。省略時はプロバイダーのデフォルト値を使用
+
+**戻り値**: 生成された nonce 文字列
+
+### validateNonce
+
+指定された nonce の有効性を検証します。
+
+```typescript
+validateNonce(nonce: string): Promise<boolean>
+```
+
+**パラメータ**:
+- `nonce`: 検証対象の nonce 値
+
+**戻り値**: nonce が有効な場合 `true`、無効または存在しない場合 `false`
+
+### revokeNonce
+
+指定された nonce を取り消し（削除）します。
+
+```typescript
+revokeNonce(nonce: string): Promise<boolean>
+```
+
+**パラメータ**:
+- `nonce`: 取り消し対象の nonce 値
+
+**戻り値**: nonce の取り消しに成功した場合 `true`、nonce が見つからない場合 `false`
 
 ### offerCredential
 クレデンシャルオファーを作成します。
@@ -785,6 +946,7 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
     - **A：**  未実装のフローを呼び出していないか確認してください。現在対応しているのは事前認可コードフローです。
 
 - **Q:クレデンシャル発行エラー**:`INVALID_PROOF`
-    - **A：**  クレデンシャルリクエストのprooj.jwtのheaderがkidを含んでいるかを確認してください。
+    - **A：**  クレデンシャルリクエストのproof.jwtのheaderがkidを含んでいるかを確認してください。また、proof に含まれる `nonce` が有効かを確認してください。
+
 
 

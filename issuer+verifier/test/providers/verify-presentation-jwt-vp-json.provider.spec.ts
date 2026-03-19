@@ -1,8 +1,9 @@
 import assert from 'node:assert'
 import { afterEach, beforeEach, describe, test, mock } from 'node:test'
 import * as jose from 'jose'
+import type { Nonce } from '../../src/nonce.types'
 import {
-  CnonceStoreProvider,
+  NonceStoreProvider,
   DidProvider,
   HolderBindingProvider,
   JwtSignatureProvider,
@@ -14,7 +15,7 @@ import { DidDocument, JsonWebKey as DidJsonWebKey } from '../../src/did.types'
 
 describe('verifyVerifiablePresentation provider', () => {
   let provider: ReturnType<typeof verifyVerifiablePresentation>
-  let mockCnonceStore: CnonceStoreProvider
+  let mockCnonceStore: NonceStoreProvider
   let mockCredentialVerifier: VerifyCredentialProvider
   let mockDidProvider: DidProvider
   let mockJwtSignatureProvider: JwtSignatureProvider
@@ -50,11 +51,11 @@ describe('verifyVerifiablePresentation provider', () => {
       .sign(issuerKeyPair.privateKey)
 
     mockCnonceStore = {
-      kind: 'cnonce-store-provider',
+      kind: 'nonce-store-provider',
       name: 'mock-cnonce-store',
       single: true,
-      validate: mock.fn(async (nonce: string) => nonce === 'test-nonce'),
-      revoke: mock.fn(async () => {}),
+      validate: mock.fn(async (nonce: Nonce) => nonce.nonce === 'test-nonce'),
+      revoke: mock.fn(async () => true),
       save: mock.fn(async () => {}),
     }
 
@@ -102,7 +103,7 @@ describe('verifyVerifiablePresentation provider', () => {
 
     provider = verifyVerifiablePresentation()
     mock.method(provider.providers, 'get', (name: string) => {
-      if (name === 'cnonce-store-provider') return mockCnonceStore
+      if (name === 'nonce-store-provider') return mockCnonceStore
       if (name === 'verify-verifiable-credential-provider') return mockCredentialVerifier
       if (name === 'did-provider') return [mockDidProvider]
       if (name === 'jwt-signature-provider') return mockJwtSignatureProvider
@@ -168,6 +169,21 @@ describe('verifyVerifiablePresentation provider', () => {
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
       name: 'INVALID_NONCE',
       message: 'nonce is not valid.',
+    })
+  })
+
+  test('should throw INVALID_NONCE when nonce revoke returns false', async () => {
+    mock.method(mockCnonceStore, 'revoke', async () => false)
+    const vpJwt = await createVpJwt({
+      nonce: 'test-nonce',
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt],
+      },
+    })
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
+      name: 'INVALID_NONCE',
+      message: 'Nonce could not be revoked.',
     })
   })
 

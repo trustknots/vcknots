@@ -6,8 +6,8 @@ import { ClientId } from '../src/client-id.types'
 import { Dcql } from '../src/dcql.type'
 import { PresentationExchange } from '../src/presentation-exchange.types'
 import {
-  CnonceProvider,
-  CnonceStoreProvider,
+  NonceProvider,
+  NonceStoreProvider,
   CredentialQueryGenerationOptions,
   CredentialQueryProvider,
   RequestObjectIdProvider,
@@ -58,21 +58,21 @@ describe('VerifierFlow', () => {
     fetch: mock.fn(),
   } satisfies VerifierMetadataStoreProvider
 
-  const mockCnonceProvider = {
-    kind: 'cnonce-provider',
-    name: 'mock-cnonce-provider',
+  const mockNonceProvider = {
+    kind: 'nonce-provider',
+    name: 'mock-nonce-provider',
     single: true,
     generate: mock.fn(),
-  } satisfies CnonceProvider
+  } satisfies NonceProvider
 
-  const mockCnonceStoreProvider = {
-    kind: 'cnonce-store-provider',
-    name: 'mock-cnonce-store-provider',
+  const mockNonceStoreProvider = {
+    kind: 'nonce-store-provider',
+    name: 'mock-nonce-store-provider',
     single: true,
     save: mock.fn(),
     validate: mock.fn(),
-    revoke: mock.fn(),
-  } satisfies CnonceStoreProvider
+    revoke: mock.fn(async () => true),
+  } satisfies NonceStoreProvider
 
   const mockCredentialQueryProvider = {
     kind: 'credential-query-provider',
@@ -139,8 +139,8 @@ describe('VerifierFlow', () => {
     context = initializeContext({
       providers: [
         mockVerifierMetadataStore,
-        mockCnonceProvider,
-        mockCnonceStoreProvider,
+        mockNonceProvider,
+        mockNonceStoreProvider,
         mockCredentialQueryProvider,
         mockRequestObjectStoreProvider,
         mockRequestObjectIdProvider,
@@ -267,8 +267,11 @@ describe('VerifierFlow', () => {
       }
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => {})
+      mock.method(mockNonceProvider, 'generate', async () => ({
+  nonce: 'nonce-123',
+  nonce_expires_in: 60000,
+}))
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -331,8 +334,11 @@ describe('VerifierFlow', () => {
       }
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => {})
+      mock.method(mockNonceProvider, 'generate', async () => ({
+  nonce: 'nonce-123',
+  nonce_expires_in: 60000,
+}))
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -463,8 +469,8 @@ describe('VerifierFlow', () => {
         'https://example.com/request.jwt/1234',
         'request_uri should be composed with base_url, verifierId, and generated requestObjectId'
       )
-      assert.equal(mockCnonceProvider.generate.mock.callCount(), 0)
-      assert.equal(mockCnonceStoreProvider.save.mock.callCount(), 0)
+      assert.equal(mockNonceProvider.generate.mock.callCount(), 0)
+      assert.equal(mockNonceStoreProvider.save.mock.callCount(), 0)
       assert.equal(mockRequestObjectIdProvider.generate.mock.callCount(), 1)
       assert.equal(mockRequestObjectStoreProvider.save.mock.callCount(), 1)
     })
@@ -620,8 +626,11 @@ describe('VerifierFlow', () => {
       }
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => {})
+      mock.method(mockNonceProvider, 'generate', async () => ({
+  nonce: 'nonce-123',
+  nonce_expires_in: 60000,
+}))
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
         'generate',

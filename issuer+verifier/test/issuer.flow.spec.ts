@@ -9,8 +9,8 @@ import { CredentialOffer } from '../src/credential-offer.types'
 import { CredentialFormats, CredentialRequest, ProofTypes } from '../src/credential-request.types'
 import { IssuerFlow, initializeIssuerFlow } from '../src/issuer.flows'
 import {
-  CnonceProvider,
-  CnonceStoreProvider,
+  NonceProvider,
+  NonceStoreProvider,
   CredentialOfferProvider,
   CredentialProofProvider,
   IssueCredentialProvider,
@@ -92,21 +92,21 @@ describe('IssuerFlow', () => {
     canHandle: mock.fn(),
   } satisfies CredentialProofProvider
 
-  const mockCnonceProvider = {
-    kind: 'cnonce-provider',
-    name: 'mock-cnonce-provider',
+  const mockNonceProvider = {
+    kind: 'nonce-provider',
+    name: 'mock-nonce-provider',
     single: true,
     generate: mock.fn(),
-  } satisfies CnonceProvider
+  } satisfies NonceProvider
 
-  const mockCnonceStoreProvider = {
-    kind: 'cnonce-store-provider',
-    name: 'mock-cnonce-store-provider',
+  const mockNonceStoreProvider = {
+    kind: 'nonce-store-provider',
+    name: 'mock-nonce-store-provider',
     single: true,
     save: mock.fn(),
     validate: mock.fn(),
-    revoke: mock.fn(),
-  } satisfies CnonceStoreProvider
+    revoke: mock.fn(async () => true),
+  } satisfies NonceStoreProvider
 
   before(() => {
     context = initializeContext({
@@ -119,8 +119,8 @@ describe('IssuerFlow', () => {
         mockIssuerSignatureKeyProvider,
         mockCredentialOfferProvider,
         mockCredentialProofProvider,
-        mockCnonceProvider,
-        mockCnonceStoreProvider,
+        mockNonceProvider,
+        mockNonceStoreProvider,
       ],
     })
     issuerFlow = initializeIssuerFlow(context)
@@ -340,6 +340,57 @@ describe('IssuerFlow', () => {
     assert.equal(mockPreAuthCodeProvider.generate.mock.callCount(), 1)
     assert.equal(mockPreAuthCodeStoreProvider.save.mock.callCount(), 1)
     assert.equal(mockCredentialOfferProvider.create.mock.callCount(), 1)
+  })
+
+  describe('createNonce', () => {
+    it('should create nonce, save to store, and return nonce string', async () => {
+      const generatedNonce = { nonce: 'abc123def456', nonce_expires_in: 300000 }
+      mock.method(mockNonceProvider, 'generate', async () => generatedNonce)
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
+
+      const result = await issuerFlow.createNonce()
+
+      assert.strictEqual(result, 'abc123def456')
+      assert.equal(mockNonceProvider.generate.mock.callCount(), 1)
+      assert.equal(mockNonceStoreProvider.save.mock.callCount(), 1)
+      assert.deepStrictEqual(mockNonceStoreProvider.save.mock.calls[0].arguments[0], generatedNonce)
+    })
+
+    it('should pass ttlMs to generate when provided', async () => {
+      const generatedNonce = { nonce: 'ttl-nonce', nonce_expires_in: 60000 }
+      mock.method(mockNonceProvider, 'generate', async () => generatedNonce)
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
+
+      await issuerFlow.createNonce(60000)
+
+      assert.equal(mockNonceProvider.generate.mock.callCount(), 1)
+      assert.deepStrictEqual(mockNonceProvider.generate.mock.calls[0].arguments[0], {
+        nonce_expires_in: 60000,
+      })
+    })
+  })
+
+  describe('validateNonce', () => {
+    it('should return true when nonce is valid', async () => {
+      mock.method(mockNonceStoreProvider, 'validate', async () => true)
+
+      const result = await issuerFlow.validateNonce('valid-nonce')
+
+      assert.strictEqual(result, true)
+      assert.equal(mockNonceStoreProvider.validate.mock.callCount(), 1)
+      assert.deepStrictEqual(mockNonceStoreProvider.validate.mock.calls[0].arguments[0], {
+        nonce: 'valid-nonce',
+      })
+    })
+
+    it('should return false when nonce is invalid', async () => {
+      mock.method(mockNonceStoreProvider, 'validate', async () => false)
+
+      const result = await issuerFlow.validateNonce('invalid-nonce')
+
+      assert.strictEqual(result, false)
+      assert.equal(mockNonceStoreProvider.validate.mock.callCount(), 1)
+    })
   })
 
   describe('issueCredential', () => {
@@ -855,10 +906,13 @@ describe('IssuerFlow', () => {
 
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
-      mock.method(mockCnonceStoreProvider, 'validate', async () => true) // Nonce is valid
-      mock.method(mockCnonceStoreProvider, 'revoke', async () => {})
-      mock.method(mockCnonceProvider, 'generate', async () => newNonce)
-      mock.method(mockCnonceStoreProvider, 'save', async () => {})
+      mock.method(mockNonceStoreProvider, 'validate', async () => true) // Nonce is valid
+      mock.method(mockNonceStoreProvider, 'revoke', async () => true)
+      mock.method(mockNonceProvider, 'generate', async () => ({
+        nonce: newNonce,
+        nonce_expires_in: 300,
+      }))
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
       mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
       mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signed.credential.jwt')
@@ -879,10 +933,51 @@ describe('IssuerFlow', () => {
       // 3. Assert
       assert.ok(response)
       assert.equal(response.c_nonce, newNonce)
-      assert.equal(mockCnonceStoreProvider.validate.mock.callCount(), 1)
-      assert.equal(mockCnonceStoreProvider.revoke.mock.callCount(), 1)
-      assert.equal(mockCnonceProvider.generate.mock.callCount(), 1)
-      assert.equal(mockCnonceStoreProvider.save.mock.callCount(), 1)
+      assert.equal(mockNonceStoreProvider.validate.mock.callCount(), 1)
+      assert.equal(mockNonceStoreProvider.revoke.mock.callCount(), 1)
+      assert.equal(mockNonceProvider.generate.mock.callCount(), 1)
+      assert.equal(mockNonceStoreProvider.save.mock.callCount(), 1)
+    })
+
+    it('should throw "INVALID_PROOF" if cnonce revoke returns false', async () => {
+      // 1. Arrange
+      const issuer = CredentialIssuer('did:example:issuer')
+      const metadata = {
+        credential_issuer: issuer,
+        credential_configurations_supported: {
+          University_Degree: {
+            format: CredentialFormats.JWT_VC_JSON,
+            credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
+            proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256K'] } },
+          },
+        },
+      }
+      const credentialRequest: CredentialRequest = {
+        format: CredentialFormats.JWT_VC_JSON,
+        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
+        proof: { proof_type: ProofTypes.JWT, jwt: 'dummy-proof-jwt' },
+      }
+      const verifiedProof = {
+        header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
+        payload: { iss: 'did:example:user', aud: issuer, nonce: 'valid-nonce' },
+      }
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+      mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
+      mock.method(mockNonceStoreProvider, 'validate', async () => true)
+      mock.method(mockNonceStoreProvider, 'revoke', async () => false)
+      mockCredentialProofProvider.canHandle.mock.mockImplementation(
+        (type) => type === ProofTypes.JWT
+      )
+
+      // 2. Act & 3. Assert
+      await assert.rejects(
+        issuerFlow.issueCredential(issuer, credentialRequest, {
+          alg: 'ES256',
+          cnonce: { c_nonce_expires_in: 300 },
+        }),
+        { name: 'INVALID_PROOF', message: 'Nonce could not be revoked.' }
+      )
     })
 
     it('should throw "INVALID_PROOF" if cnonce is invalid', async () => {
@@ -910,7 +1005,7 @@ describe('IssuerFlow', () => {
 
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
-      mock.method(mockCnonceStoreProvider, 'validate', async () => false) // Nonce is invalid
+      mock.method(mockNonceStoreProvider, 'validate', async () => false) // Nonce is invalid
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )

@@ -94,8 +94,8 @@ const isPresentationExchange = (query: unknown): query is PresentationExchange =
   ('presentation_definition' in query || 'presentation_definition_uri' in query)
 
 export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow => {
-  const cnonce$ = context.providers.get('cnonce-provider')
-  const nonceStore$ = context.providers.get('cnonce-store-provider')
+  const cnonce$ = context.providers.get('nonce-provider')
+  const nonceStore$ = context.providers.get('nonce-store-provider')
   const query$ = context.providers.get('credential-query-provider')
   const verifierMetadata$ = context.providers.get('verifier-metadata-store-provider')
   const key$ = context.providers.get('verifier-signature-key-provider')
@@ -331,7 +331,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         response_mode: response_mode || 'direct_post',
         client_id_scheme: client_id_scheme,
         client_metadata: metadata,
-        nonce,
+        nonce: nonce.nonce,
         ...parsedQuery,
         ...(transaction_data.length > 0 ? { transaction_data } : {}),
       })
@@ -365,7 +365,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         verifierId,
         requestObject,
         keyAlg,
-        nonce,
+        nonce.nonce,
         walletNonce
       )
 

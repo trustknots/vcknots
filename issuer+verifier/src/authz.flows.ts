@@ -39,8 +39,8 @@ export type AuthzFlow = {
 export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   const authz$ = context.providers.get('authz-server-metadata-store-provider')
   const codeStore$ = context.providers.get('pre-authorized-code-store-provider')
-  const cnonce$ = context.providers.get('cnonce-provider')
-  const cnonceStore$ = context.providers.get('cnonce-store-provider')
+  const cnonce$ = context.providers.get('nonce-provider')
+  const cnonceStore$ = context.providers.get('nonce-store-provider')
   const accessToken$ = context.providers.get('access-token-provider')
   const authzKey$ = context.providers.get('authz-signature-key-store-provider')
   const authzSignatureKey$ = context.providers.get('authz-signature-key-provider')
@@ -126,8 +126,8 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             access_token: `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`, // TODO: Implement access token generation
             token_type: 'bearer',
             expires_in: option?.ttlSec ?? 86400,
-            c_nonce: cnonce,
-            c_nonce_expires_in: option?.c_nonce_expire_in ?? 60 * 5 * 1000, // 5 minutes
+            c_nonce: cnonce.nonce,
+            c_nonce_expires_in: cnonce.nonce_expires_in,
           }
         }
         case 'authorization_code': {
