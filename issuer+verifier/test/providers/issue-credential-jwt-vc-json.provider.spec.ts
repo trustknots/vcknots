@@ -3,7 +3,6 @@ import { describe, it } from 'node:test'
 import { issueCredentialJwt } from '../../src/providers/issue-credential-jwt-vc-json.provider'
 import { IssueCredentialProvider } from '../../src/providers/provider.types'
 import { CredentialConfiguration, CredentialIssuer } from '../../src/credential-issuer.types'
-import { ProofJwt } from '../../src/credential.types'
 import { VcknotsError } from '../../src/errors/vcknots.error'
 import { CredentialFormats } from '../../src/credential-request.types'
 
@@ -55,20 +54,6 @@ describe('issueCredential', () => {
       },
     ],
   }
-  const proof: ProofJwt = {
-    header: {
-      typ: 'openid4vci-proof+jwt',
-      alg: 'ES256',
-      kid: 'did:example:123#key-1',
-    },
-    payload: {
-      iss: 'did:example:123',
-      aud: 'https://issuer.example.com',
-      iat: 1671306000,
-      nonce: 'tZl4S36D3a6B2d5C',
-    },
-  }
-
   it('should have correct kind, name, and single properties', () => {
     assert.equal(provider.kind, 'issue-credential-provider')
     assert.equal(provider.name, 'default-issue-credential-w3c-jwt-vc-json-provider')
@@ -84,7 +69,9 @@ describe('issueCredential', () => {
   })
 
   it('should create a verifiable credential', () => {
-    const vc = provider.createCredential(credentialIssuer, configuration, proof)
+    const vc = provider.createCredential(credentialIssuer, configuration, {
+      subject: 'did:example:123#key-1',
+    })
 
     assert.ok(vc)
     assert.ok(vc.id)
@@ -93,7 +80,7 @@ describe('issueCredential', () => {
     assert.equal(vc.issuer, credentialIssuer)
     assert.ok(vc.issuanceDate)
     assert.ok(vc.credentialSubject)
-    assert.equal(vc.credentialSubject.id, proof.header.kid)
+    assert.equal(vc.credentialSubject.id, 'did:example:123#key-1')
   })
 
   it('should create a verifiable credential with claims', () => {
@@ -103,7 +90,10 @@ describe('issueCredential', () => {
       degree: 'Bachelor of Science',
       gpa: '4.0',
     }
-    const vc = provider.createCredential(credentialIssuer, configuration, proof, claims)
+    const vc = provider.createCredential(credentialIssuer, configuration, {
+      subject: 'did:example:123#key-1',
+      claims,
+    })
 
     assert.ok(vc)
     assert.ok(vc.credentialSubject)
@@ -131,7 +121,11 @@ describe('issueCredential', () => {
       family_name: 'Doe',
     }
     assert.throws(
-      () => provider.createCredential(credentialIssuer, configurationWithMandatory, proof, claims),
+      () =>
+        provider.createCredential(credentialIssuer, configurationWithMandatory, {
+          subject: 'did:example:123#key-1',
+          claims,
+        }),
       (err: VcknotsError) => {
         assert.equal(err.name, 'INVALID_CLAIMS')
         return true
@@ -161,7 +155,11 @@ describe('issueCredential', () => {
       given_name: 'John',
     }
     assert.throws(
-      () => provider.createCredential(credentialIssuer, configurationWithMandatory, proof, claims),
+      () =>
+        provider.createCredential(credentialIssuer, configurationWithMandatory, {
+          subject: 'did:example:123#key-1',
+          claims,
+        }),
       (err: VcknotsError) => {
         assert.equal(err.name, 'INVALID_CLAIMS')
         return true
@@ -189,7 +187,10 @@ describe('issueCredential', () => {
       given_name: 123,
       age: '25',
     }
-    const vc = provider.createCredential(credentialIssuer, configurationWithTypes, proof, claims)
+    const vc = provider.createCredential(credentialIssuer, configurationWithTypes, {
+      subject: 'did:example:123#key-1',
+      claims,
+    })
 
     assert.ok(vc)
     assert.ok(vc.credentialSubject)
@@ -199,14 +200,10 @@ describe('issueCredential', () => {
     assert.equal(vc.credentialSubject.age, 25)
   })
 
-  it('should throw error if kid is missing in proof', () => {
-    const proofWithoutKid: ProofJwt = { ...proof, header: { ...proof.header, kid: undefined } }
-    assert.throws(
-      () => provider.createCredential(credentialIssuer, configuration, proofWithoutKid),
-      (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_PROOF')
-        return true
-      }
-    )
+  it('should omit credentialSubject.id if subject is not provided', () => {
+    const vc = provider.createCredential(credentialIssuer, configuration)
+
+    assert.ok(vc.credentialSubject)
+    assert.equal(vc.credentialSubject.id, undefined)
   })
 })

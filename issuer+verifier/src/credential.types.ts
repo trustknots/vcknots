@@ -15,7 +15,7 @@ export const jwtVcJsonSchema = <T extends z.ZodType>(t: T) =>
   z.object({
     credentialSubject: z
       .object({
-        id: z.string().url(),
+        id: z.string().url().optional(),
       })
       .and(t)
       .optional(),
@@ -30,8 +30,8 @@ const jwtVcJsonHeaderSchema = z.object({
 const jwtVcJsonBodySchema = <T extends z.ZodType>(t: T) =>
   z.object({
     vc: verifiableCredentialSchema(jwtVcJsonSchema(t)),
-    iss: z.string(), // issuer
-    sub: z.string(), // id contained in the credentialSubject
+    iss: z.string().optional(), // issuer
+    sub: z.string().optional(), // id contained in the credentialSubject
     nbf: z.number().optional(), // issuanceDate
     exp: z.number().optional(), // expirationDate
     jti: z.string().optional(), // id of the verifiable credential

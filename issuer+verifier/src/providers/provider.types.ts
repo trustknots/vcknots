@@ -26,6 +26,7 @@ import { RequestObject } from '../request-object.types'
 import { Certificate, SignatureKeyPair, TmpVerifierSignatureKeyPair } from '../signature-key.types'
 import { DeepPartialUnknown } from '../type.utils'
 import { VerifierMetadata } from '../verifier-metadata.types'
+import { DiVpProof } from '../proofs.types'
 
 export type AuthzRequestProviderOptions = {
   kid?: string
@@ -194,7 +195,7 @@ export type CredentialProofProvider = {
   name: string
   single: false
 
-  verifyProof(proof: string): Promise<ProofJwt | null>
+  verifyProof(proof: string | DiVpProof): Promise<ProofJwt | null>
   canHandle(proofType: string): boolean
 }
 
@@ -334,6 +335,11 @@ export type NonceStoreProvider = {
   revoke(nonce: Nonce): Promise<boolean>
 }
 
+export type IssueCredentialCreateCredentialOptions = {
+  claims?: Record<string, unknown>
+  subject?: string
+}
+
 export type IssueCredentialProvider = {
   kind: 'issue-credential-provider'
   name: string
@@ -342,8 +348,7 @@ export type IssueCredentialProvider = {
   createCredential(
     credentialIssuer: CredentialIssuer,
     configuration: CredentialConfiguration,
-    proof: ProofJwt,
-    claimsOptions?: Record<string, unknown>
+    options?: IssueCredentialCreateCredentialOptions
   ): VerifiableCredential<JwtVcJson>
   canHandle(format: CredentialFormats): boolean
 }

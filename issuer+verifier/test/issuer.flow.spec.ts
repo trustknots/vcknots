@@ -6,7 +6,7 @@ import {
   CredentialIssuerMetadata,
 } from '../src/credential-issuer.types'
 import { CredentialOffer } from '../src/credential-offer.types'
-import { CredentialFormats, CredentialRequest, ProofTypes } from '../src/credential-request.types'
+import { CredentialFormats, CredentialRequest } from '../src/credential-request.types'
 import { IssuerFlow, initializeIssuerFlow } from '../src/issuer.flows'
 import {
   NonceProvider,
@@ -23,6 +23,7 @@ import {
 import { SignatureKeyPair } from '../src/signature-key.types'
 import { Jwk } from '../src/jwk.type'
 import { VcknotsContext, initializeContext } from '../src/vcknots.context'
+import { ProofTypes } from '../src/proofs.types'
 
 describe('IssuerFlow', () => {
   let context: VcknotsContext
@@ -107,6 +108,16 @@ describe('IssuerFlow', () => {
     validate: mock.fn(),
     revoke: mock.fn(async () => true),
   } satisfies NonceStoreProvider
+
+  const createCredentialRequest = (
+    overrides: Partial<CredentialRequest> = {}
+  ): CredentialRequest => ({
+    credential_configuration_id: 'University_Degree',
+    proofs: {
+      jwt: ['dummy-proof-jwt'],
+    },
+    ...overrides,
+  })
 
   before(() => {
     context = initializeContext({
@@ -415,16 +426,7 @@ describe('IssuerFlow', () => {
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: {
-          type: ['VerifiableCredential', 'UniversityDegreeCredential'],
-        },
-        proof: {
-          proof_type: ProofTypes.JWT,
-          jwt: 'dummy-proof-jwt',
-        },
-      }
+      const credentialRequest = createCredentialRequest()
       const verifiedProof = {
         header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
         payload: { iss: 'did:example:user', aud: issuer, nonce: 'nonce' },
@@ -474,10 +476,8 @@ describe('IssuerFlow', () => {
 
       // 3. Assert
       assert.ok(response)
-      assert.strictEqual(
-        response.credential,
-        'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2YyI6e30sInN1YiI6ImRpZDpleGFtcGxlOnVzZXIja2V5LTEifQ.signed.credential.jwt'
-      )
+      assert.equal(typeof response.credential, 'string')
+      assert.match(response.credential as string, /^eyJ.+\.eyJ.+\.signed\.credential\.jwt$/)
       assert.strictEqual(response.c_nonce, undefined)
       assert.ok(response.c_nonce_expires_in)
 
@@ -514,16 +514,7 @@ describe('IssuerFlow', () => {
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: {
-          type: ['VerifiableCredential', 'UniversityDegreeCredential'],
-        },
-        proof: {
-          proof_type: ProofTypes.JWT,
-          jwt: 'dummy-proof-jwt',
-        },
-      }
+      const credentialRequest = createCredentialRequest()
       const claims = {
         given_name: 'John',
         family_name: 'Doe',
@@ -581,22 +572,16 @@ describe('IssuerFlow', () => {
       assert.equal(mockIssueCredentialProvider.createCredential.mock.callCount(), 1)
       const createCredentialArgs =
         mockIssueCredentialProvider.createCredential.mock.calls[0].arguments
-      assert.deepStrictEqual(createCredentialArgs[3], claims)
+      assert.deepStrictEqual(createCredentialArgs[2], {
+        subject: 'did:example:user#key-1',
+        claims,
+      })
     })
 
     it('should throw "ISSUER_NOT_FOUND" if issuer metadata is not found', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: {
-          type: ['VerifiableCredential', 'UniversityDegreeCredential'],
-        },
-        proof: {
-          proof_type: ProofTypes.JWT,
-          jwt: 'dummy-proof-jwt',
-        },
-      }
+      const credentialRequest = createCredentialRequest()
 
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => null)
 
@@ -610,7 +595,7 @@ describe('IssuerFlow', () => {
       assert.equal(mockIssuerMetadataProvider.fetch.mock.callCount(), 1)
     })
 
-    it('should throw "INVALID_REQUEST" if format is not specified', async () => {
+    it('should throw "INVALID_REQUEST" if credential configuration id is not specified', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
@@ -627,16 +612,9 @@ describe('IssuerFlow', () => {
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        // format is missing
-        credential_definition: {
-          type: ['VerifiableCredential', 'UniversityDegreeCredential'],
-        },
-        proof: {
-          proof_type: ProofTypes.JWT,
-          jwt: 'dummy-proof-jwt',
-        },
-      }
+      const credentialRequest = createCredentialRequest({
+        credential_configuration_id: undefined,
+      })
 
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
 
@@ -645,39 +623,29 @@ describe('IssuerFlow', () => {
         issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
         {
           name: 'INVALID_REQUEST',
-          message: 'Credential request format is not specified.',
+          message: 'Credential configuration id is not specified.',
         }
       )
     })
 
-    it('should throw "UNSUPPORTED_CREDENTIAL_TYPE" if no configurations are supported', async () => {
+    it('should throw "UNSUPPORTED_CREDENTIAL_TYPE" if requested configuration is not supported', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
         credential_issuer: issuer,
         credential_endpoint: 'https://example.com/credentials',
-        // credential_configurations_supported is missing
         credential_configurations_supported: {
-          University_Degree: {
+          Some_Other_Degree: {
             format: 'jwt_vc_json',
             credential_definition: {
-              type: ['VCKnots'],
+              type: ['VerifiableCredential', 'SomeOtherCredential'],
               credentialSubject: {},
             },
             credential_signing_alg_values_supported: ['ES256'],
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: {
-          type: ['VerifiableCredential', 'UniversityDegreeCredential'],
-        },
-        proof: {
-          proof_type: ProofTypes.JWT,
-          jwt: 'dummy-proof-jwt',
-        },
-      }
+      const credentialRequest = createCredentialRequest()
 
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
 
@@ -690,7 +658,7 @@ describe('IssuerFlow', () => {
       )
     })
 
-    it('should throw "UNSUPPORTED_CREDENTIAL_TYPE" if requested type is not supported', async () => {
+    it('should throw "UNSUPPORTED_CREDENTIAL_TYPE" if requested configuration id is not supported', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
@@ -706,16 +674,7 @@ describe('IssuerFlow', () => {
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: {
-          type: ['VerifiableCredential', 'UniversityDegreeCredential'], // This one is not in metadata
-        },
-        proof: {
-          proof_type: ProofTypes.JWT,
-          jwt: 'dummy-proof-jwt',
-        },
-      }
+      const credentialRequest = createCredentialRequest()
 
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
 
@@ -728,7 +687,7 @@ describe('IssuerFlow', () => {
       )
     })
 
-    it('should throw "INVALID_CREDENTIAL_REQUEST" if proof is missing', async () => {
+    it('should throw "INVALID_CREDENTIAL_REQUEST" if proofs are missing', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -737,25 +696,24 @@ describe('IssuerFlow', () => {
           University_Degree: {
             format: CredentialFormats.JWT_VC_JSON,
             credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
+            credential_signing_alg_values_supported: ['ES256'],
             proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256K'] } },
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
-        // proof is missing
-      }
+      const credentialRequest = createCredentialRequest({
+        proofs: undefined,
+      })
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
 
       // 2. Act & 3. Assert
       await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
         name: 'INVALID_CREDENTIAL_REQUEST',
-        message: 'No proof object found.',
+        message: 'Proof is required to issue credential.',
       })
     })
 
-    it('should throw "INVALID_CREDENTIAL_REQUEST" if proof jwt is missing', async () => {
+    it('should throw if proofs object has no supported proof entries', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -764,21 +722,19 @@ describe('IssuerFlow', () => {
           University_Degree: {
             format: CredentialFormats.JWT_VC_JSON,
             credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
+            credential_signing_alg_values_supported: ['ES256'],
             proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256K'] } },
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
-        proof: { proof_type: ProofTypes.JWT, jwt: undefined }, // jwt is missing
-      }
+      const credentialRequest = createCredentialRequest({
+        proofs: {} as CredentialRequest['proofs'],
+      })
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
 
       // 2. Act & 3. Assert
       await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
-        name: 'INVALID_CREDENTIAL_REQUEST',
-        message: 'No proof object found.',
+        message: 'Unsupported proof type',
       })
     })
 
@@ -795,11 +751,9 @@ describe('IssuerFlow', () => {
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
-        proof: { proof_type: ProofTypes.JWT, jwt: 'dummy-jwt' },
-      }
+      const credentialRequest = createCredentialRequest({
+        proofs: { jwt: ['dummy-jwt'] },
+      })
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
 
       // 2. Act & 3. Assert
@@ -818,15 +772,14 @@ describe('IssuerFlow', () => {
           University_Degree: {
             format: CredentialFormats.JWT_VC_JSON,
             credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
+            credential_signing_alg_values_supported: ['ES256'],
             proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256K'] } },
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
-        proof: { proof_type: ProofTypes.JWT, jwt: 'dummy-jwt' },
-      }
+      const credentialRequest = createCredentialRequest({
+        proofs: { jwt: ['dummy-jwt'] },
+      })
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => null) // Verification fails
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
@@ -849,15 +802,14 @@ describe('IssuerFlow', () => {
           University_Degree: {
             format: CredentialFormats.JWT_VC_JSON,
             credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
+            credential_signing_alg_values_supported: ['ES256'],
             proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256K'] } },
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
-        proof: { proof_type: ProofTypes.JWT, jwt: 'dummy-jwt' },
-      }
+      const credentialRequest = createCredentialRequest({
+        proofs: { jwt: ['dummy-jwt'] },
+      })
       const verifiedProofWithoutKid = {
         header: { alg: 'ES256K' }, // kid is missing
         payload: { iss: 'did:example:user', aud: issuer, nonce: 'nonce' },
@@ -889,11 +841,7 @@ describe('IssuerFlow', () => {
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
-        proof: { proof_type: ProofTypes.JWT, jwt: 'dummy-proof-jwt' },
-      }
+      const credentialRequest = createCredentialRequest()
       const verifiedProof = {
         header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
         payload: { iss: 'did:example:user', aud: issuer, nonce: 'valid-nonce' },
@@ -939,7 +887,7 @@ describe('IssuerFlow', () => {
       assert.equal(mockNonceStoreProvider.save.mock.callCount(), 1)
     })
 
-    it('should throw "INVALID_PROOF" if cnonce revoke returns false', async () => {
+    it('should still issue a credential even if cnonce revoke returns false', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -948,15 +896,12 @@ describe('IssuerFlow', () => {
           University_Degree: {
             format: CredentialFormats.JWT_VC_JSON,
             credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
+            credential_signing_alg_values_supported: ['ES256'],
             proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256K'] } },
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
-        proof: { proof_type: ProofTypes.JWT, jwt: 'dummy-proof-jwt' },
-      }
+      const credentialRequest = createCredentialRequest()
       const verifiedProof = {
         header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
         payload: { iss: 'did:example:user', aud: issuer, nonce: 'valid-nonce' },
@@ -966,18 +911,39 @@ describe('IssuerFlow', () => {
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(mockNonceStoreProvider, 'validate', async () => true)
       mock.method(mockNonceStoreProvider, 'revoke', async () => false)
+      mock.method(mockNonceProvider, 'generate', async () => ({
+        nonce: 'new-nonce-123',
+        nonce_expires_in: 300,
+      }))
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
+      mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
+      mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [
+        {
+          privateKey: { alg: 'ES256' },
+          publicKey: { alg: 'ES256' },
+        } as SignatureKeyPair,
+      ])
+      mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signed.credential.jwt')
+      mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
+      mockIssueCredentialProvider.canHandle.mock.mockImplementation(
+        (format) => format === CredentialFormats.JWT_VC_JSON
+      )
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
 
-      // 2. Act & 3. Assert
-      await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, {
-          alg: 'ES256',
-          cnonce: { c_nonce_expires_in: 300 },
-        }),
-        { name: 'INVALID_PROOF', message: 'Nonce could not be revoked.' }
-      )
+      // 2. Act
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
+        alg: 'ES256',
+        cnonce: { c_nonce_expires_in: 300 },
+      })
+
+      // 3. Assert
+      assert.ok(response)
+      assert.equal(response.c_nonce, 'new-nonce-123')
+      assert.equal(mockNonceStoreProvider.validate.mock.callCount(), 1)
+      assert.equal(mockNonceStoreProvider.revoke.mock.callCount(), 1)
+      assert.equal(mockNonceProvider.generate.mock.callCount(), 1)
     })
 
     it('should throw "INVALID_PROOF" if cnonce is invalid', async () => {
@@ -993,11 +959,7 @@ describe('IssuerFlow', () => {
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
-        proof: { proof_type: ProofTypes.JWT, jwt: 'dummy-proof-jwt' },
-      }
+      const credentialRequest = createCredentialRequest()
       const verifiedProof = {
         header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
         payload: { iss: 'did:example:user', aud: issuer, nonce: 'invalid-nonce' },
@@ -1034,11 +996,7 @@ describe('IssuerFlow', () => {
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
-        proof: { proof_type: ProofTypes.JWT, jwt: 'dummy-proof-jwt' },
-      }
+      const credentialRequest = createCredentialRequest()
       const verifiedProof = {
         header: { kid: 'did:example:user#key-1' },
         payload: { iss: 'did:example:user', aud: issuer },
@@ -1060,6 +1018,42 @@ describe('IssuerFlow', () => {
       )
     })
 
+    it('should allow signing alg check to pass when credential_signing_alg_values_supported is absent', async () => {
+      // 1. Arrange
+      const issuer = CredentialIssuer('did:example:issuer')
+      const metadata = {
+        credential_issuer: issuer,
+        credential_configurations_supported: {
+          University_Degree: {
+            format: CredentialFormats.JWT_VC_JSON,
+            credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
+            proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256K'] } },
+          },
+        },
+      }
+      const credentialRequest = createCredentialRequest()
+      const verifiedProof = {
+        header: { kid: 'did:example:user#key-1' },
+        payload: { iss: 'did:example:user', aud: issuer },
+      }
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+      mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
+      mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
+      mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [])
+      mockCredentialProofProvider.canHandle.mock.mockImplementation(
+        (type) => type === ProofTypes.JWT
+      )
+      mockIssueCredentialProvider.canHandle.mock.mockImplementation(
+        (format) => format === CredentialFormats.JWT_VC_JSON
+      )
+
+      // 2. Act & 3. Assert
+      await assert.rejects(
+        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
+        { name: 'AUTHZ_ISSUER_KEY_NOT_FOUND' }
+      )
+    })
+
     it('should throw "AUTHZ_ISSUER_KEY_NOT_FOUND" if signing key is not found', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
@@ -1074,11 +1068,7 @@ describe('IssuerFlow', () => {
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
-        proof: { proof_type: ProofTypes.JWT, jwt: 'dummy-proof-jwt' },
-      }
+      const credentialRequest = createCredentialRequest()
       const verifiedProof = {
         header: { kid: 'did:example:user#key-1' },
         payload: { iss: 'did:example:user', aud: issuer },
@@ -1115,11 +1105,7 @@ describe('IssuerFlow', () => {
           },
         },
       }
-      const credentialRequest: CredentialRequest = {
-        format: CredentialFormats.JWT_VC_JSON,
-        credential_definition: { type: ['VerifiableCredential', 'UniversityDegreeCredential'] },
-        proof: { proof_type: ProofTypes.JWT, jwt: 'dummy-proof-jwt' },
-      }
+      const credentialRequest = createCredentialRequest()
       const verifiedProof = {
         header: { kid: 'did:example:user#key-1' },
         payload: { iss: 'did:example:user', aud: issuer },

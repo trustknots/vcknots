@@ -2,19 +2,19 @@ import { randomUUID } from 'node:crypto'
 import * as z from 'zod'
 import { CredentialConfiguration, CredentialIssuer } from '../credential-issuer.types'
 import { CredentialFormats } from '../credential-request.types'
-import { JwtVcJson, ProofJwt, VerifiableCredential } from '../credential.types'
+import { JwtVcJson, VerifiableCredential } from '../credential.types'
 import { raise } from '../errors/vcknots.error'
-import { IssueCredentialProvider } from './provider.types'
+import { IssueCredentialProvider, IssueCredentialCreateCredentialOptions } from './provider.types'
 
 export type IssueCredentialProviderOptions = {
   identifier?: () => string
 }
 
 export const issueCredentialJwt = (
-  options?: IssueCredentialProviderOptions
+  providerOptions?: IssueCredentialProviderOptions
 ): IssueCredentialProvider => {
-  if (options?.identifier) {
-    const id = options.identifier()
+  if (providerOptions?.identifier) {
+    const id = providerOptions.identifier()
     if (!z.string().url().safeParse(id).success) {
       throw raise('INVALID_OPTIONS', {
         message: 'Identifier must be a valid URL.',
@@ -29,41 +29,36 @@ export const issueCredentialJwt = (
     createCredential(
       credentialIssuer: CredentialIssuer,
       configuration: CredentialConfiguration,
-      proof: ProofJwt,
-      claimsOptions?: Record<string, unknown>
+      options?: IssueCredentialCreateCredentialOptions
     ): VerifiableCredential<JwtVcJson> {
       const today = new Date()
-      const kid = proof.header.kid
-      if (!kid) {
-        throw raise('INVALID_PROOF', {
-          message: 'Unsupported proof header.',
-        })
+      const credentialSubject: Record<string, unknown> = {}
+      const defCredentialSubject = configuration.credential_definition.credentialSubject
+      if (options?.subject) {
+        credentialSubject.id = options.subject
       }
-
-      const credentialClaims: Record<string, unknown> = {}
-      const credentialSubject = configuration.credential_definition.credentialSubject
-      if (credentialSubject && Object.keys(credentialSubject).length > 0 && claimsOptions) {
-        for (const [key, value] of Object.entries(credentialSubject)) {
-          if (value.mandatory === true && !(key in claimsOptions)) {
+      if (defCredentialSubject && Object.keys(defCredentialSubject).length > 0 && options?.claims) {
+        for (const [key, value] of Object.entries(defCredentialSubject)) {
+          if (value.mandatory === true && !(key in options.claims)) {
             throw raise('INVALID_CLAIMS', {
               message: `Claim ${key} is not defined as mandatory in the credential definition.`,
             })
           }
-          if (key in claimsOptions) {
+          if (key in options.claims) {
             // unsupported  image media types such as image/jpeg as defined in IANA media type registry for images (https://www.iana.org/assignments/media-types/media-types.xhtml#image)
             if (value.value_type === 'string') {
-              credentialClaims[key] = String(claimsOptions[key])
+              credentialSubject[key] = String(options.claims[key])
             } else if (value.value_type === 'number') {
-              credentialClaims[key] = Number(claimsOptions[key])
+              credentialSubject[key] = Number(options.claims[key])
             } else {
-              credentialClaims[key] = claimsOptions[key]
+              credentialSubject[key] = options.claims[key]
             }
           }
         }
       }
 
-      const id = options?.identifier
-        ? options.identifier()
+      const id = providerOptions?.identifier
+        ? providerOptions.identifier()
         : `${credentialIssuer}/vc/${randomUUID().replaceAll('-', '')}`
 
       const verifiableCredential = {
@@ -73,8 +68,7 @@ export const issueCredentialJwt = (
         issuer: credentialIssuer,
         issuanceDate: today.toISOString(),
         credentialSubject: {
-          id: kid,
-          ...credentialClaims,
+          ...credentialSubject,
         },
       }
 
