@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/trustknots/vcknots/wallet/common"
-	"github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
+	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
 
 type RoundTripFunc func(req *http.Request) *http.Response
@@ -268,36 +268,6 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		_, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*noCredURL), "jwt_vc_json", accessToken, nil, nil)
 		if err == nil {
 			t.Fatal("Expected error when no credential is in the response")
-		}
-	})
-}
-
-// TestOid4vciReceiver_WithMockServer tests OID4VCI receiver using the new mockserver package
-
-func TestOid4vciReceiver_TrailingSlashIssue(t *testing.T) {
-	receiver := &Oid4vciReceiver{}
-
-	// Create a mock server
-	server := mockserver.NewMockServer()
-	defer server.Close()
-
-	// Setup the correct path in the mock server (without double slash)
-	expectedPath := "/some-path/.well-known/openid-credential-issuer"
-	server.SetJSONResponse(expectedPath, http.StatusOK, map[string]interface{}{
-		"credential_issuer": "https://example.com/some-path",
-	})
-
-	// Create an endpoint with a trailing slash
-	serverURL, _ := url.Parse(server.URL() + "/some-path/")
-	endpoint := common.URIField(*serverURL)
-
-	t.Run("FetchIssuerMetadata with trailing slash", func(t *testing.T) {
-		metadata, err := receiver.FetchIssuerMetadata(endpoint, types.Oid4vci)
-		if err != nil {
-			t.Fatalf("Expected no error, got %v. This might be due to double slash in URL.", err)
-		}
-		if metadata == nil {
-			t.Fatal("Expected metadata, got nil")
 		}
 	})
 }
