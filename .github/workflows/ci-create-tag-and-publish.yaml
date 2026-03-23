@@ -43,7 +43,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish
-        run: pnpm changeset publish
+        run: pnpm changeset publish --tag test
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

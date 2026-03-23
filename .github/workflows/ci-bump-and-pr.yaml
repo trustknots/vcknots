@@ -57,7 +57,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Apply version to package.json with changesets
-        run: npx changeset version
+        run: npx changeset version --snapshot test
 
       - name: Collect all CHANGELOG.md
         id: changelog
