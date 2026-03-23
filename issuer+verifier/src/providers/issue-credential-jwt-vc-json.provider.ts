@@ -1,10 +1,12 @@
+import { base64url } from 'jose'
 import { randomUUID } from 'node:crypto'
 import * as z from 'zod'
 import { CredentialConfiguration, CredentialIssuer } from '../credential-issuer.types'
 import { CredentialFormats } from '../credential-request.types'
-import { JwtVcJson, VerifiableCredential } from '../credential.types'
 import { raise } from '../errors/vcknots.error'
 import { IssueCredentialProvider, IssueCredentialCreateCredentialOptions } from './provider.types'
+import { withProviderRegistry, WithProviderRegistry } from './provider.registry'
+import { selectProvider } from './provider.utils'
 
 export type IssueCredentialProviderOptions = {
   identifier?: () => string
@@ -12,7 +14,7 @@ export type IssueCredentialProviderOptions = {
 
 export const issueCredentialJwt = (
   providerOptions?: IssueCredentialProviderOptions
-): IssueCredentialProvider => {
+): IssueCredentialProvider & WithProviderRegistry => {
   if (providerOptions?.identifier) {
     const id = providerOptions.identifier()
     if (!z.string().url().safeParse(id).success) {
@@ -26,17 +28,16 @@ export const issueCredentialJwt = (
     name: 'default-issue-credential-w3c-jwt-vc-json-provider',
     single: false,
 
-    createCredential(
+    ...withProviderRegistry,
+
+    async createCredential(
       credentialIssuer: CredentialIssuer,
       configuration: CredentialConfiguration,
       options?: IssueCredentialCreateCredentialOptions
-    ): VerifiableCredential<JwtVcJson> {
+    ): Promise<string> {
       const today = new Date()
       const credentialSubject: Record<string, unknown> = {}
       const defCredentialSubject = configuration.credential_definition.credentialSubject
-      if (options?.subject) {
-        credentialSubject.id = options.subject
-      }
       if (defCredentialSubject && Object.keys(defCredentialSubject).length > 0 && options?.claims) {
         for (const [key, value] of Object.entries(defCredentialSubject)) {
           if (value.mandatory === true && !(key in options.claims)) {
@@ -68,11 +69,49 @@ export const issueCredentialJwt = (
         issuer: credentialIssuer,
         issuanceDate: today.toISOString(),
         credentialSubject: {
+          ...(options?.subject ? { id: options.subject } : {}),
           ...credentialSubject,
         },
       }
 
-      return verifiableCredential
+      const keyAlg = options?.keyAlg ?? 'ES256'
+      if (
+        configuration.credential_signing_alg_values_supported &&
+        !configuration.credential_signing_alg_values_supported.includes(keyAlg)
+      ) {
+        throw raise('UNSUPPORTED_ISSUER_KEY_ALG', {
+          message: 'Unsupported key algorithm.',
+        })
+      }
+      const jwtHeader = {
+        alg: keyAlg,
+        typ: 'JWT',
+      }
+      const jwtPayload = {
+        vc: verifiableCredential,
+        iss: verifiableCredential.issuer,
+        ...(options?.subject ? { sub: options.subject } : {}),
+      }
+      const keyStore$ = this.providers.get('issuer-signature-key-store-provider')
+      const issuerKeys = await keyStore$.fetch(credentialIssuer)
+      const keys = issuerKeys.find((keypair) => keypair.privateKey.alg === keyAlg)
+      if (!keys) {
+        throw raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+          message: 'Issuer key not found.',
+        })
+      }
+      const key$ = this.providers.get('issuer-signature-key-provider')
+      const keyProvider = selectProvider(key$, keyAlg)
+      const signature = await keyProvider.sign(keys.privateKey, keyAlg, jwtPayload, jwtHeader)
+      if (!signature) {
+        throw raise('INTERNAL_SERVER_ERROR', {
+          message: 'Cannot sign credentials.',
+        })
+      }
+      const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
+      const credential = `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`
+
+      return credential
     },
     canHandle(format: CredentialFormats): boolean {
       return format === 'jwt_vc_json'

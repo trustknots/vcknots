@@ -1,4 +1,3 @@
-import { base64url } from 'jose'
 import { Nonce } from './nonce.types'
 import {
   CredentialConfigurationId,
@@ -269,49 +268,20 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         })
       }
 
-      const verifiableCredential = issueCredentialProvider.createCredential(issuer, configuration, {
-        subject: options?.subject ?? subject,
-        claims: options?.claims,
-      })
-      const keyAlg = options?.alg ?? 'ES256'
-      if (
-        configuration.credential_signing_alg_values_supported &&
-        !configuration.credential_signing_alg_values_supported.includes(keyAlg)
-      ) {
-        throw err('UNSUPPORTED_ISSUER_KEY_ALG', {
-          message: 'Unsupported key algorithm.',
-        })
-      }
-      const jwtHeader = {
-        alg: keyAlg,
-        typ: 'JWT',
-      }
-      const jwtPayload = {
-        vc: verifiableCredential,
-        iss: verifiableCredential.issuer,
-        sub: options?.subject ?? subject,
-      }
-      const issuerKeys = await keyStore$.fetch(issuer)
-      const keys = issuerKeys.find((keypair) => keypair.privateKey.alg === keyAlg)
-      if (!keys) {
-        throw err('AUTHZ_ISSUER_KEY_NOT_FOUND', {
-          message: 'Issuer key not found.',
-        })
-      }
-      const keyProvider = selectProvider(key$, keyAlg)
-      const signature = await keyProvider.sign(keys.privateKey, keyAlg, jwtPayload, jwtHeader)
-      if (!signature) {
-        throw err('INTERNAL_SERVER_ERROR', {
-          message: 'Cannot sign credentials.',
-        })
-      }
-      const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
-      const credential = `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`
+      const verifiableCredential = await issueCredentialProvider.createCredential(
+        issuer,
+        configuration,
+        {
+          subject: options?.subject ?? subject,
+          claims: options?.claims,
+          keyAlg: options?.alg ?? 'ES256',
+        }
+      )
 
       return {
         credentials: [
           {
-            credential,
+            credential: verifiableCredential,
           },
         ],
       }

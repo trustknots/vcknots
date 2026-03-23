@@ -338,6 +338,7 @@ export type NonceStoreProvider = {
 export type IssueCredentialCreateCredentialOptions = {
   claims?: Record<string, unknown>
   subject?: string
+  keyAlg?: string
 }
 
 export type IssueCredentialProvider = {
@@ -349,7 +350,7 @@ export type IssueCredentialProvider = {
     credentialIssuer: CredentialIssuer,
     configuration: CredentialConfiguration,
     options?: IssueCredentialCreateCredentialOptions
-  ): VerifiableCredential<JwtVcJson>
+  ): Promise<string>
   canHandle(format: CredentialFormats): boolean
 }
 

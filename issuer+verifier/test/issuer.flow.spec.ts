@@ -431,39 +431,11 @@ describe('IssuerFlow', () => {
         header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
         payload: { iss: 'did:example:user', aud: issuer, nonce: 'nonce' },
       }
-      const keyPair: SignatureKeyPair = {
-        privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-        publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-      }
       const signedCredential = 'signed.credential.jwt'
 
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
-      mock.method(
-        mockIssueCredentialProvider,
-        'createCredential',
-        async () =>
-          ({
-            '@context': ['https://www.w3.org/ns/credentials/v2'],
-            type: ['VerifiableCredential', 'UniversityDegreeCredential'],
-            issuer: issuer,
-            issuanceDate: '2021-01-01T19:23:24Z',
-            credentialSubject: {
-              id: 'did:example:user#key-1',
-              degree: {
-                type: 'BachelorDegree',
-                name: 'Bachelor of Science and Arts',
-              },
-            },
-          }) as const
-      )
-      mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
-      mock.method(
-        mockIssuerSignatureKeyProvider,
-        'sign',
-        async (privatekey: Jwk, alg: string, payload: unknown, header: unknown) => signedCredential
-      )
-      mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
+      mock.method(mockIssueCredentialProvider, 'createCredential', async () => signedCredential)
       mockIssueCredentialProvider.canHandle.mock.mockImplementation(
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
@@ -478,17 +450,20 @@ describe('IssuerFlow', () => {
       assert.ok(response)
       assert.equal(response.credentials?.length, 1)
       assert.equal(typeof response.credentials?.[0]?.credential, 'string')
-      assert.match(
-        response.credentials?.[0]?.credential as string,
-        /^eyJ.+\.eyJ.+\.signed\.credential\.jwt$/
-      )
+      assert.equal(response.credentials?.[0]?.credential, signedCredential)
 
       // Check if mocks were called
       assert.equal(mockIssuerMetadataProvider.fetch.mock.callCount(), 1)
       assert.equal(mockCredentialProofProvider.verifyProof.mock.callCount(), 1)
       assert.equal(mockIssueCredentialProvider.createCredential.mock.callCount(), 1)
-      assert.equal(mockIssuerKeyStoreProvider.fetch.mock.callCount(), 1)
-      assert.equal(mockIssuerSignatureKeyProvider.sign.mock.callCount(), 1)
+      assert.deepStrictEqual(
+        mockIssueCredentialProvider.createCredential.mock.calls[0].arguments[2],
+        {
+          subject: 'did:example:user#key-1',
+          claims: undefined,
+          keyAlg: 'ES256',
+        }
+      )
     })
 
     it('should issue a credential with claims for a valid request', async () => {
@@ -525,37 +500,13 @@ describe('IssuerFlow', () => {
         header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
         payload: { iss: 'did:example:user', aud: issuer, nonce: 'nonce' },
       }
-      const keyPair: SignatureKeyPair = {
-        privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-        publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-      }
-      const signedCredential = 'signed.credential.jwt'
-
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(
         mockIssueCredentialProvider,
         'createCredential',
-        async () =>
-          ({
-            '@context': ['https://www.w3.org/ns/credentials/v2'],
-            type: ['VerifiableCredential', 'UniversityDegreeCredential'],
-            issuer: issuer,
-            issuanceDate: '2021-01-01T19:23:24Z',
-            credentialSubject: {
-              id: 'did:example:user#key-1',
-              given_name: 'John',
-              family_name: 'Doe',
-            },
-          }) as const
+        async () => 'signed.credential.jwt'
       )
-      mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
-      mock.method(
-        mockIssuerSignatureKeyProvider,
-        'sign',
-        async (privatekey: Jwk, alg: string, payload: unknown, header: unknown) => signedCredential
-      )
-      mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
       mockIssueCredentialProvider.canHandle.mock.mockImplementation(
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
@@ -577,6 +528,7 @@ describe('IssuerFlow', () => {
       assert.deepStrictEqual(createCredentialArgs[2], {
         subject: 'did:example:user#key-1',
         claims,
+        keyAlg: 'ES256',
       })
     })
 
@@ -848,18 +800,15 @@ describe('IssuerFlow', () => {
         header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
         payload: { iss: 'did:example:user', aud: issuer, nonce: 'generated-cnonce' },
       }
-      const keyPair = {
-        privateKey: { alg: 'ES256' },
-        publicKey: { alg: 'ES256' },
-      } as SignatureKeyPair
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(mockNonceStoreProvider, 'validate', async () => true) // Nonce is valid
       mock.method(mockNonceStoreProvider, 'revoke', async () => true)
-      mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
-      mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
-      mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signed.credential.jwt')
-      mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
+      mock.method(
+        mockIssueCredentialProvider,
+        'createCredential',
+        async () => 'signed.credential.jwt'
+      )
       mockIssueCredentialProvider.canHandle.mock.mockImplementation(
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
@@ -912,15 +861,11 @@ describe('IssuerFlow', () => {
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(mockNonceStoreProvider, 'validate', async () => true)
       mock.method(mockNonceStoreProvider, 'revoke', async () => false)
-      mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
-      mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [
-        {
-          privateKey: { alg: 'ES256' },
-          publicKey: { alg: 'ES256' },
-        } as SignatureKeyPair,
-      ])
-      mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signed.credential.jwt')
-      mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
+      mock.method(
+        mockIssueCredentialProvider,
+        'createCredential',
+        async () => 'signed.credential.jwt'
+      )
       mockIssueCredentialProvider.canHandle.mock.mockImplementation(
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
@@ -1006,7 +951,11 @@ describe('IssuerFlow', () => {
       }
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
-      mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
+      mock.method(mockIssueCredentialProvider, 'createCredential', async () => {
+        throw Object.assign(new Error('Unsupported key algorithm.'), {
+          name: 'UNSUPPORTED_ISSUER_KEY_ALG',
+        })
+      })
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
@@ -1041,8 +990,11 @@ describe('IssuerFlow', () => {
       }
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
-      mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
-      mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [])
+      mock.method(mockIssueCredentialProvider, 'createCredential', async () => {
+        throw Object.assign(new Error('Issuer key not found.'), {
+          name: 'AUTHZ_ISSUER_KEY_NOT_FOUND',
+        })
+      })
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
@@ -1078,8 +1030,11 @@ describe('IssuerFlow', () => {
       }
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
-      mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
-      mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => []) // No keys found
+      mock.method(mockIssueCredentialProvider, 'createCredential', async () => {
+        throw Object.assign(new Error('Issuer key not found.'), {
+          name: 'AUTHZ_ISSUER_KEY_NOT_FOUND',
+        })
+      })
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
@@ -1113,16 +1068,13 @@ describe('IssuerFlow', () => {
         header: { kid: 'did:example:user#key-1' },
         payload: { iss: 'did:example:user', aud: issuer },
       }
-      const keyPair = {
-        privateKey: { alg: 'ES256' },
-        publicKey: { alg: 'ES256' },
-      } as SignatureKeyPair
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
-      mock.method(mockIssueCredentialProvider, 'createCredential', async () => ({ id: 'cred-id' }))
-      mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
-      mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => null) // Signing returns null
-      mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
+      mock.method(mockIssueCredentialProvider, 'createCredential', async () => {
+        throw Object.assign(new Error('Cannot sign credentials.'), {
+          name: 'INTERNAL_SERVER_ERROR',
+        })
+      })
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
