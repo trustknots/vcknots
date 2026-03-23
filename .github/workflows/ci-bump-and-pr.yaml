@@ -2,6 +2,9 @@ name: Auto bump up packages version and create PR
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - test/version-up-and-release
 
 permissions:
   contents: write
