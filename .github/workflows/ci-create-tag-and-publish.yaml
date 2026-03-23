@@ -43,9 +43,16 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish
-        run: pnpm changeset publish
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          pnpm changeset publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Push release tags
-        run: git push origin --tags
+        run: |
+          git remote -v
+          git tag
+          git show-ref --tags
+          git push origin --tags
