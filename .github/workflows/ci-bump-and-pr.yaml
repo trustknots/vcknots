@@ -38,14 +38,14 @@ jobs:
 
       - name: Checkout base
         run: |
-          git checkout main
-          git pull origin main
+          git branch --show-current
+          git pull origin HEAD
           git checkout -b chore/bump-bot-${BUMP_TS}
 
       - name: Run bump script
         id: bump
         run: |
-          set -o pipefail
+          set -euo pipefail
 
           OUTPUT=$(node bump.mjs 2>&1)
           echo "$OUTPUT"
