@@ -29,7 +29,7 @@ export const CredentialRequest = (value?: {
   credential_configuration_id?: string
   proofs?: {
     jwt?: string[]
-    ldp_vp?: {
+    di_vp?: {
       holder?: string
       proof: {
         domain: string
