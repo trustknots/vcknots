@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import { cert, initializeApp } from 'firebase-admin/app'
-import { firestore } from '@trustknots/google-cloud'
+import { firestore, secretManager } from '@trustknots/google-cloud'
 import { createServer } from '@trustknots/server-core'
 
 // Reference:
@@ -36,5 +36,12 @@ createServer({
       app: firebaseApp,
       databaseId: process.env.FIRESTORE_DATABASE_ID,
     }),
+    secretManager({
+      projectId: process.env.GOOGLE_PROJECT_ID,
+      credentials: {
+        privateKey: process.env.SECRET_MANAGER_PRIVATE_KEY?.replace(/\\n/g, '\n') ?? '',
+        clientEmail: process.env.SECRET_MANAGER_CLIENT_EMAIL ?? '',
+      },
+    })
   ],
 })
