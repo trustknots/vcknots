@@ -1,4 +1,5 @@
 import { verifiableCredentialSchema, jwtVcJsonSchema } from './credential.types'
+import { jwkSchema } from './jwk.type'
 import { z } from 'zod'
 
 export enum ProofTypes {
@@ -11,21 +12,27 @@ export const jwtVpJsonHeaderSchema = z.object({
   kid: z.string().optional(),
 })
 
-export const jwtVpJsonBodySchema = <T extends z.ZodType>(t: T) =>
-  z.object({
+// RFC 7519 (JWT) registered claim names
+export const jwtPayloadBaseSchema = z.object({
+  iss: z.string().optional(), // issuer
+  sub: z.string().optional(), // subject
+  aud: z.union([z.string(), z.array(z.string())]).optional(), // audience
+  exp: z.number().optional(), // expiration time
+  nbf: z.number().optional(), // not before
+  iat: z.number().optional(), // issued at
+  jti: z.string().optional(), // JWT ID
+})
+
+export const jwtVpJsonPayloadSchema = <T extends z.ZodType>(t: T) =>
+  jwtPayloadBaseSchema.extend({
     vp: verifiablePresentationSchema(t),
-    iss: z.string().optional(), // issuer
-    aud: z.string().optional(), // audience
-    nbf: z.number().optional(), // issuanceDate
-    exp: z.number().optional(), // expirationDate
-    jti: z.string().optional(), // id of the verifiable credential
-    nonce: z.string(), // TODO: we have to discuss whether this should be optional or not (not compliant with the spec)
+    nonce: z.string(),
   })
 
 export const jwtVpJsonSchema = <T extends z.ZodType>(t: T) =>
   z.object({
     header: jwtVpJsonHeaderSchema,
-    payload: jwtVpJsonBodySchema(t),
+    payload: jwtVpJsonPayloadSchema(t),
   })
 
 export const verifiablePresentationSchema = <T extends z.ZodType>(t: T) =>
@@ -39,7 +46,63 @@ export const verifiablePresentationSchema = <T extends z.ZodType>(t: T) =>
   })
 
 export type VerifiablePresentation<T extends Record<string, unknown> = Record<string, unknown>> =
-  z.infer<ReturnType<typeof jwtVpJsonBodySchema<z.ZodType<T>>>>
+  z.infer<ReturnType<typeof jwtVpJsonPayloadSchema<z.ZodType<T>>>>
 export type JwtVpJson<T extends Record<string, unknown> = Record<string, unknown>> = z.infer<
   ReturnType<typeof jwtVpJsonSchema<z.ZodType<T>>>
+>
+
+// RFC 9901: Selective Disclosure for JSON Web Tokens (SD-JWT)
+export const sdJwtArrayDisclosureDigestSchema = z.object({
+  '...': z.string(),
+})
+
+export const sdJwtPayloadValueSchema: z.ZodType = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    sdJwtArrayDisclosureDigestSchema,
+    z.array(sdJwtPayloadValueSchema),
+    z.record(z.string(), sdJwtPayloadValueSchema),
+  ])
+)
+
+export const tokenStatusListEntrySchema = z.object({
+  idx: z.number().int().nonnegative(),
+  uri: z.string().url(),
+})
+
+// draft-ietf-oauth-status-list-18
+export const sdJwtVcStatusSchema = z.object({
+  status_list: tokenStatusListEntrySchema.optional(),
+})
+
+export const sdJwtPayloadSchema = () =>
+  jwtPayloadBaseSchema
+    .extend({
+      // RFC9901
+      _sd: z.array(z.string()).optional(),
+      _sd_alg: z.string().optional(),
+      cnf: z
+        .object({
+          jwk: jwkSchema.optional(),
+        })
+        .optional(),
+      // draft-ietf-oauth-sd-jwt-vc-14
+      vct: z.string(),
+      'vct#integrity': z.string().optional(),
+      status: sdJwtVcStatusSchema.optional(),
+    })
+    .catchall(sdJwtPayloadValueSchema)
+
+export type SdJwtArrayDisclosureDigest = z.infer<typeof sdJwtArrayDisclosureDigestSchema>
+export type SdJwtPayloadValue = z.infer<typeof sdJwtPayloadValueSchema>
+export type SdJwtPayload = z.infer<ReturnType<typeof sdJwtPayloadSchema>>
+
+export const vpTokenPayloadSchema = <T extends z.ZodType>(t: T) =>
+  z.union([jwtVpJsonPayloadSchema(t), sdJwtPayloadSchema()])
+
+export type VpTokenPayload<T extends Record<string, unknown> = Record<string, unknown>> = z.infer<
+  ReturnType<typeof vpTokenPayloadSchema<z.ZodType<T>>>
 >

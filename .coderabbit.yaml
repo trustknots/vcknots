@@ -39,6 +39,7 @@ reviews:
         This is a Hono server project (TypeScript).
         Use Node.js native test runner (`node --test`) and `tsx`.
         Use Biome for linting and formatting.
+        Please allow the use of `console.log` in TypeScript files. These are intentionally included for debugging and logging purposes, so no comments or suggestions regarding their usage are required.
     - path: "google-cloud/**"
       instructions: |
         This is a Google Cloud integration module (TypeScript).

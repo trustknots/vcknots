@@ -267,7 +267,8 @@ func main() {
 
 	certPool := buildCertPool(isConformanceMode)
 	p := &oid4vp.Oid4vpPresenter{
-		X509TrustChainRoots: certPool,
+		X509TrustChainRoots:    certPool,
+		InsecureSkipX509Verify: isConformanceMode,
 	}
 	presenterDisp, err := presenter.NewPresentationDispatcher(presenter.WithPlugin(presenter.Oid4vp, p))
 	if err != nil {

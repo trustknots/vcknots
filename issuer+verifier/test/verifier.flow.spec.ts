@@ -193,6 +193,43 @@ describe('VerifierFlow', () => {
     })
   })
 
+  describe('findVerifierMetadata', () => {
+    it('should find verifier metadata', async () => {
+      const verifierId = ClientId('https://example.com')
+      const metadata = VerifierMetadata({
+        client_name: 'Test Verifier',
+        vp_formats: {
+          jwt_vc_json: { alg_values_supported: ['ES256'] },
+          jwt_vp_json: { alg_values_supported: ['ES256'] },
+        },
+      })
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async (id: ClientId) => {
+        assert.equal(id, verifierId)
+        return metadata
+      })
+
+      const found = await verifierFlow.findVerifierMetadata(verifierId)
+
+      assert.deepEqual(found, metadata)
+      assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
+    })
+
+    it('should return null if verifier metadata is not found', async () => {
+      const verifierId = ClientId('https://example.com/not-found')
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async (id: ClientId) => {
+        assert.equal(id, verifierId)
+        return null
+      })
+
+      const found = await verifierFlow.findVerifierMetadata(verifierId)
+
+      assert.strictEqual(found, null)
+      assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
+    })
+  })
+
   describe('createAuthzRequest', () => {
     it('creates request for Presentation Exchange', async () => {
       const metadata = VerifierMetadata({
@@ -671,13 +708,34 @@ describe('VerifierFlow', () => {
         })
       )
       mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
-      mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => true)
+      mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({
+        vp: {
+          '@context': ['https://www.w3.org/2018/credentials/v1'],
+          type: ['VerifiablePresentation'],
+          verifiableCredential: [makeJwt({ alg: 'ES256', typ: 'JWT' }, minimalVc)],
+        },
+        nonce: 'nonce-123',
+      }))
 
       const result = await verifierFlow.verifyPresentations(verifierId, response)
-      assert.equal(result, true)
+      assert.deepEqual(result, {
+        vp: {
+          '@context': ['https://www.w3.org/2018/credentials/v1'],
+          type: ['VerifiablePresentation'],
+          verifiableCredential: [makeJwt({ alg: 'ES256', typ: 'JWT' }, minimalVc)],
+        },
+        nonce: 'nonce-123',
+      })
 
       assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
       assert.equal(mockVerifyVerifiablePresentationProvider.verify.mock.callCount(), 1)
+      assert.equal(
+        mockVerifyVerifiablePresentationProvider.verify.mock.calls[0].arguments[0],
+        vpToken
+      )
+      assert.deepEqual(mockVerifyVerifiablePresentationProvider.verify.mock.calls[0].arguments[1], {
+        kind: 'jwt_vp_json',
+      })
     })
   })
 })

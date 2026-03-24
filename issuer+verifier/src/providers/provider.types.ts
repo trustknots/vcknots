@@ -20,6 +20,7 @@ import { Jwk } from '../jwk.type'
 import { JwtContent, JwtPayload } from '../jwt.types'
 import { PreAuthorizedCode } from '../pre-authorized-code.types'
 import { PresentationExchange } from '../presentation-exchange.types'
+import { VpTokenPayload } from '../presentation.types'
 import { RequestObjectId } from '../request-object-id.types'
 import { RequestObject } from '../request-object.types'
 import { Certificate, SignatureKeyPair, TmpVerifierSignatureKeyPair } from '../signature-key.types'
@@ -142,7 +143,7 @@ export type VerifyVerifiablePresentationProvider = {
   name: string
   single: false
 
-  verify(vp: string, options?: VerifyVerifiablePresentationVerifyOptions): Promise<boolean>
+  verify(vp: string, options?: VerifyVerifiablePresentationVerifyOptions): Promise<VpTokenPayload>
   canHandle(format: string): boolean
 }
 

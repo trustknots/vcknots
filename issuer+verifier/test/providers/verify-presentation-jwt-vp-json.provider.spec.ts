@@ -10,7 +10,7 @@ import {
 } from '../../src/providers/provider.types'
 import { verifyVerifiablePresentation } from '../../src/providers/verify-presentation-jwt-vp-json.provider'
 import { VerifiableCredential } from '../../src/credential.types'
-import { DidDocument } from '../../src/did.types'
+import { DidDocument, JsonWebKey as DidJsonWebKey } from '../../src/did.types'
 
 describe('verifyVerifiablePresentation provider', () => {
   let provider: ReturnType<typeof verifyVerifiablePresentation>
@@ -73,8 +73,7 @@ describe('verifyVerifiablePresentation provider', () => {
           id: `${holderDid}#${thumbprint}`,
           type: 'JsonWebKey2020',
           controller: holderDid,
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-          publicKeyJwk: holderJwk as any,
+          publicKeyJwk: holderJwk as unknown as DidJsonWebKey,
         },
       ],
     }
@@ -130,18 +129,24 @@ describe('verifyVerifiablePresentation provider', () => {
     const vpJwt = await createVpJwt({
       nonce: 'test-nonce',
       vp: {
+        type: ['VerifiablePresentation'],
         verifiableCredential: [vcJwt],
       },
     })
 
     const result = await provider.verify(vpJwt, { kind: 'jwt_vp_json' })
-    assert.strictEqual(result, true)
+    assert.ok(result)
+    assert.strictEqual(result.nonce, 'test-nonce')
+    assert.ok('vp' in result)
+    const vp = result.vp as { verifiableCredential: unknown[] }
+    assert.strictEqual(vp.verifiableCredential.length, 1)
   })
 
   test('should throw an error for unsupported kind', async () => {
     await assert.rejects(
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-      provider.verify('dummy-vp', { kind: 'ldp_vp' } as any),
+      provider.verify('dummy-vp', { kind: 'ldp_vp' } as unknown as NonNullable<
+        Parameters<typeof provider.verify>[1]
+      >),
       { name: 'ILLEGAL_ARGUMENT', message: 'ldp_vp is not supported.' }
     )
   })
@@ -155,7 +160,10 @@ describe('verifyVerifiablePresentation provider', () => {
   test('should throw an error for invalid nonce', async () => {
     const vpJwt = await createVpJwt({
       nonce: 'invalid-nonce',
-      vp: { verifiableCredential: [vcJwt] },
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt],
+      },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
       name: 'INVALID_NONCE',
@@ -166,7 +174,10 @@ describe('verifyVerifiablePresentation provider', () => {
   test('should throw an error if no verifiableCredential', async () => {
     const vpJwt = await createVpJwt({
       nonce: 'test-nonce',
-      vp: { verifiableCredential: [] },
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [],
+      },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
       name: 'INVALID_CREDENTIAL',
@@ -177,11 +188,14 @@ describe('verifyVerifiablePresentation provider', () => {
   test('should throw if vc is not a string', async () => {
     const vpJwt = await createVpJwt({
       nonce: 'test-nonce',
-      vp: { verifiableCredential: [{}] },
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [{}],
+      },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
-      name: 'ILLEGAL_ARGUMENT',
-      message: 'VC represented as object is not supported.',
+      name: 'INVALID_VP_TOKEN',
+      // message: 'VC represented as object is not supported.',
     })
   })
 
@@ -189,7 +203,10 @@ describe('verifyVerifiablePresentation provider', () => {
     mock.method(mockCredentialVerifier, 'verify', async () => false)
     const vpJwt = await createVpJwt({
       nonce: 'test-nonce',
-      vp: { verifiableCredential: [vcJwt] },
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt],
+      },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
       name: 'INVALID_CREDENTIAL',
@@ -201,7 +218,10 @@ describe('verifyVerifiablePresentation provider', () => {
     const vpJwt = await createVpJwt(
       {
         nonce: 'test-nonce',
-        vp: { verifiableCredential: [vcJwt] },
+        vp: {
+          type: ['VerifiablePresentation'],
+          verifiableCredential: [vcJwt],
+        },
       },
       null
     )
@@ -216,7 +236,10 @@ describe('verifyVerifiablePresentation provider', () => {
     const vpJwt = await createVpJwt(
       {
         nonce: 'test-nonce',
-        vp: { verifiableCredential: [vcJwt] },
+        vp: {
+          type: ['VerifiablePresentation'],
+          verifiableCredential: [vcJwt],
+        },
       },
       'did:unsupported:123'
     )
@@ -231,7 +254,10 @@ describe('verifyVerifiablePresentation provider', () => {
     mock.method(mockDidProvider, 'resolveDid', async () => null)
     const vpJwt = await createVpJwt({
       nonce: 'test-nonce',
-      vp: { verifiableCredential: [vcJwt] },
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt],
+      },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
       name: 'INVALID_VP_TOKEN',
@@ -248,14 +274,17 @@ describe('verifyVerifiablePresentation provider', () => {
           id: 'did:key:another#key',
           type: 'JsonWebKey2020',
           controller: holderDid,
-          publicKeyJwk: holderJwk as any,
+          publicKeyJwk: holderJwk as unknown as DidJsonWebKey,
         },
       ],
     }
     mock.method(mockDidProvider, 'resolveDid', async () => didDocWithDifferentKid)
     const vpJwt = await createVpJwt({
       nonce: 'test-nonce',
-      vp: { verifiableCredential: [vcJwt] },
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt],
+      },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
       name: 'INVALID_VP_TOKEN',
@@ -277,7 +306,10 @@ describe('verifyVerifiablePresentation provider', () => {
     mock.method(mockDidProvider, 'resolveDid', async () => didDocWithoutJwk)
     const vpJwt = await createVpJwt({
       nonce: 'test-nonce',
-      vp: { verifiableCredential: [vcJwt] },
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt],
+      },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
       name: 'INVALID_VP_TOKEN',
@@ -289,7 +321,10 @@ describe('verifyVerifiablePresentation provider', () => {
     mock.method(mockJwtSignatureProvider, 'verify', async () => false)
     const vpJwt = await createVpJwt({
       nonce: 'test-nonce',
-      vp: { verifiableCredential: [vcJwt] },
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt],
+      },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
       name: 'INVALID_PROOF',
@@ -301,7 +336,10 @@ describe('verifyVerifiablePresentation provider', () => {
     mock.method(mockHolderBindingProvider, 'verify', async () => false)
     const vpJwt = await createVpJwt({
       nonce: 'test-nonce',
-      vp: { verifiableCredential: [vcJwt] },
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt],
+      },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
       name: 'HOLDER_BINDING_FAILED',

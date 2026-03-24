@@ -55,7 +55,7 @@ type mockPresenter struct {
 	parseRequestURIFunc func(string) (any, error)
 }
 
-func (m *mockPresenter) Present(protocol types.SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission types.PresentationSubmission) error {
+func (m *mockPresenter) Present(protocol types.SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission types.PresentationSubmission, request *types.PresentationRequest) error {
 	if m.shouldError {
 		return fmt.Errorf("mock error")
 	}
@@ -82,27 +82,27 @@ func TestPresentationDispatcher_Present(t *testing.T) {
 
 	// Test with empty serialized presentation
 	testURL, _ := url.Parse("https://example.com")
-	err = dispatcher.Present(types.Oid4vp, *testURL, []byte{}, types.PresentationSubmission{})
+	err = dispatcher.Present(types.Oid4vp, *testURL, []byte{}, types.PresentationSubmission{}, nil)
 	if err == nil {
 		t.Fatal("Expected error for empty serialized presentation")
 	}
 
 	// Test unsupported presentation protocol
 	invalidType := types.SupportedPresentationProtocol(999)
-	err = dispatcher.Present(invalidType, *testURL, []byte("test"), types.PresentationSubmission{})
+	err = dispatcher.Present(invalidType, *testURL, []byte("test"), types.PresentationSubmission{}, nil)
 	if err == nil {
 		t.Fatal("Expected error for unsupported presentation protocol")
 	}
 
 	// Test successful present with OID4VP using mock plugin
-	err = dispatcher.Present(types.Oid4vp, *testURL, []byte("valid-presentation"), types.PresentationSubmission{})
+	err = dispatcher.Present(types.Oid4vp, *testURL, []byte("valid-presentation"), types.PresentationSubmission{}, nil)
 	if err != nil {
 		t.Errorf("Present returned unexpected error: %v", err)
 	}
 
 	// Test error case with mock plugin
 	mockPlugin.shouldError = true
-	err = dispatcher.Present(types.Oid4vp, *testURL, []byte("valid-presentation"), types.PresentationSubmission{})
+	err = dispatcher.Present(types.Oid4vp, *testURL, []byte("valid-presentation"), types.PresentationSubmission{}, nil)
 	if err == nil {
 		t.Fatal("Expected error when mock plugin returns error")
 	}

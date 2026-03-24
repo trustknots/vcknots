@@ -28,7 +28,7 @@ describe('sd-jwt provider', () => {
       signAlg: ES256.alg,
     })
 
-    return instance.issue({ iss, sub: 'user-123', name: 'Alice' }, undefined, {
+    return instance.issue({ iss, sub: 'user-123', name: 'Alice', vct: 'vcknots-test' }, undefined, {
       header: { kid, ...headerOverrides },
     })
   }
@@ -49,7 +49,7 @@ describe('sd-jwt provider', () => {
       kind: 'cnonce-store-provider',
       name: 'mock-cnonce-store',
       single: true,
-      validate: mock.fn(async (nonce: string) => nonce === '07cc78df02924028995d94544d22b75b'),
+      validate: mock.fn(async (nonce: string) => nonce === 'bcb201b7e186ed380127b9158a9d57a6'),
       revoke: mock.fn(async () => {}),
       save: mock.fn(async () => {}),
     }
@@ -80,7 +80,7 @@ describe('sd-jwt provider', () => {
 
     const result = await provider.verify(sdJwt, { kind: 'dc+sd-jwt', specifiedDisclosures: [] })
 
-    assert.equal(result, true)
+    assert.ok(result)
     assert.equal(fetchSpy.mock.callCount(), 1)
     const call = fetchSpy.mock.calls[0]
     assert.equal(call.arguments[0], `${issuer}/.well-known/jwt-vc-issuer`)
@@ -95,7 +95,7 @@ describe('sd-jwt provider', () => {
       kind: 'dc+sd-jwt',
     })
 
-    assert.equal(result, true)
+    assert.ok(result)
     const call = fetchSpy.mock.calls[0]
     // https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-13#section-5.1
     assert.equal(call.arguments[0], `${issuer}/.well-known/jwt-vc-issuer/tenant/1234`)
@@ -125,7 +125,7 @@ describe('sd-jwt provider', () => {
 
     const result = await provider.verify(sdJwt, { kind: 'dc+sd-jwt', specifiedDisclosures: [] })
 
-    assert.equal(result, true)
+    assert.ok(result)
     assert.equal(fetchSpy.mock.callCount(), 2)
     assert.equal(fetchSpy.mock.calls[0].arguments[0], `${issuer}/.well-known/jwt-vc-issuer`)
     assert.equal(fetchSpy.mock.calls[1].arguments[0], jwksUri)
@@ -239,13 +239,13 @@ describe('sd-jwt provider', () => {
 
   it('verifies successfully when Key-Binding JWT is expected and present', async () => {
     const sampleSdJwt =
-      'eyJ4NWMiOlsiTUlJQ0hqQ0NBY09nQXdJQkFnSVVaWDlCUzVDRE9KUlcydDFGSzFVRE10L1F3TUV3Q2dZSUtvWkl6ajBFQXdJd0lURUxNQWtHQTFVRUJoTUNSMEl4RWpBUUJnTlZCQU1NQ1U5SlJFWWdWR1Z6ZERBZUZ3MHlOREV4TWpVd09ETTJNRFJhRncwek5ERXhNak13T0RNMk1EUmFNQ0V4Q3pBSkJnTlZCQVlUQWtkQ01SSXdFQVlEVlFRRERBbFBTVVJHSUZSbGMzUXdXVEFUQmdjcWhrak9QUUlCQmdncWhrak9QUU1CQndOQ0FBVFQvZExzZDUxTExCckdWNlIyM282dnltUnhIWGVGQm9JOHlxMzF5NWtGVjJWVjBnaTl4NVp6RUZpcThETWlBSHVjTEFDRm5keEx0Wm9yQ2hhOXp6blFvNEhZTUlIVk1CMEdBMVVkRGdRV0JCUzVjYmRnQWVNQmk1d3hwYnB3SVNHaFNoQVdFVEFmQmdOVkhTTUVHREFXZ0JTNWNiZGdBZU1CaTV3eHBicHdJU0doU2hBV0VUQVBCZ05WSFJNQkFmOEVCVEFEQVFIL01JR0JCZ05WSFJFRWVqQjRnaEIzZDNjdWFHVmxibUZ1TG0xbExuVnJnaDFrWlcxdkxtTmxjblJwWm1sallYUnBiMjR1YjNCbGJtbGtMbTVsZElJSmJHOWpZV3hvYjNOMGdoWnNiMk5oYkdodmMzUXVaVzF2WW1sNExtTnZMblZyZ2lKa1pXMXZMbkJwWkMxcGMzTjFaWEl1WW5WdVpHVnpaSEoxWTJ0bGNtVnBMbVJsTUFvR0NDcUdTTTQ5QkFNQ0Ewa0FNRVlDSVFDUGJuTHhDSStXUjF2aE9XK0E4S3puQVd2MU1KbytZRWIxTUk0NU5LVy9WUUloQUx6c3FveDhWdUJSd04yZGw1TGtwbnhQNG9IOXA2SDBBT1ptS1ArWTduWFMiXSwidHlwIjoiZGMrc2Qtand0IiwiYWxnIjoiRVMyNTYifQ.eyJfc2QiOlsiMHBzU1pmUEpWVUNDZkZFSy0wc241TEV3UjA5RkZXdWFpTHMzQld0ZWpBdyIsIk5qa1l6RVdDRUxiSG9LTlhkdUsxYVgxRW91SW9kemJmNFJ2NXVucnRmdTAiLCJPV04xMnUzZFRkTFNOZ3hWRlBVQzN1eUdleEFiSWN0QWU2SUQwWlVYbGtvIiwiUWN4ZmhHOGR4RXdsNUZVRnAxUEt1T0hEOHJQZzBsX1RnS0VEZE5qb1lhQSIsImQwSXhiVEwtR0s1RTk0aGpQNi1HcEhYSGN1dllSNEIwV2Q5MFZvMUU3YkkiLCJmTU9ybXhFRWJ2emRXendZdkFhVmtuNjlSVUsyMXN3NzA4TVZFYmpvSkNJIiwiaU4xZnRJOWozZlRubGViaGVzSHZUeFVEYmI2UGdiaUUzazBjaGFWUG5vdyIsInhGdjJpT3dPY2tNYVU5d0tXX3k3QmFEaEowSHoxUXZaSFRIX1B6NnVnX3MiXSwidmN0IjoidXJuOmV1ZGk6cGlkOjEiLCJpc3MiOiJodHRwczovL2RlbW8uY2VydGlmaWNhdGlvbi5vcGVuaWQubmV0L3Rlc3QvYS9ob2dldGVzdCIsImNuZiI6eyJqd2siOnsia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsIngiOiJWbmx3bFRvNmZqWmlxU0phOEI5ZlY0Z3hyZzZ3X1ZPbmgxZ2FaQ0pPbEcwIiwieSI6IjVyMVM5Vm9rWmRTQTU0RG9UNVNxYWxHLThIY2cyVWJMZ2hRWGUwY2VQbkUifX0sImV4cCI6MTc3MDE3MzAzNSwiaWF0IjoxNzY4OTYzNDM1fQ.R4fKWZ_jaUZB5giiVGx2fJxwXoNrhKY7mDWPjTOLEuZC6u3nsUTJ0BcvrNEnX_XGddMuqj-fyw3GKlf-D2wGxA~WyJRSTRNdzZDbmkzc1NXaVRoQmhHMXJ3IiwiZ2l2ZW5fbmFtZSIsIkplYW4iXQ~WyJ4QmN0YkhScXRNVmEzc216YmhMeUJBIiwiZmFtaWx5X25hbWUiLCJEdXBvbnQiXQ~WyJxRGZGbDlwc2FQOFZZc0tDblNvcDd3IiwiYmlydGhkYXRlIiwiMTk4MC0wNS0yMyJd~WyJQVjZsM2V3OWFJZkUyRnVzNEZmdGl3IiwiRlIiXQ~WyJXZVc3UU9UVUdzd3hGcEh0VE0xS2JnIiwibmF0aW9uYWxpdGllcyIsW3siLi4uIjoiOFBSZm92MlJUSGNYX1g4YWN3b1ZWV3Q4LWVfUWtUbnh0Z0h3c3dQNzd0SSJ9XV0~WyJubTBLc2pMQUt0Nm1kdWh0WDVoZE9nIiwiY291bnRyeSIsIkREIl0~WyJwQ2JLUllxTFkyRGQxeWVaLWowenB3IiwicGxhY2Vfb2ZfYmlydGgiLHsiX3NkIjpbInhmUVRHZFlLYnNrZExfZ1F2bGtCUDZRRk55bzhyUTJmWWxSc0x2MUN4YzAiXX1d~'
+      'eyJhbGciOiJFUzI1NiIsInR5cCI6ImRjK3NkLWp3dCIsIng1YyI6WyJNSUlDSGpDQ0FjT2dBd0lCQWdJVVpYOUJTNUNET0pSVzJ0MUZLMVVETXQvUXdNRXdDZ1lJS29aSXpqMEVBd0l3SVRFTE1Ba0dBMVVFQmhNQ1IwSXhFakFRQmdOVkJBTU1DVTlKUkVZZ1ZHVnpkREFlRncweU5ERXhNalV3T0RNMk1EUmFGdzB6TkRFeE1qTXdPRE0yTURSYU1DRXhDekFKQmdOVkJBWVRBa2RDTVJJd0VBWURWUVFEREFsUFNVUkdJRlJsYzNRd1dUQVRCZ2NxaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUVC9kTHNkNTFMTEJyR1Y2UjIzbzZ2eW1SeEhYZUZCb0k4eXEzMXk1a0ZWMlZWMGdpOXg1WnpFRmlxOERNaUFIdWNMQUNGbmR4THRab3JDaGE5enpuUW80SFlNSUhWTUIwR0ExVWREZ1FXQkJTNWNiZGdBZU1CaTV3eHBicHdJU0doU2hBV0VUQWZCZ05WSFNNRUdEQVdnQlM1Y2JkZ0FlTUJpNXd4cGJwd0lTR2hTaEFXRVRBUEJnTlZIUk1CQWY4RUJUQURBUUgvTUlHQkJnTlZIUkVFZWpCNGdoQjNkM2N1YUdWbGJtRnVMbTFsTG5WcmdoMWtaVzF2TG1ObGNuUnBabWxqWVhScGIyNHViM0JsYm1sa0xtNWxkSUlKYkc5allXeG9iM04wZ2hac2IyTmhiR2h2YzNRdVpXMXZZbWw0TG1OdkxuVnJnaUprWlcxdkxuQnBaQzFwYzNOMVpYSXVZblZ1WkdWelpISjFZMnRsY21WcExtUmxNQW9HQ0NxR1NNNDlCQU1DQTBrQU1FWUNJUUNQYm5MeENJK1dSMXZoT1crQThLem5BV3YxTUpvK1lFYjFNSTQ1TktXL1ZRSWhBTHpzcW94OFZ1QlJ3TjJkbDVMa3BueFA0b0g5cDZIMEFPWm1LUCtZN25YUyJdfQ.eyJfc2QiOlsiMDRVY1lqOEV1T1ExWWZHNzdWUDZQdWdPVWF1dnRNQ0tSU1RvdUR4aldidyIsIkgwdElaUGhWVFVqTnhCd1VzelFrMW95VlVQNU5zZGRLNWo2ZGcyb0NPemMiLCJXelV0Nkd2ZnJyVHlLWmFIRFhTcERYWHJGLUxURm1UME9WTFhvYmFpZnVNIiwiWGVuek44TVl1LU5fMXpGV3g1dVVYb0FWLWhwdG1MV2d5ekczbUVkR0tDZyIsImVMbVlqTGVLY0ZQS2dVN1YwQWlVOVVMeXZ3cWVKLWJ4ZWdDUGlMTWlTMFkiLCJsdmtZMVh3OFE5M1BUOERQRHhHSlhCMzlobHJTNFpOUVZCbkhmcFZOUVZBIiwibXY3T0tCMnRoUWpOV2lxU3ZBTDAxY2VOUG5wTDlDVmhlNGRmNHRSYUxGTSIsIm52Mm9rMjFXejVkN2lsenNkczE1Vk5tRXI1U0VPYlBzVWNxNmpjemxXaEUiXSwiaXNzIjoiaHR0cHM6Ly9pc3N1ZXIuZXVkaXcuZGV2IiwidmN0IjoidXJuOmV1LmV1cm9wYS5lYy5ldWRpOnBpZDoxIiwiX3NkX2FsZyI6InNoYS0yNTYiLCJjbmYiOnsiandrIjp7Imt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJ4IjoiZXpaZ0t3TXVlQXlaTEhVZ1Nwek5rYk9XRGdqSlhUQU9KbjhNZnRPbmF5USIsInkiOiJGeV9VNEt5WlFmLTlqS3BGSnRINk9GRlJYbXdBY3ZleWZ1b0RwMWhTT0ZvIn19LCJpYXQiOjE3NzIwMTU0NjV9.gseVu9AStknO-locvvCKcnj8PnUWSZtMF4wE-SqqXteI4xMOfUaA0zFpZR6hGfNBPUSZL3ROw4RYDLQIOQjsMQ~WyJkMTQ2V0NwTVg1MDZpZzY3UHoxVGtBIiwgImZhbWlseV9uYW1lIiwgIlRFU1QiXQ~WyJzQnE1aUY1dTFibVRfU2dYblF1UmtBIiwgImdpdmVuX25hbWUiLCAiVEFSTyJd~WyJRNG80UjFxdDhacENFSkhIWFRZRmpRIiwgImJpcnRoZGF0ZSIsICIyMDAwLTAzLTAzIl0~WyJHUDRwcXpKaVJ4RGN0TEVlcEZ5VzJBIiwgIm5hdGlvbmFsaXRpZXMiLCBbIkpQIl1d~WyJKX2pYUkZxT0poR18yRmFmOHl4bFBBIiwgImlzc3VpbmdfYXV0aG9yaXR5IiwgIlRlc3QgUElEIGlzc3VlciJd~WyJiNDk2UGotUDdXS05iWkFKMDJ3NVhnIiwgImlzc3VpbmdfY291bnRyeSIsICJGQyJd~WyJ4bGlVZlExX050Y3IyYnBJcGJCN1lnIiwgIjE4IiwgdHJ1ZV0~WyJ3dDJCRVFYVDBfUDNIQ0N4VVVoSmZBIiwgImFnZV9lcXVhbF9vcl9vdmVyIiwgeyJfc2QiOiBbInNDczNOZlNLYVRoR3pRbERVRTd5WnR4VmVBSm5lRGY2dS1nNFk1NVdRekUiXX1d~WyJxcm1aeGpLNUtPZXRGUHFOSGpWN0h3IiwgImxvY2FsaXR5IiwgIkpBUEFOIl0~WyJpc0ZDcF8xREhnUUpZLVBtZWYwRHV3IiwgInBsYWNlX29mX2JpcnRoIiwgeyJfc2QiOiBbIjF1LWszbEFKMHlPV2x4OUJLLWFSVEVaUUZyLXVPUFRrTGdEN3U5aTFlMEUiXX1d~'
     const sampleKbJwt =
-      'eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJzZF9oYXNoIjoiLUx0R09tNFZKUk1YbEI2amNEQzlqMGU0QlBSeVdvbFlGdFNaNkZXeDdRTSIsImF1ZCI6Ing1MDlfc2FuX2RuczpweHY3Y2g5ci04MDgwLmFzc2UuZGV2dHVubmVscy5tcyIsImlhdCI6MTc2ODk2MzQzNSwibm9uY2UiOiIwN2NjNzhkZjAyOTI0MDI4OTk1ZDk0NTQ0ZDIyYjc1YiJ9.m0AVZJBNfmWWrmJieWThPRIe91JfNB4q7vmDZ7dHopsfNm7OatLQvGxZwMr3GTYv2-cczY8eZpA0Pe93lSv2lw'
+      'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJodHRwczovL3ZlcmlmaWVyLmV4YW1wbGUuY29tIiwiaWF0IjoxNzcyMDE1NDg4LCJub25jZSI6ImJjYjIwMWI3ZTE4NmVkMzgwMTI3YjkxNThhOWQ1N2E2Iiwic2RfaGFzaCI6IkdpNkkxZTFqdVgyU29QVmwwR3pXamZTZHBkaUVxOFowc2FKX3B4Y3poVVkifQ.bHaKF05dNqYM7jOlhgQGjqO958lTMTMM4Pu9YJVM9fjDW_zTVur5ZzDKHWxImq_8lPQ3euAJvXJlz6j7Yj2mtw'
     const sampleSdJwtVp = sampleSdJwt + sampleKbJwt
 
     const result = await provider.verify(sampleSdJwtVp, { kind: 'dc+sd-jwt', isKbJwt: true })
-    assert.equal(result, true)
+    assert.ok(result)
     // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     assert.equal((mockCnonceStore.validate as any).mock.callCount(), 1)
     // biome-ignore lint/suspicious/noExplicitAny: <explanation>

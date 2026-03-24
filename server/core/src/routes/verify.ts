@@ -38,7 +38,8 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       }
     }
     const vpToken = form.getAll('vp_token').filter((v): v is string => typeof v === 'string')
-    payload.vp_token = vpToken.length === 0 ? undefined : vpToken.length === 1 ? vpToken[0] : vpToken
+    payload.vp_token =
+      vpToken.length === 0 ? undefined : vpToken.length === 1 ? vpToken[0] : vpToken
     const state = form.get('state')
     if (typeof state === 'string') {
       payload.state = state
@@ -131,26 +132,31 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
       return c.text(`openid4vp://authorize?${encoded}`)
     } catch (err) {
-      return c.json(handleError(err), 400)
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
     }
   })
 
   // Receive the vp_token from the request and verify it
   verifyApp.post('/callback', async (c) => {
-
     try {
       const verifierId = VerifierClientId(baseUrl)
       const contentType = normalizeContentType(c.req.header('content-type') ?? '')
 
-      let parsed: PayloadResult
-      if (contentType === 'application/json') {
-        parsed = { ok: true, payload: await c.req.json() }
-      } else if (contentType === 'application/x-www-form-urlencoded') {
-        console.log("Form data received:", await c.req.formData());
-        parsed = parseFormPayload(await c.req.formData())
-      } else {
-        parsed = { ok: true, payload: {} }
+      if (contentType !== 'application/x-www-form-urlencoded') {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'content-type must be application/x-www-form-urlencoded',
+          },
+          400
+        )
       }
+
+      const formData = await c.req.formData()
+      const parsed = parseFormPayload(formData)
+
       if (!parsed.ok) {
         return c.json(parsed.error, 400)
       }
@@ -159,23 +165,32 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
 
       // Add additional validation as needed
-      await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
-      return c.json({ redirect_uri: `${baseUrl}/verified` }, 200);
-
-      // return c.json({
-      //   message: 'Callback received successfully',
-      //   authorization_response: authorizationResponse,
-      // })
+      const vppayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
+      console.log('Verified VP Payload:', vppayload)
+      return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
-      return c.json(handleError(err), 400)
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
     }
   })
 
   verifyApp.post('/callback-kbjwt', async (c) => {
     try {
       const verifierId = VerifierClientId(baseUrl)
-      console.log('Form data received:', await c.req.formData())
-      const parsed = parseFormPayload(await c.req.formData())
+      const contentType = normalizeContentType(c.req.header('content-type') ?? '')
+
+      if (contentType !== 'application/x-www-form-urlencoded') {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'content-type must be application/x-www-form-urlencoded',
+          },
+          400
+        )
+      }
+      const formData = await c.req.formData()
+      const parsed = parseFormPayload(formData)
       if (!parsed.ok) {
         return c.json(parsed.error, 400)
       }
@@ -185,47 +200,19 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       const isKbjwt: boolean = true
 
       // Add additional validation as needed
-      await verifierFlow.verifyPresentations(verifierId, authorizationResponse, isKbjwt)
+      const vpPayload = await verifierFlow.verifyPresentations(
+        verifierId,
+        authorizationResponse,
+        isKbjwt
+      )
+      console.log('Verified KBJWT VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
-
-      // return c.json({
-      //   message: 'Callback received successfully',
-      //   authorization_response: authorizationResponse,
-      // })
     } catch (err) {
-      return c.json(handleError(err), 400)
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
     }
   })
-
-
-  const presentationDefinitionJwtVC = {
-    id: randomUUID(),
-    name: 'Test Name',
-    purpose: 'Test Purpose',
-    input_descriptors: [
-      {
-        id: randomUUID(),
-        format: {
-          jwt_vc_json: {
-            proof_type: ['ES256'],
-          },
-        },
-        constraints: {
-          fields: [
-            {
-              path: ['$.vc.type'],
-              filter: {
-                type: 'array',
-                contains: {
-                  const: 'VerifiableCredential',
-                },
-              },
-            },
-          ],
-        },
-      },
-    ],
-  }
 
   // Create the request in JAR format
   type RequestObjectShape = {
@@ -238,13 +225,44 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     response_uri?: string
   }
   verifyApp.post('/request-object', async (c) => {
+    const presentationDefinitionJwtVC = {
+      id: randomUUID(),
+      name: 'Test Name',
+      purpose: 'Test Purpose',
+      input_descriptors: [
+        {
+          id: randomUUID(),
+          format: {
+            jwt_vc_json: {
+              proof_type: ['ES256'],
+            },
+          },
+          constraints: {
+            fields: [
+              {
+                path: ['$.vc.type'],
+                filter: {
+                  type: 'array',
+                  contains: {
+                    const: 'VerifiableCredential',
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ],
+    }
     const raw = await c.req.text()
     let parsed: unknown = {}
     if (raw.trim()) {
       try {
         parsed = JSON.parse(raw)
       } catch (e) {
-        parsed = {}
+        return c.json(
+          { error: 'invalid_request', error_description: 'Request body must be valid JSON' },
+          400
+        )
       }
     }
     const input =
@@ -305,7 +323,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
       return c.text(`openid4vp://authorize?${encoded}`)
     } catch (err) {
-      return c.json(handleError(err), 400)
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
     }
   })
 
@@ -318,16 +338,16 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         'Content-Type': 'application/oauth-authz-req+jwt',
       })
     } catch (err) {
-      return c.json(handleError(err), 400)
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
     }
   })
 
-  verifyApp.get("/verified", async (c) => {
-    console.log("Verified received from get request");
-    return c.json({ message: "DONE!!" }, 200);
-  });
-
-
+  verifyApp.get('/verified', async (c) => {
+    console.log('Verified received from get request')
+    return c.json({ message: 'DONE!!' }, 200)
+  })
 
   return verifyApp
 }

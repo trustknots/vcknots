@@ -8,6 +8,7 @@ import { X509Certificate } from 'node:crypto'
 import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
 import { KbJwtJsonPayload } from '../keyBindingJwt.types'
 import { Cnonce } from '../cnonce.types'
+import { sdJwtPayloadSchema, VpTokenPayload } from '../presentation.types'
 
 export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentationProvider &
   WithProviderRegistry => {
@@ -18,7 +19,7 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
 
     ...withProviderRegistry,
 
-    async verify(vp, options): Promise<boolean> {
+    async verify(vp, options): Promise<VpTokenPayload> {
       if (options && options.kind !== 'dc+sd-jwt') {
         throw err('ILLEGAL_ARGUMENT', {
           message: `${options.kind} is not supported.`,
@@ -169,14 +170,17 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
         }
         await nonceStore$.revoke(Cnonce(nonce))
       }
-      const { payload: claims, kb } = await sdJwtInst.verify(vp, {
+      const { payload: claims } = await sdJwtInst.verify(vp, {
         requiredClaimKeys: specifiedDisclosures,
         keyBindingNonce: nonce,
       })
-      // fix: response
-      console.log('Verified claims:', claims)
-      console.log('KB JWT:', kb)
-      return true
+      const parseResult = sdJwtPayloadSchema().safeParse(claims)
+      if (!parseResult.success) {
+        throw err('INVALID_SD_JWT', {
+          message: `SD-JWT payload does not match expected schema: ${parseResult.error.message}`,
+        })
+      }
+      return parseResult.data
     },
     canHandle(format: string): boolean {
       return format === 'dc+sd-jwt'

@@ -1,0 +1,27 @@
+{
+	"name": "@trustknots/server-google-cloud",
+	"version": "0.1.0",
+	"description": "",
+	"type": "module",
+	"main": "lib/example.js",
+	"private": true,
+	"scripts": {
+		"build": "tsc",
+		"format": "biome format --write ./src",
+		"lint": "biome lint ./src",
+		"test": "node --import tsx --test test/**/*.spec.ts",
+		"start": "tsx src/example.ts",
+		"typecheck": "tsc --noEmit"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "Apache-2.0",
+	"packageManager": "pnpm@10.17.1",
+	"dependencies": {
+		"@trustknots/google-cloud": "workspace:*",
+		"@trustknots/server-core": "workspace:*",
+		"@trustknots/vcknots": "workspace:*",
+		"dotenv": "^17.2.3",
+		"firebase-admin": "^13.5.0"
+	}
+}

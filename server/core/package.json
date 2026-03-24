@@ -1,0 +1,45 @@
+{
+	"name": "@trustknots/server-core",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"main": "lib/index.js",
+	"types": "lib/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./lib/index.d.ts",
+			"default": "./lib/index.js"
+		},
+		"./app": {
+			"types": "./lib/app.d.ts",
+			"default": "./lib/app.js"
+		},
+		"./routes/authz": {
+			"types": "./lib/routes/authz.d.ts",
+			"default": "./lib/routes/authz.js"
+		},
+		"./routes/issue": {
+			"types": "./lib/routes/issue.d.ts",
+			"default": "./lib/routes/issue.js"
+		},
+		"./routes/verify": {
+			"types": "./lib/routes/verify.d.ts",
+			"default": "./lib/routes/verify.js"
+		},
+		"./utils/error-handler": {
+			"types": "./lib/utils/error-handler.d.ts",
+			"default": "./lib/utils/error-handler.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc",
+		"typecheck": "tsc --noEmit",
+		"format": "biome format --write ./src",
+		"lint": "biome lint ./src"
+	},
+	"dependencies": {
+		"@hono/node-server": "^1.19.5",
+		"@trustknots/vcknots": "workspace:*",
+		"hono": "^4.9.9"
+	}
+}

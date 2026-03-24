@@ -19,6 +19,7 @@ import { RequestObjectId } from './request-object-id.types'
 import { Certificate, JwkTmp } from './signature-key.types'
 import { exportJWK, importSPKI } from 'jose'
 import { ClientIdentifier } from './client-id-scheme.types'
+import { VpTokenPayload } from './presentation.types'
 
 type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
@@ -60,6 +61,7 @@ export type FindRequestObjectOptions = {
 
 export type VerifierFlow = {
   findVerifierCertificate: (id: ClientId) => Promise<Certificate | null>
+  findVerifierMetadata: (verifierId: ClientId) => Promise<VerifierMetadata | null>
   createVerifierMetadata(
     verifierId: ClientId,
     metadata: VerifierMetadata,
@@ -83,7 +85,7 @@ export type VerifierFlow = {
     id: ClientId,
     response: AuthorizationResponse,
     isKbJwt?: boolean
-  ) => Promise<boolean>
+  ) => Promise<VpTokenPayload>
 }
 
 const isPresentationExchange = (query: unknown): query is PresentationExchange =>
@@ -109,6 +111,9 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   return {
     async findVerifierCertificate(id) {
       return certificateStore$.fetch(id)
+    },
+    async findVerifierMetadata(verifierId) {
+      return verifierMetadata$.fetch(verifierId)
     },
     async createVerifierMetadata(verifierId, metadata, options) {
       const current = await verifierMetadata$.fetch(verifierId)
@@ -418,12 +423,12 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       const format = response.presentation_submission.descriptor_map[0].format
       const options: VerifyVerifiablePresentationVerifyOptions =
         format === 'dc+sd-jwt' ? { kind: 'dc+sd-jwt', isKbJwt: isKbJwt } : { kind: 'jwt_vp_json' }
-      const vpValid = await selectProvider(verifiablePresentation$, format).verify(
+      const responsePresentation = await selectProvider(verifiablePresentation$, format).verify(
         response.vp_token,
         options
       )
 
-      return vpValid
+      return responsePresentation
     },
   }
 }

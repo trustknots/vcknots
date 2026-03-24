@@ -5,6 +5,9 @@ import { VerifyVerifiablePresentationProvider } from './provider.types'
 import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
 import { VerifiableCredential, parseVerifiableCredentialBase } from '../credential.types'
 import { selectProvider } from './provider.utils'
+import { jwtVpJsonPayloadSchema, VpTokenPayload } from '../presentation.types'
+import { z } from 'zod'
+import { Cnonce } from '../cnonce.types'
 
 export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProvider &
   WithProviderRegistry => {
@@ -15,7 +18,7 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
 
     ...withProviderRegistry,
 
-    async verify(vp, options): Promise<boolean> {
+    async verify(vp, options): Promise<VpTokenPayload> {
       if (options && options.kind !== 'jwt_vp_json') {
         throw err('ILLEGAL_ARGUMENT', {
           message: `${options.kind} is not supported.`,
@@ -32,10 +35,29 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
           message: `Invalid vp_token: ${vp}`,
         })
       }
-      const payload =
-        typeof decodedVp.payload === 'string' ? JSON.parse(decodedVp.payload) : decodedVp.payload
+      let rawPayload: unknown
+      if (typeof decodedVp.payload === 'string') {
+        try {
+          rawPayload = JSON.parse(decodedVp.payload)
+        } catch {
+          throw err('INVALID_VP_TOKEN', {
+            message: 'VP token payload is not valid JSON.',
+          })
+        }
+      } else {
+        rawPayload = decodedVp.payload
+      }
+      const parseResult = jwtVpJsonPayloadSchema(z.record(z.string(), z.unknown())).safeParse(
+        rawPayload
+      )
+      if (!parseResult.success) {
+        throw err('INVALID_VP_TOKEN', {
+          message: `VP token payload does not match expected schema: ${parseResult.error.message}`,
+        })
+      }
+      const vpPayload = parseResult.data
 
-      const nonce = payload.nonce
+      const nonce = Cnonce(vpPayload.nonce)
       const nonceStore$ = this.providers.get('cnonce-store-provider')
       const nonceValid = await nonceStore$.validate(nonce)
       if (!nonceValid) {
@@ -44,15 +66,26 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
         })
       }
       await nonceStore$.revoke(nonce)
-      console.log('Decoded VP payload:', payload)
 
-      const vcs = payload.vp.verifiableCredential
+      const vcs = vpPayload.vp.verifiableCredential
       if (Array.isArray(vcs)) {
         for (const vc of vcs) {
           if (typeof vc === 'string') {
             const parts = vc.split('.')
-            const payload = parts[1]
-            const decoded = JSON.parse(base64url.decode(payload))
+            const vcPayload = parts[1]
+            if (parts.length !== 3 || !vcPayload) {
+              throw err('INVALID_CREDENTIAL', {
+                message: 'VC JWT format is invalid.',
+              })
+            }
+            let decoded: Record<string, unknown>
+            try {
+              decoded = JSON.parse(base64url.decode(vcPayload)) as Record<string, unknown>
+            } catch {
+              throw err('INVALID_CREDENTIAL', {
+                message: 'VC JWT payload is not valid JSON.',
+              })
+            }
             const credential = decoded.vc ? decoded.vc : decoded
             if (parseVerifiableCredentialBase(credential)) {
               credentials.push([credential, vc])
@@ -97,11 +130,6 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
           message: `Cannot resolve DID: ${decodedVp.header.kid}`,
         })
       }
-      if (!didDoc.id.startsWith('did:key:')) {
-        throw err('INVALID_VP_TOKEN', {
-          message: `Unsupported DID method: ${didDoc.id}`,
-        })
-      }
 
       const vm = didDoc.verificationMethod.find(
         // FIXME: this is a hacky way to find the verification method and only works for did:key
@@ -131,7 +159,7 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
         })
       }
 
-      return true
+      return vpPayload
     },
     canHandle(format: string): boolean {
       return format === 'jwt_vp_json'

@@ -138,7 +138,7 @@ const verifiableCredentialBaseSchema = z
   })
   .passthrough()
 
-export function parseVerifiableCredentialBase(input: unknown) {
+export function parseVerifiableCredentialBase(input: unknown): input is VerifiableCredential {
   const result = verifiableCredentialBaseSchema.safeParse(input)
   if (!result.success) {
     return false

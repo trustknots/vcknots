@@ -21,7 +21,8 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
       return c.json(accessToken)
     } catch (err) {
       const errorResponse = handleError(err)
-      return c.json(errorResponse, 400)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
     }
   })
 
@@ -40,7 +41,9 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
       }
       return c.json(metadata)
     } catch (err) {
-      return c.json(handleError(err), 400)
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
     }
   })
 
