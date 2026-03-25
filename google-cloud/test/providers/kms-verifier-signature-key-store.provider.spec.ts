@@ -239,29 +239,30 @@ describe('kmsVerifierSignatureKeyStore', () => {
     assert.ok((importRequest.wrappedKey as Buffer).length > 0)
   })
 
-  it('should skip unsupported algorithms during save', async () => {
+  it('should fail save for unsupported algorithms', async () => {
     const kms = new FakeKmsClient()
     const provider = kmsVerifierSignatureKeyStore({
       client: kms as never,
       projectId,
       locationId,
     })
-    const errors: unknown[][] = []
-    console.error = (...args: unknown[]) => {
-      errors.push(args)
-    }
 
-    await provider.save(verifier, [
-      {
-        format: 'jwk',
-        declaredAlg: 'unsupported',
-        privateKey: { kty: 'EC' },
-      },
-    ])
+    await assert.rejects(
+      provider.save(verifier, [
+        {
+          format: 'jwk',
+          declaredAlg: 'unsupported',
+          privateKey: { kty: 'EC' },
+        },
+      ]),
+      (error: Error) => {
+        assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
+        assert.match(error.message, /Unsupported verifier key algorithm/)
+        return true
+      }
+    )
 
     assert.equal(kms.calls.importCryptoKeyVersion.length, 0)
-    assert.equal(errors.length, 1)
-    assert.match(String(errors[0][0]), /Unsupported verifier key algorithm/)
   })
 
   it('should fetch the latest enabled public key when KMS data is valid', async () => {
@@ -298,6 +299,42 @@ describe('kmsVerifierSignatureKeyStore', () => {
     assert.equal((key as never).export({ format: 'pem', type: 'spki' }).toString(), publicKeyPem)
   })
 
+  it('should fetch the numerically latest enabled public key version', async () => {
+    const kms = new FakeKmsClient()
+    const provider = kmsVerifierSignatureKeyStore({
+      client: kms as never,
+      projectId,
+      locationId,
+    })
+    const { publicKey: oldPublicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    const { publicKey: newPublicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    const oldPublicKeyPem = oldPublicKey.export({ format: 'pem', type: 'spki' }).toString()
+    const newPublicKeyPem = newPublicKey.export({ format: 'pem', type: 'spki' }).toString()
+    const cryptoKeyName = kms.cryptoKeyPath(
+      projectId,
+      locationId,
+      keyRingId,
+      verifierKeyId('ES256')
+    )
+    kms.addEnabledVersion(cryptoKeyName, '2', {
+      name: '',
+      pem: oldPublicKeyPem,
+      pemCrc32c: { value: String(crc32c(oldPublicKeyPem)) },
+      algorithm: 'EC_SIGN_P256_SHA256',
+    })
+    kms.addEnabledVersion(cryptoKeyName, '10', {
+      name: '',
+      pem: newPublicKeyPem,
+      pemCrc32c: { value: String(crc32c(newPublicKeyPem)) },
+      algorithm: 'EC_SIGN_P256_SHA256',
+    })
+
+    const key = await provider.fetch(verifier, 'ES256')
+
+    assert.ok(key)
+    assert.equal((key as never).export({ format: 'pem', type: 'spki' }).toString(), newPublicKeyPem)
+  })
+
   it('should return null when fetched public key CRC32C does not match', async () => {
     const kms = new FakeKmsClient()
     const provider = kmsVerifierSignatureKeyStore({
@@ -329,6 +366,45 @@ describe('kmsVerifierSignatureKeyStore', () => {
     assert.equal(key, null)
     assert.equal(errors.length, 1)
     assert.match(String(errors[0][0]), /Public key integrity check failed/)
+  })
+
+  it('should return null when fetched public key name does not match requested version', async () => {
+    const kms = new FakeKmsClient()
+    const provider = kmsVerifierSignatureKeyStore({
+      client: kms as never,
+      projectId,
+      locationId,
+    })
+    const { publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    const publicKeyPem = publicKey.export({ format: 'pem', type: 'spki' }).toString()
+    const cryptoKeyName = kms.cryptoKeyPath(
+      projectId,
+      locationId,
+      keyRingId,
+      verifierKeyId('ES256')
+    )
+    const errors: unknown[][] = []
+    console.error = (...args: unknown[]) => {
+      errors.push(args)
+    }
+    const versionName = kms.addEnabledVersion(cryptoKeyName, '1', {
+      name: '',
+      pem: publicKeyPem,
+      pemCrc32c: { value: String(crc32c(publicKeyPem)) },
+      algorithm: 'EC_SIGN_P256_SHA256',
+    })
+    kms.publicKeys.set(versionName, {
+      name: `${versionName}-unexpected`,
+      pem: publicKeyPem,
+      pemCrc32c: { value: String(crc32c(publicKeyPem)) },
+      algorithm: 'EC_SIGN_P256_SHA256',
+    })
+
+    const key = await provider.fetch(verifier, 'ES256')
+
+    assert.equal(key, null)
+    assert.equal(errors.length, 1)
+    assert.match(String(errors[0][0]), /Public key name mismatch/)
   })
 
   it('should sign with the latest enabled ES256 key version', async () => {
@@ -385,6 +461,50 @@ describe('kmsVerifierSignatureKeyStore', () => {
     assert.deepEqual(kms.calls.asymmetricSign[0].digestCrc32c, {
       value: BigInt(crc32c(expectedDigest)).toString(),
     })
+  })
+
+  it('should sign with the numerically latest enabled ES256 key version', async () => {
+    const kms = new FakeKmsClient()
+    const provider = kmsVerifierSignatureKeyStore({
+      client: kms as never,
+      projectId,
+      locationId,
+    })
+    const cryptoKeyName = kms.cryptoKeyPath(
+      projectId,
+      locationId,
+      keyRingId,
+      verifierKeyId('ES256')
+    )
+    kms.addEnabledVersion(cryptoKeyName, '2', {
+      name: '',
+      pem: 'unused',
+      pemCrc32c: { value: '0' },
+      algorithm: 'EC_SIGN_P256_SHA256',
+    })
+    const latestVersionName = kms.addEnabledVersion(cryptoKeyName, '10', {
+      name: '',
+      pem: 'unused',
+      pemCrc32c: { value: '0' },
+      algorithm: 'EC_SIGN_P256_SHA256',
+    })
+    const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    const derSignature = createHash('sha256').update('fixture').digest()
+    const signature = cryptoSign('sha256', derSignature, {
+      key: privateKey,
+      dsaEncoding: 'der',
+    })
+    kms.asymmetricSignResponse = {
+      name: latestVersionName,
+      verifiedDigestCrc32c: true,
+      signature,
+      signatureCrc32c: { value: String(crc32c(signature)) },
+    }
+
+    await provider.sign(verifier, 'ES256', { iss: verifier }, { alg: 'ES256', typ: 'JWT' })
+
+    assert.equal(kms.calls.asymmetricSign.length, 1)
+    assert.equal(kms.calls.asymmetricSign[0].name, latestVersionName)
   })
 
   it('should wrap sign failures in an INTERNAL_SERVER_ERROR', async () => {

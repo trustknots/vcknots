@@ -13,10 +13,24 @@ import { createServer } from '@trustknots/server-core'
 // });
 
 // Environment variables are required
-const { GOOGLE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL } = process.env
+const {
+  GOOGLE_PROJECT_ID,
+  GOOGLE_PROJECT_LOCATION,
+  FIREBASE_PRIVATE_KEY,
+  FIREBASE_CLIENT_EMAIL,
+  CLOUD_KMS_PRIVATE_KEY,
+  CLOUD_KMS_CLIENT_EMAIL,
+} = process.env
+
 if (!GOOGLE_PROJECT_ID || !FIREBASE_PRIVATE_KEY || !FIREBASE_CLIENT_EMAIL) {
   throw new Error(
     'Missing Firebase env vars: GOOGLE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL'
+  )
+}
+
+if (!GOOGLE_PROJECT_LOCATION || !CLOUD_KMS_PRIVATE_KEY || !CLOUD_KMS_CLIENT_EMAIL) {
+  throw new Error(
+    'Missing Cloud KMS env vars: GOOGLE_PROJECT_LOCATION, CLOUD_KMS_PRIVATE_KEY, CLOUD_KMS_CLIENT_EMAIL'
   )
 }
 
@@ -37,11 +51,11 @@ createServer({
       databaseId: process.env.FIRESTORE_DATABASE_ID,
     }),
     kms({
-      projectId: process.env.GOOGLE_PROJECT_ID,
-      locationId: process.env.GOOGLE_PROJECT_LOCATION,
+      projectId: GOOGLE_PROJECT_ID,
+      locationId: GOOGLE_PROJECT_LOCATION,
       credentials: {
-        privateKey: process.env.CLOUD_KMS_PRIVATE_KEY?.replace(/\\n/g, '\n') ?? '',
-        clientEmail: process.env.CLOUD_KMS_CLIENT_EMAIL ?? '',
+        privateKey: CLOUD_KMS_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        clientEmail: CLOUD_KMS_CLIENT_EMAIL,
       },
     }),
   ],

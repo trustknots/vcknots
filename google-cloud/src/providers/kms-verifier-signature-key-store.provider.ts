@@ -167,6 +167,24 @@ export const kmsVerifierSignatureKeyStore = (
     }
   }
 
+  const latestEnabledVersion = (versions: { name?: string | null }[]) => {
+    return versions.reduce<{ name?: string | null } | null>((latest, current) => {
+      if (!current.name) {
+        return latest
+      }
+      if (!latest?.name) {
+        return current
+      }
+
+      const currentVersion = Number(current.name.split('/').pop())
+      const latestVersion = Number(latest.name.split('/').pop())
+      if (Number.isNaN(currentVersion) || Number.isNaN(latestVersion)) {
+        return current.name.localeCompare(latest.name) > 0 ? current : latest
+      }
+      return currentVersion > latestVersion ? current : latest
+    }, null)
+  }
+
   return {
     kind: 'verifier-signature-key-store-provider',
     name: 'kms-verifier-signature-key-store-provider',
@@ -187,8 +205,9 @@ export const kmsVerifierSignatureKeyStore = (
         const declaredAlg = pair.declaredAlg
         const kmsAlgorithm = joseAlgorithmToKmsAlgorithm(declaredAlg)
         if (!kmsAlgorithm) {
-          console.error(`Unsupported verifier key algorithm: ${declaredAlg}`)
-          continue
+          throw raise('INTERNAL_SERVER_ERROR', {
+            message: `Unsupported verifier key algorithm: ${declaredAlg}`,
+          })
         }
         const keyId = verifierKeyId(verifier, declaredAlg)
         const cryptoKeyName = await ensureCryptoKey(keyRingName, keyId, kmsAlgorithm)
@@ -222,9 +241,7 @@ export const kmsVerifierSignatureKeyStore = (
       } catch {
         return null
       }
-      const latestVersion = versions
-        .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
-        .pop()
+      const latestVersion = latestEnabledVersion(versions)
       if (!latestVersion?.name) {
         return null
       }
@@ -243,6 +260,7 @@ export const kmsVerifierSignatureKeyStore = (
         console.error(
           `Public key name mismatch for verifier ${verifier}: expected ${versionName}, got ${publicKey.name}`
         )
+        return null
       }
       if (crc32c(publicKeyPem) !== publicKeyPemCrc32c) {
         console.error(
@@ -277,9 +295,7 @@ export const kmsVerifierSignatureKeyStore = (
           return null
         }
 
-        const latestVersion = versions
-          .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
-          .pop()
+        const latestVersion = latestEnabledVersion(versions)
         if (!latestVersion?.name) {
           throw raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
             message: 'Verifier private key not found.',
