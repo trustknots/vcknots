@@ -1,6 +1,7 @@
-import { importJWK, importPKCS8, importSPKI } from 'jose'
+import { CompactSign, importJWK, importPKCS8, importSPKI } from 'jose'
 import { TmpVerifierSignatureKeyPair } from '../../signature-key.types'
 import { VerifierSignatureKeyStoreProvider } from '../provider.types'
+import { raise } from '../../errors'
 
 export const inMemoryVerifierSignatureKeyStore = (): VerifierSignatureKeyStoreProvider => {
   const map = new Map<string, TmpVerifierSignatureKeyPair[]>()
@@ -34,22 +35,35 @@ export const inMemoryVerifierSignatureKeyStore = (): VerifierSignatureKeyStorePr
       return null
     },
 
-    async fetchPrivate(verifier, alg) {
-      const pairs = map.get(verifier)
-      if (!pairs) return null
-      const value = pairs.find((c) => c.declaredAlg === alg) ?? null
-      if (value) {
-        const privateKey = value.privateKey
-        if (privateKey && value.format === 'jwk' && typeof privateKey !== 'string') {
-          const key = await importJWK(privateKey, value.declaredAlg)
-          return key instanceof Uint8Array ? null : key
+    async sign(verifier, keyAlg, jwtPayload, jwtHeader) {
+      try {
+        let privateKey = null
+        const pairs = map.get(verifier)
+        if (!pairs) return null
+        const value = pairs.find((c) => c.declaredAlg === keyAlg) ?? null
+        if (value) {
+          if (value.privateKey && value.format === 'jwk' && typeof value.privateKey !== 'string') {
+            const key = await importJWK(value.privateKey, value.declaredAlg)
+            privateKey = key instanceof Uint8Array ? null : key
+          }
+          if (value.privateKey && typeof value.privateKey === 'string') {
+            const key = await importPKCS8(value.privateKey, value.declaredAlg)
+            privateKey = key
+          }
         }
-        if (privateKey && typeof privateKey === 'string') {
-          const key = await importPKCS8(privateKey, value.declaredAlg)
-          return key
+        if (!privateKey) {
+          throw raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+            message: 'Verifier private key not found.',
+          })
         }
+        const signer = new CompactSign(new TextEncoder().encode(JSON.stringify(jwtPayload)))
+        signer.setProtectedHeader({ ...jwtHeader })
+        const jws = await signer.sign(privateKey)
+        const [, , signature] = jws.split('.')
+        return signature
+      } catch (error) {
+        throw raise('INTERNAL_SERVER_ERROR', { message: `sign error: ${error}` })
       }
-      return null
     },
   }
 }

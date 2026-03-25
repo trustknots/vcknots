@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it } from 'node:test'
-import { exportJWK, generateKeyPair } from 'jose'
+import { exportJWK, generateKeyPair, importJWK, jwtVerify } from 'jose'
 import { ClientId } from '../../../src/client-id.types'
 import { inMemoryVerifierSignatureKeyStore } from '../../../src/providers/in-memory/in-memory-verifier-signature-key-store.provider'
+import { ProofJwtHeader } from '../../../src/credential.types'
+import { JwtPayload } from '../../../src/jwt.types'
 import type { TmpVerifierSignatureKeyPair } from '../../../src/signature-key.types'
 
 describe('inMemoryVerifierSignatureKeyStore', () => {
@@ -69,5 +71,61 @@ describe('inMemoryVerifierSignatureKeyStore', () => {
   it('should return null if no key pairs saved', async () => {
     const fetched = await store.fetch(ClientId('https://unknown.example.com'), 'ES256')
     assert.strictEqual(fetched, null)
+  })
+
+  it('should sign a JWT payload and return a valid signature', async () => {
+    await store.save(verifier, [pair1])
+    const jwtHeader: ProofJwtHeader = {
+      typ: 'openid4vci-proof+jwt',
+      alg: 'ES256',
+      kid: 'kid1',
+    }
+    const iat = Math.floor(Date.now() / 1000)
+    const jwtPayload: JwtPayload = {
+      iss: 'test-issuer',
+      sub: 'test-subject',
+      aud: 'test-audience',
+      iat,
+      exp: iat + 3600,
+    }
+
+    const signature = await store.sign(verifier, 'ES256', jwtPayload, jwtHeader)
+
+    assert.ok(signature)
+    assert.equal(typeof signature, 'string')
+
+    const protectedHeader = Buffer.from(JSON.stringify(jwtHeader)).toString('base64url')
+    const protectedPayload = Buffer.from(JSON.stringify(jwtPayload)).toString('base64url')
+    const jws = `${protectedHeader}.${protectedPayload}.${signature}`
+
+    const key = await importJWK(pair1.publicKey, 'ES256')
+    const { payload } = await jwtVerify(jws, key)
+
+    assert.deepStrictEqual(payload, jwtPayload)
+  })
+
+  it('should return null when verifier key pairs are not found', async () => {
+    const jwtHeader: ProofJwtHeader = {
+      typ: 'openid4vci-proof+jwt',
+      alg: 'ES256',
+      kid: 'kid1',
+    }
+    const iat = Math.floor(Date.now() / 1000)
+    const jwtPayload: JwtPayload = {
+      iss: 'test-issuer',
+      sub: 'test-subject',
+      aud: 'test-audience',
+      iat,
+      exp: iat + 3600,
+    }
+
+    const signature = await store.sign(
+      ClientId('https://unknown.example.com'),
+      'ES256',
+      jwtPayload,
+      jwtHeader
+    )
+
+    assert.strictEqual(signature, null)
   })
 })

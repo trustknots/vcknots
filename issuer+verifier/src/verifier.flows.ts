@@ -129,7 +129,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         const provider = selectProvider(key$, alg)
         const keyPairs = await provider.generate()
         // support key Pairs format jwk
-        keyStore$.save(verifierId, [{ ...keyPairs, format: 'jwk', declaredAlg: alg }])
+        await keyStore$.save(verifierId, [{ ...keyPairs, format: 'jwk', declaredAlg: alg }])
         verifierMetadata.jwks = { keys: [keyPairs.publicKey] }
         verifierMetadata.authorization_signed_response_alg = alg
       } else if ('publicKey' in options && options.publicKey !== undefined) {
@@ -139,7 +139,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
             message: 'alg is required in the provided publicKey.',
           })
         }
-        keyStore$.save(verifierId, [
+        await keyStore$.save(verifierId, [
           {
             format: options.format,
             declaredAlg: options.alg,
@@ -175,10 +175,10 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
             message: 'The provided certificate is not valid.',
           })
         }
-        certificateStore$.save(verifierId, certificates)
+        await certificateStore$.save(verifierId, certificates)
         const certificate = certificates[0]
         const publicKey = await certificate$.getPublicKey(certificate)
-        keyStore$.save(verifierId, [
+        await keyStore$.save(verifierId, [
           {
             format: options.format,
             declaredAlg: options.alg,
@@ -369,13 +369,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         walletNonce
       )
 
-      const keyProvider = selectProvider(key$, keyAlg)
-      if (!keyProvider) {
-        throw raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
-          message: `Verifier signature key provider for ${keyAlg} is not found.`,
-        })
-      }
-      const signature = await keyProvider.sign(verifierId, keyAlg, payload, header)
+      // const keyProvider = selectProvider(key$, keyAlg)
+      // if (!keyProvider) {
+      //   throw raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+      //     message: `Verifier signature key provider for ${keyAlg} is not found.`,
+      //   })
+      // }
+      const signature = await keyStore$.sign(verifierId, keyAlg, payload, header)
       if (!signature) {
         throw err('INTERNAL_SERVER_ERROR', {
           message: 'Failed to sign the request object.',

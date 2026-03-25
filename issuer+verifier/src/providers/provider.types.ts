@@ -87,7 +87,13 @@ export type VerifierSignatureKeyStoreProvider = {
 
   save(verifier: ClientId, pairs: TmpVerifierSignatureKeyPair[]): Promise<void>
   fetch(verifier: ClientId, alg: string): Promise<CryptoKey | null>
-  fetchPrivate(verifier: ClientId, alg: string): Promise<CryptoKey | null>
+  sign(
+    verifierId: ClientId,
+    keyAlg: string,
+    jwtPayload: JwtPayload,
+    jwtHeader: ProofJwtHeader
+  ): Promise<string | null>
+  // fetchPrivate(verifier: ClientId, alg: string): Promise<CryptoKey | null>
 }
 
 export type VerifierCertificateStoreProvider = {
@@ -282,12 +288,12 @@ export type VerifierSignatureKeyProvider = {
   single: false
 
   generate(): Promise<SignatureKeyPair>
-  sign(
-    verifierId: ClientId,
-    keyAlg: string,
-    jwtPayload: JwtPayload,
-    jwtHeader: ProofJwtHeader
-  ): Promise<string | null>
+  // sign(
+  //   verifierId: ClientId,
+  //   keyAlg: string,
+  //   jwtPayload: JwtPayload,
+  //   jwtHeader: ProofJwtHeader
+  // ): Promise<string | null>
   canHandle(keyAlg: string): boolean
 }
 

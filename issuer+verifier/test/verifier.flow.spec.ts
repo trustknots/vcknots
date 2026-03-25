@@ -118,7 +118,6 @@ describe('VerifierFlow', () => {
     name: 'mock-verifier-signature-key-provider',
     single: false,
     generate: mock.fn(),
-    sign: mock.fn(),
     canHandle: mock.fn(),
   } satisfies VerifierSignatureKeyProvider
 
@@ -128,7 +127,7 @@ describe('VerifierFlow', () => {
     single: true,
     save: mock.fn(),
     fetch: mock.fn(),
-    fetchPrivate: mock.fn(),
+    sign: mock.fn(),
   } satisfies VerifierSignatureKeyStoreProvider
 
   beforeEach(() => {

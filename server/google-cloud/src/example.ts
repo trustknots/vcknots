@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import { cert, initializeApp } from 'firebase-admin/app'
-import { firestore } from '@trustknots/google-cloud'
+import { firestore, kms } from '@trustknots/google-cloud'
 import { createServer } from '@trustknots/server-core'
 
 // Reference:
@@ -35,6 +35,14 @@ createServer({
     firestore({
       app: firebaseApp,
       databaseId: process.env.FIRESTORE_DATABASE_ID,
+    }),
+    kms({
+      projectId: process.env.GOOGLE_PROJECT_ID,
+      locationId: process.env.GOOGLE_PROJECT_LOCATION,
+      credentials: {
+        privateKey: process.env.CLOUD_KMS_PRIVATE_KEY?.replace(/\\n/g, '\n') ?? '',
+        clientEmail: process.env.CLOUD_KMS_CLIENT_EMAIL ?? '',
+      },
     }),
   ],
 })

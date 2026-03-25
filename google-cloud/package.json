@@ -22,6 +22,7 @@
 		"@google-cloud/kms": "5.4.0",
 		"@node-rs/crc32": "^1.10.3",
 		"@trustknots/vcknots": "workspace:*",
+		"ecdsa-sig-formatter": "^1.0.11",
 		"firebase-admin": "13.6.1",
 		"zod": "4.3.6"
 	}

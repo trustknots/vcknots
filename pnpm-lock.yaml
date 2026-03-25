@@ -78,6 +78,9 @@ importers:
       '@trustknots/vcknots':
         specifier: workspace:*
         version: link:../issuer+verifier
+      ecdsa-sig-formatter:
+        specifier: ^1.0.11
+        version: 1.0.11
       firebase-admin:
         specifier: 13.6.1
         version: 13.6.1
