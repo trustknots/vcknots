@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import { createHash } from 'node:crypto'
 import { Certificate, ClientId } from '@trustknots/vcknots'
+import { VcknotsError } from '@trustknots/vcknots/errors'
 import { secretManagerVerifierCertificateStoreProvider } from '../../src/providers/secret-manager-verifier-certificate-store.provider'
 import { createSecretManagerTestMock } from './secret-manager-test-mock'
 
@@ -132,6 +133,44 @@ describe('secretManagerVerifierCertificateStoreProvider', () => {
     await provider.save(verifier, certificate)
 
     assert.ok(secrets.has(expectedSecretName))
+  })
+
+  it('should wrap unexpected fetch errors as VcknotsError', async () => {
+    const { client } = createSecretManagerTestMock()
+    client.accessSecretVersion = async () => {
+      throw new Error('permission denied')
+    }
+
+    const provider = secretManagerVerifierCertificateStoreProvider({
+      client,
+      projectId: 'project-123',
+    })
+
+    await assert.rejects(provider.fetch(verifier), (error: unknown) => {
+      assert.ok(error instanceof VcknotsError)
+      assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
+      assert.equal(error.message, 'Failed to load verifier certificate from Secret Manager.')
+      return true
+    })
+  })
+
+  it('should wrap unexpected save errors as VcknotsError', async () => {
+    const { client } = createSecretManagerTestMock()
+    client.addSecretVersion = async () => {
+      throw new Error('permission denied')
+    }
+
+    const provider = secretManagerVerifierCertificateStoreProvider({
+      client,
+      projectId: 'project-123',
+    })
+
+    await assert.rejects(provider.save(verifier, certificate), (error: unknown) => {
+      assert.ok(error instanceof VcknotsError)
+      assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
+      assert.equal(error.message, 'Failed to store verifier certificate in Secret Manager.')
+      return true
+    })
   })
 
   it('should throw when client is missing', () => {

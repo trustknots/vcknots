@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { Certificate, ClientId, VerifierClientId, certificateSchema } from '@trustknots/vcknots'
+import { raise } from '@trustknots/vcknots/errors'
 import { VerifierCertificateStoreProvider } from '@trustknots/vcknots/providers'
 import { SecretManagerProviderOptions } from './secret-manager.provider'
 
@@ -48,8 +49,12 @@ export const secretManagerVerifierCertificateStoreProvider = (
       if (!raw) return []
       return certificateSchema.parse(JSON.parse(raw))
     } catch (error) {
+      // Secret Manager surfaces gRPC status codes on API errors: 5 = NOT_FOUND.
       if (isGoogleApiError(error, 5)) return []
-      throw error
+      raise('INTERNAL_SERVER_ERROR', {
+        message: 'Failed to load verifier certificate from Secret Manager.',
+        cause: error instanceof Error ? error : undefined,
+      })
     }
   }
 
@@ -82,15 +87,28 @@ export const secretManagerVerifierCertificateStoreProvider = (
           secret: { replication: { automatic: {} } },
         })
       } catch (error) {
-        if (!isGoogleApiError(error, 6)) throw error
+        // 6 = ALREADY_EXISTS, so a concurrent or repeated save can proceed.
+        if (!isGoogleApiError(error, 6)) {
+          raise('INTERNAL_SERVER_ERROR', {
+            message: 'Failed to create verifier certificate secret in Secret Manager.',
+            cause: error instanceof Error ? error : undefined,
+          })
+        }
       }
 
-      await client.addSecretVersion({
-        parent: secretName,
-        payload: {
-          data: Buffer.from(JSON.stringify(validatedCert), 'utf8'),
-        },
-      })
+      try {
+        await client.addSecretVersion({
+          parent: secretName,
+          payload: {
+            data: Buffer.from(JSON.stringify(validatedCert), 'utf8'),
+          },
+        })
+      } catch (error) {
+        raise('INTERNAL_SERVER_ERROR', {
+          message: 'Failed to store verifier certificate in Secret Manager.',
+          cause: error instanceof Error ? error : undefined,
+        })
+      }
     },
   }
 }
