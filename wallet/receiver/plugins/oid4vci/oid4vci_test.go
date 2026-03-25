@@ -330,6 +330,15 @@ func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
 				return err
 			},
 		},
+		{
+			name:         "Credential Issuer (With Trailing Slash)",
+			identifier:   "/tenant2/",
+			expectedPath: "/.well-known/openid-credential-issuer/tenant2",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchIssuerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
 	}
 
 	for _, tt := range tests {
