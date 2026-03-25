@@ -208,13 +208,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           },
         ]
       }
-      await verifierMetadata$.save(verifierId, verifierMetadata)
       if (certificatesToSave) {
         await certificateStore$.save(verifierId, certificatesToSave)
       }
       if (keyPairsToSave) {
         await keyStore$.save(verifierId, keyPairsToSave)
       }
+      await verifierMetadata$.save(verifierId, verifierMetadata)
     },
     async createAuthzRequest(
       verifierId,
@@ -399,8 +399,8 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       // }
       const signature = await keyStore$.sign(verifierId, keyAlg, payload, header)
       if (!signature) {
-        throw err('INTERNAL_SERVER_ERROR', {
-          message: 'Failed to sign the request object.',
+        throw err('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+          message: `Verifier signing key for ${keyAlg} is not found.`,
         })
       }
 

@@ -1,9 +1,10 @@
-import { createHash, createPublicKey } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { KeyManagementServiceClient } from '@google-cloud/kms'
 import { crc32c } from '@node-rs/crc32'
 import { derToJose } from 'ecdsa-sig-formatter'
+import { importSPKI } from 'jose'
 import { VerifierSignatureKeyStoreProvider } from '@trustknots/vcknots/providers'
-import { raise } from '@trustknots/vcknots/errors'
+import { VcknotsError, raise } from '@trustknots/vcknots/errors'
 import { CloudKmsProviderOptions } from './kms.provider'
 import { createKmsProviderHelpers } from './kms-provider.helpers'
 import {
@@ -42,7 +43,6 @@ export const kmsVerifierSignatureKeyStore = (
   const keyRingId = 'verifiers'
   const baseImportJobId = 'vcknots-verifier-import-job'
   const md5 = (verifier: VerifierClientId) => createHash('md5').update(verifier).digest('base64url')
-
   const verifierKeyId = (verifier: VerifierClientId, alg: string) =>
     `${md5(verifier)}-${alg || 'es256'}`
 
@@ -133,7 +133,7 @@ export const kmsVerifierSignatureKeyStore = (
       const [publicKey] = await kms.getPublicKey({ name: versionName })
 
       // https://cloud.google.com/kms/docs/data-integrity-guidelines
-      if (!publicKey.name || !publicKey.pem || !publicKey.pemCrc32c?.value) {
+      if (!publicKey.name || !publicKey.pem || publicKey.pemCrc32c?.value == null) {
         console.error(`Public key data is incomplete for verifier ${verifier}`)
         return null
       }
@@ -160,8 +160,7 @@ export const kmsVerifierSignatureKeyStore = (
         return null
       }
 
-      const publicKeyCrypto = createPublicKey(publicKeyPem)
-      return publicKeyCrypto as unknown as CryptoKey
+      return importSPKI(publicKeyPem, keyAlg)
     },
 
     async sign(verifier, keyAlg, jwtPayload, jwtHeader) {
@@ -227,7 +226,7 @@ export const kmsVerifierSignatureKeyStore = (
             message: 'KMS digest CRC32C verification failed',
           })
         }
-        if (!signed.signature || !signed.signatureCrc32c?.value) {
+        if (!signed.signature || signed.signatureCrc32c?.value == null) {
           raise('INTERNAL_SERVER_ERROR', { message: 'KMS signature is missing' })
         }
 
@@ -241,6 +240,9 @@ export const kmsVerifierSignatureKeyStore = (
           ? derToJose(signature.toString('base64'), keyAlg)
           : signature.toString('base64url')
       } catch (error) {
+        if (error instanceof VcknotsError) {
+          throw error
+        }
         raise('INTERNAL_SERVER_ERROR', { message: `sign error: ${error}` })
       }
     },

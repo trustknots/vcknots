@@ -3,6 +3,7 @@ import { createHash, generateKeyPairSync, sign as cryptoSign } from 'node:crypto
 import { afterEach, describe, it } from 'node:test'
 import { crc32c } from '@node-rs/crc32'
 import { derToJose } from 'ecdsa-sig-formatter'
+import { exportJWK } from 'jose'
 import { VerifierClientId } from '@trustknots/vcknots'
 import { raise } from '@trustknots/vcknots/errors'
 import { kmsVerifierSignatureKeyStore } from '../../src/providers/kms-verifier-signature-key-store.provider'
@@ -154,6 +155,14 @@ class FakeKmsClient {
     return [job]
   }
 
+  async listImportJobs({ parent }: { parent: string }) {
+    return [
+      [...this.importJobs.values()].filter((job) =>
+        String(job.name).startsWith(`${String(parent)}/importJobs/`)
+      ),
+    ]
+  }
+
   async getCryptoKey({ name }: { name: string }) {
     const error = this.errors.getCryptoKey.get(name)
     if (error) {
@@ -262,8 +271,10 @@ describe('kmsVerifierSignatureKeyStore', () => {
     assert.deepEqual(kms.calls.createCryptoKey[0], {
       parent: kms.keyRingPath(projectId, locationId, keyRingId),
       cryptoKeyId: verifierKeyId('ES256'),
+      skipInitialVersionCreation: true,
       cryptoKey: {
         purpose: 'ASYMMETRIC_SIGN',
+        importOnly: true,
         versionTemplate: {
           algorithm: 'EC_SIGN_P256_SHA256',
         },
@@ -361,7 +372,7 @@ describe('kmsVerifierSignatureKeyStore', () => {
     assert.equal(kms.calls.createImportJob.length, 0)
   })
 
-  it('should create and reuse a unique import job when the canonical job does not exist', async () => {
+  it('should create the canonical import job when no related job exists', async () => {
     const kms = new FakeKmsClient()
     kms.importJobs.clear()
     const provider = kmsVerifierSignatureKeyStore({
@@ -388,13 +399,10 @@ describe('kmsVerifierSignatureKeyStore', () => {
     ])
 
     assert.equal(kms.calls.createImportJob.length, 1)
-    assert.match(
-      String(kms.calls.createImportJob[0].importJobId),
-      /^vcknots-verifier-import-job-\d+$/
-    )
+    assert.equal(kms.calls.createImportJob[0].importJobId, baseImportJobId)
   })
 
-  it('should replace an expired canonical import job with a unique import job', async () => {
+  it('should reuse an active replacement import job when canonical is expired', async () => {
     const kms = new FakeKmsClient()
     const canonicalImportJobName = kms.importJobPath(
       projectId,
@@ -405,6 +413,19 @@ describe('kmsVerifierSignatureKeyStore', () => {
     kms.importJobs.set(canonicalImportJobName, {
       name: canonicalImportJobName,
       state: 'EXPIRED',
+      publicKey: {
+        pem: kms.wrappingKeyPair.publicKey.export({ format: 'pem', type: 'spki' }).toString(),
+      },
+    })
+    const replacementImportJobName = kms.importJobPath(
+      projectId,
+      locationId,
+      keyRingId,
+      `${baseImportJobId}-12345`
+    )
+    kms.importJobs.set(replacementImportJobName, {
+      name: replacementImportJobName,
+      state: 'ACTIVE',
       publicKey: {
         pem: kms.wrappingKeyPair.publicKey.export({ format: 'pem', type: 'spki' }).toString(),
       },
@@ -425,11 +446,7 @@ describe('kmsVerifierSignatureKeyStore', () => {
       },
     ])
 
-    assert.equal(kms.calls.createImportJob.length, 1)
-    assert.match(
-      String(kms.calls.createImportJob[0].importJobId),
-      /^vcknots-verifier-import-job-\d+$/
-    )
+    assert.equal(kms.calls.createImportJob.length, 0)
   })
 
   it('should fail save for unsupported algorithms', async () => {
@@ -523,7 +540,7 @@ describe('kmsVerifierSignatureKeyStore', () => {
     const key = await provider.fetch(verifier, 'ES256')
 
     assert.ok(key)
-    assert.equal((key as never).export({ format: 'pem', type: 'spki' }).toString(), publicKeyPem)
+    assert.deepEqual(await exportJWK(key), await exportJWK(publicKey))
   })
 
   it('should fetch the numerically latest enabled public key version', async () => {
@@ -559,7 +576,7 @@ describe('kmsVerifierSignatureKeyStore', () => {
     const key = await provider.fetch(verifier, 'ES256')
 
     assert.ok(key)
-    assert.equal((key as never).export({ format: 'pem', type: 'spki' }).toString(), newPublicKeyPem)
+    assert.deepEqual(await exportJWK(key), await exportJWK(newPublicKey))
   })
 
   it('should return null when fetched public key CRC32C does not match', async () => {
@@ -775,7 +792,7 @@ describe('kmsVerifierSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(verifier, 'ES256', { iss: verifier }, { alg: 'RS256', typ: 'JWT' }),
       (error: Error) => {
-        assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
+        assert.equal(error.name, 'AUTHZ_VERIFIER_KEY_NOT_FOUND')
         assert.match(error.message, /algorithm mismatch/)
         return true
       }
@@ -805,7 +822,7 @@ describe('kmsVerifierSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(verifier, 'ES256', { iss: verifier }, { typ: 'JWT' } as never),
       (error: Error) => {
-        assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
+        assert.equal(error.name, 'AUTHZ_VERIFIER_KEY_NOT_FOUND')
         assert.match(error.message, /algorithm mismatch/)
         return true
       }
@@ -830,7 +847,7 @@ describe('kmsVerifierSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(verifier, 'ES256', { iss: verifier }, { alg: 'ES256', typ: 'JWT' }),
       (error: Error) => {
-        assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
+        assert.equal(error.name, 'AUTHZ_VERIFIER_KEY_NOT_FOUND')
         assert.match(error.message, /Verifier private key not found/)
         return true
       }

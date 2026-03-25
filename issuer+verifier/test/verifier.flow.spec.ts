@@ -212,7 +212,7 @@ describe('VerifierFlow', () => {
       assert.equal(mockVerifierMetadataStore.save.mock.callCount(), 1)
     })
 
-    it('should save metadata before persisting provided verifier keys', async () => {
+    it('should persist provided verifier keys before saving metadata', async () => {
       const events: string[] = []
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
@@ -238,7 +238,7 @@ describe('VerifierFlow', () => {
         privateKey: 'private-key',
       })
 
-      assert.deepEqual(events, ['metadata', 'key'])
+      assert.deepEqual(events, ['key', 'metadata'])
     })
   })
 

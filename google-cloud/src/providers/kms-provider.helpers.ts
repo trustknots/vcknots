@@ -21,8 +21,6 @@ export const createKmsProviderHelpers = ({
   importJobPollIntervalMs = 3000,
   importJobMaxRetries = 60,
 }: CreateKmsProviderHelpersOptions) => {
-  let cachedImportJobName: string | null = null
-
   const ensureKeyRing = async () => {
     const keyRingName = kms.keyRingPath(projectId, locationId, keyRingId)
     try {
@@ -48,6 +46,25 @@ export const createKmsProviderHelpers = ({
   }
 
   const ensureImportJob = async (keyRingName: string) => {
+    const createImportJob = async (importJobId: string) => {
+      const importJobName = kms.importJobPath(projectId, locationId, keyRingId, importJobId)
+      await kms.createImportJob({
+        parent: keyRingName,
+        importJobId,
+        importJob: {
+          importMethod: 'RSA_OAEP_3072_SHA256',
+          protectionLevel: 'SOFTWARE',
+        },
+      })
+      const createdJob = await waitForImportJob(importJobName)
+      if (!createdJob) {
+        raise('INTERNAL_SERVER_ERROR', {
+          message: `Import job expired before becoming ACTIVE: ${importJobName}`,
+        })
+      }
+      return createdJob
+    }
+
     const waitForImportJob = async (
       importJobName: string,
       options?: { maxRetries?: number; pollIntervalMs?: number }
@@ -90,14 +107,6 @@ export const createKmsProviderHelpers = ({
       }
     }
 
-    if (cachedImportJobName) {
-      const cachedJob = await loadImportJob(cachedImportJobName)
-      if (cachedJob) {
-        return cachedJob
-      }
-      cachedImportJobName = null
-    }
-
     const canonicalImportJobName = kms.importJobPath(
       projectId,
       locationId,
@@ -106,29 +115,39 @@ export const createKmsProviderHelpers = ({
     )
     const canonicalJob = await loadImportJob(canonicalImportJobName)
     if (canonicalJob) {
-      cachedImportJobName = canonicalImportJobName
       return canonicalJob
     }
 
-    const importJobId = `${baseImportJobId}-${Date.now()}`
-    const importJobName = kms.importJobPath(projectId, locationId, keyRingId, importJobId)
-    await kms.createImportJob({
-      parent: keyRingName,
-      importJobId,
-      importJob: {
-        importMethod: 'RSA_OAEP_3072_SHA256',
-        protectionLevel: 'SOFTWARE',
-      },
-    })
-    cachedImportJobName = importJobName
-    const createdJob = await waitForImportJob(importJobName)
-    if (!createdJob) {
-      cachedImportJobName = null
-      raise('INTERNAL_SERVER_ERROR', {
-        message: `Import job expired before becoming ACTIVE: ${importJobName}`,
-      })
+    const [listedImportJobs] = await kms.listImportJobs({ parent: keyRingName })
+    const matchingImportJobs = listedImportJobs
+      .filter((job) => job.name?.startsWith(`${keyRingName}/importJobs/${baseImportJobId}`))
+      .sort((a, b) => (b.name ?? '').localeCompare(a.name ?? ''))
+
+    for (const job of matchingImportJobs) {
+      if (!job.name || job.name === canonicalImportJobName) {
+        continue
+      }
+      const reusableJob = await loadImportJob(job.name)
+      if (reusableJob) {
+        return reusableJob
+      }
     }
-    return createdJob
+
+    try {
+      return await createImportJob(baseImportJobId)
+    } catch (error) {
+      if (grpcCode(error) !== KMS_ALREADY_EXISTS) {
+        throw error
+      }
+    }
+
+    const reloadedCanonicalJob = await loadImportJob(canonicalImportJobName)
+    if (reloadedCanonicalJob) {
+      return reloadedCanonicalJob
+    }
+
+    const replacementImportJobId = `${baseImportJobId}-${Date.now()}`
+    return createImportJob(replacementImportJobId)
   }
 
   const ensureCryptoKey = async (keyRingName: string, keyId: string, kmsAlgorithm: string) => {
@@ -146,11 +165,13 @@ export const createKmsProviderHelpers = ({
           cryptoKeyId: keyId,
           cryptoKey: {
             purpose: 'ASYMMETRIC_SIGN',
+            importOnly: true,
             versionTemplate: {
               algorithm: kmsAlgorithm as never,
             },
             destroyScheduledDuration: { seconds: 60 * 60 * 24 },
           },
+          skipInitialVersionCreation: true,
         })
       } catch (createError) {
         if (grpcCode(createError) !== KMS_ALREADY_EXISTS) {
