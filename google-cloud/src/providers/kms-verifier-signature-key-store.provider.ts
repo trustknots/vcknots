@@ -1,17 +1,21 @@
-import {
-  constants,
-  createHash,
-  createPrivateKey,
-  createPublicKey,
-  publicEncrypt,
-} from 'node:crypto'
+import { createHash, createPublicKey } from 'node:crypto'
 import { KeyManagementServiceClient } from '@google-cloud/kms'
 import { crc32c } from '@node-rs/crc32'
 import { derToJose } from 'ecdsa-sig-formatter'
 import { VerifierSignatureKeyStoreProvider } from '@trustknots/vcknots/providers'
 import { raise } from '@trustknots/vcknots/errors'
-import { kmsAlgorithmToJoseAlgorithm } from './kms-utils'
 import { CloudKmsProviderOptions } from './kms.provider'
+import { createKmsProviderHelpers } from './kms-provider.helpers'
+import {
+  KMS_NOT_FOUND,
+  digestFieldName,
+  grpcCode,
+  joseAlgorithmToKmsAlgorithm,
+  kmsAlgorithmToJoseAlgorithm,
+  latestEnabledVersion,
+  toPkcs8Der,
+  wrapPrivateKeyForImport,
+} from './kms-provider.utils'
 import { VerifierClientId } from '@trustknots/vcknots'
 
 export const kmsVerifierSignatureKeyStore = (
@@ -37,161 +41,20 @@ export const kmsVerifierSignatureKeyStore = (
   }
   const keyRingId = 'verifiers'
   const baseImportJobId = 'vcknots-verifier-import-job'
-
   const md5 = (verifier: VerifierClientId) => createHash('md5').update(verifier).digest('base64url')
 
   const verifierKeyId = (verifier: VerifierClientId, alg: string) =>
     `${md5(verifier)}-${alg || 'es256'}`
 
-  const joseAlgorithmToKmsAlgorithm = (alg?: string): string | null => {
-    switch (alg) {
-      case 'ES256':
-        return 'EC_SIGN_P256_SHA256'
-      case 'ES384':
-        return 'EC_SIGN_P384_SHA384'
-      case 'RS256':
-        return 'RSA_SIGN_PKCS1_2048_SHA256'
-      case 'RS512':
-        return 'RSA_SIGN_PKCS1_4096_SHA512'
-      case 'PS256':
-        return 'RSA_SIGN_PSS_2048_SHA256'
-      case 'PS512':
-        return 'RSA_SIGN_PSS_4096_SHA512'
-      default:
-        return null
-    }
-  }
-
-  const ensureKeyRing = async () => {
-    const keyRingName = kms.keyRingPath(projectId, locationId, keyRingId)
-    try {
-      await kms.getKeyRing({ name: keyRingName })
-    } catch {
-      const parent = kms.locationPath(projectId, locationId)
-      await kms.createKeyRing({
-        parent,
-        keyRingId,
-        keyRing: {},
-      })
-    }
-    return keyRingName
-  }
-
-  const ensureImportJob = async (keyRingName: string) => {
-    const waitForImportJob = async (importJobName: string) => {
-      for (let i = 0; i < 30; i++) {
-        const [job] = await kms.getImportJob({ name: importJobName })
-        if (job.state === 'ACTIVE') {
-          return job
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-      }
-      raise('INTERNAL_SERVER_ERROR', {
-        message: `Import job did not become ACTIVE: ${importJobName}`,
-      })
-    }
-
-    const importJobName = kms.importJobPath(projectId, locationId, keyRingId, baseImportJobId)
-    try {
-      const [job] = await kms.getImportJob({ name: importJobName })
-      if (job.state === 'ACTIVE') {
-        return job
-      }
-      if (job.state === 'PENDING_GENERATION') {
-        return waitForImportJob(importJobName)
-      }
-    } catch {
-      // Fall through to create a fresh import job when the base one does not exist.
-    }
-
-    await kms.createImportJob({
-      parent: keyRingName,
-      importJobId: baseImportJobId,
-      importJob: {
-        importMethod: 'RSA_OAEP_3072_SHA256',
-        protectionLevel: 'SOFTWARE',
-      },
-    })
-    return waitForImportJob(importJobName)
-  }
-
-  const ensureCryptoKey = async (keyRingName: string, keyId: string, kmsAlgorithm: string) => {
-    const cryptoKeyName = kms.cryptoKeyPath(projectId, locationId, keyRingId, keyId)
-    try {
-      await kms.getCryptoKey({ name: cryptoKeyName })
-      return cryptoKeyName
-    } catch {
-      await kms.createCryptoKey({
-        parent: keyRingName,
-        cryptoKeyId: keyId,
-        cryptoKey: {
-          purpose: 'ASYMMETRIC_SIGN',
-          versionTemplate: {
-            algorithm: kmsAlgorithm as never,
-          },
-          destroyScheduledDuration: { seconds: 60 * 60 * 24 },
-        },
-      })
-      return cryptoKeyName
-    }
-  }
-
-  const toPkcs8Der = (privateKey: unknown): Buffer => {
-    if (typeof privateKey === 'string') {
-      const key = createPrivateKey(privateKey)
-      return key.export({ format: 'der', type: 'pkcs8' }) as Buffer
-    }
-    const key = createPrivateKey({
-      key: privateKey as unknown as import('node:crypto').JsonWebKey,
-      format: 'jwk',
-    })
-    return key.export({ format: 'der', type: 'pkcs8' }) as Buffer
-  }
-
-  const wrapPrivateKeyForImport = (privateKeyDer: Buffer, wrappingPem: string): Buffer => {
-    return publicEncrypt(
-      {
-        key: wrappingPem,
-        padding: constants.RSA_PKCS1_OAEP_PADDING,
-        oaepHash: 'sha256',
-      },
-      privateKeyDer
-    )
-  }
-
-  const digestFieldName = (alg: string): 'sha256' | 'sha384' | 'sha512' | null => {
-    switch (alg) {
-      case 'ES256':
-      case 'RS256':
-      case 'PS256':
-        return 'sha256'
-      case 'ES384':
-        return 'sha384'
-      case 'RS512':
-      case 'PS512':
-        return 'sha512'
-      default:
-        return null
-    }
-  }
-
-  const latestEnabledVersion = (versions: { name?: string | null }[]) => {
-    return versions.reduce<{ name?: string | null } | null>((latest, current) => {
-      if (!current.name) {
-        return latest
-      }
-      if (!latest?.name) {
-        return current
-      }
-
-      const currentVersion = Number(current.name.split('/').pop())
-      const latestVersion = Number(latest.name.split('/').pop())
-      if (Number.isNaN(currentVersion) || Number.isNaN(latestVersion)) {
-        return current.name.localeCompare(latest.name) > 0 ? current : latest
-      }
-      return currentVersion > latestVersion ? current : latest
-    }, null)
-  }
+  const { ensureKeyRing, ensureImportJob, ensureCryptoKey } = createKmsProviderHelpers({
+    kms,
+    projectId,
+    locationId,
+    keyRingId,
+    baseImportJobId,
+    importJobPollIntervalMs: 3000,
+    importJobMaxRetries: 60,
+  })
 
   return {
     kind: 'verifier-signature-key-store-provider',
@@ -250,12 +113,16 @@ export const kmsVerifierSignatureKeyStore = (
       const cryptoKeyName = kms.cryptoKeyPath(projectId, locationId, keyRingId, keyId)
       let versions: { name?: string | null }[] = []
       try {
-        ;[versions] = await kms.listCryptoKeyVersions({
+        const [listedVersions] = await kms.listCryptoKeyVersions({
           parent: cryptoKeyName,
           filter: 'state=ENABLED',
         })
-      } catch {
-        return null
+        versions = listedVersions
+      } catch (error) {
+        if (grpcCode(error) === KMS_NOT_FOUND) {
+          return null
+        }
+        throw error
       }
       const latestVersion = latestEnabledVersion(versions)
       if (!latestVersion?.name) {
@@ -303,18 +170,28 @@ export const kmsVerifierSignatureKeyStore = (
         const cryptoKeyName = kms.cryptoKeyPath(projectId, locationId, keyRingId, keyId)
         let versions: { name?: string | null }[] = []
         try {
-          ;[versions] = await kms.listCryptoKeyVersions({
+          const [listedVersions] = await kms.listCryptoKeyVersions({
             parent: cryptoKeyName,
             filter: 'state=ENABLED',
           })
-        } catch {
-          return null
+          versions = listedVersions
+        } catch (error) {
+          if (grpcCode(error) === KMS_NOT_FOUND) {
+            return null
+          }
+          throw error
         }
 
         const latestVersion = latestEnabledVersion(versions)
         if (!latestVersion?.name) {
           raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
             message: 'Verifier private key not found.',
+          })
+        }
+
+        if (jwtHeader.alg !== keyAlg) {
+          raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+            message: `Verifier private key algorithm mismatch: header alg ${jwtHeader.alg}, key alg ${keyAlg}.`,
           })
         }
 

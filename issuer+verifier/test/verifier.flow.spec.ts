@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { generateKeyPairSync } from 'node:crypto'
 import { before, beforeEach, describe, it, mock } from 'node:test'
 import { AuthorizationRequest } from '../src/authorization-request.types'
 import { AuthorizationResponse } from '../src/authorization-response.types'
@@ -15,6 +16,8 @@ import {
   VerifierMetadataStoreProvider,
   VerifierSignatureKeyProvider,
   VerifierSignatureKeyStoreProvider,
+  VerifierCertificateStoreProvider,
+  CertificateProvider,
   VerifyVerifiablePresentationProvider,
 } from '../src/providers'
 import { VcknotsContext, initializeContext } from '../src/vcknots.context'
@@ -130,6 +133,22 @@ describe('VerifierFlow', () => {
     sign: mock.fn(),
   } satisfies VerifierSignatureKeyStoreProvider
 
+  const mockCertificateStoreProvider = {
+    kind: 'verifier-certificate-store-provider',
+    name: 'mock-verifier-certificate-store-provider',
+    single: true,
+    save: mock.fn(),
+    fetch: mock.fn(),
+  } satisfies VerifierCertificateStoreProvider
+
+  const mockCertificateProvider = {
+    kind: 'certificate-provider',
+    name: 'mock-certificate-provider',
+    single: true,
+    validate: mock.fn(),
+    getPublicKey: mock.fn(),
+  } satisfies CertificateProvider
+
   beforeEach(() => {
     mock.reset()
   })
@@ -146,6 +165,8 @@ describe('VerifierFlow', () => {
         mockTransactionDataProvider,
         mockKeyProvider,
         mockKeyStoreProvider,
+        mockCertificateStoreProvider,
+        mockCertificateProvider,
         mockVerifyVerifiablePresentationProvider,
       ],
     })
@@ -189,6 +210,35 @@ describe('VerifierFlow', () => {
       assert.equal(mockKeyStoreProvider.save.mock.callCount(), 1)
       // Check that the metadata store's save function is called
       assert.equal(mockVerifierMetadataStore.save.mock.callCount(), 1)
+    })
+
+    it('should save metadata before persisting provided verifier keys', async () => {
+      const events: string[] = []
+      const metadata = VerifierMetadata({
+        client_name: 'Test Verifier',
+        vp_formats: {
+          jwt_vc_json: { alg_values_supported: ['ES256'] },
+          jwt_vp_json: { alg_values_supported: ['ES256'] },
+        },
+      })
+      const { publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+      const publicKeyPem = publicKey.export({ format: 'pem', type: 'spki' }).toString()
+
+      mock.method(mockVerifierMetadataStore, 'save', async () => {
+        events.push('metadata')
+      })
+      mock.method(mockKeyStoreProvider, 'save', async () => {
+        events.push('key')
+      })
+
+      await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata, {
+        format: 'pem',
+        alg: 'ES256',
+        publicKey: publicKeyPem,
+        privateKey: 'private-key',
+      })
+
+      assert.deepEqual(events, ['metadata', 'key'])
     })
   })
 

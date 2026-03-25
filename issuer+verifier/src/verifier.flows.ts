@@ -123,15 +123,24 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         })
       }
       const verifierMetadata = metadata
+      let keyPairsToSave:
+        | Array<{
+            format: 'pem' | 'jwk'
+            declaredAlg: string
+            kid?: string
+            publicKey?: string | JwkTmp
+            privateKey: string | JwkTmp
+          }>
+        | undefined
+      let certificatesToSave: Certificate | undefined
       if (!options) {
         // create new key pair (not support x509)
         const alg = metadata.authorization_signed_response_alg ?? 'ES256'
         const provider = selectProvider(key$, alg)
         const keyPairs = await provider.generate()
-        // support key Pairs format jwk
-        await keyStore$.save(verifierId, [{ ...keyPairs, format: 'jwk', declaredAlg: alg }])
         verifierMetadata.jwks = { keys: [keyPairs.publicKey] }
         verifierMetadata.authorization_signed_response_alg = alg
+        keyPairsToSave = [{ ...keyPairs, format: 'jwk', declaredAlg: alg }]
       } else if ('publicKey' in options && options.publicKey !== undefined) {
         // use provided key pair (not support x509)
         if (!options.alg) {
@@ -139,7 +148,24 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
             message: 'alg is required in the provided publicKey.',
           })
         }
-        await keyStore$.save(verifierId, [
+        if (options.format === 'jwk' && typeof options.publicKey !== 'string') {
+          verifierMetadata.jwks = { keys: [options.publicKey] }
+          verifierMetadata.authorization_signed_response_alg = options.alg
+        } else if (options.format === 'jwk') {
+          throw err('INVALID_OPTIONS', {
+            message: 'publicKey must be a JWK when format is jwk.',
+          })
+        } else if (options.format === 'pem' && typeof options.publicKey === 'string') {
+          const key = await importSPKI(options.publicKey, options.alg)
+          const jwk = await exportJWK(key)
+          verifierMetadata.jwks = { keys: [{ ...jwk }] }
+          verifierMetadata.authorization_signed_response_alg = options.alg
+        } else {
+          throw err('INVALID_OPTIONS', {
+            message: 'publicKey must be a PEM string when format is pem.',
+          })
+        }
+        keyPairsToSave = [
           {
             format: options.format,
             declaredAlg: options.alg,
@@ -147,16 +173,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
             publicKey: options.publicKey,
             privateKey: options.privateKey,
           },
-        ])
-        if (options.format === 'jwk' && typeof options.publicKey !== 'string') {
-          verifierMetadata.jwks = { keys: [options.publicKey] }
-          verifierMetadata.authorization_signed_response_alg = options.alg
-        } else if (options.format === 'pem' && typeof options.publicKey === 'string') {
-          const key = await importSPKI(options.publicKey, options.alg)
-          const jwk = await exportJWK(key)
-          verifierMetadata.jwks = { keys: [{ ...jwk }] }
-          verifierMetadata.authorization_signed_response_alg = options.alg
-        }
+        ]
       } else if ('certificate' in options && options.certificate !== undefined) {
         // use provided key pair and x509 certificate
         // password protected private key is not supported
@@ -165,20 +182,23 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
             message: 'alg is required in the provided privateKey.',
           })
         }
-        if (typeof options.certificate === 'string') {
-          options.certificate = [options.certificate]
-        }
-        const certificates = Certificate(options.certificate)
+        const certificateChain =
+          typeof options.certificate === 'string' ? [options.certificate] : options.certificate
+        const certificates = Certificate(certificateChain)
         const certValid = await certificate$.validate(certificates)
         if (!certValid) {
           throw err('INVALID_CERTIFICATE', {
             message: 'The provided certificate is not valid.',
           })
         }
-        await certificateStore$.save(verifierId, certificates)
         const certificate = certificates[0]
         const publicKey = await certificate$.getPublicKey(certificate)
-        await keyStore$.save(verifierId, [
+        const key = await importSPKI(publicKey, options.alg)
+        const jwk = await exportJWK(key)
+        verifierMetadata.jwks = { keys: [{ ...jwk }] }
+        verifierMetadata.authorization_signed_response_alg = options.alg
+        certificatesToSave = certificates
+        keyPairsToSave = [
           {
             format: options.format,
             declaredAlg: options.alg,
@@ -186,13 +206,15 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
             publicKey: publicKey,
             privateKey: options.privateKey,
           },
-        ])
-        const key = await importSPKI(publicKey, options.alg)
-        const jwk = await exportJWK(key)
-        verifierMetadata.jwks = { keys: [{ ...jwk }] }
-        verifierMetadata.authorization_signed_response_alg = options.alg
+        ]
       }
       await verifierMetadata$.save(verifierId, verifierMetadata)
+      if (certificatesToSave) {
+        await certificateStore$.save(verifierId, certificatesToSave)
+      }
+      if (keyPairsToSave) {
+        await keyStore$.save(verifierId, keyPairsToSave)
+      }
     },
     async createAuthzRequest(
       verifierId,

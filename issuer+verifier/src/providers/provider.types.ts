@@ -93,7 +93,6 @@ export type VerifierSignatureKeyStoreProvider = {
     jwtPayload: JwtPayload,
     jwtHeader: ProofJwtHeader
   ): Promise<string | null>
-  // fetchPrivate(verifier: ClientId, alg: string): Promise<CryptoKey | null>
 }
 
 export type VerifierCertificateStoreProvider = {
