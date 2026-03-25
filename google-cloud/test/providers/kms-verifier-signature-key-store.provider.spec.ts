@@ -239,6 +239,36 @@ describe('kmsVerifierSignatureKeyStore', () => {
     assert.ok((importRequest.wrappedKey as Buffer).length > 0)
   })
 
+  it('should reuse the canonical import job across saves', async () => {
+    const kms = new FakeKmsClient()
+    kms.importJobs.clear()
+    const provider = kmsVerifierSignatureKeyStore({
+      client: kms as never,
+      projectId,
+      locationId,
+    })
+    const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
+
+    await provider.save(verifier, [
+      {
+        format: 'pem',
+        declaredAlg: 'ES256',
+        privateKey: privateKeyPem,
+      },
+    ])
+    await provider.save(verifier, [
+      {
+        format: 'pem',
+        declaredAlg: 'ES256',
+        privateKey: privateKeyPem,
+      },
+    ])
+
+    assert.equal(kms.calls.createImportJob.length, 1)
+    assert.equal(kms.calls.createImportJob[0].importJobId, baseImportJobId)
+  })
+
   it('should fail save for unsupported algorithms', async () => {
     const kms = new FakeKmsClient()
     const provider = kmsVerifierSignatureKeyStore({
@@ -262,6 +292,40 @@ describe('kmsVerifierSignatureKeyStore', () => {
       }
     )
 
+    assert.equal(kms.calls.importCryptoKeyVersion.length, 0)
+  })
+
+  it('should not mutate KMS before all pairs pass validation', async () => {
+    const kms = new FakeKmsClient()
+    const provider = kmsVerifierSignatureKeyStore({
+      client: kms as never,
+      projectId,
+      locationId,
+    })
+    const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
+
+    await assert.rejects(
+      provider.save(verifier, [
+        {
+          format: 'pem',
+          declaredAlg: 'ES256',
+          privateKey: privateKeyPem,
+        },
+        {
+          format: 'pem',
+          declaredAlg: 'RS256',
+          privateKey: privateKeyPem,
+        },
+      ]),
+      (error: Error) => {
+        assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
+        assert.match(error.message, /requires RSA_AES wrapping/)
+        return true
+      }
+    )
+
+    assert.equal(kms.calls.createCryptoKey.length, 0)
     assert.equal(kms.calls.importCryptoKeyVersion.length, 0)
   })
 

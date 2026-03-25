@@ -17,11 +17,21 @@ import { VerifierClientId } from '@trustknots/vcknots'
 export const kmsVerifierSignatureKeyStore = (
   options?: CloudKmsProviderOptions
 ): VerifierSignatureKeyStoreProvider => {
-  const kms = options?.client ?? new KeyManagementServiceClient()
   const projectId = options?.projectId ?? process.env.GOOGLE_CLOUD_PROJECT_ID
   const locationId = options?.locationId ?? process.env.GOOGLE_CLOUD_LOCATION ?? 'global'
+  const kms =
+    options?.client ??
+    new KeyManagementServiceClient({
+      projectId,
+      ...(options?.credentials && {
+        credentials: {
+          private_key: options.credentials.privateKey,
+          client_email: options.credentials.clientEmail,
+        },
+      }),
+    })
   if (!projectId) {
-    throw raise('INTERNAL_SERVER_ERROR', {
+    raise('INTERNAL_SERVER_ERROR', {
       message: 'Missing projectId in CloudKmsProviderOptions or GOOGLE_CLOUD_PROJECT_ID env var',
     })
   }
@@ -76,7 +86,7 @@ export const kmsVerifierSignatureKeyStore = (
         }
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
-      throw raise('INTERNAL_SERVER_ERROR', {
+      raise('INTERNAL_SERVER_ERROR', {
         message: `Import job did not become ACTIVE: ${importJobName}`,
       })
     }
@@ -94,17 +104,15 @@ export const kmsVerifierSignatureKeyStore = (
       // Fall through to create a fresh import job when the base one does not exist.
     }
 
-    const importJobId = `${baseImportJobId}-${Date.now()}`
-    const freshImportJobName = kms.importJobPath(projectId, locationId, keyRingId, importJobId)
     await kms.createImportJob({
       parent: keyRingName,
-      importJobId,
+      importJobId: baseImportJobId,
       importJob: {
         importMethod: 'RSA_OAEP_3072_SHA256',
         protectionLevel: 'SOFTWARE',
       },
     })
-    return waitForImportJob(freshImportJobName)
+    return waitForImportJob(importJobName)
   }
 
   const ensureCryptoKey = async (keyRingName: string, keyId: string, kmsAlgorithm: string) => {
@@ -196,28 +204,36 @@ export const kmsVerifierSignatureKeyStore = (
       const importJobName = importJob.name
       const wrappingPublicKeyPem = importJob.publicKey?.pem
       if (!importJobName || !wrappingPublicKeyPem) {
-        throw raise('INTERNAL_SERVER_ERROR', {
+        raise('INTERNAL_SERVER_ERROR', {
           message: 'Import job is missing name or wrapping public key',
         })
       }
 
-      for (const pair of pairs) {
+      const validatedPairs = pairs.map((pair) => {
         const declaredAlg = pair.declaredAlg
         const kmsAlgorithm = joseAlgorithmToKmsAlgorithm(declaredAlg)
         if (!kmsAlgorithm) {
-          throw raise('INTERNAL_SERVER_ERROR', {
+          raise('INTERNAL_SERVER_ERROR', {
             message: `Unsupported verifier key algorithm: ${declaredAlg}`,
           })
         }
-        const keyId = verifierKeyId(verifier, declaredAlg)
-        const cryptoKeyName = await ensureCryptoKey(keyRingName, keyId, kmsAlgorithm)
 
         if (declaredAlg.startsWith('RS') || declaredAlg.startsWith('PS')) {
-          throw raise('INTERNAL_SERVER_ERROR', {
+          raise('INTERNAL_SERVER_ERROR', {
             message: `Import for ${declaredAlg} requires RSA_AES wrapping (AES-KWP), which is not implemented`,
           })
         }
 
+        return {
+          pair,
+          declaredAlg,
+          kmsAlgorithm,
+          keyId: verifierKeyId(verifier, declaredAlg),
+        }
+      })
+
+      for (const { pair, kmsAlgorithm, keyId } of validatedPairs) {
+        const cryptoKeyName = await ensureCryptoKey(keyRingName, keyId, kmsAlgorithm)
         const privateKeyDer = toPkcs8Der(pair.privateKey)
         const wrappedKey = wrapPrivateKeyForImport(privateKeyDer, wrappingPublicKeyPem)
         await kms.importCryptoKeyVersion({
@@ -297,7 +313,7 @@ export const kmsVerifierSignatureKeyStore = (
 
         const latestVersion = latestEnabledVersion(versions)
         if (!latestVersion?.name) {
-          throw raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+          raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
             message: 'Verifier private key not found.',
           })
         }
@@ -307,7 +323,7 @@ export const kmsVerifierSignatureKeyStore = (
         const signingInput = `${encodedHeader}.${encodedPayload}`
         const digestField = digestFieldName(keyAlg)
         if (!digestField) {
-          throw raise('INTERNAL_SERVER_ERROR', {
+          raise('INTERNAL_SERVER_ERROR', {
             message: `Unsupported verifier key algorithm: ${keyAlg}`,
           })
         }
@@ -327,20 +343,20 @@ export const kmsVerifierSignatureKeyStore = (
 
         // https://cloud.google.com/kms/docs/data-integrity-guidelines
         if (signed.name !== versionName) {
-          throw raise('INTERNAL_SERVER_ERROR', { message: 'KMS key version mismatch' })
+          raise('INTERNAL_SERVER_ERROR', { message: 'KMS key version mismatch' })
         }
         if (!signed.verifiedDigestCrc32c) {
-          throw raise('INTERNAL_SERVER_ERROR', {
+          raise('INTERNAL_SERVER_ERROR', {
             message: 'KMS digest CRC32C verification failed',
           })
         }
         if (!signed.signature || !signed.signatureCrc32c?.value) {
-          throw raise('INTERNAL_SERVER_ERROR', { message: 'KMS signature is missing' })
+          raise('INTERNAL_SERVER_ERROR', { message: 'KMS signature is missing' })
         }
 
         const signature = Buffer.from(signed.signature as Uint8Array)
         if (crc32c(signature) !== Number(signed.signatureCrc32c.value)) {
-          throw raise('INTERNAL_SERVER_ERROR', {
+          raise('INTERNAL_SERVER_ERROR', {
             message: 'KMS signature CRC32C verification failed',
           })
         }
@@ -348,7 +364,7 @@ export const kmsVerifierSignatureKeyStore = (
           ? derToJose(signature.toString('base64'), keyAlg)
           : signature.toString('base64url')
       } catch (error) {
-        throw raise('INTERNAL_SERVER_ERROR', { message: `sign error: ${error}` })
+        raise('INTERNAL_SERVER_ERROR', { message: `sign error: ${error}` })
       }
     },
   }
