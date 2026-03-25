@@ -2,6 +2,7 @@ package oid4vci
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -88,6 +89,61 @@ func TestOid4vciReceiver_FetchIssuerMetadata(t *testing.T) {
 		_, err := receiver.FetchIssuerMetadata(common.URIField(*invalidJSONURL), types.Oid4vci)
 		if err == nil {
 			t.Fatal("Expected error for invalid JSON response")
+		}
+	})
+
+	t.Run("Trailing slash in endpoint", func(t *testing.T) {
+		metadata := types.CredentialIssuerMetadata{
+			CredentialIssuer: "http://example.com",
+		}
+		// Use a raw handler to bypass ServeMux's automatic path cleaning and redirects
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Check RequestURI for double slashes before any normalization
+			if strings.Contains(r.RequestURI, "//") {
+				http.Error(w, "Double slash detected: "+r.RequestURI, http.StatusBadRequest)
+				return
+			}
+			mockserver.JSONResponse(w, http.StatusOK, metadata)
+		}))
+		defer server.Close()
+
+		// Create endpoint WITH trailing slash
+		endpointURL, _ := url.Parse(server.URL + "/")
+		endpoint := common.URIField(*endpointURL)
+
+		res, err := receiver.FetchIssuerMetadata(endpoint, types.Oid4vci)
+		if err != nil {
+			t.Fatalf("Expected no error with trailing slash, got %v. If this is a 400 error, it means a double slash was detected.", err)
+		}
+		if res.CredentialIssuer != metadata.CredentialIssuer {
+			t.Errorf("Expected metadata, got %v", res)
+		}
+	})
+
+	t.Run("Trailing slash in endpoint with path component", func(t *testing.T) {
+		metadata := types.CredentialIssuerMetadata{
+			CredentialIssuer: "http://example.com/issuer",
+		}
+		// Use a raw handler to bypass ServeMux's automatic path cleaning and redirects
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.RequestURI, "//") {
+				http.Error(w, "Double slash detected: "+r.RequestURI, http.StatusBadRequest)
+				return
+			}
+			mockserver.JSONResponse(w, http.StatusOK, metadata)
+		}))
+		defer server.Close()
+
+		// Create endpoint WITH path and trailing slash
+		endpointURL, _ := url.Parse(server.URL + "/issuer/")
+		endpoint := common.URIField(*endpointURL)
+
+		res, err := receiver.FetchIssuerMetadata(endpoint, types.Oid4vci)
+		if err != nil {
+			t.Fatalf("Expected no error with trailing slash and path, got %v. If this is a 400 error, it means a double slash was detected.", err)
+		}
+		if res.CredentialIssuer != metadata.CredentialIssuer {
+			t.Errorf("Expected metadata, got %v", res)
 		}
 	})
 }
