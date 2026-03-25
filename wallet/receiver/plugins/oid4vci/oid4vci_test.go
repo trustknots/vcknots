@@ -1,14 +1,16 @@
 package oid4vci
 
 import (
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/trustknots/vcknots/wallet/common"
-	"github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
+	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
 
 type RoundTripFunc func(req *http.Request) *http.Response
@@ -273,3 +275,86 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 }
 
 // TestOid4vciReceiver_WithMockServer tests OID4VCI receiver using the new mockserver package
+
+func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
+	receiver := &Oid4vciReceiver{}
+
+	tests := []struct {
+		name         string
+		identifier   string
+		expectedPath string
+		discovery    func(common.URIField) error
+	}{
+		{
+			name:         "Auth Server (Base URL)",
+			identifier:   "/",
+			expectedPath: "/.well-known/oauth-authorization-server",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchAuthorizationServerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+		{
+			name:         "Auth Server (With Path)",
+			identifier:   "/tenant1",
+			expectedPath: "/.well-known/oauth-authorization-server/tenant1",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchAuthorizationServerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+		{
+			name:         "Auth Server (With Trailing Slash)",
+			identifier:   "/tenant1/",
+			expectedPath: "/.well-known/oauth-authorization-server/tenant1",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchAuthorizationServerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+		{
+			name:         "Credential Issuer (Base URL)",
+			identifier:   "/",
+			expectedPath: "/.well-known/openid-credential-issuer",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchIssuerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+		{
+			name:         "Credential Issuer (With Path)",
+			identifier:   "/tenant2",
+			expectedPath: "/.well-known/openid-credential-issuer/tenant2",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchIssuerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == tt.expectedPath {
+					w.WriteHeader(http.StatusOK)
+					// Return minimal valid JSON for both types
+					fmt.Fprint(w, `{"issuer": "https://example.com", "credential_issuer": "https://example.com"}`)
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
+			}))
+			defer server.Close()
+
+			serverURL, _ := url.Parse(server.URL)
+			identifierURL := *serverURL
+			if tt.identifier != "/" {
+				identifierURL.Path = tt.identifier
+			}
+			endpoint := common.URIField(identifierURL)
+
+			if err := tt.discovery(endpoint); err != nil {
+				t.Errorf("Pattern %s failed: expected success at %s, got %v", tt.name, tt.expectedPath, err)
+			}
+		})
+	}
+}
