@@ -14,20 +14,27 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
 
   // Fake Firestore instance backed by the in-memory store, injected via DI.
   const mockFirestore = {
-    doc: (path: string) => ({
-      get: async () => ({
-        exists: store.has(path),
-        data: () => store.get(path),
-      }),
-      set: async (data: Record<string, unknown>, options?: { merge?: boolean }) => {
-        if (options?.merge) {
-          const current = store.get(path) ?? {}
-          store.set(path, { ...current, ...data })
-        } else {
-          store.set(path, { ...data })
-        }
-      },
-    }),
+    doc: (path: string) => {
+      const ref = {
+        get: async () => ({
+          exists: store.has(path),
+          data: () => store.get(path),
+          ref,
+        }),
+        set: async (data: Record<string, unknown>, options?: { merge?: boolean }) => {
+          if (options?.merge) {
+            const current = store.get(path) ?? {}
+            store.set(path, { ...current, ...data })
+          } else {
+            store.set(path, { ...data })
+          }
+        },
+        delete: async () => {
+          store.delete(path)
+        },
+      }
+      return ref
+    },
   } as unknown as Firestore
 
   // Fake App instance backed by the in-memory Firestore mock, injected via DI.
