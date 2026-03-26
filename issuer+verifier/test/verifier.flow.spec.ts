@@ -3,6 +3,7 @@ import { before, beforeEach, describe, it, mock } from 'node:test'
 import { AuthorizationRequest } from '../src/authorization-request.types'
 import { AuthorizationResponse } from '../src/authorization-response.types'
 import { ClientId } from '../src/client-id.types'
+import { ClientIdentifier } from '../src/client-id-scheme.types'
 import { Dcql } from '../src/dcql.type'
 import { PresentationExchange } from '../src/presentation-exchange.types'
 import {
@@ -717,7 +718,9 @@ describe('VerifierFlow', () => {
         nonce: 'nonce-123',
       }))
 
-      const result = await verifierFlow.verifyPresentations(verifierId, response)
+      const result = await verifierFlow.verifyPresentations(verifierId, response, {
+        expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
+      })
       assert.deepEqual(result, {
         vp: {
           '@context': ['https://www.w3.org/2018/credentials/v1'],
@@ -735,6 +738,7 @@ describe('VerifierFlow', () => {
       )
       assert.deepEqual(mockVerifyVerifiablePresentationProvider.verify.mock.calls[0].arguments[1], {
         kind: 'jwt_vp_json',
+        expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
       })
     })
   })

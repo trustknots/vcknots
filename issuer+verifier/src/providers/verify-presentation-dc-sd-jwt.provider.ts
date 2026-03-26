@@ -20,14 +20,19 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
     ...withProviderRegistry,
 
     async verify(vp, options): Promise<VpTokenPayload> {
-      if (options && options.kind !== 'dc+sd-jwt') {
+      if (!options) {
+        throw err('ILLEGAL_ARGUMENT', {
+          message: 'verify options are required for dc+sd-jwt.',
+        })
+      }
+      if (options.kind !== 'dc+sd-jwt') {
         throw err('ILLEGAL_ARGUMENT', {
           message: `${options.kind} is not supported.`,
         })
       }
 
-      const specifiedDisclosures = options?.specifiedDisclosures || []
-      const isKbJwt = options?.isKbJwt || false
+      const specifiedDisclosures = options.specifiedDisclosures ?? []
+      const isKbJwt = options.isKbJwt ?? false
 
       if (isKbJwt && vp.endsWith('~')) {
         throw err('INVALID_SD_JWT', {
@@ -65,7 +70,6 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
             issUri.origin
           ).toString()
         }
-        console.log('jwt-vc-issuer metadataUrl:', metadataUrl)
         const metadataResponse = await fetch(metadataUrl)
         if (!metadataResponse.ok) {
           throw err('INVALID_SD_JWT', {
@@ -159,6 +163,12 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
         }
         const kbSdJwtDecoded = KbJwtJsonPayload(await jose.decodeJwt(kbJwt))
         nonce = kbSdJwtDecoded.nonce
+        const { expectedAud } = options
+        if (kbSdJwtDecoded.aud !== expectedAud) {
+          throw err('INVALID_SD_JWT', {
+            message: 'Key binding JWT aud does not match expected client_id.',
+          })
+        }
       }
       if (nonce) {
         const nonceStore$ = this.providers.get('cnonce-store-provider')

@@ -8,6 +8,7 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
   ClientId,
+  ClientIdentifier,
   Cnonce,
   VerifierMetadata,
 } from '../src'
@@ -25,7 +26,7 @@ type JwtHeader = {
 type JwtPayload = {
   [key: string]: unknown
 }
-async function createJwt(nonce: string): Promise<string> {
+async function createJwt(nonce: string, aud: string): Promise<string> {
   const privateJwk: JWK = {
     kty: 'EC',
     crv: 'P-256',
@@ -43,6 +44,7 @@ async function createJwt(nonce: string): Promise<string> {
 
   const payload: JwtPayload = {
     iss: 'did:key:zDnaeYiwHNeMYaj21Wo9jPCowtnBrY8he8UCK8ZZN1mhhx8PM',
+    aud,
     vp: {
       type: ['VerifiablePresentation'],
       verifiableCredential: [
@@ -392,7 +394,7 @@ describe('Vcknots', () => {
       if (typeof nonce !== 'string') {
         assert.fail('nonce must be a string')
       }
-      const vpJwt = await createJwt(nonce)
+      const vpJwt = await createJwt(nonce, ClientIdentifier(`redirect_uri:${verifierId}`))
 
       const response: AuthorizationResponse = AuthorizationResponse({
         presentation_submission: {
@@ -435,7 +437,9 @@ describe('Vcknots', () => {
         }
       })
 
-      await vk.verifier.verifyPresentations(verifierId, response)
+      await vk.verifier.verifyPresentations(verifierId, response, {
+        expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
+      })
 
       mock.reset()
     })
@@ -496,7 +500,9 @@ describe('Vcknots', () => {
           }),
         }
       })
-      await vk.verifier.verifyPresentations(verifierId, response)
+      await vk.verifier.verifyPresentations(verifierId, response, {
+        expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
+      })
 
       mock.reset()
     })
@@ -529,7 +535,11 @@ describe('Vcknots', () => {
         vp_token: sampleDcSdJwtVp,
       })
 
-      await vkWithPreSavedNonce.verifier.verifyPresentations(verifierId, response, true)
+      // KB-JWT payload in sampleDcSdJwtVp uses aud: https://verifier.example.com
+      await vkWithPreSavedNonce.verifier.verifyPresentations(verifierId, response, {
+        expectedAud: ClientIdentifier('https://verifier.example.com'),
+        isKbJwt: true,
+      })
 
       mock.reset()
     })

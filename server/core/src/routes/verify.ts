@@ -12,6 +12,13 @@ import {
 import { randomUUID } from 'node:crypto'
 import { handleError } from '../utils/error-handler.js'
 
+/** Host (and optional port) for `x509_san_dns:` client_id — no `http(s)://`, no path. */
+const hostForX509SanDns = (url: string): string => {
+  const withoutScheme = url.trim().replace(/^https?:\/\//i, '')
+  const slash = withoutScheme.indexOf('/')
+  return slash === -1 ? withoutScheme : withoutScheme.slice(0, slash)
+}
+
 export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
   const verifyApp = new Hono()
 
@@ -164,12 +171,15 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       // Validate it using the AuthorizationResponse
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
 
-      // Add additional validation as needed
-      const vppayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
+      // Add additional validation as needed (expectedAud must match auth request client_id)
+      const vppayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
+        expectedAud: ClientIdentifier(`redirect_uri:${baseUrl}/callback`),
+      })
       console.log('Verified VP Payload:', vppayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
       const errorResponse = handleError(err)
+      console.log('error Response:', errorResponse)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400
       return c.json(errorResponse, status)
     }
@@ -177,6 +187,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   verifyApp.post('/callback-kbjwt', async (c) => {
     try {
+      console.log('callback-kbjwt')
       const verifierId = VerifierClientId(baseUrl)
       const contentType = normalizeContentType(c.req.header('content-type') ?? '')
 
@@ -197,18 +208,17 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
       // Validate it using the AuthorizationResponse
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-      const isKbjwt: boolean = true
-
+      const expectedAud = ClientIdentifier(`x509_san_dns:${hostForX509SanDns(baseUrl)}`)
       // Add additional validation as needed
-      const vpPayload = await verifierFlow.verifyPresentations(
-        verifierId,
-        authorizationResponse,
-        isKbjwt
-      )
+      const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
+        expectedAud: expectedAud,
+        isKbJwt: true,
+      })
       console.log('Verified KBJWT VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
       const errorResponse = handleError(err)
+      console.log('error Response:', errorResponse)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400
       return c.json(errorResponse, status)
     }

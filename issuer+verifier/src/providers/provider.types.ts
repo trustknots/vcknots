@@ -2,6 +2,7 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
 } from '../authorization-server.types'
+import type { ClientIdentifier } from '../client-id-scheme.types'
 import { ClientId } from '../client-id.types'
 import { Cnonce } from '../cnonce.types'
 import {
@@ -129,12 +130,14 @@ export type VerifyCredentialProvider = {
 export type VerifyVerifiablePresentationVerifyOptions =
   | {
       kind: 'jwt_vp_json'
+      /** VP JWT `aud` must equal this or be included if `aud` is an array. */
+      expectedAud: ClientIdentifier
     }
   | {
       kind: 'dc+sd-jwt'
       specifiedDisclosures?: string[]
       isKbJwt?: boolean
-      expectedAud?: string
+      expectedAud?: ClientIdentifier
       expectedNonce?: string
       expectedTransactionDataHashes?: string[]
     }
