@@ -49,10 +49,11 @@ describe('CredentialProofJwtProvider', () => {
     payload: JWTPayload,
     alg: string,
     kid: string,
+    typ: string,
     customHeader?: object
   ) => {
     return await new SignJWT(payload)
-      .setProtectedHeader({ alg, kid, ...customHeader })
+      .setProtectedHeader({ alg, kid, typ, ...customHeader })
       .setIssuedAt()
       .sign(keys.privateKey)
   }
@@ -95,7 +96,7 @@ describe('CredentialProofJwtProvider', () => {
     it('should verify a valid proof for pre-authorized code flow', async () => {
       const provider = setupProvider({ usePreAuth: true, credentialIssuer })
       const payload = { aud: credentialIssuer, nonce: 'test-nonce' }
-      const proof = await createTestProof(payload, 'ES256', testKid)
+      const proof = await createTestProof(payload, 'ES256', testKid, 'openid4vci-proof+jwt')
 
       const result = await provider.verifyProof(proof)
 
@@ -110,7 +111,7 @@ describe('CredentialProofJwtProvider', () => {
     it('should verify a valid proof for authorization code flow', async () => {
       const provider = setupProvider({ usePreAuth: false, credentialIssuer, clientId })
       const payload = { iss: clientId, aud: credentialIssuer, nonce: 'test-nonce' }
-      const proof = await createTestProof(payload, 'ES256', testKid)
+      const proof = await createTestProof(payload, 'ES256', testKid, 'openid4vci-proof+jwt')
 
       const result = await provider.verifyProof(proof)
 
@@ -130,7 +131,7 @@ describe('CredentialProofJwtProvider', () => {
     it('should throw INVALID_PROOF if kid is missing in header', async () => {
       const provider = setupProvider()
       const proof = await new SignJWT({ aud: credentialIssuer })
-        .setProtectedHeader({ alg: 'ES256' }) // No kid
+        .setProtectedHeader({ alg: 'ES256', typ: 'openid4vci-proof+jwt' }) // No kid
         .sign(keys.privateKey)
       await assert.rejects(provider.verifyProof(proof), (err: VcknotsError) => {
         assert.equal(err.name, 'INVALID_PROOF')
@@ -139,9 +140,25 @@ describe('CredentialProofJwtProvider', () => {
       })
     })
 
+    it('should throw INVALID_PROOF if typ is not openid4vci-proof+jwt in header', async () => {
+      const provider = setupProvider()
+      const payload = { aud: credentialIssuer, nonce: 'test-nonce' }
+      const proof = await createTestProof(payload, 'ES256', testKid, 'invalid-typ')
+      await assert.rejects(provider.verifyProof(proof), (err: VcknotsError) => {
+        assert.equal(err.name, 'INVALID_PROOF')
+        assert.equal(err.message, 'Invalid Proof Header typ value.')
+        return true
+      })
+    })
+
     it('should throw INVALID_PROOF for invalid DID format in kid', async () => {
       const provider = setupProvider()
-      const proof = await createTestProof({ aud: credentialIssuer }, 'ES256', 'invalid-did')
+      const proof = await createTestProof(
+        { aud: credentialIssuer },
+        'ES256',
+        'invalid-did',
+        'openid4vci-proof+jwt'
+      )
       await assert.rejects(provider.verifyProof(proof), {
         name: 'INVALID_PROOF',
         message: 'Invalid DID format: invalid-did',
@@ -155,7 +172,12 @@ describe('CredentialProofJwtProvider', () => {
         return []
       })
       // No provider registered
-      const proof = await createTestProof({ aud: credentialIssuer }, 'ES256', testKid)
+      const proof = await createTestProof(
+        { aud: credentialIssuer },
+        'ES256',
+        testKid,
+        'openid4vci-proof+jwt'
+      )
       await assert.rejects(provider.verifyProof(proof), (err: VcknotsError) => {
         assert.equal(err.name, 'INVALID_PROOF')
         assert.equal(err.message, 'No kid or unsupported did type detected.')
@@ -166,7 +188,12 @@ describe('CredentialProofJwtProvider', () => {
     it('should throw error if DID resolution fails', async () => {
       const provider = setupProvider()
       const unknownKid = 'did:key:unknown#unknown'
-      const proof = await createTestProof({ aud: credentialIssuer }, 'ES256', unknownKid)
+      const proof = await createTestProof(
+        { aud: credentialIssuer },
+        'ES256',
+        unknownKid,
+        'openid4vci-proof+jwt'
+      )
       // The provider is expected to propagate the error from the DID provider.
       await assert.rejects(provider.verifyProof(proof), { name: 'INVALID_PROOF' })
     })
@@ -179,7 +206,12 @@ describe('CredentialProofJwtProvider', () => {
           ({ id: 'did:key:123', '@context': 'https://www.w3.org/ns/did/v1' }) as DidDocument,
       }
       mock.method(provider.providers, 'get', () => [invalidDidProvider])
-      const proof = await createTestProof({ aud: credentialIssuer }, 'ES256', testKid)
+      const proof = await createTestProof(
+        { aud: credentialIssuer },
+        'ES256',
+        testKid,
+        'openid4vci-proof+jwt'
+      )
       await assert.rejects(provider.verifyProof(proof), {
         name: 'INVALID_PROOF',
         message: 'Unsupported did type detected.',
@@ -190,7 +222,7 @@ describe('CredentialProofJwtProvider', () => {
       const provider = setupProvider()
       const otherKeys = await generateKeyPair('ES256')
       const proof = await new SignJWT({ aud: credentialIssuer })
-        .setProtectedHeader({ alg: 'ES256', kid: testKid })
+        .setProtectedHeader({ alg: 'ES256', kid: testKid, typ: 'openid4vci-proof+jwt' })
         .setIssuedAt()
         .sign(otherKeys.privateKey) // Signed with a different key
       await assert.rejects(provider.verifyProof(proof), (err: Error & { code?: string }) => {
@@ -202,7 +234,12 @@ describe('CredentialProofJwtProvider', () => {
 
     it('should throw INVALID_PROOF if payload claims are invalid (missing aud)', async () => {
       const provider = setupProvider()
-      const proof = await createTestProof({ iss: clientId }, 'ES256', testKid) // Missing aud
+      const proof = await createTestProof(
+        { iss: clientId },
+        'ES256',
+        testKid,
+        'openid4vci-proof+jwt'
+      ) // Missing aud
       await assert.rejects(provider.verifyProof(proof), {
         name: 'INVALID_PROOF',
         message: 'Unsupported Proof Payload.',
@@ -214,7 +251,8 @@ describe('CredentialProofJwtProvider', () => {
       const proof = await createTestProof(
         { iss: clientId, aud: credentialIssuer },
         'ES256',
-        testKid
+        testKid,
+        'openid4vci-proof+jwt'
       )
       await assert.rejects(provider.verifyProof(proof), {
         name: 'INVALID_PROOF',
@@ -227,7 +265,8 @@ describe('CredentialProofJwtProvider', () => {
       const proof = await createTestProof(
         { iss: 'wrong-client', aud: credentialIssuer },
         'ES256',
-        testKid
+        testKid,
+        'openid4vci-proof+jwt'
       )
       await assert.rejects(provider.verifyProof(proof), {
         name: 'INVALID_PROOF',
@@ -237,7 +276,12 @@ describe('CredentialProofJwtProvider', () => {
 
     it('should throw INVALID_PROOF if aud does not match credential_issuer', async () => {
       const provider = setupProvider({ usePreAuth: true, credentialIssuer })
-      const proof = await createTestProof({ aud: 'wrong-issuer' }, 'ES256', testKid)
+      const proof = await createTestProof(
+        { aud: 'wrong-issuer' },
+        'ES256',
+        testKid,
+        'openid4vci-proof+jwt'
+      )
       await assert.rejects(provider.verifyProof(proof), {
         name: 'INVALID_PROOF',
         message: 'aud claim must be the Credential Issuer Identifier.',

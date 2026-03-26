@@ -125,12 +125,6 @@ export const createServer = (options?: VcknotsOptions) => {
         return true
       }
 
-      const verifierCertificate = await verifierFlow.findVerifierCertificate(clientId)
-      if (verifierCertificate && verifierCertificate.length > 0) {
-        console.log('Verifier certificate already exists, skipping initialization')
-        return true
-      }
-
       const defaultPrivateKeyPath = join(
         __dirname,
         '../../samples/certificate-openid-test/private_key_openid.pem'

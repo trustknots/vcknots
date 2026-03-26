@@ -22,8 +22,19 @@ type Oid4vciReceiver struct{}
 // It handles common patterns: URL construction, status checking, body reading, and JSON parsing.
 func (o *Oid4vciReceiver) doRequest(method string, endpoint common.URIField, path string, body io.Reader, target interface{}) error {
 	endpointURL := url.URL(endpoint)
-	if !strings.HasSuffix(endpointURL.Path, path) {
-		endpointURL.Path = endpointURL.Path + path
+
+	if path == "/.well-known/oauth-authorization-server" {
+		// Special handling for metadata discovery as per RFC 8414 §3
+		// The well-known string MUST be inserted between the host component and the path component.
+		originalPath := strings.TrimSuffix(endpointURL.Path, "/")
+		if !strings.HasPrefix(originalPath, path) {
+			endpointURL.Path = path + originalPath
+		}
+	} else {
+		// OID4VCI Draft 13 (ID1) §11.2.2, etc...
+		if !strings.HasSuffix(endpointURL.Path, path) {
+			endpointURL = *endpointURL.JoinPath(path)
+		}
 	}
 
 	var resp *http.Response

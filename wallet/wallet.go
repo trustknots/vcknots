@@ -309,7 +309,7 @@ func (w *Wallet) convertEntryToSavedCredential(entry types.CredentialEntry) (*Sa
 func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfile, nonce *string, aud string) (string, error) {
 	header := map[string]interface{}{
 		"alg": "ES256",
-		"typ": "JWT",
+		"typ": "openid4vci-proof+jwt",
 		"kid": did.ID,
 	}
 

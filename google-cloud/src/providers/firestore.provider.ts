@@ -6,6 +6,7 @@ import { firestoreVerifierMetadataStore } from './firestore-verifier-metadata-st
 import { firestoreAuthzServerMetadataStore } from './firestore-authz-metadata-store.provider'
 import { firestorePreAuthorizedCodeStore } from './firestore-pre-authorized-code-store.provider'
 import { firestoreRequestObjectStore } from './firestore-request-object-store.provider'
+import { firestoreCnonceStore } from './firestore-cnonce-store.provider'
 
 const configuredInstances = new WeakSet<Firestore>()
 
@@ -59,5 +60,6 @@ export const firestore = (options?: FirestoreProviderOptions): Provider[] => {
     firestoreAuthzServerMetadataStore(options),
     firestorePreAuthorizedCodeStore(options),
     firestoreRequestObjectStore(options),
+    firestoreCnonceStore(options),
   ]
 }
