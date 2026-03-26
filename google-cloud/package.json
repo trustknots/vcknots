@@ -13,7 +13,7 @@
 		"lint": "biome lint ./src/**/*.ts",
 		"test": "node --import tsx --test test/**/*.spec.ts",
 		"test:ci": "node --import tsx --test --experimental-test-coverage \"test/**/*.spec.ts\"",
-		"test:all": "node --import tsx --test --experimental-test-coverage --test-coverage-lines=80 --test-coverage-functions=80 --test-coverage-branches=80 \"test/**/*.spec.ts\"",
+		"test:all": "node --import tsx --test --experimental-test-coverage --test-coverage-include=\"src/**/*.ts\" --test-coverage-exclude=\"test/**/*.ts\" --test-coverage-lines=80 --test-coverage-functions=80 --test-coverage-branches=80 \"test/**/*.spec.ts\"",
 		"typecheck": "tsc --noEmit"
 	},
 	"keywords": [],
