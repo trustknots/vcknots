@@ -172,10 +172,10 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
 
       // Add additional validation as needed (expectedAud must match auth request client_id)
-      const vppayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
+      const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
         expectedAud: ClientIdentifier(`redirect_uri:${baseUrl}/callback`),
       })
-      console.log('Verified VP Payload:', vppayload)
+      console.log('Verified VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
       const errorResponse = handleError(err)
