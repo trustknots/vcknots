@@ -339,14 +339,17 @@ eyJhbGciOiJFUzI1NiIsInR5cCI6Im9hdXRoLWF1dGh6LXJlcStqd3QiLCJ4NWMiOlsiXG5NSUlDSGpD
 This is an endpoint where the Verifier receives the `vp_token` returned from the Wallet and performs verification (VP verification).
 
 - **Endpoint**: `POST /verify/callback`
-- **Request body (JSON)**
-  - JSON containing OpenID4VP Authorization Response fields such as `vp_token` and `presentation_submission`.
-  - Validation is performed using the `VerifierAuthorizationResponse` schema.
+- **Request body**
+  - `Content-Type: application/x-www-form-urlencoded`
+  - Form fields carry OpenID4VP Authorization Response parameters such as `vp_token` and `presentation_submission` (same as a Wallet `direct_post` response).
+  - Values are validated and parsed into `VerifierAuthorizationResponse`.
 - **Response**
-  - `200 OK`: Returns a JSON response containing `message` and the verified `authorization_response`.
-  - `400 Bad Request`: Returned when validation fails or a verification error occurs.
+  - `200 OK`: JSON body `{ "redirect_uri": "<baseUrl>/verified" }` (sample server; adjust to your app).
+  - `400 Bad Request` / `500 Internal Server Error`: OAuth-style JSON from `handleError` (`error`, `error_description`) when validation or VP verification fails.
 
-- Actual code
+- **Related endpoint**: `POST /verify/callback-kbjwt` — used in the sample when the authorization request uses `x509_san_dns` and SD-JWT with a Key Binding JWT. It calls `verifyPresentations` with `isKbJwt: true` and `expectedAud` built from the verifier base URL host (`x509_san_dns:…`), matching the authorization request `client_id` with the KB-JWT `aud` claim.
+
+- Code example
 ```typescript
 verifyApp.post('/verify/callback', async (c) => {
   try {
@@ -357,16 +360,16 @@ verifyApp.post('/verify/callback', async (c) => {
     }
 
     const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-    const isKbjwt: boolean = true
 
-    await verifierFlow.verifyPresentations(verifierId, authorizationResponse, isKbjwt)
-
-    return c.json({
-      message: 'Callback received successfully',
-      authorization_response: authorizationResponse,
+    const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
+      expectedAud: ClientIdentifier(`redirect_uri:${baseUrl}/callback`),
     })
+
+    return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
   } catch (err) {
-    return c.json(handleError(err), 400)
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
   }
 })
 ```
@@ -398,33 +401,15 @@ curl --location 'http://localhost:8080/verify/callback' \
 --data-urlencode 'state=tEoHpMJo1896FnkXJxVu'
 ```
 
-**Response**
+**Response** (`200 OK`)
 
 ```
 {
-    "message": "Callback received successfully",
-    "authorization_response": {
-        "vp_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSJ9.eyJpc3MiOiJkaWQ6a2V5OnpEbmFlWWl3SE5lTVlhajIxV285alBDb3d0bkJyWThoZThVQ0s4WlpOMW1oaHg4UE0iLCJub25jZSI6ImUzMDNhYzUzMWM1YjQ3ODM4OWRkN2M0NzQ0MDRlM2I5IiwidnAiOnsidHlwZSI6WyJWZXJpZmlhYmxlUHJlc2VudGF0aW9uIl0sInZlcmlmaWFibGVDcmVkZW50aWFsIjpbImV5SmhiR2NpT2lKRlV6STFOaUlzSW5SNWNDSTZJa3BYVkNKOS5leUoyWXlJNmV5SkFZMjl1ZEdWNGRDSTZXeUpvZEhSd2N6b3ZMM2QzZHk1M015NXZjbWN2TWpBeE9DOWpjbVZrWlc1MGFXRnNjeTkyTVNKZExDSnBaQ0k2SW1oMGRIQnpPaTh2YldWa1lXeGliMjlyTFdSbGRpMWhjSEF0YVhOemRXVnlMbmRsWWk1aGNIQXZZM0psWkdWdWRHbGhiSE12UzJNME1GcG1XblIwVlVwV1pGRnJORk5JYm5ZaUxDSjBlWEJsSWpwYklsWmxjbWxtYVdGaWJHVkRjbVZrWlc1MGFXRnNJaXdpVFdWa1lXeENiMjlyVFdWa1lXd2lMQ0pOUkVJME1EUXlZek5sTWpWaU9UUTBOV0UwT0RobU1EbGhPRE00WVRNME9EVTROeUpkTENKcGMzTjFaWElpT2lKb2RIUndjem92TDIxbFpHRnNZbTl2YXkxa1pYWXRZWEJ3TFdsemMzVmxjaTUzWldJdVlYQndMMmx6YzNWbGNuTXZXVzlsZVRsSVJtcFVXVkI1WTIxa2NYZGFWVk1pTENKcGMzTjFZVzVqWlVSaGRHVWlPaUl5TURJMExURXlMVEkwVkRBeE9qTTRPalF6TGpZek1sb2lMQ0pqY21Wa1pXNTBhV0ZzVTNWaWFtVmpkQ0k2ZXlKcFpDSTZJbVJwWkRwclpYazZla1J1WVdWWmFYZElUbVZOV1dGcU1qRlhiemxxVUVOdmQzUnVRbkpaT0dobE9GVkRTemhhV2s0eGJXaG9lRGhRVFNJc0ltMWxaR0ZzYVhOMFQyWWlPbnNpYm1GdFpTSTZXM3NpZG1Gc2RXVWlPaUozYjI1a1pYSnNZVzVrSWl3aWJHOWpZV3hsSWpvaWFtRXRTbEFpZlYwc0ltUmxjMk55YVhCMGFXOXVJanBiZXlKMllXeDFaU0k2SW5kdmJtUmxjbXhoYm1RaUxDSnNiMk5oYkdVaU9pSnFZUzFLVUNKOVhTd2liRzluYnlJNlczc2lkbUZzZFdVaU9uc2lkWEpwSWpvaWFIUjBjSE02THk5emRHOXlZV2RsTG1kdmIyZHNaV0Z3YVhNdVkyOXRMMjFsWkdGc1ltOXZheTFrWlhZdVlYQndjM0J2ZEM1amIyMHZhWE56ZFdWeUpUSkdkakVsTWtacGMzTjFaWEp6SlRKR1dXOWxlVGxJUm1wVVdWQjVZMjFrY1hkYVZWTWxNa1pqY21Wa1pXNTBhV0ZzY3lVeVJrSndkR3RYZFcxSFFVUXlNWHBUTm5WU2JUSmhMbkJ1WnlKOUxDSnNiMk5oYkdVaU9pSnFZUzFLVUNKOVhYMTlmU3dpYVhOeklqb2lhSFIwY0hNNkx5OXRaV1JoYkdKdmIyc3RaR1YyTFdGd2NDMXBjM04xWlhJdWQyVmlMbUZ3Y0M5cGMzTjFaWEp6TDFsdlpYazVTRVpxVkZsUWVXTnRaSEYzV2xWVElpd2libUptSWpveE56TTFNREEwTXpJek5qTXlMQ0p6ZFdJaU9pSmthV1E2YTJWNU9ucEVibUZsV1dsM1NFNWxUVmxoYWpJeFYyODVhbEJEYjNkMGJrSnlXVGhvWlRoVlEwczRXbHBPTVcxb2FIZzRVRTBpZlEuX1dlOUEyalJnR3VrYzg5MnpXVFpxLUFTcnBQM3dZeHhXOFM4XzdwT3ZqQldZbTVQa1U5UlhoUWY2SmlzTGxPT1NhNVFaX3JBNGxmNEU3dDZubG9FaHciXSwiaG9sZGVyIjoiZGlkOmtleTp6RG5hZVlpd0hOZU1ZYWoyMVdvOWpQQ293dG5Cclk4aGU4VUNLOFpaTjFtaGh4OFBNIn19.5Mjnb7Y_1CJWEL5LgiFIZypeZthwrAODPrL5TcAy-lw95797Z_-L2hvyxvDf5HV1CIaqt3xfRdy7nJMZYTKnTw",
-        "presentation_submission": {
-            "id": "BptkWumGAD21zS6uRm2a",
-            "definition_id": "3cf37e60-e6e4-4d67-acff-3623586a7c4c",
-            "descriptor_map": [
-                {
-                    "id": "BptkWumGAD21zS6uRm2a",
-                    "format": "jwt_vp_json",
-                    "path": "$",
-                    "path_nested": {
-                        "id": "BptkWumGAD21zS6uRm2a",
-                        "format": "jwt_vc_json",
-                        "path": "$.verifiableCredential[0]"
-                    }
-                }
-            ]
-        },
-        "state": "tEoHpMJo1896FnkXJxVu"
-    }
+  "redirect_uri": "http://localhost:8080/verified"
 }
 ```
+
+(Exact `redirect_uri` depends on your verifier `baseUrl`.)
 
 
 ## 4. Registering Verifier Metadata{#initializeVerifierMetadata}
@@ -682,17 +667,26 @@ Verifies the VP token.
 ```typescript
 verifyPresentations(
   id: ClientId,
-  response: AuthorizationResponse
-  isKbjwt: boolean
+  response: AuthorizationResponse,
+  options: VerifyPresentationOptions
 ): Promise<VpTokenPayload>
 ```
 
 **Parameters**:
 - `id`: Identifier of the Verifier ([VerifierClientId](#VerifierClientId))
 - `response`: Information used for verification ([Verifierauthorizationresponse](#Verifierauthorizationresponse))
-- `isKbJwt`： Flag indicating whether to verify the Key Binding JWT when validating an SD-JWT.
-  - `isKbJwt = true`  → Verify the Key Binding JWT
-  - `isKbJwt = false` → Do not verify the Key Binding JWT
+- `options`: [VerifyPresentationOptions](#VerifyPresentationOptions) — must include `expectedAud` (see below).
+
+#### VerifyPresentationOptions{#VerifyPresentationOptions}
+Options passed from your verifier application into VP / credential-format–specific checks. Defined in [`verifier.flows.ts`](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts).
+
+| Field | Required | Description |
+| ----- | -------- | ----------- |
+| `expectedAud` | Yes | [`ClientIdentifier`](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/client-id-scheme.types.ts) value that **must match the OAuth / OpenID4VP `client_id`** used in the authorization request. The VP’s JWT `aud` (`jwt_vp_json`) and the KB-JWT’s `aud` (`dc+sd-jwt` when Key Binding is used) are compared to this string. |
+| `specifiedDisclosures` | No | For `dc+sd-jwt`: optional selective-disclosure hints. |
+| `isKbJwt` | No | For `dc+sd-jwt`: if `true`, validate the Key Binding JWT (nonce, `aud`, `sd_hash`, etc.). If omitted, KB-JWT validation follows the provider default (`false`). |
+| `expectedNonce` | No | For `dc+sd-jwt` + KB-JWT: expected `nonce` claim in the KB-JWT (usually the authorization request `nonce`). |
+| `expectedTransactionDataHashes` | No | For `dc+sd-jwt` + KB-JWT when `transaction_data` is used: expected hash list in the KB-JWT. |
 
 **Return value**:
 - Returns a verified VP token payload of type [VpTokenPayload](#VpTokenPayload).
@@ -720,17 +714,20 @@ verifyPresentations(
   }
   ```
 
+- **Implementer responsibility**: This library **does not** automatically persist or manage verified payloads. Binding to sessions or databases, retention, and whether to write audit logs must be **designed and implemented by your (integrator) application** in line with business requirements.
 
 **Error cases**:
 - `VERIFIER_NOT_FOUND`: The Verifier does not exist
-- `UNSUPPORTED_VP_TOKEN`: The VP token format is not supported
-- `INVALID_NONCE`: Occurs when the nonce issued at the time of the authorization request is not included in `vp_token`, or does not match. The Wallet must always return a `vp_token` that includes the nonce provided in the authorization request.
-- `INVALID_CREDENTIAL`: Invalid credential
-- `INVALID_PRESENTATION_SUBMISSION`: Invalid presentation_submission
-- `HOLDER_BINDING_FAILED`: Holder binding verification failed
+- `UNSUPPORTED_VP_TOKEN`: Unsupported `vp_token` shape or format (for example, multiple VPs, or formats not wired to a provider)
+- `ILLEGAL_ARGUMENT`: Missing/invalid arguments (for example, flow not implemented yet without `presentation_submission`, or VP provider rejects options)
+- `INVALID_NONCE`: The authorization request `nonce` is missing from the VP or does not match
+- `INVALID_CREDENTIAL`: Invalid embedded VC (for example, `jwt_vp_json` path) or issuer/JWKS resolution failure
+- `INVALID_VP_TOKEN`: VP structure or binding checks failed (for example, `aud` does not match `expectedAud`)
+- `INVALID_SD_JWT` / `HOLDER_BINDING_FAILED`: SD-JWT or Key Binding verification failures
+- `INVALID_PRESENTATION_SUBMISSION`: Invalid `presentation_submission`
 
 **Notes**:
-- If `isKbJwt` is not specified, `false` is used by default (this behavior may change in future implementations).
+- Pass the **same** value as the **`client_id`** from the authorization request (including the scheme prefix, e.g. `redirect_uri:` or `x509_san_dns:`) as `expectedAud`. It **must match** the `aud` claim the Wallet sets on the VP or KB-JWT.
 
 
 ### findVerifierCertificate

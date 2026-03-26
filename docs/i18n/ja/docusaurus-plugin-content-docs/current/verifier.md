@@ -340,14 +340,17 @@ eyJhbGciOiJFUzI1NiIsInR5cCI6Im9hdXRoLWF1dGh6LXJlcStqd3QiLCJ4NWMiOlsiXG5NSUlDSGpD
 Wallet から返送される `vp_token` を受け取り、Verifier 側で検証 (VP 検証) を行うエンドポイントです。
 
 - **エンドポイント**: `POST /verify/callback`
-- **リクエストボディ (JSON)**
-  - `vp_token`, `presentation_submission` など OpenID4VP の Authorization Response フィールドを含む JSON。
-  - `VerifierAuthorizationResponse` スキーマでバリデーションが行われます。
+- **リクエストボディ**
+  - `Content-Type: application/x-www-form-urlencoded`
+  - フォームフィールドに `vp_token` や `presentation_submission` など、OpenID4VP の Authorization Response パラメータを載せます（Wallet の `direct_post` 応答と同形式）。
+  - 値は検証のうえ `VerifierAuthorizationResponse` にパースされます。
 - **レスポンス**
-  - `200 OK`: `message` と検証済み `authorization_response` を JSON で返却。
-  - `400 Bad Request`: バリデーション失敗や検証エラーが発生した場合。
+  - `200 OK`: JSON 本文 `{ "redirect_uri": "<baseUrl>/verified" }`（サンプルサーバの挙動。アプリに合わせて変更してください）。
+  - `400 Bad Request` / `500 Internal Server Error`: バリデーションまたは VP 検証失敗時に `handleError` 由来の OAuth 形式 JSON（`error`, `error_description`）。
 
-- 実際のコード
+- **関連エンドポイント**: `POST /verify/callback-kbjwt` — 認可リクエストが `x509_san_dns` かつ SD-JWT + Key Binding JWT を使うサンプル向け。`verifyPresentations` を `isKbJwt: true` と、ベース URL のホストから組み立てた `expectedAud`（`x509_san_dns:…`）で呼び出し、認可リクエストの `client_id` と KB-JWT の `aud` を一致させます。
+
+- コード例
 ```typescript
 verifyApp.post('/verify/callback', async (c) => {
   try {
@@ -358,16 +361,16 @@ verifyApp.post('/verify/callback', async (c) => {
     }
 
     const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-    const isKbjwt: boolean = true
 
-    await verifierFlow.verifyPresentations(verifierId, authorizationResponse, isKbjwt)
-
-    return c.json({
-      message: 'Callback received successfully',
-      authorization_response: authorizationResponse,
+    const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
+      expectedAud: ClientIdentifier(`redirect_uri:${baseUrl}/callback`),
     })
+
+    return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
   } catch (err) {
-    return c.json(handleError(err), 400)
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
   }
 })
 ```
@@ -377,9 +380,9 @@ verifyApp.post('/verify/callback', async (c) => {
 **リクエスト**
 
 ```bash
-curl --location 'http://localhost:8080/verify/callback' \
+curl --location 'https://9pnzpbbg-8080.asse.devtunnels.ms/callback' \
 --header 'Content-Type: application/x-www-form-urlencoded' \
---data-urlencode 'vp_token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSJ9.eyJpc3MiOiJkaWQ6a2V5OnpEbmFlWWl3SE5lTVlhajIxV285alBDb3d0bkJyWThoZThVQ0s4WlpOMW1oaHg4UE0iLCJub25jZSI6IjY4ZTM5NzgwMjZiYzRiNzY5NzRhZGEwYjc5NzRiNTA5IiwidnAiOnsidHlwZSI6WyJWZXJpZmlhYmxlUHJlc2VudGF0aW9uIl0sInZlcmlmaWFibGVDcmVkZW50aWFsIjpbImV5SmhiR2NpT2lKRlV6STFOaUlzSW5SNWNDSTZJa3BYVkNKOS5leUoyWXlJNmV5SkFZMjl1ZEdWNGRDSTZXeUpvZEhSd2N6b3ZMM2QzZHk1M015NXZjbWN2TWpBeE9DOWpjbVZrWlc1MGFXRnNjeTkyTVNKZExDSnBaQ0k2SW1oMGRIQnpPaTh2YldWa1lXeGliMjlyTFdSbGRpMWhjSEF0YVhOemRXVnlMbmRsWWk1aGNIQXZZM0psWkdWdWRHbGhiSE12UzJNME1GcG1XblIwVlVwV1pGRnJORk5JYm5ZaUxDSjBlWEJsSWpwYklsWmxjbWxtYVdGaWJHVkRjbVZrWlc1MGFXRnNJaXdpVFdWa1lXeENiMjlyVFdWa1lXd2lMQ0pOUkVJME1EUXlZek5sTWpWaU9UUTBOV0UwT0RobU1EbGhPRE00WVRNME9EVTROeUpkTENKcGMzTjFaWElpT2lKb2RIUndjem92TDIxbFpHRnNZbTl2YXkxa1pYWXRZWEJ3TFdsemMzVmxjaTUzWldJdVlYQndMMmx6YzNWbGNuTXZXVzlsZVRsSVJtcFVXVkI1WTIxa2NYZGFWVk1pTENKcGMzTjFZVzVqWlVSaGRHVWlPaUl5TURJMExURXlMVEkwVkRBeE9qTTRPalF6TGpZek1sb2lMQ0pqY21Wa1pXNTBhV0ZzVTNWaWFtVmpkQ0k2ZXlKcFpDSTZJbVJwWkRwclpYazZla1J1WVdWWmFYZElUbVZOV1dGcU1qRlhiemxxVUVOdmQzUnVRbkpaT0dobE9GVkRTemhhV2s0eGJXaG9lRGhRVFNJc0ltMWxaR0ZzYVhOMFQyWWlPbnNpYm1GdFpTSTZXM3NpZG1Gc2RXVWlPaUozYjI1a1pYSnNZVzVrSWl3aWJHOWpZV3hsSWpvaWFtRXRTbEFpZlYwc0ltUmxjMk55YVhCMGFXOXVJanBiZXlKMllXeDFaU0k2SW5kdmJtUmxjbXhoYm1RaUxDSnNiMk5oYkdVaU9pSnFZUzFLVUNKOVhTd2liRzluYnlJNlczc2lkbUZzZFdVaU9uc2lkWEpwSWpvaWFIUjBjSE02THk5emRHOXlZV2RsTG1kdmIyZHNaV0Z3YVhNdVkyOXRMMjFsWkdGc1ltOXZheTFrWlhZdVlYQndjM0J2ZEM1amIyMHZhWE56ZFdWeUpUSkdkakVsTWtacGMzTjFaWEp6SlRKR1dXOWxlVGxJUm1wVVdWQjVZMjFrY1hkYVZWTWxNa1pqY21Wa1pXNTBhV0ZzY3lVeVJrSndkR3RYZFcxSFFVUXlNWHBUTm5WU2JUSmhMbkJ1WnlKOUxDSnNiMk5oYkdVaU9pSnFZUzFLVUNKOVhYMTlmU3dpYVhOeklqb2lhSFIwY0hNNkx5OXRaV1JoYkdKdmIyc3RaR1YyTFdGd2NDMXBjM04xWlhJdWQyVmlMbUZ3Y0M5cGMzTjFaWEp6TDFsdlpYazVTRVpxVkZsUWVXTnRaSEYzV2xWVElpd2libUptSWpveE56TTFNREEwTXpJek5qTXlMQ0p6ZFdJaU9pSmthV1E2YTJWNU9ucEVibUZsV1dsM1NFNWxUVmxoYWpJeFYyODVhbEJEYjNkMGJrSnlXVGhvWlRoVlEwczRXbHBPTVcxb2FIZzRVRTBpZlEuX1dlOUEyalJnR3VrYzg5MnpXVFpxLUFTcnBQM3dZeHhXOFM4XzdwT3ZqQldZbTVQa1U5UlhoUWY2SmlzTGxPT1NhNVFaX3JBNGxmNEU3dDZubG9FaHciXSwiaG9sZGVyIjoiZGlkOmtleTp6RG5hZVlpd0hOZU1ZYWoyMVdvOWpQQ293dG5Cclk4aGU4VUNLOFpaTjFtaGh4OFBNIn19.Xs4kYmtNJEBLKOgof6pne9dkxDVim2MvCUwQVsFXzL5w01f0_nRSZVIYvPST8ofu9h0X80gIKxouJ-K5uBxMHg' \
+--data-urlencode 'vp_token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSJ9.eyJpc3MiOiJkaWQ6a2V5OnpEbmFlWWl3SE5lTVlhajIxV285alBDb3d0bkJyWThoZThVQ0s4WlpOMW1oaHg4UE0iLCJub25jZSI6Ijg5NDAwOWRkOGJmMDQxMzBhMWVlYmFkZmM1YTE3MmRkIiwiYXVkIjoicmVkaXJlY3RfdXJpOmh0dHBzOi8vOXBuenBiYmctODA4MC5hc3NlLmRldnR1bm5lbHMubXMvY2FsbGJhY2siLCJ2cCI6eyJ0eXBlIjpbIlZlcmlmaWFibGVQcmVzZW50YXRpb24iXSwidmVyaWZpYWJsZUNyZWRlbnRpYWwiOlsiZXlKaGJHY2lPaUpGVXpJMU5pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SjJZeUk2ZXlKQVkyOXVkR1Y0ZENJNld5Sm9kSFJ3Y3pvdkwzZDNkeTUzTXk1dmNtY3ZNakF4T0M5amNtVmtaVzUwYVdGc2N5OTJNU0pkTENKcFpDSTZJbWgwZEhCek9pOHZPWEJ1ZW5CaVltY3RPREE0TUM1aGMzTmxMbVJsZG5SMWJtNWxiSE11YlhNdmRtTXZPVEV4T0dOa09UVTNaREF6TkRneFlqazNZakF4WmpNME5qTTVPRFk0TjJZaUxDSjBlWEJsSWpwYklsWmxjbWxtYVdGaWJHVkRjbVZrWlc1MGFXRnNJaXdpVlc1cGRtVnljMmwwZVVSbFozSmxaVU55WldSbGJuUnBZV3dpWFN3aWFYTnpkV1Z5SWpvaWFIUjBjSE02THk4NWNHNTZjR0ppWnkwNE1EZ3dMbUZ6YzJVdVpHVjJkSFZ1Ym1Wc2N5NXRjeUlzSW1semMzVmhibU5sUkdGMFpTSTZJakl3TWpZdE1ETXRNalpVTVRBNk1USTZNVFF1TVRZNVdpSXNJbU55WldSbGJuUnBZV3hUZFdKcVpXTjBJanA3SW1sa0lqb2laR2xrT210bGVUcDZSRzVoWlZscGQwaE9aVTFaWVdveU1WZHZPV3BRUTI5M2RHNUNjbGs0YUdVNFZVTkxPRnBhVGpGdGFHaDRPRkJOSWl3aVoybDJaVzVmYm1GdFpTSTZJblJsYzNRaUxDSm1ZVzFwYkhsZmJtRnRaU0k2SW5SaGNtOGlMQ0prWldkeVpXVWlPaUkxSWl3aVozQmhJam9pZEdWemRDSjlmU3dpYVhOeklqb2lhSFIwY0hNNkx5ODVjRzU2Y0dKaVp5MDRNRGd3TG1GemMyVXVaR1YyZEhWdWJtVnNjeTV0Y3lJc0luTjFZaUk2SW1ScFpEcHJaWGs2ZWtSdVlXVlphWGRJVG1WTldXRnFNakZYYnpscVVFTnZkM1J1UW5KWk9HaGxPRlZEU3poYVdrNHhiV2hvZURoUVRTSjkucUU5aVlxYngzVHNWNjhGQVR2Rl84b083T0VsallPeWR2eGJOQnlyazJpY1Q2c0l2WE5QS0NiYTlwcUxvOWVPNjNEdy1PdDNVZHBPMm10Q3lXOGM1a1EiXSwiaG9sZGVyIjoiZGlkOmtleTp6RG5hZVlpd0hOZU1ZYWoyMVdvOWpQQ293dG5Cclk4aGU4VUNLOFpaTjFtaGh4OFBNIn19.hzXVRIennFIu1CiYXCQB_W-w4xL-Un9PChp5c31ZPI2CbmZaCJsjkuvwEm6c6_5F1nY7UkAF-EsVqewbsdne6Q' \
 --data-urlencode 'presentation_submission={
 		"id": "BptkWumGAD21zS6uRm2a",
 		"definition_id": "3cf37e60-e6e4-4d67-acff-3623586a7c4c",
@@ -396,34 +399,14 @@ curl --location 'http://localhost:8080/verify/callback' \
 			}
 		]
 	}' \
---data-urlencode 'state=tEoHpMJo1896FnkXJxVu'
+--data-urlencode 'state=example-state'
 ```
 
-**レスポンス**
+**レスポンス**（`200 OK`）
 
 ```
 {
-    "message": "Callback received successfully",
-    "authorization_response": {
-        "vp_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSJ9.eyJpc3MiOiJkaWQ6a2V5OnpEbmFlWWl3SE5lTVlhajIxV285alBDb3d0bkJyWThoZThVQ0s4WlpOMW1oaHg4UE0iLCJub25jZSI6ImUzMDNhYzUzMWM1YjQ3ODM4OWRkN2M0NzQ0MDRlM2I5IiwidnAiOnsidHlwZSI6WyJWZXJpZmlhYmxlUHJlc2VudGF0aW9uIl0sInZlcmlmaWFibGVDcmVkZW50aWFsIjpbImV5SmhiR2NpT2lKRlV6STFOaUlzSW5SNWNDSTZJa3BYVkNKOS5leUoyWXlJNmV5SkFZMjl1ZEdWNGRDSTZXeUpvZEhSd2N6b3ZMM2QzZHk1M015NXZjbWN2TWpBeE9DOWpjbVZrWlc1MGFXRnNjeTkyTVNKZExDSnBaQ0k2SW1oMGRIQnpPaTh2YldWa1lXeGliMjlyTFdSbGRpMWhjSEF0YVhOemRXVnlMbmRsWWk1aGNIQXZZM0psWkdWdWRHbGhiSE12UzJNME1GcG1XblIwVlVwV1pGRnJORk5JYm5ZaUxDSjBlWEJsSWpwYklsWmxjbWxtYVdGaWJHVkRjbVZrWlc1MGFXRnNJaXdpVFdWa1lXeENiMjlyVFdWa1lXd2lMQ0pOUkVJME1EUXlZek5sTWpWaU9UUTBOV0UwT0RobU1EbGhPRE00WVRNME9EVTROeUpkTENKcGMzTjFaWElpT2lKb2RIUndjem92TDIxbFpHRnNZbTl2YXkxa1pYWXRZWEJ3TFdsemMzVmxjaTUzWldJdVlYQndMMmx6YzNWbGNuTXZXVzlsZVRsSVJtcFVXVkI1WTIxa2NYZGFWVk1pTENKcGMzTjFZVzVqWlVSaGRHVWlPaUl5TURJMExURXlMVEkwVkRBeE9qTTRPalF6TGpZek1sb2lMQ0pqY21Wa1pXNTBhV0ZzVTNWaWFtVmpkQ0k2ZXlKcFpDSTZJbVJwWkRwclpYazZla1J1WVdWWmFYZElUbVZOV1dGcU1qRlhiemxxVUVOdmQzUnVRbkpaT0dobE9GVkRTemhhV2s0eGJXaG9lRGhRVFNJc0ltMWxaR0ZzYVhOMFQyWWlPbnNpYm1GdFpTSTZXM3NpZG1Gc2RXVWlPaUozYjI1a1pYSnNZVzVrSWl3aWJHOWpZV3hsSWpvaWFtRXRTbEFpZlYwc0ltUmxjMk55YVhCMGFXOXVJanBiZXlKMllXeDFaU0k2SW5kdmJtUmxjbXhoYm1RaUxDSnNiMk5oYkdVaU9pSnFZUzFLVUNKOVhTd2liRzluYnlJNlczc2lkbUZzZFdVaU9uc2lkWEpwSWpvaWFIUjBjSE02THk5emRHOXlZV2RsTG1kdmIyZHNaV0Z3YVhNdVkyOXRMMjFsWkdGc1ltOXZheTFrWlhZdVlYQndjM0J2ZEM1amIyMHZhWE56ZFdWeUpUSkdkakVsTWtacGMzTjFaWEp6SlRKR1dXOWxlVGxJUm1wVVdWQjVZMjFrY1hkYVZWTWxNa1pqY21Wa1pXNTBhV0ZzY3lVeVJrSndkR3RYZFcxSFFVUXlNWHBUTm5WU2JUSmhMbkJ1WnlKOUxDSnNiMk5oYkdVaU9pSnFZUzFLVUNKOVhYMTlmU3dpYVhOeklqb2lhSFIwY0hNNkx5OXRaV1JoYkdKdmIyc3RaR1YyTFdGd2NDMXBjM04xWlhJdWQyVmlMbUZ3Y0M5cGMzTjFaWEp6TDFsdlpYazVTRVpxVkZsUWVXTnRaSEYzV2xWVElpd2libUptSWpveE56TTFNREEwTXpJek5qTXlMQ0p6ZFdJaU9pSmthV1E2YTJWNU9ucEVibUZsV1dsM1NFNWxUVmxoYWpJeFYyODVhbEJEYjNkMGJrSnlXVGhvWlRoVlEwczRXbHBPTVcxb2FIZzRVRTBpZlEuX1dlOUEyalJnR3VrYzg5MnpXVFpxLUFTcnBQM3dZeHhXOFM4XzdwT3ZqQldZbTVQa1U5UlhoUWY2SmlzTGxPT1NhNVFaX3JBNGxmNEU3dDZubG9FaHciXSwiaG9sZGVyIjoiZGlkOmtleTp6RG5hZVlpd0hOZU1ZYWoyMVdvOWpQQ293dG5Cclk4aGU4VUNLOFpaTjFtaGh4OFBNIn19.5Mjnb7Y_1CJWEL5LgiFIZypeZthwrAODPrL5TcAy-lw95797Z_-L2hvyxvDf5HV1CIaqt3xfRdy7nJMZYTKnTw",
-        "presentation_submission": {
-            "id": "BptkWumGAD21zS6uRm2a",
-            "definition_id": "3cf37e60-e6e4-4d67-acff-3623586a7c4c",
-            "descriptor_map": [
-                {
-                    "id": "BptkWumGAD21zS6uRm2a",
-                    "format": "jwt_vp_json",
-                    "path": "$",
-                    "path_nested": {
-                        "id": "BptkWumGAD21zS6uRm2a",
-                        "format": "jwt_vc_json",
-                        "path": "$.verifiableCredential[0]"
-                    }
-                }
-            ]
-        },
-        "state": "tEoHpMJo1896FnkXJxVu"
-    }
+  "redirect_uri": "http://localhost:8080/verified"
 }
 ```
 
@@ -691,16 +674,25 @@ VP Tokenを検証します。
 verifyPresentations(
   id: ClientId,
   response: AuthorizationResponse,
-  isKbJwt: boolean
+  options: VerifyPresentationOptions
 ): Promise<VpTokenPayload>
 ```
 
 **パラメータ**:
 - `id`: Verifierの識別子（[VerifierClientId](#VerifierClientId)）
 - `response`: 検証に利用する情報（[Verifierauthorizationresponse](#Verifierauthorizationresponse)）
-- `isKbJwt`： SD-JWT検証の場合、Key Binding JWTを検証するかどうかのフラグ
-  - `isKbJwt = true` → Key Binding JWTを検証
-  - `isKbJwt = false`　→ Key Binding JWTを検証しない
+- `options`: [VerifyPresentationOptions](#VerifyPresentationOptions)。`expectedAud` の指定が必須です。
+
+#### VerifyPresentationOptions{#VerifyPresentationOptions}
+Verifier アプリから VP／クレデンシャル形式ごとの検査に渡すオプションです。型定義は [`verifier.flows.ts`](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts) を参照してください。
+
+| フィールド | 必須 | 説明 |
+| ---------- | ---- | ---- |
+| `expectedAud` | はい | 認可リクエストで送った **OAuth / OpenID4VP の `client_id` と同一**である [`ClientIdentifier`](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/client-id-scheme.types.ts) 文字列。`jwt_vp_json` の VP JWT の `aud`、および `dc+sd-jwt` で Key Binding がある場合の KB-JWT の `aud` と突き合わせられます。 |
+| `specifiedDisclosures` | いいえ | `dc+sd-jwt` 用。選択的開示の指定（任意）。 |
+| `isKbJwt` | いいえ | `dc+sd-jwt` 用。`true` のとき Key Binding JWT を検証（`nonce`、`aud`、`sd_hash` など）。省略時はプロバイダ既定（未指定は KB-JWT 検証なしに寄せる動き）。 |
+| `expectedNonce` | いいえ | `dc+sd-jwt` + KB-JWT 時。KB-JWT の `nonce` 期待値（通常は認可リクエストの `nonce`）。 |
+| `expectedTransactionDataHashes` | いいえ | `transaction_data` 利用時。KB-JWT に含まれるハッシュ列の期待値。 |
 
 **戻り値**:
 - 型 [VpTokenPayload](#VpTokenPayload) の検証済み VP トークンペイロードを返します。
@@ -727,16 +719,21 @@ verifyPresentations(
     // _sd、cnf、status などの SD-JWT ペイロードクレームを含む場合があります
   }
   ```
+
+- **実装者側の扱い**: 本ライブラリは検証済みペイロードを**自動では保存・管理しません**。セッションやデータベースへの紐づけ、保管期間、監査ログの有無などは、**利用者（実装者）のアプリケーション**が、業務要件に従って設計・実装してください。
+
 **エラーケース**:
 - `VERIFIER_NOT_FOUND`: Verifierが存在しない
-- `UNSUPPORTED_VP_TOKEN`: サポートされていないVP Token形式
-- `INVALID_NONCE`: 認可リクエスト時に発行されたnonceが`vp_token`に含まれていない、または一致しない場合に発生します。WalletはAuthorizationリクエストで提供されたnonceを`vp_token`に必ず含めて返す必要があります。
-- `INVALID_CREDENTIAL`: 無効なクレデンシャル
-- `INVALID_PRESENTATION_SUBMISSION`: 無効なpresentation_submission
-- `HOLDER_BINDING_FAILED`: Holder binding検証失敗
+- `UNSUPPORTED_VP_TOKEN`: `vp_token` の形や形式が未対応（複数 VP、オブジェクト形式の `vp_token` など）
+- `ILLEGAL_ARGUMENT`: 引数不備（例: `presentation_submission` なしの経路は未実装、プロバイダがオプションを拒否）
+- `INVALID_NONCE`: 認可リクエストの `nonce` が VP に無い、または一致しない
+- `INVALID_CREDENTIAL`: 内包 VC が無効（`jwt_vp_json` 経路）、発行者メタデータ／JWKS 取得失敗など
+- `INVALID_VP_TOKEN`: VP 構造または `aud` が `expectedAud` と一致しないなど
+- `INVALID_SD_JWT` / `HOLDER_BINDING_FAILED`: SD-JWT または Key Binding の検証失敗
+- `INVALID_PRESENTATION_SUBMISSION`: 無効な `presentation_submission`
 
 **注意事項**:
-- `isKbJwt`が指定されない場合、デフォルトで`false`が使用されます（今後の実装で変更される可能性があります）
+- 認可リクエストで使った **`client_id` と同じ文字列**（`redirect_uri:` や `x509_san_dns:` などスキーム接頭辞込み）を `expectedAud` に渡してください。Wallet が設定する `aud` と一致させる必要があります。
 
 
 
