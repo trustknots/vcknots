@@ -61,8 +61,29 @@ export const kmsVerifierSignatureKeyStore = (
     name: 'kms-verifier-signature-key-store-provider',
     single: true,
 
-    async save(verifier, pairs) {
+    async save(verifier, keyAlg, pair) {
+      const declaredAlg = pair?.declaredAlg ?? keyAlg
+      if (pair && pair.declaredAlg !== keyAlg) {
+        raise('ILLEGAL_ARGUMENT', {
+          message: `The provided key pair algorithm ${pair.declaredAlg} does not match the requested key algorithm ${keyAlg}.`,
+        })
+      }
+
+      const kmsAlgorithm = joseAlgorithmToKmsAlgorithm(declaredAlg)
+      if (!kmsAlgorithm) {
+        raise('INTERNAL_SERVER_ERROR', {
+          message: `Unsupported verifier key algorithm: ${declaredAlg}`,
+        })
+      }
+
       const keyRingName = await ensureKeyRing()
+      const keyId = verifierKeyId(verifier, declaredAlg)
+
+      if (!pair) {
+        await ensureCryptoKey(keyRingName, keyId, kmsAlgorithm, { importOnly: false })
+        return
+      }
+
       const importJob = await ensureImportJob(keyRingName)
       const importJobName = importJob.name
       const wrappingPublicKeyPem = importJob.publicKey?.pem
@@ -72,44 +93,27 @@ export const kmsVerifierSignatureKeyStore = (
         })
       }
 
-      const validatedPairs = pairs.map((pair) => {
-        const declaredAlg = pair.declaredAlg
-        const kmsAlgorithm = joseAlgorithmToKmsAlgorithm(declaredAlg)
-        if (!kmsAlgorithm) {
-          raise('INTERNAL_SERVER_ERROR', {
-            message: `Unsupported verifier key algorithm: ${declaredAlg}`,
-          })
-        }
-
-        if (declaredAlg.startsWith('RS') || declaredAlg.startsWith('PS')) {
-          raise('INTERNAL_SERVER_ERROR', {
-            message: `Import for ${declaredAlg} requires RSA_AES wrapping (AES-KWP), which is not implemented`,
-          })
-        }
-
-        return {
-          pair,
-          declaredAlg,
-          kmsAlgorithm,
-          keyId: verifierKeyId(verifier, declaredAlg),
-        }
-      })
-
-      for (const { pair, kmsAlgorithm, keyId } of validatedPairs) {
-        const cryptoKeyName = await ensureCryptoKey(keyRingName, keyId, kmsAlgorithm)
-        const privateKeyDer = toPkcs8Der(pair.privateKey)
-        const wrappedKey = wrapPrivateKeyForImport(privateKeyDer, wrappingPublicKeyPem)
-        await kms.importCryptoKeyVersion({
-          parent: cryptoKeyName,
-          algorithm: kmsAlgorithm as never,
-          importJob: importJobName,
-          wrappedKey,
+      if (declaredAlg.startsWith('RS') || declaredAlg.startsWith('PS')) {
+        raise('INTERNAL_SERVER_ERROR', {
+          message: `Import for ${declaredAlg} requires RSA_AES wrapping (AES-KWP), which is not implemented`,
         })
       }
+
+      const cryptoKeyName = await ensureCryptoKey(keyRingName, keyId, kmsAlgorithm, {
+        importOnly: true,
+      })
+      const privateKeyDer = toPkcs8Der(pair.privateKey)
+      const wrappedKey = wrapPrivateKeyForImport(privateKeyDer, wrappingPublicKeyPem)
+      await kms.importCryptoKeyVersion({
+        parent: cryptoKeyName,
+        algorithm: kmsAlgorithm as never,
+        importJob: importJobName,
+        wrappedKey,
+      })
     },
 
-    async fetch(verifier, alg) {
-      const keyId = verifierKeyId(verifier, alg)
+    async fetch(verifier, keyAlg) {
+      const keyId = verifierKeyId(verifier, keyAlg)
       const cryptoKeyName = kms.cryptoKeyPath(projectId, locationId, keyRingId, keyId)
       let versions: { name?: string | null }[] = []
       try {
@@ -152,15 +156,15 @@ export const kmsVerifierSignatureKeyStore = (
         return null
       }
 
-      const keyAlg = kmsAlgorithmToJoseAlgorithm(publicKey.algorithm)
-      if (!keyAlg || keyAlg !== alg) {
+      const alg = kmsAlgorithmToJoseAlgorithm(publicKey.algorithm)
+      if (!alg || alg !== keyAlg) {
         console.error(
           `Unsupported KMS key algorithm for verifier ${verifier}: ${publicKey.algorithm}`
         )
         return null
       }
 
-      return importSPKI(publicKeyPem, keyAlg)
+      return importSPKI(publicKeyPem, alg)
     },
 
     async sign(verifier, keyAlg, jwtPayload, jwtHeader) {
@@ -207,15 +211,27 @@ export const kmsVerifierSignatureKeyStore = (
 
         const digestCrc32c = crc32c(digest)
         const versionName = latestVersion.name
-        const [signed] = await kms.asymmetricSign({
-          name: versionName,
-          digest: {
-            [digestField]: digest,
-          } as never,
-          digestCrc32c: {
-            value: BigInt(digestCrc32c).toString(),
-          },
-        })
+        const signed = await (async () => {
+          try {
+            const [signResponse] = await kms.asymmetricSign({
+              name: versionName,
+              digest: {
+                [digestField]: digest,
+              } as never,
+              digestCrc32c: {
+                value: BigInt(digestCrc32c).toString(),
+              },
+            })
+            return signResponse
+          } catch (error) {
+            if (grpcCode(error) === KMS_NOT_FOUND) {
+              raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+                message: 'Verifier private key not found.',
+              })
+            }
+            throw error
+          }
+        })()
 
         // https://cloud.google.com/kms/docs/data-integrity-guidelines
         if (signed.name !== versionName) {

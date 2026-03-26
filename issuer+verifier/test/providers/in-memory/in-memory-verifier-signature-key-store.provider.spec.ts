@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it } from 'node:test'
 import { exportJWK, generateKeyPair, importJWK, jwtVerify } from 'jose'
+import type { JWK } from 'jose'
 import { ClientId } from '../../../src/client-id.types'
 import { inMemoryVerifierSignatureKeyStore } from '../../../src/providers/in-memory/in-memory-verifier-signature-key-store.provider'
 import { ProofJwtHeader } from '../../../src/credential.types'
 import { JwtPayload } from '../../../src/jwt.types'
-import type { TmpVerifierSignatureKeyPair } from '../../../src/signature-key.types'
+import type { SignatureKeyEntry } from '../../../src/signature-key.types'
 
 describe('inMemoryVerifierSignatureKeyStore', () => {
   let store: ReturnType<typeof inMemoryVerifierSignatureKeyStore>
   const verifier = ClientId('https://verifier.example.com')
-  let pair1: TmpVerifierSignatureKeyPair
-  let pair2: TmpVerifierSignatureKeyPair
+  let pair1: SignatureKeyEntry
+  let pair2: SignatureKeyEntry
 
   beforeEach(async () => {
     store = inMemoryVerifierSignatureKeyStore()
@@ -37,15 +38,15 @@ describe('inMemoryVerifierSignatureKeyStore', () => {
   })
 
   it('should save and fetch key pairs for a verifier', async () => {
-    await store.save(verifier, [pair1])
+    await store.save(verifier, 'ES256', pair1)
     const fetched = await store.fetch(verifier, 'ES256')
     assert.ok(fetched)
     assert.equal(fetched.algorithm.name, 'ECDSA')
   })
 
   it('should append new key pairs with different alg', async () => {
-    await store.save(verifier, [pair1])
-    await store.save(verifier, [pair2])
+    await store.save(verifier, 'ES256', pair1)
+    await store.save(verifier, 'ES384', pair2)
     const fetched1 = await store.fetch(verifier, 'ES256')
     const fetched2 = await store.fetch(verifier, 'ES384')
     assert.ok(fetched1)
@@ -56,16 +57,24 @@ describe('inMemoryVerifierSignatureKeyStore', () => {
     const keys1b = await generateKeyPair('ES256', { extractable: true })
     const pubKey1b = await exportJWK(keys1b.publicKey)
     const privKey1b = await exportJWK(keys1b.privateKey)
-    const pair1b: TmpVerifierSignatureKeyPair = {
+    const pair1b: SignatureKeyEntry = {
       ...pair1,
       publicKey: { ...pubKey1b, kid: 'kid1b', alg: 'ES256' },
       privateKey: { ...privKey1b, kid: 'kid1b', alg: 'ES256' },
     }
 
-    await store.save(verifier, [pair1])
-    await store.save(verifier, [pair1b])
+    await store.save(verifier, 'ES256', pair1)
+    await store.save(verifier, 'ES256', pair1b)
     const fetched = await store.fetch(verifier, 'ES256')
     assert.ok(fetched)
+  })
+
+  it('should reject save when pair algorithm does not match keyAlg', async () => {
+    await assert.rejects(store.save(verifier, 'ES256', pair2), (error: Error) => {
+      assert.equal(error.name, 'ILLEGAL_ARGUMENT')
+      assert.match(error.message, /does not match the requested key algorithm/)
+      return true
+    })
   })
 
   it('should return null if no key pairs saved', async () => {
@@ -74,7 +83,7 @@ describe('inMemoryVerifierSignatureKeyStore', () => {
   })
 
   it('should sign a JWT payload and return a valid signature', async () => {
-    await store.save(verifier, [pair1])
+    await store.save(verifier, 'ES256', pair1)
     const jwtHeader: ProofJwtHeader = {
       typ: 'openid4vci-proof+jwt',
       alg: 'ES256',
@@ -98,7 +107,8 @@ describe('inMemoryVerifierSignatureKeyStore', () => {
     const protectedPayload = Buffer.from(JSON.stringify(jwtPayload)).toString('base64url')
     const jws = `${protectedHeader}.${protectedPayload}.${signature}`
 
-    const key = await importJWK(pair1.publicKey, 'ES256')
+    assert.ok(pair1.publicKey && typeof pair1.publicKey !== 'string')
+    const key = await importJWK(pair1.publicKey as JWK, 'ES256')
     const { payload } = await jwtVerify(jws, key)
 
     assert.deepStrictEqual(payload, jwtPayload)

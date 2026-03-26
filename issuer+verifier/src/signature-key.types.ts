@@ -1,17 +1,6 @@
 import { z } from 'zod'
 import { jwkSchema } from './jwk.type'
 
-const jwk = z
-  .object({
-    e: z.string().optional(),
-    n: z.string().optional(),
-    kty: z.string().optional(),
-    x: z.string().optional(),
-    y: z.string().optional(),
-    crv: z.string().optional(),
-  })
-  .and(z.record(z.string(), z.unknown()))
-
 const PEM_LABELS =
   '(PUBLIC KEY|PRIVATE KEY|ENCRYPTED PRIVATE KEY|EC PRIVATE KEY|RSA PRIVATE KEY|CERTIFICATE|CERTIFICATE REQUEST|X509 CRL|PKCS7|PKCS8)'
 
@@ -40,16 +29,15 @@ export const tmpKeyMeta = z.object({
   kid: z.string().optional(),
 })
 
-export const tmpVerifierSignatureKeyPairSchema = z.object({
+export const signatureKeyEntrySchema = z.object({
   ...tmpKeyMeta.shape,
-  publicKey: z.union([PemStringSchema, jwk]).optional(),
-  privateKey: z.union([PemStringSchema, jwk]),
+  publicKey: z.union([PemStringSchema, jwkSchema]).optional(),
+  privateKey: z.union([PemStringSchema, jwkSchema]),
 })
 
 export type Certificate = z.infer<typeof certificateSchema>
 export type SignatureKeyPair = z.infer<typeof signatureKeyPairSchema>
-export type JwkTmp = z.infer<typeof jwk>
-export type TmpVerifierSignatureKeyPair = z.infer<typeof tmpVerifierSignatureKeyPairSchema>
+export type SignatureKeyEntry = z.infer<typeof signatureKeyEntrySchema>
 
 export const Certificate = (value?: string | string[]) => certificateSchema.parse(value)
 Certificate.schema = certificateSchema

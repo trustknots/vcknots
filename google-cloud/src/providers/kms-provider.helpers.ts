@@ -21,6 +21,15 @@ export const createKmsProviderHelpers = ({
   importJobPollIntervalMs = 3000,
   importJobMaxRetries = 60,
 }: CreateKmsProviderHelpersOptions) => {
+  type ImportJob = {
+    name?: string | null
+    state?: unknown
+    publicKey?: {
+      pem?: string | null
+    } | null
+  }
+  const inFlightImportJobs = new Map<string, Promise<ImportJob>>()
+
   const ensureKeyRing = async () => {
     const keyRingName = kms.keyRingPath(projectId, locationId, keyRingId)
     try {
@@ -146,12 +155,45 @@ export const createKmsProviderHelpers = ({
       return reloadedCanonicalJob
     }
 
+    const existingImportJob = inFlightImportJobs.get(canonicalImportJobName)
+    if (existingImportJob) {
+      return existingImportJob
+    }
+
     const replacementImportJobId = `${baseImportJobId}-${Date.now()}`
-    return createImportJob(replacementImportJobId)
+    const createReplacementImportJobPromise = (async () => {
+      try {
+        return await createImportJob(replacementImportJobId)
+      } catch (error) {
+        if (grpcCode(error) !== KMS_ALREADY_EXISTS) {
+          throw error
+        }
+
+        const fallbackJob = await loadImportJob(canonicalImportJobName)
+        if (fallbackJob) {
+          return fallbackJob
+        }
+        throw error
+      }
+    })()
+
+    inFlightImportJobs.set(canonicalImportJobName, createReplacementImportJobPromise)
+    createReplacementImportJobPromise.finally(() => {
+      if (inFlightImportJobs.get(canonicalImportJobName) === createReplacementImportJobPromise) {
+        inFlightImportJobs.delete(canonicalImportJobName)
+      }
+    })
+    return createReplacementImportJobPromise
   }
 
-  const ensureCryptoKey = async (keyRingName: string, keyId: string, kmsAlgorithm: string) => {
+  const ensureCryptoKey = async (
+    keyRingName: string,
+    keyId: string,
+    kmsAlgorithm: string,
+    options?: { importOnly?: boolean }
+  ) => {
     const cryptoKeyName = kms.cryptoKeyPath(projectId, locationId, keyRingId, keyId)
+    const importOnly = options?.importOnly ?? true
     try {
       await kms.getCryptoKey({ name: cryptoKeyName })
       return cryptoKeyName
@@ -165,13 +207,13 @@ export const createKmsProviderHelpers = ({
           cryptoKeyId: keyId,
           cryptoKey: {
             purpose: 'ASYMMETRIC_SIGN',
-            importOnly: true,
+            importOnly,
             versionTemplate: {
               algorithm: kmsAlgorithm as never,
             },
             destroyScheduledDuration: { seconds: 60 * 60 * 24 },
           },
-          skipInitialVersionCreation: true,
+          skipInitialVersionCreation: importOnly,
         })
       } catch (createError) {
         if (grpcCode(createError) !== KMS_ALREADY_EXISTS) {

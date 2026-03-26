@@ -1,20 +1,42 @@
 import { CompactSign, importJWK, importPKCS8, importSPKI } from 'jose'
-import { TmpVerifierSignatureKeyPair } from '../../signature-key.types'
+import { SignatureKeyEntry } from '../../signature-key.types'
 import { VerifierSignatureKeyStoreProvider } from '../provider.types'
 import { raise } from '../../errors'
+import { WithProviderRegistry, withProviderRegistry } from '../provider.registry'
+import { selectProvider } from '../provider.utils'
 
-export const inMemoryVerifierSignatureKeyStore = (): VerifierSignatureKeyStoreProvider => {
-  const map = new Map<string, TmpVerifierSignatureKeyPair[]>()
+export const inMemoryVerifierSignatureKeyStore = (): VerifierSignatureKeyStoreProvider &
+  WithProviderRegistry => {
+  const map = new Map<string, SignatureKeyEntry[]>()
 
   return {
     kind: 'verifier-signature-key-store-provider',
     name: 'in-memory-verifier-signature-key-store-provider',
     single: true,
 
-    async save(verifier, pairs) {
+    ...withProviderRegistry,
+
+    async save(verifier, keyAlg, pair) {
       const current = map.get(verifier) ?? []
-      const values = current.filter((c) => !pairs.some((p) => c.declaredAlg === p.declaredAlg))
-      map.set(verifier, [...values, ...pairs])
+      let pairToSave: SignatureKeyEntry
+      if (!pair) {
+        const signatureKey$ = this.providers.get('verifier-signature-key-provider')
+        const keyPair = await selectProvider(signatureKey$, keyAlg).generate()
+        pairToSave = {
+          ...keyPair,
+          format: 'jwk',
+          declaredAlg: keyAlg,
+        }
+      } else {
+        if (pair.declaredAlg !== keyAlg) {
+          throw raise('ILLEGAL_ARGUMENT', {
+            message: `The provided key pair algorithm ${pair.declaredAlg} does not match the requested key algorithm ${keyAlg}.`,
+          })
+        }
+        pairToSave = pair
+      }
+      const values = current.filter((c) => c.declaredAlg !== keyAlg)
+      map.set(verifier, [...values, pairToSave])
     },
 
     async fetch(verifier, alg) {

@@ -40,6 +40,14 @@ const grpcError = (message: string, code: number) => {
   return error
 }
 
+const createDeferred = () => {
+  let resolve!: () => void
+  const promise = new Promise<void>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
 class FakeKmsClient {
   keyRings = new Set<string>()
   cryptoKeys = new Set<string>()
@@ -62,12 +70,15 @@ class FakeKmsClient {
   errors = {
     getKeyRing: new Map<string, Error & { code?: number }>(),
     createKeyRing: null as (Error & { code?: number }) | null,
+    createImportJob: new Map<string, Error & { code?: number }>(),
     getImportJob: new Map<string, Error & { code?: number }>(),
     getCryptoKey: new Map<string, Error & { code?: number }>(),
     createCryptoKey: null as (Error & { code?: number }) | null,
     listCryptoKeyVersions: new Map<string, Error & { code?: number }>(),
+    asymmetricSign: new Map<string, Error & { code?: number }>(),
   }
   getImportJobResponses = new Map<string, FakeImportJob[]>()
+  createImportJobBarrier: Promise<void> | null = null
 
   wrappingKeyPair = generateKeyPairSync('rsa', { modulusLength: 3072 })
 
@@ -127,7 +138,10 @@ class FakeKmsClient {
     }
     const responses = this.getImportJobResponses.get(name)
     if (responses && responses.length > 0) {
-      const next = responses.shift()!
+      const next = responses.shift()
+      if (!next) {
+        throw new Error(`Missing queued import job response for ${name}`)
+      }
       if (responses.length === 0) {
         this.getImportJobResponses.delete(name)
       }
@@ -143,6 +157,14 @@ class FakeKmsClient {
 
   async createImportJob(request: Record<string, unknown>) {
     this.calls.createImportJob.push(request)
+    const importJobId = String(request.importJobId)
+    const error = this.errors.createImportJob.get(importJobId)
+    if (error) {
+      throw error
+    }
+    if (this.createImportJobBarrier) {
+      await this.createImportJobBarrier
+    }
     const importJobName = `${String(request.parent)}/importJobs/${String(request.importJobId)}`
     const job = {
       name: importJobName,
@@ -211,6 +233,10 @@ class FakeKmsClient {
 
   async asymmetricSign(request: Record<string, unknown>) {
     this.calls.asymmetricSign.push(request)
+    const error = this.errors.asymmetricSign.get(String(request.name))
+    if (error) {
+      throw error
+    }
     if (!this.asymmetricSignResponse) {
       throw raise('INTERNAL_SERVER_ERROR', { message: 'missing response' })
     }
@@ -257,13 +283,11 @@ describe('kmsVerifierSignatureKeyStore', () => {
     const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
     const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
 
-    await provider.save(verifier, [
-      {
-        format: 'pem',
-        declaredAlg: 'ES256',
-        privateKey: privateKeyPem,
-      },
-    ])
+    await provider.save(verifier, 'ES256', {
+      format: 'pem',
+      declaredAlg: 'ES256',
+      privateKey: privateKeyPem,
+    })
 
     assert.equal(kms.calls.createKeyRing.length, 0)
     assert.equal(kms.calls.createCryptoKey.length, 1)
@@ -308,13 +332,11 @@ describe('kmsVerifierSignatureKeyStore', () => {
     const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
     const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
 
-    await provider.save(verifier, [
-      {
-        format: 'pem',
-        declaredAlg: 'ES256',
-        privateKey: privateKeyPem,
-      },
-    ])
+    await provider.save(verifier, 'ES256', {
+      format: 'pem',
+      declaredAlg: 'ES256',
+      privateKey: privateKeyPem,
+    })
 
     assert.equal(kms.calls.createKeyRing.length, 0)
     assert.equal(kms.calls.createCryptoKey.length, 1)
@@ -333,13 +355,11 @@ describe('kmsVerifierSignatureKeyStore', () => {
     const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
 
     await assert.rejects(
-      provider.save(verifier, [
-        {
-          format: 'pem',
-          declaredAlg: 'ES256',
-          privateKey: privateKeyPem,
-        },
-      ]),
+      provider.save(verifier, 'ES256', {
+        format: 'pem',
+        declaredAlg: 'ES256',
+        privateKey: privateKeyPem,
+      }),
       /permission denied/
     )
   })
@@ -354,20 +374,16 @@ describe('kmsVerifierSignatureKeyStore', () => {
     const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
     const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
 
-    await provider.save(verifier, [
-      {
-        format: 'pem',
-        declaredAlg: 'ES256',
-        privateKey: privateKeyPem,
-      },
-    ])
-    await provider.save(verifier, [
-      {
-        format: 'pem',
-        declaredAlg: 'ES256',
-        privateKey: privateKeyPem,
-      },
-    ])
+    await provider.save(verifier, 'ES256', {
+      format: 'pem',
+      declaredAlg: 'ES256',
+      privateKey: privateKeyPem,
+    })
+    await provider.save(verifier, 'ES256', {
+      format: 'pem',
+      declaredAlg: 'ES256',
+      privateKey: privateKeyPem,
+    })
 
     assert.equal(kms.calls.createImportJob.length, 0)
   })
@@ -383,20 +399,16 @@ describe('kmsVerifierSignatureKeyStore', () => {
     const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
     const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
 
-    await provider.save(verifier, [
-      {
-        format: 'pem',
-        declaredAlg: 'ES256',
-        privateKey: privateKeyPem,
-      },
-    ])
-    await provider.save(verifier, [
-      {
-        format: 'pem',
-        declaredAlg: 'ES256',
-        privateKey: privateKeyPem,
-      },
-    ])
+    await provider.save(verifier, 'ES256', {
+      format: 'pem',
+      declaredAlg: 'ES256',
+      privateKey: privateKeyPem,
+    })
+    await provider.save(verifier, 'ES256', {
+      format: 'pem',
+      declaredAlg: 'ES256',
+      privateKey: privateKeyPem,
+    })
 
     assert.equal(kms.calls.createImportJob.length, 1)
     assert.equal(kms.calls.createImportJob[0].importJobId, baseImportJobId)
@@ -438,15 +450,63 @@ describe('kmsVerifierSignatureKeyStore', () => {
     const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
     const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
 
-    await provider.save(verifier, [
-      {
+    await provider.save(verifier, 'ES256', {
+      format: 'pem',
+      declaredAlg: 'ES256',
+      privateKey: privateKeyPem,
+    })
+
+    assert.equal(kms.calls.createImportJob.length, 0)
+  })
+
+  it('should share in-flight replacement import job creation across concurrent saves', async () => {
+    const kms = new FakeKmsClient()
+    kms.importJobs.clear()
+    kms.errors.createImportJob.set(baseImportJobId, grpcError('already exists', 6))
+    const createImportJobDeferred = createDeferred()
+    kms.createImportJobBarrier = createImportJobDeferred.promise
+    const provider = kmsVerifierSignatureKeyStore({
+      client: kms as never,
+      projectId,
+      locationId,
+    })
+    const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
+    const originalDateNow = Date.now
+    let now = 1000
+    Date.now = () => now++
+
+    try {
+      const save1 = provider.save(verifier, 'ES256', {
         format: 'pem',
         declaredAlg: 'ES256',
         privateKey: privateKeyPem,
-      },
-    ])
+      })
+      const save2 = provider.save(verifier, 'ES256', {
+        format: 'pem',
+        declaredAlg: 'ES256',
+        privateKey: privateKeyPem,
+      })
 
-    assert.equal(kms.calls.createImportJob.length, 0)
+      while (
+        !kms.calls.createImportJob.some((call) =>
+          String(call.importJobId).startsWith(`${baseImportJobId}-`)
+        )
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      createImportJobDeferred.resolve()
+      await Promise.all([save1, save2])
+    } finally {
+      Date.now = originalDateNow
+    }
+
+    const replacementCreateCalls = kms.calls.createImportJob.filter((call) =>
+      String(call.importJobId).startsWith(`${baseImportJobId}-`)
+    )
+    assert.equal(replacementCreateCalls.length, 1)
   })
 
   it('should fail save for unsupported algorithms', async () => {
@@ -458,13 +518,11 @@ describe('kmsVerifierSignatureKeyStore', () => {
     })
 
     await assert.rejects(
-      provider.save(verifier, [
-        {
-          format: 'jwk',
-          declaredAlg: 'unsupported',
-          privateKey: { kty: 'EC' },
-        },
-      ]),
+      provider.save(verifier, 'unsupported', {
+        format: 'jwk',
+        declaredAlg: 'unsupported',
+        privateKey: { kty: 'EC' },
+      }),
       (error: Error) => {
         assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
         assert.match(error.message, /Unsupported verifier key algorithm/)
@@ -475,7 +533,7 @@ describe('kmsVerifierSignatureKeyStore', () => {
     assert.equal(kms.calls.importCryptoKeyVersion.length, 0)
   })
 
-  it('should not mutate KMS before all pairs pass validation', async () => {
+  it('should reject save when pair algorithm does not match keyAlg', async () => {
     const kms = new FakeKmsClient()
     const provider = kmsVerifierSignatureKeyStore({
       client: kms as never,
@@ -486,27 +544,49 @@ describe('kmsVerifierSignatureKeyStore', () => {
     const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
 
     await assert.rejects(
-      provider.save(verifier, [
-        {
-          format: 'pem',
-          declaredAlg: 'ES256',
-          privateKey: privateKeyPem,
-        },
-        {
-          format: 'pem',
-          declaredAlg: 'RS256',
-          privateKey: privateKeyPem,
-        },
-      ]),
+      provider.save(verifier, 'ES384', {
+        format: 'pem',
+        declaredAlg: 'ES256',
+        privateKey: privateKeyPem,
+      }),
       (error: Error) => {
-        assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
-        assert.match(error.message, /requires RSA_AES wrapping/)
+        assert.equal(error.name, 'ILLEGAL_ARGUMENT')
+        assert.match(error.message, /does not match the requested key algorithm/)
         return true
       }
     )
 
     assert.equal(kms.calls.createCryptoKey.length, 0)
     assert.equal(kms.calls.importCryptoKeyVersion.length, 0)
+  })
+
+  it('should create a KMS-managed key when pair is not provided', async () => {
+    const kms = new FakeKmsClient()
+    kms.importJobs.clear()
+    const provider = kmsVerifierSignatureKeyStore({
+      client: kms as never,
+      projectId,
+      locationId,
+    })
+
+    await provider.save(verifier, 'ES256')
+
+    assert.equal(kms.calls.createImportJob.length, 0)
+    assert.equal(kms.calls.importCryptoKeyVersion.length, 0)
+    assert.equal(kms.calls.createCryptoKey.length, 1)
+    assert.deepEqual(kms.calls.createCryptoKey[0], {
+      parent: kms.keyRingPath(projectId, locationId, keyRingId),
+      cryptoKeyId: verifierKeyId('ES256'),
+      skipInitialVersionCreation: false,
+      cryptoKey: {
+        purpose: 'ASYMMETRIC_SIGN',
+        importOnly: false,
+        versionTemplate: {
+          algorithm: 'EC_SIGN_P256_SHA256',
+        },
+        destroyScheduledDuration: { seconds: 60 * 60 * 24 },
+      },
+    })
   })
 
   it('should fetch the latest enabled public key when KMS data is valid', async () => {
@@ -874,6 +954,37 @@ describe('kmsVerifierSignatureKeyStore', () => {
       (error: Error) => {
         assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
         assert.match(error.message, /permission denied/)
+        return true
+      }
+    )
+  })
+
+  it('should map NOT_FOUND from asymmetricSign to AUTHZ_VERIFIER_KEY_NOT_FOUND', async () => {
+    const kms = new FakeKmsClient()
+    const provider = kmsVerifierSignatureKeyStore({
+      client: kms as never,
+      projectId,
+      locationId,
+    })
+    const cryptoKeyName = kms.cryptoKeyPath(
+      projectId,
+      locationId,
+      keyRingId,
+      verifierKeyId('ES256')
+    )
+    const latestVersionName = kms.addEnabledVersion(cryptoKeyName, '1', {
+      name: '',
+      pem: 'unused',
+      pemCrc32c: { value: '0' },
+      algorithm: 'EC_SIGN_P256_SHA256',
+    })
+    kms.errors.asymmetricSign.set(latestVersionName, grpcError('not found', 5))
+
+    await assert.rejects(
+      provider.sign(verifier, 'ES256', { iss: verifier }, { alg: 'ES256', typ: 'JWT' }),
+      (error: Error) => {
+        assert.equal(error.name, 'AUTHZ_VERIFIER_KEY_NOT_FOUND')
+        assert.match(error.message, /Verifier private key not found/)
         return true
       }
     )

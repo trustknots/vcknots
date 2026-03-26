@@ -16,7 +16,8 @@ import { VcknotsContext } from './vcknots.context'
 import { VerifierMetadata } from './verifier-metadata.types'
 
 import { RequestObjectId } from './request-object-id.types'
-import { Certificate, JwkTmp } from './signature-key.types'
+import { Certificate } from './signature-key.types'
+import { Jwk } from './jwk.type'
 import { exportJWK, importSPKI } from 'jose'
 import { ClientIdentifier } from './client-id-scheme.types'
 import { VpTokenPayload } from './presentation.types'
@@ -27,12 +28,12 @@ type CreateVerifierMetadataOptionsBase = {
   kid?: string
 }
 type CreateVerifierMetadataOptionsWithCert = CreateVerifierMetadataOptionsBase & {
-  privateKey: string | JwkTmp
+  privateKey: string | Jwk
   certificate: string | string[]
 }
 type CreateVerifierMetadataOptionsWithPubKey = CreateVerifierMetadataOptionsBase & {
-  privateKey: string | JwkTmp
-  publicKey: string | JwkTmp
+  privateKey: string | Jwk
+  publicKey: string | Jwk
 }
 export type CreateVerifierMetadataOptions =
   | CreateVerifierMetadataOptionsWithPubKey
@@ -124,60 +125,59 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
       const verifierMetadata = metadata
       let keyPairsToSave:
-        | Array<{
+        | {
             format: 'pem' | 'jwk'
             declaredAlg: string
             kid?: string
-            publicKey?: string | JwkTmp
-            privateKey: string | JwkTmp
-          }>
+            publicKey?: string | Jwk
+            privateKey: string | Jwk
+          }
         | undefined
       let certificatesToSave: Certificate | undefined
-      if (!options) {
+      let keyAlg: string | undefined = options?.alg
+      if (!options || !keyAlg) {
         // create new key pair (not support x509)
-        const alg = metadata.authorization_signed_response_alg ?? 'ES256'
-        const provider = selectProvider(key$, alg)
+        keyAlg = metadata.authorization_signed_response_alg ?? 'ES256'
+        const provider = selectProvider(key$, keyAlg)
         const keyPairs = await provider.generate()
         verifierMetadata.jwks = { keys: [keyPairs.publicKey] }
-        verifierMetadata.authorization_signed_response_alg = alg
-        keyPairsToSave = [{ ...keyPairs, format: 'jwk', declaredAlg: alg }]
+        verifierMetadata.authorization_signed_response_alg = keyAlg
+        keyPairsToSave = { ...keyPairs, format: 'jwk', declaredAlg: keyAlg }
       } else if ('publicKey' in options && options.publicKey !== undefined) {
         // use provided key pair (not support x509)
-        if (!options.alg) {
+        if (!keyAlg) {
           throw err('INTERNAL_SERVER_ERROR', {
             message: 'alg is required in the provided publicKey.',
           })
         }
         if (options.format === 'jwk' && typeof options.publicKey !== 'string') {
           verifierMetadata.jwks = { keys: [options.publicKey] }
-          verifierMetadata.authorization_signed_response_alg = options.alg
+          verifierMetadata.authorization_signed_response_alg = keyAlg
         } else if (options.format === 'jwk') {
           throw err('INVALID_OPTIONS', {
             message: 'publicKey must be a JWK when format is jwk.',
           })
         } else if (options.format === 'pem' && typeof options.publicKey === 'string') {
-          const key = await importSPKI(options.publicKey, options.alg)
+          const key = await importSPKI(options.publicKey, keyAlg)
           const jwk = await exportJWK(key)
           verifierMetadata.jwks = { keys: [{ ...jwk }] }
-          verifierMetadata.authorization_signed_response_alg = options.alg
+          verifierMetadata.authorization_signed_response_alg = keyAlg
         } else {
           throw err('INVALID_OPTIONS', {
             message: 'publicKey must be a PEM string when format is pem.',
           })
         }
-        keyPairsToSave = [
-          {
-            format: options.format,
-            declaredAlg: options.alg,
-            kid: options.kid,
-            publicKey: options.publicKey,
-            privateKey: options.privateKey,
-          },
-        ]
+        keyPairsToSave = {
+          format: options.format,
+          declaredAlg: keyAlg,
+          kid: options.kid,
+          publicKey: options.publicKey,
+          privateKey: options.privateKey,
+        }
       } else if ('certificate' in options && options.certificate !== undefined) {
         // use provided key pair and x509 certificate
         // password protected private key is not supported
-        if (!options.alg) {
+        if (!keyAlg) {
           throw err('INTERNAL_SERVER_ERROR', {
             message: 'alg is required in the provided privateKey.',
           })
@@ -193,26 +193,24 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         }
         const certificate = certificates[0]
         const publicKey = await certificate$.getPublicKey(certificate)
-        const key = await importSPKI(publicKey, options.alg)
+        const key = await importSPKI(publicKey, keyAlg)
         const jwk = await exportJWK(key)
         verifierMetadata.jwks = { keys: [{ ...jwk }] }
-        verifierMetadata.authorization_signed_response_alg = options.alg
+        verifierMetadata.authorization_signed_response_alg = keyAlg
         certificatesToSave = certificates
-        keyPairsToSave = [
-          {
-            format: options.format,
-            declaredAlg: options.alg,
-            kid: options.kid,
-            publicKey: publicKey,
-            privateKey: options.privateKey,
-          },
-        ]
+        keyPairsToSave = {
+          format: options.format,
+          declaredAlg: keyAlg,
+          kid: options.kid,
+          publicKey: publicKey,
+          privateKey: options.privateKey,
+        }
       }
       if (certificatesToSave) {
         await certificateStore$.save(verifierId, certificatesToSave)
       }
       if (keyPairsToSave) {
-        await keyStore$.save(verifierId, keyPairsToSave)
+        await keyStore$.save(verifierId, keyAlg, keyPairsToSave)
       }
       await verifierMetadata$.save(verifierId, verifierMetadata)
     },

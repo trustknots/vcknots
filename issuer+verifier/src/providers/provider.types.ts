@@ -23,7 +23,7 @@ import { PresentationExchange } from '../presentation-exchange.types'
 import { VpTokenPayload } from '../presentation.types'
 import { RequestObjectId } from '../request-object-id.types'
 import { RequestObject } from '../request-object.types'
-import { Certificate, SignatureKeyPair, TmpVerifierSignatureKeyPair } from '../signature-key.types'
+import { Certificate, SignatureKeyPair, SignatureKeyEntry } from '../signature-key.types'
 import { DeepPartialUnknown } from '../type.utils'
 import { VerifierMetadata } from '../verifier-metadata.types'
 
@@ -85,8 +85,8 @@ export type VerifierSignatureKeyStoreProvider = {
   name: string
   single: true
 
-  save(verifier: ClientId, pairs: TmpVerifierSignatureKeyPair[]): Promise<void>
-  fetch(verifier: ClientId, alg: string): Promise<CryptoKey | null>
+  save(verifier: ClientId, keyAlg: string, pair?: SignatureKeyEntry): Promise<void>
+  fetch(verifier: ClientId, keyAlg: string): Promise<CryptoKey | null>
   sign(
     verifierId: ClientId,
     keyAlg: string,
@@ -287,12 +287,6 @@ export type VerifierSignatureKeyProvider = {
   single: false
 
   generate(): Promise<SignatureKeyPair>
-  // sign(
-  //   verifierId: ClientId,
-  //   keyAlg: string,
-  //   jwtPayload: JwtPayload,
-  //   jwtHeader: ProofJwtHeader
-  // ): Promise<string | null>
   canHandle(keyAlg: string): boolean
 }
 
