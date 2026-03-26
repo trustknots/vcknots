@@ -99,7 +99,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   const nonceStore$ = context.providers.get('cnonce-store-provider')
   const query$ = context.providers.get('credential-query-provider')
   const verifierMetadata$ = context.providers.get('verifier-metadata-store-provider')
-  const key$ = context.providers.get('verifier-signature-key-provider')
   const keyStore$ = context.providers.get('verifier-signature-key-store-provider')
   const requestObjectId$ = context.providers.get('request-object-id-provider')
   const requestObjectStore$ = context.providers.get('request-object-store-provider')
@@ -138,11 +137,16 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       if (!options || !keyAlg) {
         // create new key pair (not support x509)
         keyAlg = metadata.authorization_signed_response_alg ?? 'ES256'
-        const provider = selectProvider(key$, keyAlg)
-        const keyPairs = await provider.generate()
-        verifierMetadata.jwks = { keys: [keyPairs.publicKey] }
+        await keyStore$.save(verifierId, keyAlg)
+        const publicKey = await keyStore$.fetch(verifierId, keyAlg)
+        if (!publicKey) {
+          throw err('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+            message: `Verifier public key for ${keyAlg} is not found.`,
+          })
+        }
+        const jwk = await exportJWK(publicKey)
+        verifierMetadata.jwks = { keys: [{ ...jwk, alg: keyAlg }] }
         verifierMetadata.authorization_signed_response_alg = keyAlg
-        keyPairsToSave = { ...keyPairs, format: 'jwk', declaredAlg: keyAlg }
       } else if ('publicKey' in options && options.publicKey !== undefined) {
         // use provided key pair (not support x509)
         if (!keyAlg) {
