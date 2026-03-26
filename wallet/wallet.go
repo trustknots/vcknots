@@ -40,6 +40,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/receiver"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer"
+	sdjwtvc "github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 	serializerTypes "github.com/trustknots/vcknots/wallet/serializer/types"
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
@@ -308,7 +309,7 @@ func (w *Wallet) convertEntryToSavedCredential(entry types.CredentialEntry) (*Sa
 func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfile, nonce *string, aud string) (string, error) {
 	header := map[string]interface{}{
 		"alg": "ES256",
-		"typ": "JWT",
+		"typ": "openid4vci-proof+jwt",
 		"kid": did.ID,
 	}
 
@@ -344,6 +345,7 @@ func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfil
 	b64Signature := base64.RawURLEncoding.EncodeToString(signature)
 	return signingInput + "." + b64Signature, nil
 }
+
 // GetCredentialEntries retrieves credential entries with optional filtering.
 func (w *Wallet) GetCredentialEntries(req GetCredentialEntriesRequest) ([]*SavedCredential, int, error) {
 	if req.Filter != nil {
@@ -597,6 +599,8 @@ func (w *Wallet) PresentCredential(uriString string, key IKeyEntry, options seri
 		return err
 	}
 
+	applyOID4VPRequestOptions(req, options)
+
 	credentials, flavor, err := w.selectCredentialsForPresentation(req)
 	if err != nil {
 		return err
@@ -708,6 +712,22 @@ func (w *Wallet) buildDescriptorMap(credentials []*SavedCredential, flavor *cred
 	var descriptorMap []presenterTypes.DescriptorMapItem
 	for i := range credentials {
 		descriptionItemID := uuid.New().String()
+		// Temporary compatibility workaround:
+		// the current verifier/request-object flow still requires
+		// presentation_submission.descriptor_map, and dc+sd-jwt must point to the
+		// combined vp_token itself with path "$" instead of JWT-VP style nested paths.
+		// This format-specific branching does not belong in wallet core long term and
+		// should be removed or moved once the verifier/request-object flow is
+		// reorganized around DCQL.
+		if vpFormat == "dc+sd-jwt" {
+			descriptorMap = append(descriptorMap, presenterTypes.DescriptorMapItem{
+				ID:     descriptionItemID,
+				Format: vpFormat,
+				Path:   "$",
+			})
+			continue
+		}
+
 		descriptorMap = append(descriptorMap, presenterTypes.DescriptorMapItem{
 			ID:     descriptionItemID,
 			Format: vpFormat,
@@ -749,8 +769,35 @@ func (w *Wallet) buildPresentation(credentials []*SavedCredential, flavor *crede
 	return presentation, nil
 }
 
+func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, options serializerTypes.SerializePresentationOptions) {
+	if req == nil || req.OAuthAuthzRequest == nil {
+		return
+	}
+
+	sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions)
+	if !ok {
+		return
+	}
+
+	sdOpts.Audience = req.ClientID
+	sdOpts.Nonce = req.Nonce
+}
+
 // submitPresentation serializes and submits the presentation to the verifier.
 func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentation, flavor *credential.SupportedSerializationFlavor, endpoint *url.URL, descriptorMap []presenterTypes.DescriptorMapItem, req *oid4vp.CredentialPresentationRequest, key IKeyEntry, options serializerTypes.SerializePresentationOptions) error {
+	if len(req.TransactionData) > 0 {
+		if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok {
+			transactionDataHashesAlg := req.TransactionDataHashesAlg
+			if transactionDataHashesAlg == "" {
+				// OID4VP transaction_data_hashes_alg default when omitted.
+				transactionDataHashesAlg = "sha-256"
+			}
+
+			sdOpts.TransactionData = req.TransactionData
+			sdOpts.TransactionDataHashesAlg = transactionDataHashesAlg
+		}
+	}
+
 	bytes, _, err := w.serializer.SerializePresentation(
 		*flavor,
 		presentation,

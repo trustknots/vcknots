@@ -87,7 +87,6 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 		return fmt.Errorf("plugin type mismatch")
 	}
 
-	// Convert presentation_submission to JSON string for form data
 	presentationSubmissionJSON, err := json.Marshal(presentationSubmission)
 	if err != nil {
 		return fmt.Errorf("failed to marshal presentation_submission: %w", err)
@@ -97,7 +96,7 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 	var useJARM bool
 	var encryptionAlg, encryptionEnc string
 	var verifierJWKS *jose.JSONWebKeySet
-	
+
 	if request != nil && request.ClientMetadata != nil {
 		if metadata, ok := request.ClientMetadata.(*VerifierMetadata); ok {
 			if metadata.AuthorizationEncryptedResponseAlg != "" {
@@ -412,7 +411,20 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 		b.errValidation = fmt.Errorf("missing required parameters: %s", strings.Join(missing, ", "))
 	}
 
-	// TODO: support transaction_data and verifier_info
+	if td, exists := params["transaction_data"]; exists && td != nil {
+		switch v := td.(type) {
+		case []interface{}:
+			for _, item := range v {
+				if str, ok := item.(string); ok {
+					b.req.TransactionData = append(b.req.TransactionData, str)
+				}
+			}
+		case []string:
+			b.req.TransactionData = v
+		}
+	}
+
+	b.req.TransactionDataHashesAlg = getParam("transaction_data_hashes_alg", false)
 }
 
 // WithQueryParams populates the CredentialPresentationRequest fields from URL query parameters.

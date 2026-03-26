@@ -123,9 +123,13 @@ Open a new terminal, navigate to each test directory, and run the server integra
 cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 go run server_integration_jwtvc.go
 
-# SD-JWT integration test
+# SD-JWT integration test (without kb-jwt)
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go
+
+# SD-JWT integration test (with kb-jwt)
+cd /path/to/vcknots/wallet/examples/server_integration_sdjwt+kbjwt
+go run server_integration_sdjwt_kbjwt.go
 ```
 
 
@@ -222,8 +226,11 @@ examples/
 ├── server_integration_jwtvc/
 │   └── server_integration_jwtvc.go   # JWT-VC integration test
 ├── server_integration_sdjwt/
-│   ├── server_integration_sdjwt.go   # SD-JWT integration test
+│   ├── server_integration_sdjwt.go   # SD-JWT integration test (without kb-jwt)
 │   └── example_sd_jwt.txt            # Sample SD-JWT credential
+├── server_integration_sdjwt+kbjwt/
+│   ├── server_integration_sdjwt_kbjwt.go # SD-JWT integration test with kb-jwt
+│   └── example_sd_jwt.txt                 # Sample SD-JWT credential
 ├── custom_dispatcher/                 # Example: custom dispatcher implementation
 ├── custom_plugin/                     # Example: custom plugin implementation
 └── README.md                          # This file
@@ -232,6 +239,8 @@ examples/
 **Note**: The certificate file and SD-JWT sample file are loaded using relative paths from each test directory. By default:
 - Certificate: `../../../server/samples/certificate-openid-test/certificate_openid.pem`
 - SD-JWT sample: `example_sd_jwt.txt` (in server_integration_sdjwt/)
+
+For KB-JWT verification, use the `server_integration_sdjwt+kbjwt` sample. It requests `dc+sd-jwt`, posts to `http://localhost:8080/callback-kbjwt`, and includes a fixed nonce plus KB-JWT audience matching `x509_san_dns:localhost`.
 
 If you need to use a different certificate, set the `VCKNOTS_CERT_PATH` environment variable:
 

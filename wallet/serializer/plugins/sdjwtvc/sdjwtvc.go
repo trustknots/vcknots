@@ -18,6 +18,8 @@ import (
 	"github.com/trustknots/vcknots/wallet/serializer/types"
 )
 
+const defaultHashAlgorithm = "sha-256"
+
 // SdJwtVcSerializer implements Serializer for SD-JWT VC format
 type SdJwtVcSerializer struct{}
 
@@ -36,6 +38,12 @@ type SdJwtVcPresentationOptions struct {
 	Audience string
 	// Nonce is the nonce value for the Key Binding JWT (required if RequireKeyBinding is true)
 	Nonce string
+	// TransactionData contains base64url-encoded transaction data strings from the authorization request.
+	// Each entry is hashed and included in the KB-JWT as transaction_data_hashes.
+	TransactionData []string
+	// TransactionDataHashesAlg specifies the hash algorithm used for transaction_data_hashes.
+	// This value is expected to be resolved by the caller.
+	TransactionDataHashesAlg string
 }
 
 // IsSerializePresentationOptions implements the marker interface
@@ -175,37 +183,89 @@ func computeDisclosureHash(disclosure string, algorithm string) (string, error) 
 	return base64.RawURLEncoding.EncodeToString(hashBytes), nil
 }
 
-// KeyBindingJWT represents the structure of a Key Binding JWT
-type KeyBindingJWT struct {
-	Iat    int64  `json:"iat"`
-	Aud    string `json:"aud"`
-	Nonce  string `json:"nonce"`
-	SdHash string `json:"sd_hash"`
+// normalizeSDHashAlgorithm applies RFC 9901 defaulting behavior for _sd_alg.
+// Unknown or empty values fall back to sha-256.
+func normalizeSDHashAlgorithm(algorithm string) string {
+	switch strings.ToLower(algorithm) {
+	case "sha-256", "sha-384", "sha-512":
+		return strings.ToLower(algorithm)
+	default:
+		return defaultHashAlgorithm
+	}
 }
 
-// createKeyBindingJWT creates a Key Binding JWT
-func createKeyBindingJWT(sdJwtWithDisclosures string, key keystore.KeyEntry, alg jose.SignatureAlgorithm, audience, nonce string, sdAlg string) (string, error) {
-	// Compute sd_hash
-	var h hash.Hash
-	switch strings.ToLower(sdAlg) {
-	case "sha-256":
-		h = sha256.New()
-	case "sha-384":
-		h = sha512.New384()
-	case "sha-512":
-		h = sha512.New()
-	default:
-		h = sha256.New()
-	}
-	h.Write([]byte(sdJwtWithDisclosures))
-	sdHash := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+// KeyBindingJWT represents the structure of a Key Binding JWT
+type KeyBindingJWT struct {
+	Iat                      int64    `json:"iat"`
+	Aud                      string   `json:"aud"`
+	Nonce                    string   `json:"nonce"`
+	SdHash                   string   `json:"sd_hash"`
+	TransactionDataHashes    []string `json:"transaction_data_hashes,omitempty"`
+	TransactionDataHashesAlg string   `json:"transaction_data_hashes_alg,omitempty"`
+}
 
-	// Create KB-JWT claims
+// createKeyBindingJWT creates a Key Binding JWT containing the hash of the provided
+// SD-JWT-with-disclosures and optional per-item transaction data hashes, signs it
+// using the provided key, and returns the compact JWT string.
+//
+// The function computes `sd_hash` by hashing `sdJwtWithDisclosures` using `sdAlg`
+// (defaults to SHA-256 when empty or unrecognized), and computes each entry of
+// `transactionData` using `transactionDataHashesAlg`.
+// If `transactionData` is provided and `transactionDataHashesAlg` is empty or unsupported,
+// the function returns an error.
+// The JWT header uses `typ: "kb+jwt"` and the provided `alg`. The signature is
+// produced by `key.Sign`; DER signatures are converted to raw format when required
+// by the algorithm before being base64url-encoded and appended to form the compact JWT.
+func createKeyBindingJWT(
+	sdJwtWithDisclosures string,
+	key keystore.KeyEntry,
+	alg jose.SignatureAlgorithm,
+	audience, nonce string,
+	sdAlg string,
+	transactionData []string,
+	transactionDataHashesAlg string,
+) (string, error) {
+	sdHash, err := computeDisclosureHash(sdJwtWithDisclosures, normalizeSDHashAlgorithm(sdAlg))
+	if err != nil {
+		return "", fmt.Errorf("failed to hash SD-JWT for sd_hash: %w", err)
+	}
+
+	tdComputeAlg := strings.ToLower(transactionDataHashesAlg)
+	if tdComputeAlg == "" {
+		if len(transactionData) > 0 {
+			return "", fmt.Errorf("transaction_data_hashes_alg is required when transaction_data is present")
+		}
+	} else {
+		switch tdComputeAlg {
+		case "sha-256", "sha-384", "sha-512":
+			// valid
+		default:
+			return "", fmt.Errorf("unsupported transaction_data_hashes_alg: %s", transactionDataHashesAlg)
+		}
+	}
+
+	var transactionDataHashes []string
+	for _, td := range transactionData {
+		h, err := computeDisclosureHash(td, tdComputeAlg)
+		if err != nil {
+			return "", fmt.Errorf("failed to hash transaction data: %w", err)
+		}
+		transactionDataHashes = append(transactionDataHashes, h)
+	}
+
+	// Only include the alg claim when there are actual hashes to qualify.
+	var tdHashesAlg string
+	if len(transactionDataHashes) > 0 {
+		tdHashesAlg = transactionDataHashesAlg
+	}
+
 	kbClaims := KeyBindingJWT{
-		Iat:    time.Now().Unix(),
-		Aud:    audience,
-		Nonce:  nonce,
-		SdHash: sdHash,
+		Iat:                      time.Now().Unix(),
+		Aud:                      audience,
+		Nonce:                    nonce,
+		SdHash:                   sdHash,
+		TransactionDataHashes:    transactionDataHashes,
+		TransactionDataHashesAlg: tdHashesAlg,
 	}
 
 	// Create KB-JWT header
@@ -512,6 +572,35 @@ func (s *SdJwtVcSerializer) SerializePresentation(
 
 	// Create Key Binding JWT if required
 	if sdOpts != nil && sdOpts.RequireKeyBinding && key != nil {
+		// Verify signing key matches cnf.jwk in SD-JWT payload (RFC 9901)
+		cnfVal, hasCnf := payloadMap["cnf"]
+		if !hasCnf || cnfVal == nil {
+			return nil, nil, types.NewInvalidCredentialError("cnf claim is required for key binding but not present in SD-JWT", nil)
+		}
+		cnfMap, ok := cnfVal.(map[string]interface{})
+		if !ok {
+			return nil, nil, types.NewInvalidJWTError("cnf claim must be an object", nil)
+		}
+		jwkVal, exists := cnfMap["jwk"]
+		if !exists {
+			return nil, nil, types.NewInvalidJWTError("cnf claim must contain jwk", nil)
+		}
+		jwkBytes, err := json.Marshal(jwkVal)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal cnf.jwk: %w", err)
+		}
+		var cnfJWK jose.JSONWebKey
+		if err := json.Unmarshal(jwkBytes, &cnfJWK); err != nil {
+			return nil, nil, types.NewInvalidJWTError("failed to parse cnf.jwk", err)
+		}
+		equal, err := josehelper.EqualPublicKey(cnfJWK, key.PublicKey())
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to compare keys: %w", err)
+		}
+		if !equal {
+			return nil, nil, types.NewInvalidCredentialError("signing key does not match cnf claim in SD-JWT", nil)
+		}
+
 		// Get algorithm from key
 		pubKey := key.PublicKey()
 		algStr := pubKey.Algorithm
@@ -528,7 +617,16 @@ func (s *SdJwtVcSerializer) SerializePresentation(
 		// Remove trailing ~ if KB-JWT will be added
 		sdJwtWithDisclosures = strings.TrimSuffix(sdJwtWithDisclosures, "~") + "~"
 
-		kbJwt, err := createKeyBindingJWT(sdJwtWithDisclosures, key, alg, sdOpts.Audience, sdOpts.Nonce, sdAlg)
+		kbJwt, err := createKeyBindingJWT(
+			sdJwtWithDisclosures,
+			key,
+			alg,
+			sdOpts.Audience,
+			sdOpts.Nonce,
+			sdAlg,
+			sdOpts.TransactionData,
+			sdOpts.TransactionDataHashesAlg,
+		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create key binding JWT:  %w", err)
 		}

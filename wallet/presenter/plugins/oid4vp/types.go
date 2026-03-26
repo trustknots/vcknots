@@ -75,11 +75,12 @@ const (
 // These fields are defined in the OID4VP specification and RFC6749.
 type CredentialPresentationRequest struct {
 	*OAuthAuthzRequest
-	PresentationDefinition *PresentationDefinition `json:"presentation_definition"`    // required
-	ClientMetadata         *VerifierMetadata       `json:"client_metadata,omitempty"`  // optional
-	TransactionData        []string                `json:"transaction_data,omitempty"` // optional, to be implemented
-	VerifierInfo           []any                   `json:"verifier_info,omitempty"`    // optional, to be implemented
-	ResponseURI            string                  `json:"response_uri,omitempty"`     // optional
+	PresentationDefinition   *PresentationDefinition `json:"presentation_definition"`               // required
+	ClientMetadata           *VerifierMetadata       `json:"client_metadata,omitempty"`             // optional
+	TransactionData          []string                `json:"transaction_data,omitempty"`            // optional, to be implemented
+	TransactionDataHashesAlg string                  `json:"transaction_data_hashes_alg,omitempty"` // optional, hash algorithm for transaction_data_hashes
+	VerifierInfo             []any                   `json:"verifier_info,omitempty"`               // optional, to be implemented
+	ResponseURI              string                  `json:"response_uri,omitempty"`                // optional
 }
 
 type RequestURIMethod string

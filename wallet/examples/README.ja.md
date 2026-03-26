@@ -123,9 +123,13 @@ Authz metadata initialized
 cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 go run server_integration_jwtvc.go
 
-# SD-JWT 統合テスト
+# SD-JWT 統合テスト（kb-jwt なし）
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go
+
+# SD-JWT 統合テスト（kb-jwt あり）
+cd /path/to/vcknots/wallet/examples/server_integration_sdjwt+kbjwt
+go run server_integration_sdjwt_kbjwt.go
 ```
 
 
@@ -222,8 +226,11 @@ examples/
 ├── server_integration_jwtvc/
 │   └── server_integration_jwtvc.go   # JWT-VC 統合テスト
 ├── server_integration_sdjwt/
-│   ├── server_integration_sdjwt.go   # SD-JWT 統合テスト
+│   ├── server_integration_sdjwt.go   # SD-JWT 統合テスト（kb-jwt なし）
 │   └── example_sd_jwt.txt            # サンプル SD-JWT クレデンシャル
+├── server_integration_sdjwt+kbjwt/
+│   ├── server_integration_sdjwt_kbjwt.go # kb-jwt 付き SD-JWT 統合テスト
+│   └── example_sd_jwt.txt                 # サンプル SD-JWT クレデンシャル
 ├── custom_dispatcher/                 # カスタムディスパッチャー実装例
 ├── custom_plugin/                     # カスタムプラグイン実装例
 └── README.md                          # このファイル
@@ -232,6 +239,8 @@ examples/
 **注意**: 証明書ファイルと SD-JWT サンプルファイルは、各テストディレクトリからの相対パスで読み込まれます。デフォルトでは：
 - 証明書: `../../../server/samples/certificate-openid-test/certificate_openid.pem`
 - SD-JWT サンプル: `example_sd_jwt.txt` (server_integration_sdjwt/ 内)
+
+kb-jwt 付き検証を行う場合は `server_integration_sdjwt+kbjwt` を利用してください。このサンプルは `dc+sd-jwt` を要求し、`http://localhost:8080/callback-kbjwt` に送信し、`x509_san_dns:localhost` に一致する audience と固定 nonce を使って KB-JWT を付与します。
 
 別の証明書を使用する場合は、`VCKNOTS_CERT_PATH` 環境変数を設定してください：
 

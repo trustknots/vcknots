@@ -48,6 +48,14 @@ export const credentialProofJWT = (
           message: 'Unsupported Proof Header alg value.',
         })
       }
+
+      const proofTyp = proofJwtHeader.typ
+      if (proofTyp !== 'openid4vci-proof+jwt') {
+        throw raise('INVALID_PROOF', {
+          message: 'Invalid Proof Header typ value.',
+        })
+      }
+
       let publicKeyJwk: JsonWebKey
       if (proofJwtHeader.kid) {
         const didSplit = proofJwtHeader.kid.split(':')

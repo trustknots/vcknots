@@ -61,6 +61,8 @@ To start this server, follow the steps below.
    - `GOOGLE_PROJECT_LOCATION`
    - `FIREBASE_PRIVATE_KEY`
    - `FIREBASE_CLIENT_EMAIL`
+   - `SECRET_MANAGER_PRIVATE_KEY`
+   - `SECRET_MANAGER_CLIENT_EMAIL`
 
    Optional variables:
 

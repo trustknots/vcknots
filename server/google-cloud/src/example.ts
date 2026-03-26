@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import { cert, initializeApp } from 'firebase-admin/app'
-import { firestore } from '@trustknots/google-cloud'
+import { firestore, secretManager } from '@trustknots/google-cloud'
 import { createServer } from '@trustknots/server-core'
 
 // Reference:
@@ -20,6 +20,25 @@ if (!GOOGLE_PROJECT_ID || !FIREBASE_PRIVATE_KEY || !FIREBASE_CLIENT_EMAIL) {
   )
 }
 
+const secretManagerPrivateKey = process.env.SECRET_MANAGER_PRIVATE_KEY
+const secretManagerClientEmail = process.env.SECRET_MANAGER_CLIENT_EMAIL
+const hasSecretManagerPrivateKey = !!secretManagerPrivateKey
+const hasSecretManagerClientEmail = !!secretManagerClientEmail
+
+if (hasSecretManagerPrivateKey !== hasSecretManagerClientEmail) {
+  throw new Error(
+    'SECRET_MANAGER_PRIVATE_KEY and SECRET_MANAGER_CLIENT_EMAIL must both be set, or both be omitted to use ADC'
+  )
+}
+
+const secretManagerCredentials =
+  hasSecretManagerPrivateKey && hasSecretManagerClientEmail
+    ? {
+        privateKey: secretManagerPrivateKey.replace(/\\n/g, '\n'),
+        clientEmail: secretManagerClientEmail,
+      }
+    : undefined
+
 // Initialize Firebase App
 const firebaseApp = initializeApp({
   credential: cert({
@@ -35,6 +54,10 @@ createServer({
     firestore({
       app: firebaseApp,
       databaseId: process.env.FIRESTORE_DATABASE_ID,
+    }),
+    secretManager({
+      projectId: process.env.GOOGLE_PROJECT_ID,
+      credentials: secretManagerCredentials,
     }),
   ],
 })
