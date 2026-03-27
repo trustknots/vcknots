@@ -99,11 +99,11 @@ export const kmsVerifierSignatureKeyStore = (
         })
       }
 
+      const privateKeyDer = toPkcs8Der(pair.privateKey)
+      const wrappedKey = wrapPrivateKeyForImport(privateKeyDer, wrappingPublicKeyPem)
       const cryptoKeyName = await ensureCryptoKey(keyRingName, keyId, kmsAlgorithm, {
         importOnly: true,
       })
-      const privateKeyDer = toPkcs8Der(pair.privateKey)
-      const wrappedKey = wrapPrivateKeyForImport(privateKeyDer, wrappingPublicKeyPem)
       await kms.importCryptoKeyVersion({
         parent: cryptoKeyName,
         algorithm: kmsAlgorithm as never,
