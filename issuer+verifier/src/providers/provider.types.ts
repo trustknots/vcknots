@@ -136,11 +136,27 @@ export type VerifyVerifiablePresentationVerifyOptions =
   | {
       kind: 'dc+sd-jwt'
       specifiedDisclosures?: string[]
-      isKbJwt?: boolean
+      isKbJwt?: false
       expectedAud?: ClientIdentifier
       expectedNonce?: string
       expectedTransactionDataHashes?: string[]
     }
+  | {
+      kind: 'dc+sd-jwt'
+      specifiedDisclosures?: string[]
+      isKbJwt: true
+      expectedAud: ClientIdentifier
+      expectedNonce?: string
+      expectedTransactionDataHashes?: string[]
+    }
+  // | {
+//     kind: 'dc+sd-jwt'
+//     specifiedDisclosures?: string[]
+//     isKbJwt?: boolean
+//     expectedAud?: ClientIdentifier
+//     expectedNonce?: string
+//     expectedTransactionDataHashes?: string[]
+//   }
 export type VerifyVerifiablePresentationProvider = {
   kind: 'verify-verifiable-presentation-provider'
   name: string

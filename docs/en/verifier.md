@@ -403,7 +403,7 @@ curl --location 'http://localhost:8080/verify/callback' \
 
 **Response** (`200 OK`)
 
-```
+```json
 {
   "redirect_uri": "http://localhost:8080/verified"
 }
