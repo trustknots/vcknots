@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { proofsSchema } from './proofs.types'
 
 // https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#appendix-A.1
 export enum CredentialFormats {
@@ -7,84 +8,39 @@ export enum CredentialFormats {
   LDP_VC = 'ldp_vc',
 }
 
-export enum ProofTypes {
-  JWT = 'jwt',
-  LDP_VP = 'ldp_vp',
-}
-
 // https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html#name-credential-request
-const credentialRequestCommonSchema = z.object({
+const credentialRequestSchema = z.object({
   credential_identifier: z.string().optional(),
-  format: z.nativeEnum(CredentialFormats).optional(),
-  proof: z
-    .object({
-      proof_type: z.nativeEnum(ProofTypes),
-    })
-    .optional(),
+  credential_configuration_id: z.string().optional(),
+  proofs: proofsSchema.optional(),
   credential_response_encryption: z
     .object({
       jwk: z.string(),
       alg: z.string(),
-      enc: z.string(),
+      zip: z.string().optional(),
     })
     .optional(),
 })
-
-const credentialRequestJwtVcJsonSchema = z.object({
-  credential_definition: z.object({
-    type: z.array(z.string()),
-    credentialSubject: z.record(z.string(), z.string()).optional(),
-  }),
-})
-
-const credentialRequestProofJwt = z.object({
-  proof: z
-    .object({
-      jwt: z.string().optional(),
-    })
-    .optional(),
-})
-
-const credentialRequestProofLdpVp = z.object({
-  proof: z
-    .object({
-      ldp_vp: z
-        .object({
-          holder: z.string().optional(),
-          proof: z.object({
-            domain: z.string(),
-            challenge: z.string(),
-          }),
-        })
-        .optional(),
-    })
-    .optional(),
-})
-
-const credentialRequestSchema = credentialRequestCommonSchema
-  .and(credentialRequestJwtVcJsonSchema)
-  .and(credentialRequestProofJwt)
-  .and(credentialRequestProofLdpVp)
 
 export type CredentialRequest = z.infer<typeof credentialRequestSchema>
 
 export const CredentialRequest = (value?: {
   credential_identifier?: string
-  format?: CredentialFormats
-  proof?: {
-    proof_type: ProofTypes
-    jwt?: string
-    ldp_vp?: {
+  credential_configuration_id?: string
+  proofs?: {
+    jwt?: string[]
+    di_vp?: {
       holder?: string
       proof: {
         domain: string
         challenge: string
       }
-    }
+    }[]
+    attestation?: string[]
   }
   credential_response_encryption?: {
     jwk: string
     alg: string
-    enc: string
+    zip?: string
   }
 }) => credentialRequestSchema.parse(value)

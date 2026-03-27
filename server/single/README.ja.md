@@ -186,26 +186,22 @@ Authz metadata initialized
 ```json
 {
   "credential_identifier"?: string,
-  "format"?: "jwt_vc_json" | "jwt_vc_json-ld" | "ldp_vc",
-  "credential_definition": {
-    "type": string[],
-    "credentialSubject"?: Record<string, string>
-  },
-  "proof"?: {
-    "proof_type": "jwt" | "ldp_vp",
-    "jwt"?: string,
-    "ldp_vp"?: {
+  "credential_configuration_id"?: string,
+  "proofs"?: {
+    "jwt"?: string[],
+    "di_vp?": {
       "holder"?: string,
       "proof": {
         "domain": string,
         "challenge": string
       }
-    }
+    }[],
+    "attestation"?: string[]
   },
   "credential_response_encryption"?: {
     "jwk": string,
     "alg": string,
-    "enc": string
+    "zip"?: string
   }
 }
 ```
@@ -292,9 +288,7 @@ pre-authorized_code={pre_authorized_code}
   "token_type": string,
   "expires_in": number,
   "refresh_token"?: string,
-  "scope"?: string,
-  "c_nonce"?: string,
-  "c_nonce_expires_in"?: number
+  "scope"?: string
 }
 ```
 

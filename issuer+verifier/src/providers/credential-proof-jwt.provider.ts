@@ -4,6 +4,7 @@ import { raise } from '../errors/vcknots.error'
 import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
 import { CredentialProofProvider } from './provider.types'
 import { selectProvider } from './provider.utils'
+import { DiVpProof } from '../proofs.types'
 
 export type CredentialProofProviderOptions =
   | {
@@ -26,7 +27,12 @@ export const credentialProofJWT = (
 
     ...withProviderRegistry,
 
-    async verifyProof(proof: string): Promise<ProofJwt | null> {
+    async verifyProof(proof: string | DiVpProof): Promise<ProofJwt | null> {
+      if (typeof proof !== 'string') {
+        throw raise('INVALID_PROOF', {
+          message: 'Unsupported proof type.',
+        })
+      }
       let decoded: ReturnType<typeof decodeJwt>
       try {
         decoded = decodeJwt(proof)

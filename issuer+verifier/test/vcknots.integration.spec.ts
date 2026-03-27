@@ -202,7 +202,6 @@ describe('Vcknots', () => {
 
       const accessToken = await vk.authz.createAccessToken(authzIssuer, tokenRequest, {
         ttlSec: 3600,
-        c_nonce_expire_in: 300000,
       })
 
       const tokenResponse = accessToken as TokenResponse
@@ -211,11 +210,6 @@ describe('Vcknots', () => {
       assert.ok(typeof tokenResponse.access_token === 'string')
       assert.equal(tokenResponse.token_type, 'bearer')
       assert.ok(typeof tokenResponse.expires_in === 'number' && tokenResponse.expires_in > 0)
-      assert.ok(typeof tokenResponse.c_nonce === 'string')
-      assert.ok(typeof tokenResponse.c_nonce_expires_in === 'number')
-      assert.ok(
-        typeof tokenResponse.c_nonce_expires_in === 'number' && tokenResponse.c_nonce_expires_in > 0
-      )
     })
   })
 

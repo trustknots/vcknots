@@ -15,7 +15,6 @@ type TokenRequestOptions = {
   }
   [GrantType.PreAuthorizedCode]: {
     ttlSec?: number
-    c_nonce_expire_in?: number
   }
 }
 
@@ -39,8 +38,6 @@ export type AuthzFlow = {
 export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   const authz$ = context.providers.get('authz-server-metadata-store-provider')
   const codeStore$ = context.providers.get('pre-authorized-code-store-provider')
-  const cnonce$ = context.providers.get('nonce-provider')
-  const cnonceStore$ = context.providers.get('nonce-store-provider')
   const accessToken$ = context.providers.get('access-token-provider')
   const authzKey$ = context.providers.get('authz-signature-key-store-provider')
   const authzSignatureKey$ = context.providers.get('authz-signature-key-provider')
@@ -118,16 +115,11 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           // format JWT components
           const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
 
-          // Create cnonce
-          const cnonce = await cnonce$.generate()
-          await cnonceStore$.save(cnonce)
           // Create Token Response
           return {
             access_token: `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`, // TODO: Implement access token generation
             token_type: 'bearer',
             expires_in: option?.ttlSec ?? 86400,
-            c_nonce: cnonce.nonce,
-            c_nonce_expires_in: cnonce.nonce_expires_in,
           }
         }
         case 'authorization_code': {
