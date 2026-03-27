@@ -16,7 +16,8 @@ import { VcknotsContext } from './vcknots.context'
 import { VerifierMetadata } from './verifier-metadata.types'
 
 import { RequestObjectId } from './request-object-id.types'
-import { Certificate, JwkTmp } from './signature-key.types'
+import { Certificate } from './signature-key.types'
+import { Jwk } from './jwk.type'
 import { exportJWK, importSPKI } from 'jose'
 import { ClientIdentifier } from './client-id-scheme.types'
 import { VpTokenPayload } from './presentation.types'
@@ -27,12 +28,12 @@ type CreateVerifierMetadataOptionsBase = {
   kid?: string
 }
 type CreateVerifierMetadataOptionsWithCert = CreateVerifierMetadataOptionsBase & {
-  privateKey: string | JwkTmp
+  privateKey: string | Jwk
   certificate: string | string[]
 }
 type CreateVerifierMetadataOptionsWithPubKey = CreateVerifierMetadataOptionsBase & {
-  privateKey: string | JwkTmp
-  publicKey: string | JwkTmp
+  privateKey: string | Jwk
+  publicKey: string | Jwk
 }
 export type CreateVerifierMetadataOptions =
   | CreateVerifierMetadataOptionsWithPubKey
@@ -98,7 +99,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   const nonceStore$ = context.providers.get('cnonce-store-provider')
   const query$ = context.providers.get('credential-query-provider')
   const verifierMetadata$ = context.providers.get('verifier-metadata-store-provider')
-  const key$ = context.providers.get('verifier-signature-key-provider')
   const keyStore$ = context.providers.get('verifier-signature-key-store-provider')
   const requestObjectId$ = context.providers.get('request-object-id-provider')
   const requestObjectStore$ = context.providers.get('request-object-store-provider')
@@ -123,74 +123,98 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         })
       }
       const verifierMetadata = metadata
-      if (!options) {
+      let keyPairsToSave:
+        | {
+            format: 'pem' | 'jwk'
+            declaredAlg: string
+            kid?: string
+            publicKey?: string | Jwk
+            privateKey: string | Jwk
+          }
+        | undefined
+      let certificatesToSave: Certificate | undefined
+      let keyAlg: string | undefined = options?.alg
+      if (!options || !keyAlg) {
         // create new key pair (not support x509)
-        const alg = metadata.authorization_signed_response_alg ?? 'ES256'
-        const provider = selectProvider(key$, alg)
-        const keyPairs = await provider.generate()
-        // support key Pairs format jwk
-        keyStore$.save(verifierId, [{ ...keyPairs, format: 'jwk', declaredAlg: alg }])
-        verifierMetadata.jwks = { keys: [keyPairs.publicKey] }
-        verifierMetadata.authorization_signed_response_alg = alg
+        keyAlg = metadata.authorization_signed_response_alg ?? 'ES256'
+        await keyStore$.save(verifierId, keyAlg)
+        const publicKey = await keyStore$.fetch(verifierId, keyAlg)
+        if (!publicKey) {
+          throw err('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+            message: `Verifier public key for ${keyAlg} is not found.`,
+          })
+        }
+        const jwk = await exportJWK(publicKey)
+        verifierMetadata.jwks = { keys: [{ ...jwk, alg: keyAlg }] }
+        verifierMetadata.authorization_signed_response_alg = keyAlg
       } else if ('publicKey' in options && options.publicKey !== undefined) {
         // use provided key pair (not support x509)
-        if (!options.alg) {
+        if (!keyAlg) {
           throw err('INTERNAL_SERVER_ERROR', {
             message: 'alg is required in the provided publicKey.',
           })
         }
-        keyStore$.save(verifierId, [
-          {
-            format: options.format,
-            declaredAlg: options.alg,
-            kid: options.kid,
-            publicKey: options.publicKey,
-            privateKey: options.privateKey,
-          },
-        ])
         if (options.format === 'jwk' && typeof options.publicKey !== 'string') {
           verifierMetadata.jwks = { keys: [options.publicKey] }
-          verifierMetadata.authorization_signed_response_alg = options.alg
+          verifierMetadata.authorization_signed_response_alg = keyAlg
+        } else if (options.format === 'jwk') {
+          throw err('INVALID_OPTIONS', {
+            message: 'publicKey must be a JWK when format is jwk.',
+          })
         } else if (options.format === 'pem' && typeof options.publicKey === 'string') {
-          const key = await importSPKI(options.publicKey, options.alg)
+          const key = await importSPKI(options.publicKey, keyAlg)
           const jwk = await exportJWK(key)
           verifierMetadata.jwks = { keys: [{ ...jwk }] }
-          verifierMetadata.authorization_signed_response_alg = options.alg
+          verifierMetadata.authorization_signed_response_alg = keyAlg
+        } else {
+          throw err('INVALID_OPTIONS', {
+            message: 'publicKey must be a PEM string when format is pem.',
+          })
+        }
+        keyPairsToSave = {
+          format: options.format,
+          declaredAlg: keyAlg,
+          kid: options.kid,
+          publicKey: options.publicKey,
+          privateKey: options.privateKey,
         }
       } else if ('certificate' in options && options.certificate !== undefined) {
         // use provided key pair and x509 certificate
         // password protected private key is not supported
-        if (!options.alg) {
+        if (!keyAlg) {
           throw err('INTERNAL_SERVER_ERROR', {
             message: 'alg is required in the provided privateKey.',
           })
         }
-        if (typeof options.certificate === 'string') {
-          options.certificate = [options.certificate]
-        }
-        const certificates = Certificate(options.certificate)
+        const certificateChain =
+          typeof options.certificate === 'string' ? [options.certificate] : options.certificate
+        const certificates = Certificate(certificateChain)
         const certValid = await certificate$.validate(certificates)
         if (!certValid) {
           throw err('INVALID_CERTIFICATE', {
             message: 'The provided certificate is not valid.',
           })
         }
-        certificateStore$.save(verifierId, certificates)
         const certificate = certificates[0]
         const publicKey = await certificate$.getPublicKey(certificate)
-        keyStore$.save(verifierId, [
-          {
-            format: options.format,
-            declaredAlg: options.alg,
-            kid: options.kid,
-            publicKey: publicKey,
-            privateKey: options.privateKey,
-          },
-        ])
-        const key = await importSPKI(publicKey, options.alg)
+        const key = await importSPKI(publicKey, keyAlg)
         const jwk = await exportJWK(key)
         verifierMetadata.jwks = { keys: [{ ...jwk }] }
-        verifierMetadata.authorization_signed_response_alg = options.alg
+        verifierMetadata.authorization_signed_response_alg = keyAlg
+        certificatesToSave = certificates
+        keyPairsToSave = {
+          format: options.format,
+          declaredAlg: keyAlg,
+          kid: options.kid,
+          publicKey: publicKey,
+          privateKey: options.privateKey,
+        }
+      }
+      if (certificatesToSave) {
+        await certificateStore$.save(verifierId, certificatesToSave)
+      }
+      if (keyPairsToSave) {
+        await keyStore$.save(verifierId, keyAlg, keyPairsToSave)
       }
       await verifierMetadata$.save(verifierId, verifierMetadata)
     },
@@ -369,16 +393,16 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         walletNonce
       )
 
-      const keyProvider = selectProvider(key$, keyAlg)
-      if (!keyProvider) {
-        throw raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
-          message: `Verifier signature key provider for ${keyAlg} is not found.`,
-        })
-      }
-      const signature = await keyProvider.sign(verifierId, keyAlg, payload, header)
+      // const keyProvider = selectProvider(key$, keyAlg)
+      // if (!keyProvider) {
+      //   throw raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+      //     message: `Verifier signature key provider for ${keyAlg} is not found.`,
+      //   })
+      // }
+      const signature = await keyStore$.sign(verifierId, keyAlg, payload, header)
       if (!signature) {
-        throw err('INTERNAL_SERVER_ERROR', {
-          message: 'Failed to sign the request object.',
+        throw err('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+          message: `Verifier signing key for ${keyAlg} is not found.`,
         })
       }
 

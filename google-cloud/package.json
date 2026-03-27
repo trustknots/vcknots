@@ -13,7 +13,7 @@
 		"lint": "biome lint ./src/**/*.ts",
 		"test": "node --import tsx --test test/**/*.spec.ts",
 		"test:ci": "node --import tsx --test --experimental-test-coverage \"test/**/*.spec.ts\"",
-		"test:all": "node --import tsx --test --experimental-test-coverage --test-coverage-lines=80 --test-coverage-functions=80 --test-coverage-branches=80 \"test/**/*.spec.ts\"",
+		"test:all": "node --import tsx --test --experimental-test-coverage --test-coverage-include=\"src/**/*.ts\" --test-coverage-exclude=\"test/**/*.ts\" --test-coverage-lines=80 --test-coverage-functions=80 --test-coverage-branches=80 \"test/**/*.spec.ts\"",
 		"typecheck": "tsc --noEmit"
 	},
 	"keywords": [],
@@ -22,9 +22,12 @@
 	"packageManager": "pnpm@10.30.3",
 	"dependencies": {
 		"@google-cloud/kms": "5.4.0",
+		"@node-rs/crc32": "^1.10.3",
 		"@google-cloud/secret-manager": "^6.1.1",
 		"@trustknots/vcknots": "workspace:*",
+		"ecdsa-sig-formatter": "^1.0.11",
 		"firebase-admin": "13.6.1",
+		"jose": "6.2.0",
 		"zod": "4.3.6"
 	}
 }
