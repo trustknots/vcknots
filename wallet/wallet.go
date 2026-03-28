@@ -731,7 +731,7 @@ func (w *Wallet) buildDescriptorMap(credentials []*SavedCredential, flavor *cred
 		descriptorMap = append(descriptorMap, presenterTypes.DescriptorMapItem{
 			ID:     descriptionItemID,
 			Format: vpFormat,
-			Path:   fmt.Sprintf("$.vp_token[%d]", i),
+			Path:   "$",
 			PathNested: &presenterTypes.DescriptorMapItem{
 				ID:     descriptionItemID,
 				Format: vcFormat,
