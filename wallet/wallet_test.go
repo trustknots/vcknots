@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
@@ -1189,22 +1190,11 @@ func TestBuildDescriptorMap_UsesVPTokenRootPathForJwtVP(t *testing.T) {
 	flavor := credential.JwtVc
 
 	descriptorMap, err := controller.buildDescriptorMap([]*SavedCredential{{}}, &flavor)
-	if err != nil {
-		t.Fatalf("buildDescriptorMap() returned error: %v", err)
-	}
-	if len(descriptorMap) != 1 {
-		t.Fatalf("expected descriptor map length 1, got %d", len(descriptorMap))
-	}
-
-	if descriptorMap[0].Path != "$" {
-		t.Fatalf("expected top-level path '$', got %q", descriptorMap[0].Path)
-	}
-	if descriptorMap[0].PathNested == nil {
-		t.Fatalf("expected nested path for jwt_vp_json format")
-	}
-	if descriptorMap[0].PathNested.Path != "$.verifiableCredential[0]" {
-		t.Fatalf("expected nested vc path '$.verifiableCredential[0]', got %q", descriptorMap[0].PathNested.Path)
-	}
+	require.NoError(t, err)
+	require.Len(t, descriptorMap, 1)
+	require.Equal(t, "$", descriptorMap[0].Path)
+	require.NotNil(t, descriptorMap[0].PathNested)
+	require.Equal(t, "$.verifiableCredential[0]", descriptorMap[0].PathNested.Path)
 }
 
 func TestBuildDescriptorMap_UsesVPTokenRootPathForAllJwtDescriptors(t *testing.T) {
@@ -1212,16 +1202,12 @@ func TestBuildDescriptorMap_UsesVPTokenRootPathForAllJwtDescriptors(t *testing.T
 	flavor := credential.JwtVc
 
 	descriptorMap, err := controller.buildDescriptorMap([]*SavedCredential{{}, {}}, &flavor)
-	if err != nil {
-		t.Fatalf("buildDescriptorMap() returned error: %v", err)
-	}
-	if len(descriptorMap) != 2 {
-		t.Fatalf("expected descriptor map length 2, got %d", len(descriptorMap))
-	}
+	require.NoError(t, err)
+	require.Len(t, descriptorMap, 2)
 
 	for i, item := range descriptorMap {
-		if item.Path != "$" {
-			t.Fatalf("descriptorMap[%d].Path: expected '$', got %q", i, item.Path)
-		}
+		require.Equalf(t, "$", item.Path, "descriptorMap[%d].Path", i)
+		require.NotNilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
+		require.Equalf(t, fmt.Sprintf("$.verifiableCredential[%d]", i), item.PathNested.Path, "descriptorMap[%d].PathNested.Path", i)
 	}
 }
