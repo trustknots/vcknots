@@ -314,7 +314,6 @@ func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfil
 	}
 
 	payload := map[string]interface{}{
-		"iss": did.ID,
 		"iat": time.Now().Unix(),
 		"aud": aud,
 	}

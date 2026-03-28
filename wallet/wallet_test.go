@@ -4,6 +4,8 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -617,6 +619,25 @@ func TestController_generateJWTProof_Integration(t *testing.T) {
 	}
 	if parts != 2 {
 		t.Errorf("expected JWT to have 2 dots (3 parts), got %d dots", parts)
+	}
+
+	proofParts := strings.Split(proof, ".")
+	if len(proofParts) != 3 {
+		t.Fatalf("expected JWT to have 3 parts, got %d", len(proofParts))
+	}
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(proofParts[1])
+	if err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("failed to unmarshal payload: %v", err)
+	}
+
+	if _, ok := payload["iss"]; ok {
+		t.Fatalf("expected iss claim to be omitted in anonymous pre-authorized flow")
 	}
 }
 
