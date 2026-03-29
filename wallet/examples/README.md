@@ -70,6 +70,9 @@ pnpm install
 # Build the issuer+verifier module
 pnpm -F @trustknots/vcknots build
 
+# Build the server-core module
+pnpm -F @trustknots/server-core build
+
 # Build the server module
 pnpm -F @trustknots/server build
 

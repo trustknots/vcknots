@@ -68,10 +68,13 @@ cd ../
 pnpm install
 
 # issuer+verifierモジュールのbuild
-pnpm -F @trustknots/vcknots build    
+pnpm -F @trustknots/vcknots build
+
+# サーバーコアモジュールのbuild
+pnpm -F @trustknots/server-core build
 
 # サーバーモジュールのbuild
-pnpm -F @trustknots/server build    
+pnpm -F @trustknots/server build
 
 # サーバーを起動
 pnpm -F @trustknots/server start
