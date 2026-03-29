@@ -72,12 +72,12 @@ importers:
       '@google-cloud/kms':
         specifier: 5.4.0
         version: 5.4.0
-      '@node-rs/crc32':
-        specifier: ^1.10.3
-        version: 1.10.6
       '@google-cloud/secret-manager':
         specifier: ^6.1.1
         version: 6.1.1
+      '@node-rs/crc32':
+        specifier: ^1.10.3
+        version: 1.10.6
       '@trustknots/vcknots':
         specifier: workspace:*
         version: link:../issuer+verifier
