@@ -7,15 +7,19 @@ import {
 import { err } from './errors/vcknots.error'
 import { GrantType, TokenRequest } from './token-request.types'
 import { VcknotsContext } from './vcknots.context'
+import { JwtPayload } from './jwt.types'
+
+type AuthzKeyAlg = string
+
 type TokenRequestOptions = {
   [GrantType.AuthorizationCode]: {
     //TODO: Implement options for authorization code flow
-    alg?: 'ES256'
+    alg?: AuthzKeyAlg
   }
   [GrantType.PreAuthorizedCode]: {
     ttlSec?: number
     c_nonce_expire_in?: number
-    alg?: 'ES256'
+    alg?: AuthzKeyAlg
   }
 }
 
@@ -25,7 +29,7 @@ export type AuthzFlow = {
   ): Promise<AuthorizationServerMetadata | null>
   createAuthzServerMetadata(
     metadata: AuthorizationServerMetadata,
-    options?: { alg?: 'ES256' }
+    options?: { alg?: AuthzKeyAlg }
   ): Promise<void>
   createAccessToken<T extends GrantType>(
     authz: AuthorizationServerIssuer,
@@ -36,7 +40,7 @@ export type AuthzFlow = {
   verifyAccessToken(
     authz: AuthorizationServerIssuer,
     accessToken: string,
-    options?: { alg?: 'ES256' }
+    options?: { alg?: AuthzKeyAlg }
   ): Promise<boolean>
 }
 
@@ -135,8 +139,19 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           message: 'Access token is not a valid JWT.',
         })
       }
-      // const decodedHeader = JSON.parse(base64url.decode(jwtHeader))
-      const decodedPayload = JSON.parse(base64url.decode(jwtPayload))
+      let decodedHeader: { alg?: AuthzKeyAlg }
+      let decodedPayload: JwtPayload
+      try {
+        decodedHeader = JSON.parse(base64url.decode(jwtHeader))
+        decodedPayload = JSON.parse(base64url.decode(jwtPayload))
+      } catch (error) {
+        throw err('INVALID_ACCESS_TOKEN', {
+          message:
+            error instanceof Error
+              ? `Access token is not a valid JWT. ${error.message}`
+              : 'Access token is not a valid JWT.',
+        })
+      }
 
       // TODO: Need to consider whether to use Provider
       const authzIssuer = AuthorizationServerIssuer(decodedPayload.iss)
@@ -145,7 +160,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           message: `Access token issuer ${authzIssuer} does not match the expected issuer ${authz}.`,
         })
       }
-      const keyAlg = options?.alg ?? 'ES256'
+      const keyAlg = decodedHeader.alg ?? options?.alg ?? 'ES256'
       const publicKey = await authzKey$.fetch(authzIssuer, keyAlg)
       if (!publicKey) {
         throw err('AUTHZ_ISSUER_KEY_NOT_FOUND', {
@@ -158,7 +173,9 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       //   new URL(`${authz}/.well-known/jwks.json`)
       // )
       try {
-        await jwtVerify(accessToken, publicKey, decodedPayload)
+        await jwtVerify(accessToken, publicKey, {
+          issuer: decodedPayload.iss,
+        })
       } catch (error) {
         throw err('INVALID_ACCESS_TOKEN', {
           message: 'Access token verification failed.',

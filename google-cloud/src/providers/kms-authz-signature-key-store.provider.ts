@@ -77,9 +77,14 @@ export const kmsAuthzSignatureKeyStore = (
         })
       }
 
-      const keyRingName = await ensureKeyRing()
-      const keyId = authzKeyId(authz, declaredAlg)
+      if (pair && (declaredAlg.startsWith('RS') || declaredAlg.startsWith('PS'))) {
+        raise('INTERNAL_SERVER_ERROR', {
+          message: `Import for ${declaredAlg} requires RSA_AES wrapping (AES-KWP), which is not implemented`,
+        })
+      }
 
+      const keyId = authzKeyId(authz, declaredAlg)
+      const keyRingName = await ensureKeyRing()
       if (!pair) {
         await ensureCryptoKey(keyRingName, keyId, kmsAlgorithm, { importOnly: false })
         return
@@ -91,12 +96,6 @@ export const kmsAuthzSignatureKeyStore = (
       if (!importJobName || !wrappingPublicKeyPem) {
         raise('INTERNAL_SERVER_ERROR', {
           message: 'Import job is missing name or wrapping public key',
-        })
-      }
-
-      if (declaredAlg.startsWith('RS') || declaredAlg.startsWith('PS')) {
-        raise('INTERNAL_SERVER_ERROR', {
-          message: `Import for ${declaredAlg} requires RSA_AES wrapping (AES-KWP), which is not implemented`,
         })
       }
 
@@ -135,7 +134,19 @@ export const kmsAuthzSignatureKeyStore = (
       }
 
       const versionName = latestVersion.name
-      const [publicKey] = await kms.getPublicKey({ name: versionName })
+      const [publicKey] = await (async () => {
+        try {
+          return await kms.getPublicKey({ name: versionName })
+        } catch (error) {
+          if (grpcCode(error) === KMS_NOT_FOUND) {
+            return [null]
+          }
+          throw error
+        }
+      })()
+      if (!publicKey) {
+        return null
+      }
 
       if (!publicKey.name || !publicKey.pem || publicKey.pemCrc32c?.value == null) {
         console.error(`Public key data is incomplete for authorization server ${authz}`)

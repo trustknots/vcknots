@@ -65,15 +65,14 @@ export const inMemoryAuthzSignatureKeyStore = (option?: {
         const pairs = map.get(authz)
         if (!pairs) return null
         const value = pairs.find((c) => c.declaredAlg === keyAlg) ?? null
-        if (value) {
-          if (value.privateKey && value.format === 'jwk' && typeof value.privateKey !== 'string') {
-            const key = await importJWK(value.privateKey, value.declaredAlg)
-            privateKey = key instanceof Uint8Array ? null : key
-          }
-          if (value.privateKey && typeof value.privateKey === 'string') {
-            const key = await importPKCS8(value.privateKey, value.declaredAlg)
-            privateKey = key
-          }
+        if (!value) return null
+        if (value.privateKey && value.format === 'jwk' && typeof value.privateKey !== 'string') {
+          const key = await importJWK(value.privateKey, value.declaredAlg)
+          privateKey = key instanceof Uint8Array ? null : key
+        }
+        if (value.privateKey && typeof value.privateKey === 'string') {
+          const key = await importPKCS8(value.privateKey, value.declaredAlg)
+          privateKey = key
         }
         if (!privateKey) {
           throw raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
@@ -86,6 +85,9 @@ export const inMemoryAuthzSignatureKeyStore = (option?: {
         const [, , signature] = jws.split('.')
         return signature
       } catch (error) {
+        if (error instanceof Error && error.name === 'AUTHZ_VERIFIER_KEY_NOT_FOUND') {
+          throw error
+        }
         throw raise('INTERNAL_SERVER_ERROR', { message: `sign error: ${error}` })
       }
     },

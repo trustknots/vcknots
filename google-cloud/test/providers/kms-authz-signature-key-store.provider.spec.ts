@@ -122,10 +122,10 @@ class FakeKmsClient {
   }
 
   async createKeyRing(request: Record<string, unknown>) {
+    this.calls.createKeyRing.push(request)
     if (this.errors.createKeyRing) {
       throw this.errors.createKeyRing
     }
-    this.calls.createKeyRing.push(request)
     const name = this.keyRingPath(projectId, locationId, String(request.keyRingId))
     this.keyRings.add(name)
     return [{ name }]
@@ -338,7 +338,7 @@ describe('kmsAuthzSignatureKeyStore', () => {
       privateKey: privateKeyPem,
     })
 
-    assert.equal(kms.calls.createKeyRing.length, 0)
+    assert.equal(kms.calls.createKeyRing.length, 1)
     assert.equal(kms.calls.createCryptoKey.length, 1)
   })
 
