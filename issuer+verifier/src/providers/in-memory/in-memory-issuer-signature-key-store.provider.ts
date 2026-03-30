@@ -59,26 +59,26 @@ export const inMemoryIssuerSignatureKeyStore = (): IssuerSignatureKeyStoreProvid
     },
 
     async sign(issuer, keyAlg, jwtPayload, jwtHeader) {
+      let privateKey = null
+      const pairs = map.get(issuer)
+      if (!pairs) return null
+      const value = pairs.find((c) => c.declaredAlg === keyAlg) ?? null
+      if (value) {
+        if (value.privateKey && value.format === 'jwk' && typeof value.privateKey !== 'string') {
+          const key = await importJWK(value.privateKey, value.declaredAlg)
+          privateKey = key instanceof Uint8Array ? null : key
+        }
+        if (value.privateKey && typeof value.privateKey === 'string') {
+          const key = await importPKCS8(value.privateKey, value.declaredAlg)
+          privateKey = key
+        }
+      }
+      if (!privateKey) {
+        throw raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+          message: 'Issuer private key not found.',
+        })
+      }
       try {
-        let privateKey = null
-        const pairs = map.get(issuer)
-        if (!pairs) return null
-        const value = pairs.find((c) => c.declaredAlg === keyAlg) ?? null
-        if (value) {
-          if (value.privateKey && value.format === 'jwk' && typeof value.privateKey !== 'string') {
-            const key = await importJWK(value.privateKey, value.declaredAlg)
-            privateKey = key instanceof Uint8Array ? null : key
-          }
-          if (value.privateKey && typeof value.privateKey === 'string') {
-            const key = await importPKCS8(value.privateKey, value.declaredAlg)
-            privateKey = key
-          }
-        }
-        if (!privateKey) {
-          throw raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
-            message: 'Issuer private key not found.',
-          })
-        }
         const signer = new CompactSign(new TextEncoder().encode(JSON.stringify(jwtPayload)))
         signer.setProtectedHeader({ ...jwtHeader })
         const jws = await signer.sign(privateKey)

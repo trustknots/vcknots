@@ -75,7 +75,7 @@ export const kmsIssuerSignatureKeyStore = (
         })
       }
 
-      if (declaredAlg.startsWith('RS') || declaredAlg.startsWith('PS')) {
+      if ((pair && declaredAlg.startsWith('RS')) || declaredAlg.startsWith('PS')) {
         raise('INTERNAL_SERVER_ERROR', {
           message: `Import for ${declaredAlg} requires RSA_AES wrapping (AES-KWP), which is not implemented`,
         })
@@ -188,7 +188,9 @@ export const kmsIssuerSignatureKeyStore = (
           versions = listedVersions
         } catch (error) {
           if (grpcCode(error) === KMS_NOT_FOUND) {
-            return null
+            raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+              message: 'Issuer private key not found.',
+            })
           }
           throw error
         }

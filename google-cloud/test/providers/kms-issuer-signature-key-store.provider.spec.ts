@@ -122,10 +122,10 @@ class FakeKmsClient {
   }
 
   async createKeyRing(request: Record<string, unknown>) {
+    this.calls.createKeyRing.push(request)
     if (this.errors.createKeyRing) {
       throw this.errors.createKeyRing
     }
-    this.calls.createKeyRing.push(request)
     const name = this.keyRingPath(projectId, locationId, String(request.keyRingId))
     this.keyRings.add(name)
     return [{ name }]
@@ -197,10 +197,10 @@ class FakeKmsClient {
   }
 
   async createCryptoKey(request: Record<string, unknown>) {
+    this.calls.createCryptoKey.push(request)
     if (this.errors.createCryptoKey) {
       throw this.errors.createCryptoKey
     }
-    this.calls.createCryptoKey.push(request)
     const name = `${String(request.parent)}/cryptoKeys/${String(request.cryptoKeyId)}`
     this.cryptoKeys.add(name)
     return [{ name }]
@@ -338,7 +338,7 @@ describe('kmsIssuerSignatureKeyStore', () => {
       privateKey: privateKeyPem,
     })
 
-    assert.equal(kms.calls.createKeyRing.length, 0)
+    assert.equal(kms.calls.createKeyRing.length, 1)
     assert.equal(kms.calls.createCryptoKey.length, 1)
   })
 
@@ -488,11 +488,19 @@ describe('kmsIssuerSignatureKeyStore', () => {
         privateKey: privateKeyPem,
       })
 
+      const maxAttempts = 100
+      let attempts = 0
       while (
         !kms.calls.createImportJob.some((call) =>
           String(call.importJobId).startsWith(`${baseImportJobId}-`)
         )
       ) {
+        if (attempts >= maxAttempts) {
+          assert.fail(
+            `Timed out waiting for replacement import job creation for baseImportJobId=${baseImportJobId} after ${maxAttempts} polling attempts`
+          )
+        }
+        attempts += 1
         await new Promise((resolve) => setTimeout(resolve, 0))
       }
 
