@@ -1,21 +1,21 @@
 import base64url from 'base64url'
-import { importJWK, jwtVerify } from 'jose'
+import { jwtVerify } from 'jose'
 import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
 } from './authorization-server.types'
 import { err } from './errors/vcknots.error'
-import { selectProvider } from './providers/provider.utils'
 import { GrantType, TokenRequest } from './token-request.types'
 import { VcknotsContext } from './vcknots.context'
 type TokenRequestOptions = {
-  // biome-ignore lint/complexity/noBannedTypes: <explanation>
   [GrantType.AuthorizationCode]: {
     //TODO: Implement options for authorization code flow
+    alg?: 'ES256'
   }
   [GrantType.PreAuthorizedCode]: {
     ttlSec?: number
     c_nonce_expire_in?: number
+    alg?: 'ES256'
   }
 }
 
@@ -33,7 +33,11 @@ export type AuthzFlow = {
     options?: TokenRequestOptions[T]
     // biome-ignore lint/complexity/noBannedTypes: <explanation>
   ): Promise<Object>
-  verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promise<boolean>
+  verifyAccessToken(
+    authz: AuthorizationServerIssuer,
+    accessToken: string,
+    options?: { alg?: 'ES256' }
+  ): Promise<boolean>
 }
 
 export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
@@ -43,7 +47,6 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   const cnonceStore$ = context.providers.get('cnonce-store-provider')
   const accessToken$ = context.providers.get('access-token-provider')
   const authzKey$ = context.providers.get('authz-signature-key-store-provider')
-  const authzSignatureKey$ = context.providers.get('authz-signature-key-provider')
 
   return {
     async findAuthzServerMetadata(issuer) {
@@ -51,15 +54,13 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
     },
     async createAuthzServerMetadata(metadata, options) {
       const privateKeyAlg = options?.alg ?? 'ES256'
-      const provider = selectProvider(authzSignatureKey$, privateKeyAlg)
-      const key = await provider.generate()
       const current = await authz$.fetch(metadata.issuer)
       if (current) {
         throw err('DUPLICATE_AUTHZ_SERVER', {
           message: `issuer ${metadata.issuer} is already registered.`,
         })
       }
-      await authzKey$.save(metadata.issuer, key)
+      await authzKey$.save(metadata.issuer, privateKeyAlg)
       await authz$.save(metadata)
     },
     async createAccessToken(authz, tokenRequest, options) {
@@ -78,38 +79,20 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
 
           // TODO: if ix_code is provided, it should be validated
 
-          // Fetch private key
-          const keyPaire = await authzKey$.fetch(authz)
-          if (!keyPaire) {
-            throw err('INVALID_REQUEST', {
-              message: `Authorization server key for ${authz} not found.`,
-            })
-          }
-          const privateKey = keyPaire.privateKey
-          if (!privateKey) {
-            throw err('INVALID_REQUEST', {
-              message: 'Authorization server private key not found.',
-            })
-          }
-          const privateKeyAlg = privateKey.alg ?? null
-          if (!privateKeyAlg || typeof privateKeyAlg !== 'string') {
-            throw err('INVALID_REQUEST', {
-              message: 'Authorization server private key algorithm is not specified.',
-            })
-          }
+          const keyAlg = options?.alg ?? 'ES256'
           // Authz access token (data)
           // for JWK privateKey
           const jwtHeader = {
-            alg: privateKeyAlg,
+            alg: keyAlg,
             typ: 'JWT',
           }
           const jwtPayload = await accessToken$.createTokenPayload(
             authz,
+
             tokenRequest['pre-authorized_code']
           )
           // sign with issuer private key
-          const provider = selectProvider(authzSignatureKey$, privateKeyAlg)
-          const signature = await provider.sign(privateKey, privateKeyAlg, jwtPayload, jwtHeader)
+          const signature = await authzKey$.sign(authz, keyAlg, jwtPayload, jwtHeader)
           if (!signature) {
             throw err('INTERNAL_SERVER_ERROR', {
               message: 'Cannot sign access token.',
@@ -143,7 +126,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         }
       }
     },
-    async verifyAccessToken(authz, accessToken: string): Promise<boolean> {
+    async verifyAccessToken(authz, accessToken: string, options): Promise<boolean> {
       // TODO:  AccessToken Support (self-contained, Token Introspection) — prioritize self-contained.
       // self-contained check
       const [jwtHeader, jwtPayload, jwtSignature] = accessToken.split('.')
@@ -152,7 +135,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           message: 'Access token is not a valid JWT.',
         })
       }
-      const decodedHeader = JSON.parse(base64url.decode(jwtHeader))
+      // const decodedHeader = JSON.parse(base64url.decode(jwtHeader))
       const decodedPayload = JSON.parse(base64url.decode(jwtPayload))
 
       // TODO: Need to consider whether to use Provider
@@ -162,32 +145,20 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           message: `Access token issuer ${authzIssuer} does not match the expected issuer ${authz}.`,
         })
       }
-      const keyPair = await authzKey$.fetch(authzIssuer)
-      if (!keyPair) {
+      const keyAlg = options?.alg ?? 'ES256'
+      const publicKey = await authzKey$.fetch(authzIssuer, keyAlg)
+      if (!publicKey) {
         throw err('AUTHZ_ISSUER_KEY_NOT_FOUND', {
           message: `Authorization server key for ${authzIssuer} not found.`,
         })
       }
 
-      const [canHandle] = authzSignatureKey$.filter((it) => it.canHandle(decodedHeader.alg))
-      if (!canHandle) {
-        throw err('PROVIDER_NOT_FOUND', {
-          message: `Signature algorithm ${decodedHeader.alg} is not supported.`,
-        })
-      }
-
-      if (!keyPair.publicKey) {
-        throw err('AUTHZ_ISSUER_KEY_NOT_FOUND', {
-          message: `Authorization server public key for ${authzIssuer} not found.`,
-        })
-      }
-      const authzJWKS = await importJWK(keyPair.publicKey)
       // Reference: library-dependent implementation
       // const authzJWKS = createRemoteJWKSet(
       //   new URL(`${authz}/.well-known/jwks.json`)
       // )
       try {
-        await jwtVerify(accessToken, authzJWKS, decodedPayload)
+        await jwtVerify(accessToken, publicKey, decodedPayload)
       } catch (error) {
         throw err('INVALID_ACCESS_TOKEN', {
           message: 'Access token verification failed.',
