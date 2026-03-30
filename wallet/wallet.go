@@ -306,7 +306,8 @@ func (w *Wallet) convertEntryToSavedCredential(entry types.CredentialEntry) (*Sa
 }
 
 // generateJWTProof generates a JWT proof for credential requests.
-// When clientID is nil or empty, iss is omitted (anonymous pre-authorized flow).
+// When clientID is nil, iss is omitted (anonymous pre-authorized flow).
+// When clientID is provided, it must be non-empty.
 func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfile, nonce *string, aud string, clientID *string) (string, error) {
 	header := map[string]interface{}{
 		"alg": "ES256",
@@ -319,7 +320,10 @@ func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfil
 		"aud": aud,
 	}
 
-	if clientID != nil && *clientID != "" {
+	if clientID != nil {
+		if strings.TrimSpace(*clientID) == "" {
+			return "", fmt.Errorf("clientID must be non-empty when provided")
+		}
 		payload["iss"] = *clientID
 	}
 
