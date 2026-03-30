@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
@@ -1182,4 +1183,46 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 			t.Fatalf("expected nonce %q, got %q", req.Nonce, opts.Nonce)
 		}
 	})
+}
+
+func TestBuildDescriptorMap_UsesVPTokenRootPathForJwtVP(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	flavor := credential.JwtVc
+
+	descriptorMap, err := controller.buildDescriptorMap([]*SavedCredential{{}}, &flavor)
+	require.NoError(t, err)
+	require.Len(t, descriptorMap, 1)
+	require.Equal(t, "$", descriptorMap[0].Path)
+	require.NotNil(t, descriptorMap[0].PathNested)
+	require.Equal(t, "$.verifiableCredential[0]", descriptorMap[0].PathNested.Path)
+}
+
+func TestBuildDescriptorMap_UsesVPTokenRootPathForAllJwtDescriptors(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	flavor := credential.JwtVc
+
+	descriptorMap, err := controller.buildDescriptorMap([]*SavedCredential{{}, {}}, &flavor)
+	require.NoError(t, err)
+	require.Len(t, descriptorMap, 2)
+
+	for i, item := range descriptorMap {
+		require.Equalf(t, fmt.Sprintf("$[%d]", i), item.Path, "descriptorMap[%d].Path", i)
+		require.NotNilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
+		require.Equalf(t, fmt.Sprintf("$.verifiableCredential[%d]", i), item.PathNested.Path, "descriptorMap[%d].PathNested.Path", i)
+	}
+}
+
+func TestBuildDescriptorMap_UsesVPTokenRootPathForALLSdJwtDescriptors(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	flavor := credential.SDJwtVC
+
+	descriptorMap, err := controller.buildDescriptorMap([]*SavedCredential{{}, {}}, &flavor)
+	require.NoError(t, err)
+	require.Len(t, descriptorMap, 2)
+
+	for i, item := range descriptorMap {
+		require.Equalf(t, fmt.Sprintf("$[%d]", i), item.Path, "descriptorMap[%d].Path", i)
+		require.Equalf(t, "dc+sd-jwt", item.Format, "descriptorMap[%d].Format", i)
+		require.Nilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
+	}
 }

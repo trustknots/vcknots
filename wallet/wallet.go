@@ -712,6 +712,10 @@ func (w *Wallet) buildDescriptorMap(credentials []*SavedCredential, flavor *cred
 	var descriptorMap []presenterTypes.DescriptorMapItem
 	for i := range credentials {
 		descriptionItemID := uuid.New().String()
+		descriptorPath := "$"
+		if len(credentials) > 1 {
+			descriptorPath = fmt.Sprintf("$[%d]", i)
+		}
 		// Temporary compatibility workaround:
 		// the current verifier/request-object flow still requires
 		// presentation_submission.descriptor_map, and dc+sd-jwt must point to the
@@ -723,7 +727,7 @@ func (w *Wallet) buildDescriptorMap(credentials []*SavedCredential, flavor *cred
 			descriptorMap = append(descriptorMap, presenterTypes.DescriptorMapItem{
 				ID:     descriptionItemID,
 				Format: vpFormat,
-				Path:   "$",
+				Path:   descriptorPath,
 			})
 			continue
 		}
@@ -731,7 +735,7 @@ func (w *Wallet) buildDescriptorMap(credentials []*SavedCredential, flavor *cred
 		descriptorMap = append(descriptorMap, presenterTypes.DescriptorMapItem{
 			ID:     descriptionItemID,
 			Format: vpFormat,
-			Path:   fmt.Sprintf("$.vp_token[%d]", i),
+			Path:   descriptorPath,
 			PathNested: &presenterTypes.DescriptorMapItem{
 				ID:     descriptionItemID,
 				Format: vcFormat,
