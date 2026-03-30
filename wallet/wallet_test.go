@@ -1206,8 +1206,23 @@ func TestBuildDescriptorMap_UsesVPTokenRootPathForAllJwtDescriptors(t *testing.T
 	require.Len(t, descriptorMap, 2)
 
 	for i, item := range descriptorMap {
-		require.Equalf(t, "$", item.Path, "descriptorMap[%d].Path", i)
+		require.Equalf(t, fmt.Sprintf("$[%d]", i), item.Path, "descriptorMap[%d].Path", i)
 		require.NotNilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
 		require.Equalf(t, fmt.Sprintf("$.verifiableCredential[%d]", i), item.PathNested.Path, "descriptorMap[%d].PathNested.Path", i)
+	}
+}
+
+func TestBuildDescriptorMap_UsesVPTokenRootPathForALLSdJwtDescriptors(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	flavor := credential.SDJwtVC
+
+	descriptorMap, err := controller.buildDescriptorMap([]*SavedCredential{{}, {}}, &flavor)
+	require.NoError(t, err)
+	require.Len(t, descriptorMap, 2)
+
+	for i, item := range descriptorMap {
+		require.Equalf(t, fmt.Sprintf("$[%d]", i), item.Path, "descriptorMap[%d].Path", i)
+		require.Equalf(t, "dc+sd-jwt", item.Format, "descriptorMap[%d].Format", i)
+		require.Nilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
 	}
 }
