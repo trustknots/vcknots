@@ -67,8 +67,14 @@ export type AuthzSignatureKeyStoreProvider = {
   name: string
   single: true
 
-  save(authz: AuthorizationServerIssuer, pair: SignatureKeyPair): Promise<void>
-  fetch(authz: AuthorizationServerIssuer): Promise<SignatureKeyPair>
+  save(authz: AuthorizationServerIssuer, keyAlg: string, pair?: SignatureKeyEntry): Promise<void>
+  fetch(authz: AuthorizationServerIssuer, keyAlg: string): Promise<CryptoKey | null>
+  sign(
+    authz: AuthorizationServerIssuer,
+    keyAlg: string,
+    jwtPayload: JwtPayload,
+    jwtHeader: ProofJwtHeader
+  ): Promise<string | null>
 }
 
 export type IssuerSignatureKeyStoreProvider = {
@@ -257,12 +263,6 @@ export type AuthzSignatureKeyProvider = {
   single: false
 
   generate(): Promise<SignatureKeyPair>
-  sign(
-    privateKey: Jwk,
-    keyAlg: string,
-    jwtPayload: JwtPayload,
-    jwtHeader: ProofJwtHeader
-  ): Promise<string | null>
   canHandle(keyAlg: string): boolean
 }
 
