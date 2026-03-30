@@ -75,7 +75,7 @@ export const kmsIssuerSignatureKeyStore = (
         })
       }
 
-      if ((pair && declaredAlg.startsWith('RS')) || declaredAlg.startsWith('PS')) {
+      if (pair && (declaredAlg.startsWith('RS') || declaredAlg.startsWith('PS'))) {
         raise('INTERNAL_SERVER_ERROR', {
           message: `Import for ${declaredAlg} requires RSA_AES wrapping (AES-KWP), which is not implemented`,
         })
