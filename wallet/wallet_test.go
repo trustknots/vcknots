@@ -591,7 +591,7 @@ func TestController_FetchAuthorizationServerMetadata_Integration(t *testing.T) {
 	}
 }
 
-func TestController_generateJWTProof_Integration(t *testing.T) {
+func TestController_generateJWTProof_AnonymousPreAuthorizedFlow_OmitsIss(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
 	key := newMockKeyEntry()
@@ -601,7 +601,7 @@ func TestController_generateJWTProof_Integration(t *testing.T) {
 	}
 	nonce := "test-nonce"
 
-	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud")
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", nil)
 	if err != nil {
 		t.Errorf("generateJWTProof returned error: %v", err)
 	}
@@ -641,6 +641,46 @@ func TestController_generateJWTProof_Integration(t *testing.T) {
 	}
 }
 
+func TestController_generateJWTProof_NonAnonymousFlow_IncludesIssAsClientID(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	key := newMockKeyEntry()
+	did := &idprofTypes.IdentityProfile{
+		ID:     "did:key:test123",
+		TypeID: "did:key",
+	}
+	nonce := "test-nonce"
+	clientID := "test-client-id"
+
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", &clientID)
+	if err != nil {
+		t.Fatalf("generateJWTProof returned error: %v", err)
+	}
+
+	proofParts := strings.Split(proof, ".")
+	if len(proofParts) != 3 {
+		t.Fatalf("expected JWT to have 3 parts, got %d", len(proofParts))
+	}
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(proofParts[1])
+	if err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("failed to unmarshal payload: %v", err)
+	}
+
+	iss, ok := payload["iss"].(string)
+	if !ok {
+		t.Fatalf("expected iss claim to be present as string in non-anonymous flow")
+	}
+	if iss != clientID {
+		t.Fatalf("expected iss %q, got %q", clientID, iss)
+	}
+}
+
 func TestController_generateJWTProof_WithoutNonce_Integration(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
@@ -650,7 +690,7 @@ func TestController_generateJWTProof_WithoutNonce_Integration(t *testing.T) {
 		TypeID: "did:key",
 	}
 
-	proof, err := controller.generateJWTProof(key, did, nil, "test-aud")
+	proof, err := controller.generateJWTProof(key, did, nil, "test-aud", nil)
 	if err != nil {
 		t.Errorf("generateJWTProof returned error: %v", err)
 	}
