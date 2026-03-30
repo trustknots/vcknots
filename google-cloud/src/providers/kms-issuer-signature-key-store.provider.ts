@@ -43,7 +43,14 @@ export const kmsIssuerSignatureKeyStore = (
   const keyRingId = 'issuers'
   const baseImportJobId = 'vcknots-issuer-import-job'
   const md5 = (issuer: CredentialIssuer) => createHash('md5').update(issuer).digest('base64url')
-  const issuerKeyId = (issuer: CredentialIssuer, alg: string) => `${md5(issuer)}-${alg || 'es256'}`
+  const issuerKeyId = (issuer: CredentialIssuer, alg: string) => {
+    if (typeof alg !== 'string' || alg.trim().length === 0) {
+      raise('INTERNAL_SERVER_ERROR', {
+        message: 'Issuer key algorithm is required to build a KMS key id',
+      })
+    }
+    return `${md5(issuer)}-${alg}`
+  }
 
   const { ensureKeyRing, ensureImportJob, ensureCryptoKey } = createKmsProviderHelpers({
     kms,
@@ -203,8 +210,8 @@ export const kmsIssuerSignatureKeyStore = (
         }
 
         if (jwtHeader.alg !== keyAlg) {
-          raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
-            message: `Issuer private key algorithm mismatch: header alg ${jwtHeader.alg}, key alg ${keyAlg}.`,
+          raise('ILLEGAL_ARGUMENT', {
+            message: `JWT header algorithm mismatch: header.alg=${jwtHeader.alg}, expected=${keyAlg}.`,
           })
         }
 

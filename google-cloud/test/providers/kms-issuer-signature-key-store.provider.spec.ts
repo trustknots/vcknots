@@ -840,7 +840,7 @@ describe('kmsIssuerSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(issuer, 'ES256', { iss: issuer }, { alg: 'RS256', typ: 'JWT' }),
       (error: Error) => {
-        assert.equal(error.name, 'AUTHZ_ISSUER_KEY_NOT_FOUND')
+        assert.equal(error.name, 'ILLEGAL_ARGUMENT')
         assert.match(error.message, /algorithm mismatch/)
         return true
       }
@@ -865,7 +865,7 @@ describe('kmsIssuerSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(issuer, 'ES256', { iss: issuer }, { typ: 'JWT' } as never),
       (error: Error) => {
-        assert.equal(error.name, 'AUTHZ_ISSUER_KEY_NOT_FOUND')
+        assert.equal(error.name, 'ILLEGAL_ARGUMENT')
         assert.match(error.message, /algorithm mismatch/)
         return true
       }
