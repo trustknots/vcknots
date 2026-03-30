@@ -28,6 +28,16 @@ func NewJwtVcSerializer() (*JwtVcSerializer, error) {
 	return &JwtVcSerializer{}, nil
 }
 
+// JwtVcPresentationOptions contains options for JWT VC presentation serialization
+type JwtVcPresentationOptions struct {
+	Audience string
+	Nonce string
+}
+
+
+func (o *JwtVcPresentationOptions) IsSerializePresentationOptions() {}
+
+
 // SerializeCredential serializes a credential to JWT VC format
 func (s *JwtVcSerializer) SerializeCredential(flavor credential.SupportedSerializationFlavor, cred *credential.Credential) ([]byte, error) {
 	if flavor != credential.JwtVc {
@@ -163,6 +173,17 @@ func (s *JwtVcSerializer) SerializePresentation(flavor credential.SupportedSeria
 	if presentation.Nonce != nil {
 		customClaims["nonce"] = *presentation.Nonce
 	}
+
+	// Set Nonce, Audience
+	if opts, ok := options.(*JwtVcPresentationOptions); ok && opts != nil {
+		if len(opts.Nonce) > 1 {
+			customClaims["nonce"] = opts.Nonce
+		}
+		if len(opts.Audience) > 1 {
+			customClaims["aud"] = opts.Audience
+		}
+	}
+
 
 	// Merge claims into a single map
 	allClaims := make(map[string]any)
