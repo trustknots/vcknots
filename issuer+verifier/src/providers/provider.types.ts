@@ -76,8 +76,14 @@ export type IssuerSignatureKeyStoreProvider = {
   name: string
   single: true
 
-  save(issuer: CredentialIssuer, pairs: SignatureKeyPair[]): Promise<void>
-  fetch(issuer: CredentialIssuer): Promise<SignatureKeyPair[]>
+  save(issuer: CredentialIssuer, keyAlg: string, pair?: SignatureKeyEntry): Promise<void>
+  fetch(issuer: CredentialIssuer, keyAlg: string): Promise<CryptoKey | null>
+  sign(
+    issuer: CredentialIssuer,
+    keyAlg: string,
+    jwtPayload: JwtPayload,
+    jwtHeader: ProofJwtHeader
+  ): Promise<string | null>
 }
 
 export type VerifierSignatureKeyStoreProvider = {
@@ -272,12 +278,6 @@ export type IssuerSignatureKeyProvider = {
   single: false
 
   generate(): Promise<SignatureKeyPair>
-  sign(
-    privateKey: Jwk,
-    keyAlg: string,
-    jwtPayload: JwtPayload,
-    jwtHeader: ProofJwtHeader
-  ): Promise<string | null>
   canHandle(keyAlg: string): boolean
 }
 
