@@ -16,7 +16,6 @@ import { CredentialFormats } from '../credential-request.types'
 import { JwtVcJson, ProofJwt, ProofJwtHeader, VerifiableCredential } from '../credential.types'
 import { Dcql } from '../dcql.type'
 import { DidDocument } from '../did.types'
-import { Jwk } from '../jwk.type'
 import { JwtContent, JwtPayload } from '../jwt.types'
 import { PreAuthorizedCode } from '../pre-authorized-code.types'
 import { PresentationExchange } from '../presentation-exchange.types'
@@ -82,8 +81,14 @@ export type IssuerSignatureKeyStoreProvider = {
   name: string
   single: true
 
-  save(issuer: CredentialIssuer, pairs: SignatureKeyPair[]): Promise<void>
-  fetch(issuer: CredentialIssuer): Promise<SignatureKeyPair[]>
+  save(issuer: CredentialIssuer, keyAlg: string, pair?: SignatureKeyEntry): Promise<void>
+  fetch(issuer: CredentialIssuer, keyAlg: string): Promise<CryptoKey | null>
+  sign(
+    issuer: CredentialIssuer,
+    keyAlg: string,
+    jwtPayload: JwtPayload,
+    jwtHeader: ProofJwtHeader
+  ): Promise<string | null>
 }
 
 export type VerifierSignatureKeyStoreProvider = {
@@ -272,12 +277,6 @@ export type IssuerSignatureKeyProvider = {
   single: false
 
   generate(): Promise<SignatureKeyPair>
-  sign(
-    privateKey: Jwk,
-    keyAlg: string,
-    jwtPayload: JwtPayload,
-    jwtHeader: ProofJwtHeader
-  ): Promise<string | null>
   canHandle(keyAlg: string): boolean
 }
 

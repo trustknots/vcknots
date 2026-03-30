@@ -1,5 +1,6 @@
 import { Provider } from '@trustknots/vcknots/providers'
 import { KeyManagementServiceClient } from '@google-cloud/kms'
+import { kmsIssuerSignatureKeyStore } from './kms-issuer-signature-key-store.provider'
 import { kmsAuthzSignatureKeyStore } from './kms-authz-signature-key-store.provider'
 import { kmsVerifierSignatureKeyStore } from './kms-verifier-signature-key-store.provider'
 
@@ -33,6 +34,7 @@ export const kms = (options?: CloudKmsProviderOptions): Provider[] => {
 
   return [
     kmsAuthzSignatureKeyStore({ ...options, client }),
+    kmsIssuerSignatureKeyStore({ ...options, client }),
     kmsVerifierSignatureKeyStore({ ...options, client }),
   ]
 }

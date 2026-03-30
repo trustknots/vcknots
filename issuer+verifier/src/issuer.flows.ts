@@ -1,4 +1,4 @@
-import { base64url } from 'jose'
+import { base64url, exportJWK } from 'jose'
 import { Cnonce } from './cnonce.types'
 import {
   CredentialConfigurationId,
@@ -12,6 +12,7 @@ import { err, raise } from './errors/vcknots.error'
 import { selectProvider } from './providers/provider.utils'
 import { VcknotsContext } from './vcknots.context'
 import { JwtVcIssuerResponse } from './jwt-vc-issuer.types'
+import { jwkSchema } from './jwk.type'
 
 type OfferOptions =
   | {
@@ -59,7 +60,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const cnonce$ = context.providers.get('cnonce-provider')
   const cnonceStore$ = context.providers.get('cnonce-store-provider')
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
-  const key$ = context.providers.get('issuer-signature-key-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
 
   return {
@@ -75,13 +75,29 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const jwtVcIssuerMetadata: JwtVcIssuerResponse = {
         issuer: metadata.credential_issuer,
       }
-      const issuerKeys = await keyStore$.fetch(id)
-      if (issuerKeys && issuerKeys.length > 0) {
+      const algs = Array.from(
+        Object.values(metadata.credential_configurations_supported ?? {})
+          .flatMap((it) => it.credential_signing_alg_values_supported ?? [])
+          .reduce((acc, it) => {
+            acc.add(it)
+            return acc
+          }, new Set<string>())
+      )
+      const keyAlgs = algs.length === 0 ? ['ES256'] : algs
+      const keys = (
+        await Promise.all(
+          keyAlgs.map(async (alg) => {
+            const issuerKey = await keyStore$.fetch(id, alg)
+            if (!issuerKey) {
+              return null
+            }
+            return jwkSchema.parse(await exportJWK(issuerKey))
+          })
+        )
+      ).filter((key) => key !== null)
+      if (keys.length > 0) {
         jwtVcIssuerMetadata.jwks = {
-          keys: issuerKeys.map((keypair) => {
-            const { publicKey } = keypair
-            return publicKey
-          }),
+          keys,
         }
       }
       return jwtVcIssuerMetadata
@@ -102,14 +118,11 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           }, new Set<string>())
       )
 
-      const pairs = await Promise.all(
+      await Promise.all(
         algs.map(async (alg) => {
-          const provider = selectProvider(key$, alg)
-          return await provider.generate()
+          return await keyStore$.save(issuer.credential_issuer, alg)
         })
       )
-
-      await keyStore$.save(issuer.credential_issuer, pairs)
       await metadataStore$.save(issuer)
     },
     async offerCredential(issuer, configurations, options) {
@@ -247,15 +260,13 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         iss: verifiableCredential.issuer,
         sub: verifyProof.header.kid,
       }
-      const issuerKeys = await keyStore$.fetch(issuer)
-      const keys = issuerKeys.find((keypair) => keypair.privateKey.alg === keyAlg)
-      if (!keys) {
+      const issuerKeys = await keyStore$.fetch(issuer, keyAlg)
+      if (!issuerKeys) {
         throw err('AUTHZ_ISSUER_KEY_NOT_FOUND', {
           message: 'Issuer key not found.',
         })
       }
-      const keyProvider = selectProvider(key$, keyAlg)
-      const signature = await keyProvider.sign(keys.privateKey, keyAlg, jwtPayload, jwtHeader)
+      const signature = await keyStore$.sign(issuer, keyAlg, jwtPayload, jwtHeader)
       if (!signature) {
         throw err('INTERNAL_SERVER_ERROR', {
           message: 'Cannot sign credentials.',
