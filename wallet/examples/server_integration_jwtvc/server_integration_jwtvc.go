@@ -32,7 +32,6 @@ import (
 	"github.com/trustknots/vcknots/wallet"
 	"github.com/trustknots/vcknots/wallet/examples/common"
 	"github.com/trustknots/vcknots/wallet/receiver/types"
-	"github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 )
 
 func receiveCredential(w *wallet.Wallet, key *common.MockKeyEntry, logger *slog.Logger) *wallet.SavedCredential {
@@ -179,7 +178,7 @@ func receiveCredential(w *wallet.Wallet, key *common.MockKeyEntry, logger *slog.
 	return savedCredential
 }
 
-func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential *wallet.SavedCredential, options *sdjwtvc.SdJwtVcPresentationOptions, logger *slog.Logger) {
+func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential *wallet.SavedCredential, logger *slog.Logger) {
 	// Example verifier details
 	verifierURL := "http://localhost:8080"
 
@@ -340,7 +339,7 @@ func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential
 	logger.Info("Request URI is valid", "scheme", urlParsed.Scheme)
 
 	// Present demo credential to the verifier
-	err = w.PresentCredential(string(body), key, options)
+	err = w.PresentCredential(string(body), key, nil)
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
 		panic(err)
@@ -363,5 +362,5 @@ func main() {
 	receivedCredential := receiveCredential(w, mockKey, logger)
 
 	// Tests - Use the received credential for presentation
-	presentation(w, mockKey, receivedCredential, nil, logger)
+	presentation(w, mockKey, receivedCredential, logger)
 }

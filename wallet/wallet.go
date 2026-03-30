@@ -782,6 +782,9 @@ func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, option
 	if !ok {
 		return
 	}
+	if sdOpts == nil {
+		return
+	}
 
 	sdOpts.Audience = req.ClientID
 	sdOpts.Nonce = req.Nonce
@@ -790,7 +793,7 @@ func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, option
 // submitPresentation serializes and submits the presentation to the verifier.
 func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentation, flavor *credential.SupportedSerializationFlavor, endpoint *url.URL, descriptorMap []presenterTypes.DescriptorMapItem, req *oid4vp.CredentialPresentationRequest, key IKeyEntry, options serializerTypes.SerializePresentationOptions) error {
 	if len(req.TransactionData) > 0 {
-		if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok {
+		if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok && sdOpts != nil {
 			transactionDataHashesAlg := req.TransactionDataHashesAlg
 			if transactionDataHashesAlg == "" {
 				// OID4VP transaction_data_hashes_alg default when omitted.
