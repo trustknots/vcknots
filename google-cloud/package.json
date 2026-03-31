@@ -1,9 +1,9 @@
 {
 	"name": "@trustknots/google-cloud",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "",
 	"main": "lib/index.js",
-	"private":true,
+	"private": true,
 	"types": "lib/index.d.ts",
 	"exports": {
 		".": "./lib/index.js"
