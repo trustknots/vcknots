@@ -247,6 +247,13 @@ func (s *JwtVcSerializer) DeserializePresentation(flavor credential.SupportedSer
 	return nil, types.NewFormatError(flavor, errors.New("not implemented"), "DeserializePresentation not implemented for JWT VC format")
 }
 
+func (s *JwtVcSerializer) GetDefaultOption(flavor credential.SupportedSerializationFlavor) (types.SerializePresentationOptions, error) {
+	if flavor != credential.JwtVc {
+		return nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected JWT VC format")
+	}
+	return &JwtVcPresentationOptions{}, nil
+}
+
 // convertCredentialFromJSON converts JSON payload to Credential struct
 func (s *JwtVcSerializer) convertCredentialFromJSON(payloadBase64 string) (*credential.Credential, error) {
 	// Use RawURLEncoding as per JWT specification (no padding)

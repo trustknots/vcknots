@@ -564,3 +564,43 @@ func TestConvertCredentialFromJSON(t *testing.T) {
 		}
 	})
 }
+
+func TestJwtVcPresentationOptions_SetAudience(t *testing.T) {
+	tests := []struct {
+		name string
+		audience string
+	}{
+		{name: "audience-sample1", audience: "x509_san_dns:localhost"},
+		{name: "audience-sample2", audience: "did:web:example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := JwtVcPresentationOptions{}
+			o.SetAudience(tt.audience)
+
+			if o.Audience != tt.audience {
+				t.Errorf("Failed to set audience")
+			}
+		})
+	}
+}
+
+func TestJwtVcPresentationOptions_SetNonce(t *testing.T) {
+	tests := []struct {
+		name string
+		nonce string
+	}{
+		{name: "nonce-sample1", nonce: "asldkfjad4e4"},
+		{name: "nonce-sample2", nonce: "78qrgaig"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := JwtVcPresentationOptions{}
+			o.SetNonce(tt.nonce)
+
+			if o.Nonce != tt.nonce {
+				t.Errorf("Failed to set nonce")
+			}
+		})
+	}
+}

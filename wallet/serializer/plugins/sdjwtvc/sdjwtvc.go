@@ -757,3 +757,10 @@ func (s *SdJwtVcSerializer) DeserializePresentation(flavor credential.SupportedS
 
 	return presentation, nil
 }
+
+func (s *SdJwtVcSerializer) GetDefaultOption(flavor credential.SupportedSerializationFlavor) (types.SerializePresentationOptions, error) {
+	if flavor != credential.SDJwtVC {
+		return nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected SD-JWT VC format")
+	}
+	return &SdJwtVcPresentationOptions{}, nil
+}
