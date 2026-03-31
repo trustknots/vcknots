@@ -5,5 +5,5 @@
 ### Patch Changes
 
 - Updated dependencies
-  - @trustknots/vcknots@0.4.0
+  - @trustknots/vcknots@0.4.1
   - @trustknots/server-core@0.1.1
