@@ -239,7 +239,7 @@ func TestSerializePresentationWithBinding(t *testing.T) {
 	nonce := "test-nonce"
 	options := JwtVcPresentationOptions{
 		Audience: "https://example.com/verifier",
-		Nonce: nonce,
+		Nonce:    nonce,
 	}
 
 	// Test with valid JWT VC format

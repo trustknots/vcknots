@@ -1168,6 +1168,22 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 		},
 	}
 
+	t.Run("copies oid4vp request values into jwt-vc options", func(t *testing.T) {
+		opts := &jwtvc.JwtVcPresentationOptions{
+			Audience: "old-audience",
+			Nonce:    "old-nonce",
+		}
+
+		applyOID4VPRequestOptions(req, opts)
+
+		if opts.Audience != req.ClientID {
+			t.Fatalf("expected audience %q, got %q", req.ClientID, opts.Audience)
+		}
+		if opts.Nonce != req.Nonce {
+			t.Fatalf("expected nonce %q, got %q", req.Nonce, opts.Nonce)
+		}
+	})
+
 	t.Run("copies oid4vp request values into sd-jwt options", func(t *testing.T) {
 		opts := &sdjwtvc.SdJwtVcPresentationOptions{
 			RequireKeyBinding: false,
@@ -1226,45 +1242,4 @@ func TestBuildDescriptorMap_UsesVPTokenRootPathForALLSdJwtDescriptors(t *testing
 		require.Equalf(t, "dc+sd-jwt", item.Format, "descriptorMap[%d].Format", i)
 		require.Nilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
 	}
-}
-
-func TestSubmitPresentation(t *testing.T) {
-	controller := createTestControllerWithDefaults(t)
-	key := newMockKeyEntry()
-	endpoint, _ := url.Parse("https://verifier.example.com/post")
-
-	presentation := &credential.CredentialPresentation{
-		ID: "test-pres",
-	}
-
-	req := &oid4vp.CredentialPresentationRequest{
-		OAuthAuthzRequest: &oid4vp.OAuthAuthzRequest{
-			ClientID: "test-client",
-			Nonce:    "test-nonce",
-		},
-		PresentationDefinition: &oid4vp.PresentationDefinition{
-			ID: "test-def",
-		},
-	}
-
-	t.Run("sets audience and nonce from presentation request for SD-JWT options", func(t *testing.T) {
-		options := &sdjwtvc.SdJwtVcPresentationOptions{}
-		flavor := credential.SDJwtVC
-
-		// We ignore the error as we only want to check if options were modified before SerializePresentation call
-		_ = controller.submitPresentation(presentation, &flavor, endpoint, nil, req, key, options)
-
-		require.Equal(t, "test-client", options.Audience)
-		require.Equal(t, "test-nonce", options.Nonce)
-	})
-
-	t.Run("sets audience and nonce from presentation request for JWT options", func(t *testing.T) {
-		options := &jwtvc.JwtVcPresentationOptions{}
-		flavor := credential.JwtVc
-
-		_ = controller.submitPresentation(presentation, &flavor, endpoint, nil, req, key, options)
-
-		require.Equal(t, "test-client", options.Audience)
-		require.Equal(t, "test-nonce", options.Nonce)
-	})
 }

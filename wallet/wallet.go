@@ -40,7 +40,6 @@ import (
 	"github.com/trustknots/vcknots/wallet/receiver"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer"
-	"github.com/trustknots/vcknots/wallet/serializer/plugins/jwtvc"
 	sdjwtvc "github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 	serializerTypes "github.com/trustknots/vcknots/wallet/serializer/types"
 	"github.com/trustknots/vcknots/wallet/verifier"
@@ -778,17 +777,8 @@ func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, option
 	if req == nil || req.OAuthAuthzRequest == nil {
 		return
 	}
-
-	sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions)
-	if !ok {
-		return
-	}
-	if sdOpts == nil {
-		return
-	}
-
-	sdOpts.Audience = req.ClientID
-	sdOpts.Nonce = req.Nonce
+	options.SetAudience(req.ClientID)
+	options.SetNonce(req.Nonce)
 }
 
 // submitPresentation serializes and submits the presentation to the verifier.
@@ -804,15 +794,6 @@ func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentat
 			sdOpts.TransactionData = req.TransactionData
 			sdOpts.TransactionDataHashesAlg = transactionDataHashesAlg
 		}
-	}
-
-	if sdjwtOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok && sdjwtOpts != nil {
-		sdjwtOpts.Audience = req.ClientID
-		sdjwtOpts.Nonce = req.Nonce
-	}
-	if jwtOpts, ok := options.(*jwtvc.JwtVcPresentationOptions); ok && jwtOpts != nil {
-		jwtOpts.Audience = req.ClientID
-		jwtOpts.Nonce = req.Nonce
 	}
 
 	bytes, _, err := w.serializer.SerializePresentation(

@@ -27,6 +27,8 @@ var (
 // Each plugin can define its own options struct that implements this interface
 type SerializePresentationOptions interface {
 	IsSerializePresentationOptions()
+	SetAudience(audience string)
+	SetNonce(nonce string)
 }
 
 // Serializer defines the interface that all serialization plugins must implement
