@@ -35,12 +35,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Build
+        run: |
+          pnpm build
+    
       - name: Check npm auth
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" >> ~/.npmrc
           npm whoami
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
 
       - name: Publish
         run: |
