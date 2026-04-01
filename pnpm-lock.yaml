@@ -155,10 +155,10 @@ importers:
         specifier: workspace:*
         version: link:../../issuer+verifier
       dotenv:
-        specifier: ^17.2.3
+        specifier: 17.3.1
         version: 17.3.1
       firebase-admin:
-        specifier: ^13.5.0
+        specifier: 13.6.1
         version: 13.6.1
 
   server/multi:
