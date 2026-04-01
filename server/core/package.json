@@ -29,6 +29,10 @@
 		"./utils/error-handler": {
 			"types": "./lib/utils/error-handler.d.ts",
 			"default": "./lib/utils/error-handler.js"
+		},
+		"./utils/direct-post-vp-aud-transaction-store": {
+			"types": "./lib/utils/direct-post-vp-aud-transaction-store.d.ts",
+			"default": "./lib/utils/direct-post-vp-aud-transaction-store.js"
 		}
 	},
 	"scripts": {
