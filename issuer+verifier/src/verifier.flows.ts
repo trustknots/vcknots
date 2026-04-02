@@ -47,9 +47,10 @@ export type CreateAuthzRequestOptions = {
   transaction_data?: { type: string; transaction_data_hashes_alg?: string[] }
 }
 export type VerifyPresentationOptions = {
+  /** OAuth/OID4VP client_id value the VP / KB-JWT must bind to (e.g. JWT `aud`). */
+  expectedAud: ClientIdentifier
   specifiedDisclosures?: string[]
   isKbJwt?: boolean
-  expectedAud?: string
   expectedNonce?: string
   expectedTransactionDataHashes?: string[]
 }
@@ -85,7 +86,7 @@ export type VerifierFlow = {
   verifyPresentations: (
     id: ClientId,
     response: AuthorizationResponse,
-    isKbJwt?: boolean
+    options: VerifyPresentationOptions
   ) => Promise<VpTokenPayload>
 }
 
@@ -412,7 +413,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       return `${encode(header)}.${encode(payload)}.${signature}`
     },
-    async verifyPresentations(id, response, isKbJwt) {
+    async verifyPresentations(id, response, options) {
       const verifier = await verifierMetadata$.fetch(id)
       if (!verifier) {
         throw raise('VERIFIER_NOT_FOUND', {
@@ -445,11 +446,20 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
 
       const format = response.presentation_submission.descriptor_map[0].format
-      const options: VerifyVerifiablePresentationVerifyOptions =
-        format === 'dc+sd-jwt' ? { kind: 'dc+sd-jwt', isKbJwt: isKbJwt } : { kind: 'jwt_vp_json' }
+      const verifyOptions: VerifyVerifiablePresentationVerifyOptions =
+        format === 'dc+sd-jwt'
+          ? {
+              kind: 'dc+sd-jwt',
+              specifiedDisclosures: options.specifiedDisclosures,
+              isKbJwt: options.isKbJwt,
+              expectedAud: options.expectedAud,
+              expectedNonce: options.expectedNonce,
+              expectedTransactionDataHashes: options.expectedTransactionDataHashes,
+            }
+          : { kind: 'jwt_vp_json', expectedAud: options.expectedAud }
       const responsePresentation = await selectProvider(verifiablePresentation$, format).verify(
         response.vp_token,
-        options
+        verifyOptions
       )
 
       return responsePresentation

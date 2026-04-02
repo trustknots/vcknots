@@ -1,0 +1,117 @@
+name: Auto bump up packages version and create PR
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Generate timestamp
+        id: ts
+        run: |
+          echo "BUMP_TS=$(date +%Y%m%d%H%M%S)" >> $GITHUB_ENV
+
+      - name: Checkout base
+        run: |
+          git branch --show-current
+          git checkout -b chore/bump-bot-${BUMP_TS}
+
+      - name: Run bump script
+        id: bump
+        run: |
+          set -euo pipefail
+
+          OUTPUT=$(node bump.mjs 2>&1)
+          echo "$OUTPUT"
+
+          {
+            echo "body<<EOF"
+            echo "$OUTPUT"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Apply version to package.json with changesets
+        run: npx changeset version
+
+      - name: Collect all CHANGELOG.md
+        id: changelog
+        run: |
+          {
+            echo "body<<EOF"
+
+            found=false
+            while IFS= read -r file; do
+              found=true
+              cat "$file"
+              echo ""
+              echo "---"
+              echo ""
+            done < <(
+              find . -type d -name node_modules -prune -o -type f -name "CHANGELOG.md" -print
+            )
+
+            if [ "$found" = false ]; then
+              echo "No CHANGELOG files found."
+            fi
+
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build PR body
+        id: pr-body
+        run: |
+          cat <<EOF > pr-body.md
+          ## CHANGELOG.md
+
+          ${{ steps.changelog.outputs.body }}
+
+          ## Bump Log
+          \`\`\`
+          ${{ steps.bump.outputs.body }}
+          \`\`\`
+          EOF
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ':(glob)**/package.json'
+          git add ':(glob)**/CHANGELOG.md'
+          git status
+          git commit -m "chore: bump-bot-${{ env.BUMP_TS }}" || echo "No changes"
+          git push origin HEAD
+
+      - name: Create PR
+        run: |
+          gh pr create \
+            --base main \
+            --head chore/bump-bot-${{ env.BUMP_TS }} \
+            --title "chore(trustknots): bump-bot-${{ env.BUMP_TS }}" \
+            --body-file pr-body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -4,12 +4,15 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
@@ -591,7 +594,7 @@ func TestController_FetchAuthorizationServerMetadata_Integration(t *testing.T) {
 	}
 }
 
-func TestController_generateJWTProof_Integration(t *testing.T) {
+func TestController_generateJWTProof_AnonymousPreAuthorizedFlow_OmitsIss(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
 	key := newMockKeyEntry()
@@ -601,7 +604,7 @@ func TestController_generateJWTProof_Integration(t *testing.T) {
 	}
 	nonce := "test-nonce"
 
-	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud")
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", nil)
 	if err != nil {
 		t.Errorf("generateJWTProof returned error: %v", err)
 	}
@@ -620,6 +623,103 @@ func TestController_generateJWTProof_Integration(t *testing.T) {
 	if parts != 2 {
 		t.Errorf("expected JWT to have 2 dots (3 parts), got %d dots", parts)
 	}
+
+	proofParts := strings.Split(proof, ".")
+	require.Len(t, proofParts, 3, "expected JWT to have 3 parts")
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(proofParts[1])
+	require.NoError(t, err, "failed to decode payload")
+
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal(payloadBytes, &payload), "failed to unmarshal payload")
+
+	assert.NotContains(t, payload, "iss", "expected iss claim to be omitted in anonymous pre-authorized flow")
+}
+
+func TestController_generateJWTProof_NonAnonymousFlow_IncludesIssAsClientID(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	key := newMockKeyEntry()
+	did := &idprofTypes.IdentityProfile{
+		ID:     "did:key:test123",
+		TypeID: "did:key",
+	}
+	nonce := "test-nonce"
+	clientID := "test-client-id"
+
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", &clientID)
+	if err != nil {
+		t.Fatalf("generateJWTProof returned error: %v", err)
+	}
+
+	proofParts := strings.Split(proof, ".")
+	if len(proofParts) != 3 {
+		t.Fatalf("expected JWT to have 3 parts, got %d", len(proofParts))
+	}
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(proofParts[1])
+	if err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("failed to unmarshal payload: %v", err)
+	}
+
+	iss, ok := payload["iss"].(string)
+	if !ok {
+		t.Fatalf("expected iss claim to be present as string in non-anonymous flow")
+	}
+	if iss != clientID {
+		t.Fatalf("expected iss %q, got %q", clientID, iss)
+	}
+}
+
+func TestController_generateJWTProof_NonAnonymousFlow_EmptyClientIDReturnsError(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	key := newMockKeyEntry()
+	did := &idprofTypes.IdentityProfile{
+		ID:     "did:key:test123",
+		TypeID: "did:key",
+	}
+	nonce := "test-nonce"
+	emptyClientID := ""
+
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", &emptyClientID)
+	if err == nil {
+		t.Fatalf("expected error when clientID is empty, got nil")
+	}
+	if !strings.Contains(err.Error(), "clientID must be non-empty when provided") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if proof != "" {
+		t.Fatalf("expected empty proof on error, got %q", proof)
+	}
+}
+
+func TestController_generateJWTProof_NonAnonymousFlow_BlankClientIDReturnsError(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	key := newMockKeyEntry()
+	did := &idprofTypes.IdentityProfile{
+		ID:     "did:key:test123",
+		TypeID: "did:key",
+	}
+	nonce := "test-nonce"
+	blankClientID := "   "
+
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", &blankClientID)
+	if err == nil {
+		t.Fatalf("expected error when clientID is blank, got nil")
+	}
+	if !strings.Contains(err.Error(), "clientID must be non-empty when provided") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if proof != "" {
+		t.Fatalf("expected empty proof on error, got %q", proof)
+	}
 }
 
 func TestController_generateJWTProof_WithoutNonce_Integration(t *testing.T) {
@@ -631,7 +731,7 @@ func TestController_generateJWTProof_WithoutNonce_Integration(t *testing.T) {
 		TypeID: "did:key",
 	}
 
-	proof, err := controller.generateJWTProof(key, did, nil, "test-aud")
+	proof, err := controller.generateJWTProof(key, did, nil, "test-aud", nil)
 	if err != nil {
 		t.Errorf("generateJWTProof returned error: %v", err)
 	}

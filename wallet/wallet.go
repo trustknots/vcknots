@@ -306,7 +306,9 @@ func (w *Wallet) convertEntryToSavedCredential(entry types.CredentialEntry) (*Sa
 }
 
 // generateJWTProof generates a JWT proof for credential requests.
-func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfile, nonce *string, aud string) (string, error) {
+// When clientID is nil, iss is omitted (anonymous pre-authorized flow).
+// When clientID is provided, it must be non-empty.
+func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfile, nonce *string, aud string, clientID *string) (string, error) {
 	header := map[string]interface{}{
 		"alg": "ES256",
 		"typ": "openid4vci-proof+jwt",
@@ -314,9 +316,15 @@ func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfil
 	}
 
 	payload := map[string]interface{}{
-		"iss": did.ID,
 		"iat": time.Now().Unix(),
 		"aud": aud,
+	}
+
+	if clientID != nil {
+		if strings.TrimSpace(*clientID) == "" {
+			return "", fmt.Errorf("clientID must be non-empty when provided")
+		}
+		payload["iss"] = *clientID
 	}
 
 	if nonce != nil && *nonce != "" {
@@ -541,7 +549,7 @@ func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata 
 		return nil, fmt.Errorf("failed to generate DID: %w", err)
 	}
 
-	proof, err := w.generateJWTProof(req.Key, did, accessToken.CNonce, issuerMetadata.CredentialIssuer)
+	proof, err := w.generateJWTProof(req.Key, did, accessToken.CNonce, issuerMetadata.CredentialIssuer, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate JWT proof: %w", err)
 	}
