@@ -780,7 +780,7 @@ func (w *Wallet) buildPresentation(credentials []*SavedCredential, flavor *crede
 }
 
 func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, options serializerTypes.SerializePresentationOptions) {
-	if options == nil && req == nil || req.OAuthAuthzRequest == nil {
+	if options == nil || req == nil || req.OAuthAuthzRequest == nil {
 		return
 	}
 	options.SetAudience(req.ClientID)
