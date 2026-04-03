@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, it, before, mock } from 'node:test'
-import {
-  credentialProofJWT,
-  CredentialProofProviderOptions,
-} from '../../src/providers/credential-proof-jwt.provider'
-import { CredentialProofProvider, DidProvider } from '../../src/providers/provider.types'
+import { credentialProofJWT } from '../../src/providers/credential-proof-jwt.provider'
+import type { CredentialProofJwtVerifyContext } from '../../src/credential-proof-jwt.types'
+import { CredentialIssuer } from '../../src/credential-issuer.types'
+import type { CredentialProofProvider, DidProvider } from '../../src/providers/provider.types'
 import { WithProviderRegistry } from '../../src/providers/provider.registry'
 import { generateKeyPair, SignJWT, exportJWK, JWTPayload } from 'jose'
 import { VcknotsError, raise } from '../../src/errors/vcknots.error'
@@ -13,11 +12,21 @@ import { DidDocument, JsonWebKey } from '../../src/did.types'
 describe('CredentialProofJwtProvider', () => {
   let keys: { publicKey: CryptoKey; privateKey: CryptoKey }
   let publicKeyJwk: JsonWebKey
-  const credentialIssuer = 'https://issuer.example.com'
+  const credentialIssuer = CredentialIssuer('https://issuer.example.com')
   const clientId = 'test-client'
   const testDid = 'did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRoAnwWsdvktH'
   // Note: The kid should contain the full DID and fragment.
   const testKid = `${testDid}#z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRoAnwWsdvktH`
+
+  const preAuthCtx: CredentialProofJwtVerifyContext = {
+    usePreAuth: true,
+    credentialIssuer,
+  }
+  const authCodeCtx: CredentialProofJwtVerifyContext = {
+    usePreAuth: false,
+    credentialIssuer,
+    clientId,
+  }
 
   const mockDidProvider: DidProvider = {
     kind: 'did-provider',
@@ -78,10 +87,8 @@ describe('CredentialProofJwtProvider', () => {
   })
 
   describe('verifyProof', () => {
-    const setupProvider = (
-      options?: CredentialProofProviderOptions
-    ): CredentialProofProvider & WithProviderRegistry => {
-      const provider = credentialProofJWT(options)
+    const setupProvider = (): CredentialProofProvider & WithProviderRegistry => {
+      const provider = credentialProofJWT()
       // Mock the get method of the provider registry
       mock.method(provider.providers, 'get', (name: string) => {
         if (name === 'did-provider') {
@@ -93,11 +100,11 @@ describe('CredentialProofJwtProvider', () => {
     }
 
     it('should verify a valid proof for pre-authorized code flow', async () => {
-      const provider = setupProvider({ usePreAuth: true, credentialIssuer })
+      const provider = setupProvider()
       const payload = { aud: credentialIssuer, nonce: 'test-nonce' }
       const proof = await createTestProof(payload, 'ES256', testKid)
 
-      const result = await provider.verifyProof(proof)
+      const result = await provider.verifyProof(proof, preAuthCtx)
 
       assert.ok(result)
       assert.equal(result.payload.aud, credentialIssuer)
@@ -108,11 +115,11 @@ describe('CredentialProofJwtProvider', () => {
     })
 
     it('should verify a valid proof for authorization code flow', async () => {
-      const provider = setupProvider({ usePreAuth: false, credentialIssuer, clientId })
+      const provider = setupProvider()
       const payload = { iss: clientId, aud: credentialIssuer, nonce: 'test-nonce' }
       const proof = await createTestProof(payload, 'ES256', testKid)
 
-      const result = await provider.verifyProof(proof)
+      const result = await provider.verifyProof(proof, authCodeCtx)
 
       assert.ok(result)
       assert.equal(result.payload.iss, clientId)
@@ -149,7 +156,7 @@ describe('CredentialProofJwtProvider', () => {
     })
 
     it('should throw INVALID_PROOF if no suitable DID provider is found', async () => {
-      const provider = credentialProofJWT({ usePreAuth: true, credentialIssuer })
+      const provider = credentialProofJWT()
       // Mock the get method for this specific test to simulate no providers
       mock.method(provider.providers, 'get', () => {
         return []
@@ -203,45 +210,92 @@ describe('CredentialProofJwtProvider', () => {
     it('should throw INVALID_PROOF if payload claims are invalid (missing aud)', async () => {
       const provider = setupProvider()
       const proof = await createTestProof({ iss: clientId }, 'ES256', testKid) // Missing aud
-      await assert.rejects(provider.verifyProof(proof), {
+      await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
         name: 'INVALID_PROOF',
         message: 'Unsupported Proof Payload.',
       })
     })
 
     it('should throw INVALID_PROOF if iss is present in pre-auth flow', async () => {
-      const provider = setupProvider({ usePreAuth: true, credentialIssuer })
+      const provider = setupProvider()
       const proof = await createTestProof(
         { iss: clientId, aud: credentialIssuer },
         'ES256',
         testKid
       )
-      await assert.rejects(provider.verifyProof(proof), {
+      await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
         name: 'INVALID_PROOF',
         message: 'iss claim must omitted using case Pre-Authorized Code Flow.',
       })
     })
 
-    it('should throw INVALID_PROOF if iss does not match client_id in auth-code flow', async () => {
-      const provider = setupProvider({ usePreAuth: false, credentialIssuer, clientId })
+    it('should verify auth-code flow when iss equals credential issuer identifier', async () => {
+      const provider = setupProvider()
+      const proof = await createTestProof(
+        { iss: credentialIssuer, aud: credentialIssuer, nonce: 'n' },
+        'ES256',
+        testKid
+      )
+      const result = await provider.verifyProof(proof, authCodeCtx)
+      assert.ok(result)
+      assert.equal(result?.payload.iss, credentialIssuer)
+    })
+
+    it('should throw INVALID_PROOF if iss is neither client_id nor credential issuer in auth-code flow', async () => {
+      const provider = setupProvider()
       const proof = await createTestProof(
         { iss: 'wrong-client', aud: credentialIssuer },
         'ES256',
         testKid
       )
-      await assert.rejects(provider.verifyProof(proof), {
+      await assert.rejects(provider.verifyProof(proof, authCodeCtx), {
         name: 'INVALID_PROOF',
-        message: 'iss claim must the client_id of the Client making the Credential request.',
+        message:
+          'iss claim must be the client_id of the Client making the Credential request or the Credential Issuer Identifier.',
       })
     })
 
     it('should throw INVALID_PROOF if aud does not match credential_issuer', async () => {
-      const provider = setupProvider({ usePreAuth: true, credentialIssuer })
+      const provider = setupProvider()
       const proof = await createTestProof({ aud: 'wrong-issuer' }, 'ES256', testKid)
-      await assert.rejects(provider.verifyProof(proof), {
+      await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
         name: 'INVALID_PROOF',
         message: 'aud claim must be the Credential Issuer Identifier.',
       })
+    })
+
+    it('should throw INVALID_PROOF when verifyProof is called without OID4VCI context', async () => {
+      const provider = credentialProofJWT()
+      mock.method(provider.providers, 'get', (name: string) => {
+        if (name === 'did-provider') {
+          return [mockDidProvider]
+        }
+        return []
+      })
+      const proof = await createTestProof({ aud: credentialIssuer }, 'ES256', testKid)
+      await assert.rejects(provider.verifyProof(proof), {
+        name: 'INVALID_PROOF',
+        message:
+          'Credential proof verification requires credentialIssuer and usePreAuth (OID4VCI). Pass CredentialProofJwtVerifyContext as the second argument to verifyProof().',
+      })
+    })
+
+    it('should verify when verifyProof receives context', async () => {
+      const provider = credentialProofJWT()
+      mock.method(provider.providers, 'get', (name: string) => {
+        if (name === 'did-provider') {
+          return [mockDidProvider]
+        }
+        return []
+      })
+      const payload = { aud: credentialIssuer, nonce: 'test-nonce' }
+      const proof = await createTestProof(payload, 'ES256', testKid)
+      const result = await provider.verifyProof(proof, {
+        usePreAuth: true,
+        credentialIssuer,
+      })
+      assert.ok(result)
+      assert.equal(result?.payload.aud, credentialIssuer)
     })
   })
 })

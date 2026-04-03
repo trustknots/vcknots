@@ -76,6 +76,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
           c_nonce_expires_in: 60 * 5 * 1000,
         },
         claims: issueClaimsSample,
+        proofJwt: { usePreAuth: true },
       })
       return c.json(credential)
     } catch (err) {

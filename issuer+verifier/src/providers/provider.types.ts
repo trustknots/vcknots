@@ -26,7 +26,10 @@ import { RequestObject } from '../request-object.types'
 import { Certificate, SignatureKeyPair, TmpVerifierSignatureKeyPair } from '../signature-key.types'
 import { DeepPartialUnknown } from '../type.utils'
 import { VerifierMetadata } from '../verifier-metadata.types'
+import type { CredentialProofJwtVerifyContext } from '../credential-proof-jwt.types'
 import { DiVpProof } from '../proofs.types'
+
+export type { CredentialProofJwtVerifyContext } from '../credential-proof-jwt.types'
 
 export type AuthzRequestProviderOptions = {
   kid?: string
@@ -195,7 +198,10 @@ export type CredentialProofProvider = {
   name: string
   single: false
 
-  verifyProof(proof: string | DiVpProof): Promise<ProofJwt | null>
+  verifyProof(
+    proof: string | DiVpProof,
+    context?: CredentialProofJwtVerifyContext
+  ): Promise<ProofJwt | null>
   canHandle(proofType: string): boolean
 }
 
