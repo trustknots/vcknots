@@ -447,6 +447,24 @@ func TestController_PresentCredential_ErrorPaths_Integration(t *testing.T) {
 	}
 }
 
+func TestController_parseAuthorizationRequest_RejectsNonHTTPSResponseURI(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	presentationDefinition := url.QueryEscape(`{"id":"test-def"}`)
+	uri := fmt.Sprintf(
+		"openid4vp://present?client_id=redirect_uri:https://example.com/cb&response_type=vp_token&nonce=test-nonce&presentation_definition=%s&response_mode=direct_post&response_uri=http://example.com/response",
+		presentationDefinition,
+	)
+
+	_, _, err := controller.parseAuthorizationRequest(uri)
+	if err == nil {
+		t.Fatal("expected error for non-https response_uri")
+	}
+	if !strings.Contains(err.Error(), "response_uri must use https scheme") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestController_PresentCredential_MissingRequiredFields_Integration(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
