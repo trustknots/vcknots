@@ -647,9 +647,6 @@ func (w *Wallet) parseAuthorizationRequest(uriString string) (*oid4vp.Credential
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid response_uri: %w", err)
 		}
-		if !strings.EqualFold(endpoint.Scheme, "https") {
-			return nil, nil, fmt.Errorf("response_uri must use https scheme")
-		}
 	} else {
 		endpoint, err = url.Parse(req.RedirectURI)
 		if err != nil {

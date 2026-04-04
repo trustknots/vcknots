@@ -457,12 +457,8 @@ func TestController_parseAuthorizationRequest_RejectsNonHTTPSResponseURI(t *test
 	)
 
 	_, _, err := controller.parseAuthorizationRequest(uri)
-	if err == nil {
-		t.Fatal("expected error for non-https response_uri")
-	}
-	if !strings.Contains(err.Error(), "response_uri must use https scheme") {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "response_uri must use https scheme")
 }
 
 func TestController_PresentCredential_MissingRequiredFields_Integration(t *testing.T) {
