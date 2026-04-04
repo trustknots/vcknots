@@ -290,6 +290,16 @@ func (b *requestBuilder) validate() error {
 		return fmt.Errorf("nonce is required")
 	}
 
+	if b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost {
+		responseURI, err := url.Parse(b.req.ResponseURI)
+		if err != nil {
+			return fmt.Errorf("response_uri must be URI: %w", err)
+		}
+		if !strings.EqualFold(responseURI.Scheme, "https") {
+			return fmt.Errorf("response_uri must use https scheme")
+		}
+	}
+
 	return nil
 }
 

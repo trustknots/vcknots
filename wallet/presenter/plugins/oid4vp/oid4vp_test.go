@@ -155,7 +155,7 @@ func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
 			"id": "test-def",
 		},
 		"redirect_uri":    "http://example.com/callback",
-		"response_uri":    "http://example.com/response",
+		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
 
@@ -182,7 +182,7 @@ func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
 	}{
 		{
 			name:    "Query parameters",
-			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/callback&response_type=vp_token&nonce=test-nonce&presentation_definition=%7B%22id%22%3A%22test-def%22%7D&response_mode=direct_post&response_uri=http://example.com/response",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/callback&response_type=vp_token&nonce=test-nonce&presentation_definition=%7B%22id%22%3A%22test-def%22%7D&response_mode=direct_post&response_uri=https://example.com/response",
 			setup:   nil,
 			wantErr: false,
 		},
@@ -287,7 +287,7 @@ func TestOid4vpPresenter_WithRequestObject_TypHeader(t *testing.T) {
 			"id": "test-def",
 		},
 		"redirect_uri":    "http://example.com/callback",
-		"response_uri":    "http://example.com/response",
+		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
 
@@ -393,7 +393,7 @@ func TestOid4vpPresenter_WithRequestObject_IssClaimIgnored(t *testing.T) {
 			"id": "test-def",
 		},
 		"redirect_uri":    "http://example.com/callback",
-		"response_uri":    "http://example.com/response",
+		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
 
@@ -454,7 +454,7 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 				"id": "test-def",
 			},
 			"redirect_uri":    "http://example.com/callback",
-			"response_uri":    "http://example.com/response",
+			"response_uri":    "https://example.com/response",
 			"client_metadata": clientMetadata,
 		}
 
@@ -549,7 +549,7 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 				"id": "test-def",
 			},
 			"redirect_uri":    "http://example.com/callback",
-			"response_uri":    "http://example.com/response",
+			"response_uri":    "https://example.com/response",
 			"client_metadata": clientMetadata,
 		}
 
@@ -598,6 +598,12 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post",
 			wantErr: true,
 			errSub:  "missing required parameters: response_uri",
+		},
+		{
+			name:    "response_mode=direct_post rejects non-https response_uri",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&response_uri=http://example.com/response",
+			wantErr: true,
+			errSub:  "response_uri must use https scheme",
 		},
 	}
 
@@ -665,7 +671,7 @@ func TestOid4vpPresenter_ClientIDParsingAndRedirectMismatch(t *testing.T) {
 
 	t.Run("client_id with trailing whitespace", func(t *testing.T) {
 		// Trailing whitespace should be trimmed
-		uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb%20&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&response_uri=http://example.com/cb"
+		uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb%20&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&response_uri=https://example.com/cb"
 		req, err := p.ParsePresentationRequest(uri)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -742,7 +748,7 @@ func TestOid4vpPresenter_RequestParameterJWT_Success(t *testing.T) {
 			"id": "test-def",
 		},
 		"redirect_uri":    "http://example.com/callback",
-		"response_uri":    "http://example.com/response",
+		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
 
