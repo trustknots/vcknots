@@ -293,8 +293,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       ) {
         if (verifyProof.header.jwk) {
           holderJwk = verifyProof.header.jwk
-        }
-        if (verifyProof.header.kid) {
+        } else if (verifyProof.header.kid) {
           const didSplit = verifyProof.header.kid.split(':')
           if (didSplit.length < 3 || didSplit[0] !== 'did') {
             throw raise('INVALID_PROOF', {
@@ -303,7 +302,12 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           }
           const didProvider = selectProvider(did$, didSplit[1])
           const didDoc = await didProvider.resolveDid(verifyProof.header.kid)
-          if (!didDoc || !didDoc.verificationMethod || !didDoc.verificationMethod[0].publicKeyJwk) {
+          if (
+            !didDoc ||
+            !didDoc.verificationMethod ||
+            didDoc.verificationMethod.length === 0 ||
+            !didDoc.verificationMethod[0].publicKeyJwk
+          ) {
             throw raise('INVALID_PROOF', {
               message: 'Unsupported did type detected.',
             })
