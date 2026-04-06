@@ -253,8 +253,8 @@ const validateUniqueLocaleArray = <T extends { locale?: string }>(
   if (!arr) return
   const localeList = new Set<string>()
   arr.forEach((item, i) => {
-    const loc = item.locale?.toLowerCase()
-    if (!loc) return
+    if (item.locale === undefined) return
+    const loc = typeof item.locale === 'string' ? item.locale.trim().toLowerCase() : item.locale
     if (localeList.has(loc)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
