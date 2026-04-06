@@ -7,6 +7,7 @@ import { raise } from '../errors/vcknots.error'
 import { IssueCredentialProvider, IssueCredentialCreateCredentialOptions } from './provider.types'
 import { withProviderRegistry, WithProviderRegistry } from './provider.registry'
 import { selectProvider } from './provider.utils'
+import * as jose from 'jose'
 
 export type IssueCredentialProviderOptions = {
   identifier?: () => string
@@ -109,15 +110,6 @@ export const issueCredentialJwt = (
           message: 'Unsupported key algorithm.',
         })
       }
-      const jwtHeader = {
-        alg: keyAlg,
-        typ: 'JWT',
-      }
-      const jwtPayload = {
-        vc: verifiableCredential,
-        iss: verifiableCredential.issuer,
-        ...(options?.subject ? { sub: options.subject } : {}),
-      }
       const keyStore$ = this.providers.get('issuer-signature-key-store-provider')
       const issuerKeys = await keyStore$.fetch(credentialIssuer)
       const keys = issuerKeys.find((keypair) => keypair.privateKey.alg === keyAlg)
@@ -126,6 +118,19 @@ export const issueCredentialJwt = (
           message: 'Issuer key not found.',
         })
       }
+      const kid = await jose.calculateJwkThumbprint(keys.publicKey)
+
+      const jwtHeader = {
+        alg: keyAlg,
+        kid,
+        typ: 'JWT',
+      }
+      const jwtPayload = {
+        vc: verifiableCredential,
+        iss: verifiableCredential.issuer,
+        ...(options?.subject ? { sub: options.subject } : {}),
+      }
+
       const key$ = this.providers.get('issuer-signature-key-provider')
       const keyProvider = selectProvider(key$, keyAlg)
       const signature = await keyProvider.sign(keys.privateKey, keyAlg, jwtPayload, jwtHeader)

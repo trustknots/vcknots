@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
+import { calculateJwkThumbprint } from 'jose'
 import {
   CredentialConfigurationSupported,
   CredentialIssuer,
@@ -21,6 +22,23 @@ const decodeJwtSegment = (segment: string) =>
 
 describe('issueCredential', () => {
   const credentialIssuer = CredentialIssuer('https://issuer.example.com')
+  const keyPair: SignatureKeyPair = {
+    privateKey: {
+      alg: 'ES256',
+      kty: 'EC',
+      crv: 'P-256',
+      d: 'w3JFeaJ7TqG0p7qJ2Y2k1V3H8K0sHfYt7G0vG0p7m0Q',
+      x: 'ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ',
+      y: 'Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo',
+    } as Jwk,
+    publicKey: {
+      alg: 'ES256',
+      kty: 'EC',
+      crv: 'P-256',
+      x: 'ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ',
+      y: 'Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo',
+    } as Jwk,
+  }
   const configuration: CredentialConfigurationSupported = {
     format: 'jwt_vc_json',
     credential_definition: {
@@ -132,10 +150,7 @@ describe('issueCredential', () => {
   it('should create a signed verifiable credential jwt', async () => {
     const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
       createProvider()
-    const keyPair: SignatureKeyPair = {
-      privateKey: { alg: 'ES256', kty: 'EC', kid: 'issuer-key-1' } as Jwk,
-      publicKey: { alg: 'ES256', kty: 'EC', kid: 'issuer-key-1' } as Jwk,
-    }
+    const expectedKid = await calculateJwkThumbprint(keyPair.publicKey)
 
     mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
     mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signedjwt')
@@ -151,7 +166,7 @@ describe('issueCredential', () => {
     const payload = decodeJwtSegment(payloadSegment)
 
     assert.equal(signature, 'signedjwt')
-    assert.deepStrictEqual(header, { alg: 'ES256', typ: 'JWT' })
+    assert.deepStrictEqual(header, { alg: 'ES256', kid: expectedKid, typ: 'JWT' })
     assert.equal(payload.iss, credentialIssuer)
     assert.equal(payload.sub, 'did:example:123#key-1')
     assert.equal(payload.vc.id.startsWith(`${credentialIssuer}/vc/`), true)
@@ -164,10 +179,6 @@ describe('issueCredential', () => {
   it('should create a signed verifiable credential jwt with claims', async () => {
     const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
       createProvider()
-    const keyPair: SignatureKeyPair = {
-      privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-      publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-    }
     const claims = {
       given_name: 'John',
       family_name: 'Doe',
@@ -205,11 +216,6 @@ describe('issueCredential', () => {
       },
     }
 
-    const keyPair: SignatureKeyPair = {
-      privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-      publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-    }
-
     mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
     mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signedjwt')
     mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
@@ -239,11 +245,6 @@ describe('issueCredential', () => {
             : claim
         ),
       },
-    }
-
-    const keyPair: SignatureKeyPair = {
-      privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-      publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
     }
 
     mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
@@ -280,11 +281,6 @@ describe('issueCredential', () => {
         ],
       },
     }
-    const keyPair: SignatureKeyPair = {
-      privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-      publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-    }
-
     mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
     mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signedjwt')
     mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
@@ -310,10 +306,6 @@ describe('issueCredential', () => {
   it('should omit subject fields if subject is not provided', async () => {
     const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
       createProvider()
-    const keyPair: SignatureKeyPair = {
-      privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-      publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-    }
 
     mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
     mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signedjwt')
@@ -330,10 +322,6 @@ describe('issueCredential', () => {
     const provider = issueCredentialJwt({
       identifier: () => 'https://issuer.example.com/custom/vc/123',
     }) as IssueCredentialProvider & WithProviderRegistry
-    const keyPair: SignatureKeyPair = {
-      privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-      publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-    }
     const mockIssuerKeyStoreProvider = {
       kind: 'issuer-signature-key-store-provider',
       name: 'mock-issuer-key-store-provider',
@@ -374,10 +362,6 @@ describe('issueCredential', () => {
   it('should throw if signing alg is not supported', async () => {
     const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
       createProvider()
-    const keyPair: SignatureKeyPair = {
-      privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-      publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-    }
     const config = {
       ...configuration,
       credential_signing_alg_values_supported: ['ES256'],
@@ -411,10 +395,6 @@ describe('issueCredential', () => {
   it('should throw if signing fails', async () => {
     const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
       createProvider()
-    const keyPair: SignatureKeyPair = {
-      privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-      publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-    }
 
     mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
     mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => null)
