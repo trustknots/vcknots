@@ -66,7 +66,6 @@ serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, a
   issuerMetadataConfig.credential_issuer = CredentialIssuer(baseUrl)
   issuerMetadataConfig.authorization_servers = [authzURL]
   issuerMetadataConfig.credential_endpoint = `${issuerURL}/credentials`
-  issuerMetadataConfig.batch_credential_endpoint = `${issuerURL}/batch_credential`
   issuerMetadataConfig.deferred_credential_endpoint = `${issuerURL}/deferred_credential`
   issuerMetadataConfig.nonce_endpoint = `${issuerURL}/nonce`
   await initializeIssuerMetadata(issuerMetadataConfig)

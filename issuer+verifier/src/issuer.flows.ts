@@ -13,6 +13,7 @@ import { VcknotsContext } from './vcknots.context'
 import { JwtVcIssuerResponse } from './jwt-vc-issuer.types'
 import { DiVpProof, Proofs, ProofTypes } from './proofs.types'
 import { ProofJwt } from './credential.types'
+import { calculateJwkThumbprint } from 'jose'
 
 type OfferOptions =
   | {
@@ -100,6 +101,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
   const key$ = context.providers.get('issuer-signature-key-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
+  const did$ = context.providers.get('did-provider')
 
   return {
     async findIssuerMetadata(id) {
@@ -117,10 +119,25 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const issuerKeys = await keyStore$.fetch(id)
       if (issuerKeys && issuerKeys.length > 0) {
         jwtVcIssuerMetadata.jwks = {
-          keys: issuerKeys.map((keypair) => {
-            const { publicKey } = keypair
-            return publicKey
-          }),
+          keys: await Promise.all(
+            issuerKeys.map(async (keypair) => {
+              const { publicKey } = keypair
+              if (publicKey.kid) {
+                return publicKey
+              }
+              try {
+                const kid = await calculateJwkThumbprint(publicKey)
+                return {
+                  ...publicKey,
+                  kid,
+                }
+              } catch (e) {
+                throw err('INVALID_ISSUER_KEY', {
+                  message: `Failed to calculate kid for issuer ${id} key.`,
+                })
+              }
+            })
+          ),
         }
       }
       return jwtVcIssuerMetadata
@@ -213,8 +230,9 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       }
 
       // https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html#name-credential-request-2
-      const credentialConfiguration = metadata.credential_configurations_supported
-      const configuration = credentialConfiguration[credentialRequest.credential_configuration_id]
+      const credentialConfigurationSupported = metadata.credential_configurations_supported
+      const configuration =
+        credentialConfigurationSupported[credentialRequest.credential_configuration_id]
       if (!configuration) {
         throw err('UNKNOWN_CREDENTIAL_CONFIGURATION', {
           message: `Credential configuration ${credentialRequest.credential_configuration_id} is not supported by issuer ${issuer}.`,
@@ -268,6 +286,32 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         })
       }
 
+      let holderJwk = {}
+      if (
+        configuration.cryptographic_binding_methods_supported &&
+        configuration.format === 'dc+sd-jwt'
+      ) {
+        if (verifyProof.header.jwk) {
+          holderJwk = verifyProof.header.jwk
+        }
+        if (verifyProof.header.kid) {
+          const didSplit = verifyProof.header.kid.split(':')
+          if (didSplit.length < 3 || didSplit[0] !== 'did') {
+            throw raise('INVALID_PROOF', {
+              message: `Invalid DID format: ${verifyProof.header.kid}`,
+            })
+          }
+          const didProvider = selectProvider(did$, didSplit[1])
+          const didDoc = await didProvider.resolveDid(verifyProof.header.kid)
+          if (!didDoc || !didDoc.verificationMethod || !didDoc.verificationMethod[0].publicKeyJwk) {
+            throw raise('INVALID_PROOF', {
+              message: 'Unsupported did type detected.',
+            })
+          }
+          holderJwk = didDoc.verificationMethod[0].publicKeyJwk
+        }
+      }
+
       const verifiableCredential = await issueCredentialProvider.createCredential(
         issuer,
         configuration,
@@ -275,6 +319,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           subject: options?.subject ?? subject,
           claims: options?.claims,
           keyAlg: options?.alg ?? 'ES256',
+          holderJwk,
         }
       )
 

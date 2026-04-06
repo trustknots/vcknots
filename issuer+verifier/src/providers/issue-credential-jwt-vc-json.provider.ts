@@ -1,7 +1,7 @@
 import { base64url } from 'jose'
 import { randomUUID } from 'node:crypto'
 import * as z from 'zod'
-import { CredentialConfiguration, CredentialIssuer } from '../credential-issuer.types'
+import { CredentialConfigurationSupported, CredentialIssuer } from '../credential-issuer.types'
 import { CredentialFormats } from '../credential-request.types'
 import { raise } from '../errors/vcknots.error'
 import { IssueCredentialProvider, IssueCredentialCreateCredentialOptions } from './provider.types'
@@ -10,6 +10,29 @@ import { selectProvider } from './provider.utils'
 
 export type IssueCredentialProviderOptions = {
   identifier?: () => string
+}
+
+const getClaimValue = (claims: Record<string, unknown>, path: string[]): unknown => {
+  let current: unknown = claims
+  for (const segment of path) {
+    if (typeof current !== 'object' || current === null || !(segment in current)) {
+      return undefined
+    }
+    current = (current as Record<string, unknown>)[segment]
+  }
+  return current
+}
+
+const setClaimValue = (target: Record<string, unknown>, path: string[], value: unknown): void => {
+  let current = target
+  for (const segment of path.slice(0, -1)) {
+    const next = current[segment]
+    if (typeof next !== 'object' || next === null || Array.isArray(next)) {
+      current[segment] = {}
+    }
+    current = current[segment] as Record<string, unknown>
+  }
+  current[path[path.length - 1]] = value
 }
 
 export const issueCredentialJwt = (
@@ -32,28 +55,31 @@ export const issueCredentialJwt = (
 
     async createCredential(
       credentialIssuer: CredentialIssuer,
-      configuration: CredentialConfiguration,
+      configuration: CredentialConfigurationSupported,
       options?: IssueCredentialCreateCredentialOptions
     ): Promise<string> {
+      if (!configuration.credential_definition || configuration.format !== 'jwt_vc_json') {
+        throw raise('INVALID_CONFIGURATION', {
+          message: 'Invalid credential configuration.',
+        })
+      }
       const today = new Date()
       const credentialSubject: Record<string, unknown> = {}
-      const defCredentialSubject = configuration.credential_definition.credentialSubject
-      if (defCredentialSubject && Object.keys(defCredentialSubject).length > 0 && options?.claims) {
-        for (const [key, value] of Object.entries(defCredentialSubject)) {
-          if (value.mandatory === true && !(key in options.claims)) {
+      const defCredentialMetadataClaims = configuration.credential_metadata?.claims
+      if (
+        defCredentialMetadataClaims &&
+        defCredentialMetadataClaims.length > 0 &&
+        options?.claims
+      ) {
+        for (const claim of defCredentialMetadataClaims) {
+          const value = getClaimValue(options.claims, claim.path)
+          if (claim.mandatory === true && value === undefined) {
             throw raise('INVALID_CLAIMS', {
-              message: `Claim ${key} is not defined as mandatory in the credential definition.`,
+              message: `Claim ${claim.path.join('.')} is not defined as mandatory in the credential definition.`,
             })
           }
-          if (key in options.claims) {
-            // unsupported  image media types such as image/jpeg as defined in IANA media type registry for images (https://www.iana.org/assignments/media-types/media-types.xhtml#image)
-            if (value.value_type === 'string') {
-              credentialSubject[key] = String(options.claims[key])
-            } else if (value.value_type === 'number') {
-              credentialSubject[key] = Number(options.claims[key])
-            } else {
-              credentialSubject[key] = options.claims[key]
-            }
+          if (value !== undefined) {
+            setClaimValue(credentialSubject, claim.path, value)
           }
         }
       }

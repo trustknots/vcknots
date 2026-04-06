@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
-import { CredentialConfiguration, CredentialIssuer } from '../../src/credential-issuer.types'
+import {
+  CredentialConfigurationSupported,
+  CredentialIssuer,
+} from '../../src/credential-issuer.types'
 import { VcknotsError } from '../../src/errors/vcknots.error'
 import { Jwk } from '../../src/jwk.type'
 import { CredentialFormats } from '../../src/credential-request.types'
@@ -18,12 +21,27 @@ const decodeJwtSegment = (segment: string) =>
 
 describe('issueCredential', () => {
   const credentialIssuer = CredentialIssuer('https://issuer.example.com')
-  const configuration: CredentialConfiguration = {
+  const configuration: CredentialConfigurationSupported = {
     format: 'jwt_vc_json',
     credential_definition: {
       type: ['VerifiableCredential', 'UniversityDegreeCredential'],
-      credentialSubject: {
-        given_name: {
+    },
+    credential_metadata: {
+      display: [
+        {
+          name: 'University Degree',
+          locale: 'en-US',
+          logo: {
+            uri: 'https://example.com/logo.png',
+            alt_text: 'University Logo',
+          },
+          background_color: '#12107c',
+          text_color: '#FFFFFF',
+        },
+      ],
+      claims: [
+        {
+          path: ['given_name'],
           display: [
             {
               name: 'Given Name',
@@ -31,7 +49,8 @@ describe('issueCredential', () => {
             },
           ],
         },
-        family_name: {
+        {
+          path: ['family_name'],
           display: [
             {
               name: 'Surname',
@@ -39,28 +58,19 @@ describe('issueCredential', () => {
             },
           ],
         },
-        degree: {},
-        gpa: {
+        {
+          path: ['degree'],
+        },
+        {
+          path: ['gpa'],
           display: [
             {
               name: 'GPA',
             },
           ],
         },
-      },
+      ],
     },
-    display: [
-      {
-        name: 'University Degree',
-        locale: 'en-US',
-        logo: {
-          uri: 'https://example.com/logo.png',
-          alt_text: 'University Logo',
-        },
-        background_color: '#12107c',
-        text_color: '#FFFFFF',
-      },
-    ],
   }
 
   const createProvider = () => {
@@ -185,21 +195,22 @@ describe('issueCredential', () => {
   it('should throw error if mandatory claim is missing', async () => {
     const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
       createProvider()
-    const configurationWithMandatory: CredentialConfiguration = {
+    const configurationWithMandatory: CredentialConfigurationSupported = {
       ...configuration,
-      credential_definition: {
-        ...configuration.credential_definition,
-        credentialSubject: {
-          ...configuration.credential_definition.credentialSubject,
-          given_name: {
-            ...configuration.credential_definition.credentialSubject?.given_name,
-            mandatory: true,
-          },
-        },
+      credential_metadata: {
+        ...configuration.credential_metadata,
+        claims: configuration.credential_metadata?.claims?.map((claim) =>
+          claim.path[0] === 'given_name' ? { ...claim, mandatory: true } : claim
+        ),
       },
     }
 
-    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [])
+    const keyPair: SignatureKeyPair = {
+      privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
+      publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
+    }
+
+    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
     mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signedjwt')
     mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
 
@@ -218,25 +229,24 @@ describe('issueCredential', () => {
   it('should throw error if a mandatory claim is missing when multiple mandatory claims exist', async () => {
     const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
       createProvider()
-    const configurationWithMandatory: CredentialConfiguration = {
+    const configurationWithMandatory: CredentialConfigurationSupported = {
       ...configuration,
-      credential_definition: {
-        ...configuration.credential_definition,
-        credentialSubject: {
-          ...configuration.credential_definition.credentialSubject,
-          given_name: {
-            ...configuration.credential_definition.credentialSubject?.given_name,
-            mandatory: true,
-          },
-          family_name: {
-            ...configuration.credential_definition.credentialSubject?.family_name,
-            mandatory: true,
-          },
-        },
+      credential_metadata: {
+        ...configuration.credential_metadata,
+        claims: configuration.credential_metadata?.claims?.map((claim) =>
+          ['given_name', 'family_name'].includes(claim.path[0])
+            ? { ...claim, mandatory: true }
+            : claim
+        ),
       },
     }
 
-    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [])
+    const keyPair: SignatureKeyPair = {
+      privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
+      publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
+    }
+
+    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
     mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signedjwt')
     mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
 
@@ -252,22 +262,22 @@ describe('issueCredential', () => {
     )
   })
 
-  it('should cast claims to correct type', async () => {
+  it('should map nested claims using credential metadata paths', async () => {
     const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
       createProvider()
-    const configurationWithTypes: CredentialConfiguration = {
+    const nestedConfiguration: CredentialConfigurationSupported = {
       ...configuration,
-      credential_definition: {
-        ...configuration.credential_definition,
-        credentialSubject: {
-          ...configuration.credential_definition.credentialSubject,
-          given_name: {
-            value_type: 'string',
+      credential_metadata: {
+        ...configuration.credential_metadata,
+        claims: [
+          {
+            path: ['name', 'given'],
+            mandatory: true,
           },
-          age: {
-            value_type: 'number',
+          {
+            path: ['name', 'family'],
           },
-        },
+        ],
       },
     }
     const keyPair: SignatureKeyPair = {
@@ -279,20 +289,22 @@ describe('issueCredential', () => {
     mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signedjwt')
     mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
 
-    const credential = await provider.createCredential(credentialIssuer, configurationWithTypes, {
+    const credential = await provider.createCredential(credentialIssuer, nestedConfiguration, {
       subject: 'did:example:123#key-1',
       claims: {
-        given_name: 123,
-        age: '25',
+        name: {
+          given: 'John',
+          family: 'Doe',
+        },
       },
     })
 
     const payload = decodeJwtSegment(credential.split('.')[1])
 
-    assert.equal(typeof payload.vc.credentialSubject.given_name, 'string')
-    assert.equal(payload.vc.credentialSubject.given_name, '123')
-    assert.equal(typeof payload.vc.credentialSubject.age, 'number')
-    assert.equal(payload.vc.credentialSubject.age, 25)
+    assert.deepEqual(payload.vc.credentialSubject.name, {
+      given: 'John',
+      family: 'Doe',
+    })
   })
 
   it('should omit subject fields if subject is not provided', async () => {
@@ -369,7 +381,7 @@ describe('issueCredential', () => {
     const config = {
       ...configuration,
       credential_signing_alg_values_supported: ['ES256'],
-    } satisfies CredentialConfiguration
+    } satisfies CredentialConfigurationSupported
 
     mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
     mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signedjwt')

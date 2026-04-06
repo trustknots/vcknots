@@ -462,6 +462,7 @@ describe('IssuerFlow', () => {
           subject: 'did:example:user#key-1',
           claims: undefined,
           keyAlg: 'ES256',
+          holderJwk: {},
         }
       )
     })
@@ -529,6 +530,7 @@ describe('IssuerFlow', () => {
         subject: 'did:example:user#key-1',
         claims,
         keyAlg: 'ES256',
+        holderJwk: {},
       })
     })
 

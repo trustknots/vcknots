@@ -40,6 +40,10 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       family_name: 'taro',
       degree: '5',
       gpa: 'test',
+      address: {
+        country: 'fuga',
+        region: 'xyz',
+      },
     }
 
     try {
@@ -162,10 +166,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       const nonce = c.req.param('nonce')
       const deleted = await issuerFlow.revokeNonce(nonce)
       if (!deleted) {
-        return c.json(
-          { error: 'not_found', error_description: 'Nonce not found.' },
-          404
-        )
+        return c.json({ error: 'not_found', error_description: 'Nonce not found.' }, 404)
       }
       return c.json({ deleted: true }, 200)
     } catch (err) {
