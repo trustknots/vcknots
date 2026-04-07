@@ -44,6 +44,27 @@ func (m *MockSerializer) DeserializePresentation(flavor credential.SupportedSeri
 	return &credential.CredentialPresentation{}, nil
 }
 
+func (m *MockSerializer) GetDefaultOption(flavor credential.SupportedSerializationFlavor) (types.SerializePresentationOptions, error) {
+	if m.shouldError {
+		return nil, errors.New("mock error")
+	}
+	return &MockSerializerOption{}, nil
+}
+
+type MockSerializerOption struct {
+	Nonce string
+	Audience string
+}
+
+func (o *MockSerializerOption) IsSerializePresentationOptions() {}
+func (o *MockSerializerOption) SetAudience(audience string) {
+	o.Audience = audience
+}
+func (o *MockSerializerOption) SetNonce(nonce string) {
+	o.Nonce = nonce
+}
+
+
 type MockKeyEntry struct {
 	shouldSignError bool
 }

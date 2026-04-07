@@ -27,6 +27,8 @@ var (
 // Each plugin can define its own options struct that implements this interface
 type SerializePresentationOptions interface {
 	IsSerializePresentationOptions()
+	SetAudience(audience string)
+	SetNonce(nonce string)
 }
 
 // Serializer defines the interface that all serialization plugins must implement
@@ -44,6 +46,8 @@ type Serializer interface {
 
 	// DeserializePresentation deserializes byte array to CredentialPresentation struct
 	DeserializePresentation(flavor credential.SupportedSerializationFlavor, data []byte) (*credential.CredentialPresentation, error)
+
+	GetDefaultOption(flavor credential.SupportedSerializationFlavor) (SerializePresentationOptions, error)
 }
 
 // NewFormatError creates a format-specific error with context
