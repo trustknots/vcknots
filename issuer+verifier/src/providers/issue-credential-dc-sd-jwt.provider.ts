@@ -165,6 +165,10 @@ export const issueCredentialSDJWT = (
             })
           }
           holderJwk = didDoc.verificationMethod[0].publicKeyJwk
+        } else {
+          throw raise('INVALID_PROOF', {
+            message: 'Invalid proof header: either jwk or kid must be provided.',
+          })
         }
       }
 
@@ -199,6 +203,14 @@ export const issueCredentialSDJWT = (
       }
 
       const keyAlg = options?.keyAlg ?? 'ES256'
+      if (
+        configuration.credential_signing_alg_values_supported &&
+        !configuration.credential_signing_alg_values_supported.includes(keyAlg)
+      ) {
+        throw raise('UNSUPPORTED_ISSUER_KEY_ALG', {
+          message: 'Unsupported key algorithm.',
+        })
+      }
       const keyStore$ = this.providers.get('issuer-signature-key-store-provider')
       const issuerKeys = await keyStore$.fetch(credentialIssuer)
       const keys = issuerKeys.find((keypair) => keypair.privateKey.alg === keyAlg)
