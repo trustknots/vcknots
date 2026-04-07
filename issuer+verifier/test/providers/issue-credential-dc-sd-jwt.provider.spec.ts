@@ -234,6 +234,50 @@ describe('issueCredentialSDJWT', () => {
     )
   })
 
+  it('should reject missing mandatory claims when claims are omitted', async () => {
+    const { provider } = createProvider()
+
+    await assert.rejects(
+      provider.createCredential(credentialIssuer, configuration, {
+        proofHeader,
+      }),
+      (err: VcknotsError) => {
+        assert.equal(err.name, 'INVALID_CLAIMS')
+        return true
+      }
+    )
+  })
+
+  it('should reject dangerous claim path segments', async () => {
+    const { provider } = createProvider()
+    const unsafeConfiguration: CredentialConfigurationSupported = {
+      ...configuration,
+      credential_metadata: {
+        claims: [
+          {
+            path: ['constructor', 'prototype'],
+          },
+        ],
+      },
+    }
+
+    await assert.rejects(
+      provider.createCredential(credentialIssuer, unsafeConfiguration, {
+        proofHeader,
+        claims: {
+          constructor: {
+            prototype: 'value',
+          },
+        },
+      }),
+      (err: VcknotsError) => {
+        assert.equal(err.name, 'INVALID_CLAIMS')
+        assert.match(err.message, /Unsupported claim path segment/)
+        return true
+      }
+    )
+  })
+
   it('should throw if issuer key is not found', async () => {
     const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
       createProvider()
@@ -246,6 +290,9 @@ describe('issueCredentialSDJWT', () => {
       provider.createCredential(credentialIssuer, configuration, {
         proofHeader,
         keyAlg: 'ES256',
+        claims: {
+          given_name: 'Alice',
+        },
       }),
       {
         name: 'AUTHZ_ISSUER_KEY_NOT_FOUND',
@@ -265,6 +312,9 @@ describe('issueCredentialSDJWT', () => {
       provider.createCredential(credentialIssuer, configuration, {
         proofHeader,
         keyAlg: 'ES256',
+        claims: {
+          given_name: 'Alice',
+        },
       }),
       {
         name: 'INTERNAL_SERVER_ERROR',

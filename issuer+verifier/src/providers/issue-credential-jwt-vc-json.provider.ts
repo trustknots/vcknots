@@ -13,22 +13,41 @@ export type IssueCredentialProviderOptions = {
   identifier?: () => string
 }
 
+const forbiddenPathSegments = new Set(['__proto__', 'constructor', 'prototype'])
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const assertSafePath = (path: string[]): void => {
+  for (const segment of path) {
+    if (forbiddenPathSegments.has(segment)) {
+      throw raise('INVALID_CLAIMS', {
+        message: `Unsupported claim path segment: ${segment}`,
+      })
+    }
+  }
+}
+
 const getClaimValue = (claims: Record<string, unknown>, path: string[]): unknown => {
+  assertSafePath(path)
   let current: unknown = claims
   for (const segment of path) {
-    if (typeof current !== 'object' || current === null || !(segment in current)) {
+    if (!isPlainObject(current) || !Object.prototype.hasOwnProperty.call(current, segment)) {
       return undefined
     }
-    current = (current as Record<string, unknown>)[segment]
+    current = current[segment]
   }
   return current
 }
 
 const setClaimValue = (target: Record<string, unknown>, path: string[], value: unknown): void => {
+  assertSafePath(path)
   let current = target
   for (const segment of path.slice(0, -1)) {
-    const next = current[segment]
-    if (typeof next !== 'object' || next === null || Array.isArray(next)) {
+    const next = Object.prototype.hasOwnProperty.call(current, segment)
+      ? current[segment]
+      : undefined
+    if (!isPlainObject(next)) {
       current[segment] = {}
     }
     current = current[segment] as Record<string, unknown>
@@ -66,14 +85,11 @@ export const issueCredentialJwt = (
       }
       const today = new Date()
       const credentialSubject: Record<string, unknown> = {}
+      const claimsSource = options?.claims ?? {}
       const defCredentialMetadataClaims = configuration.credential_metadata?.claims
-      if (
-        defCredentialMetadataClaims &&
-        defCredentialMetadataClaims.length > 0 &&
-        options?.claims
-      ) {
+      if (defCredentialMetadataClaims && defCredentialMetadataClaims.length > 0) {
         for (const claim of defCredentialMetadataClaims) {
-          const value = getClaimValue(options.claims, claim.path)
+          const value = getClaimValue(claimsSource, claim.path)
           if (claim.mandatory === true && value === undefined) {
             throw raise('INVALID_CLAIMS', {
               message: `Claim ${claim.path.join('.')} is not defined as mandatory in the credential definition.`,

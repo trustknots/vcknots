@@ -96,7 +96,7 @@ serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, a
     ...issuerMetadataConfig,
     credential_issuer: CredentialIssuer(baseUrl),
     authorization_servers: [baseUrl],
-    credential_endpoint: `${baseUrl}/issue/credentials`,
+    credential_endpoint: `${baseUrl}/credentials`,
     deferred_credential_endpoint: `${baseUrl}/deferred_credential`,
     nonce_endpoint: `${baseUrl}/nonce`,  
   })
@@ -286,7 +286,8 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
             "format": "dc+sd-jwt",
             "scope": "UniversityDegreeSdJwt",
             "cryptographic_binding_methods_supported": [
-                "jwk"
+                "jwk",
+                "did:key"
             ],
             "proof_types_supported": {
                 "jwt": {

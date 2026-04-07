@@ -232,6 +232,29 @@ describe('issueCredential', () => {
     )
   })
 
+  it('should throw error if mandatory claim is missing when claims are omitted', async () => {
+    const { provider } = createProvider()
+    const configurationWithMandatory: CredentialConfigurationSupported = {
+      ...configuration,
+      credential_metadata: {
+        ...configuration.credential_metadata,
+        claims: configuration.credential_metadata?.claims?.map((claim) =>
+          claim.path[0] === 'given_name' ? { ...claim, mandatory: true } : claim
+        ),
+      },
+    }
+
+    await assert.rejects(
+      provider.createCredential(credentialIssuer, configurationWithMandatory, {
+        subject: 'did:example:123#key-1',
+      }),
+      (err: VcknotsError) => {
+        assert.equal(err.name, 'INVALID_CLAIMS')
+        return true
+      }
+    )
+  })
+
   it('should throw error if a mandatory claim is missing when multiple mandatory claims exist', async () => {
     const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
       createProvider()
@@ -301,6 +324,36 @@ describe('issueCredential', () => {
       given: 'John',
       family: 'Doe',
     })
+  })
+
+  it('should reject dangerous claim path segments', async () => {
+    const { provider } = createProvider()
+    const unsafeConfiguration: CredentialConfigurationSupported = {
+      ...configuration,
+      credential_metadata: {
+        ...configuration.credential_metadata,
+        claims: [
+          {
+            path: ['__proto__', 'polluted'],
+          },
+        ],
+      },
+    }
+
+    await assert.rejects(
+      provider.createCredential(credentialIssuer, unsafeConfiguration, {
+        claims: {
+          __proto__: {
+            polluted: 'value',
+          },
+        },
+      }),
+      (err: VcknotsError) => {
+        assert.equal(err.name, 'INVALID_CLAIMS')
+        assert.match(err.message, /Unsupported claim path segment/)
+        return true
+      }
+    )
   })
 
   it('should omit subject fields if subject is not provided', async () => {
