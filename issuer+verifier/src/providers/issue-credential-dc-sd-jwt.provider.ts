@@ -105,14 +105,50 @@ export const issueCredentialSDJWT = (
 
       let holderJwk = {}
       if (configuration.cryptographic_binding_methods_supported) {
-        if (!options?.holderJwk) {
+        if (!options?.proofHeader) {
           throw raise('INVALID_OPTIONS', {
             message:
               'holderJwk must be provided in options when cryptographic binding is supported.',
           })
         }
-        holderJwk = options.holderJwk
+        if (options.proofHeader.jwk) {
+          if (!configuration.cryptographic_binding_methods_supported.includes('jwk')) {
+            throw raise('UNSUPPORTED_CRYPTOGRAPHIC_BINDING_METHOD', {
+              message: 'Unsupported cryptographic binding method detected.',
+            })
+          }
+          holderJwk = options.proofHeader.jwk
+        } else if (options.proofHeader.kid) {
+          const didSplit = options.proofHeader.kid.split(':')
+          if (didSplit.length < 3 || didSplit[0] !== 'did') {
+            throw raise('INVALID_PROOF', {
+              message: `Invalid DID format: ${options.proofHeader.kid}`,
+            })
+          }
+          if (
+            !configuration.cryptographic_binding_methods_supported.includes(`did:${didSplit[1]}`)
+          ) {
+            throw raise('UNSUPPORTED_CRYPTOGRAPHIC_BINDING_METHOD', {
+              message: 'Unsupported cryptographic binding method detected.',
+            })
+          }
+          const did$ = this.providers.get('did-provider')
+          const didProvider = selectProvider(did$, didSplit[1])
+          const didDoc = await didProvider.resolveDid(options.proofHeader.kid)
+          if (
+            !didDoc ||
+            !didDoc.verificationMethod ||
+            didDoc.verificationMethod.length === 0 ||
+            !didDoc.verificationMethod[0].publicKeyJwk
+          ) {
+            throw raise('INVALID_PROOF', {
+              message: 'Unsupported did type detected.',
+            })
+          }
+          holderJwk = didDoc.verificationMethod[0].publicKeyJwk
+        }
       }
+
       const sdJwtClaims: Record<string, unknown> = {}
       const disclosableClaims: Record<string, unknown> = {}
       const defCredentialMetadataClaims = configuration.credential_metadata?.claims

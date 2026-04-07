@@ -128,7 +128,7 @@ export const issueCredentialJwt = (
       const jwtPayload = {
         vc: verifiableCredential,
         iss: verifiableCredential.issuer,
-        ...(options?.subject ? { sub: options.subject } : {}),
+        ...(options?.subject !== undefined ? { sub: options.subject } : {}),
       }
 
       const key$ = this.providers.get('issuer-signature-key-provider')

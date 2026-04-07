@@ -107,7 +107,7 @@
 			"format": "dc+sd-jwt",
 			"scope": "UniversityDegreeSdJwt",
 			"credential_signing_alg_values_supported": ["ES256"],
-			"cryptographic_binding_methods_supported": ["jwk"],
+			"cryptographic_binding_methods_supported": ["jwk", "did:key"],
 			"proof_types_supported": {
 				"jwt": {
 					"proof_signing_alg_values_supported": ["ES256"]

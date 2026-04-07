@@ -32,6 +32,10 @@ describe('issueCredentialSDJWT', () => {
     x: 'ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ',
     y: 'Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo',
   }
+  const proofHeader = {
+    alg: 'ES256',
+    jwk: holderJwk,
+  }
   const keyPair: SignatureKeyPair = {
     privateKey: {
       alg: 'ES256',
@@ -120,7 +124,7 @@ describe('issueCredentialSDJWT', () => {
 
     const credential = await provider.createCredential(credentialIssuer, configuration, {
       subject: 'did:example:holder',
-      holderJwk,
+      proofHeader,
       claims: {
         given_name: 'Alice',
         family_name: 'Anderson',
@@ -199,7 +203,7 @@ describe('issueCredentialSDJWT', () => {
     )
   })
 
-  it('should require holderJwk when cryptographic binding is supported', async () => {
+  it('should require proofHeader when cryptographic binding is supported', async () => {
     const { provider } = createProvider()
 
     await assert.rejects(
@@ -218,7 +222,7 @@ describe('issueCredentialSDJWT', () => {
 
     await assert.rejects(
       provider.createCredential(credentialIssuer, configuration, {
-        holderJwk,
+        proofHeader,
         claims: {
           family_name: 'Anderson',
         },
@@ -240,7 +244,7 @@ describe('issueCredentialSDJWT', () => {
 
     await assert.rejects(
       provider.createCredential(credentialIssuer, configuration, {
-        holderJwk,
+        proofHeader,
         keyAlg: 'ES256',
       }),
       {
@@ -259,7 +263,7 @@ describe('issueCredentialSDJWT', () => {
 
     await assert.rejects(
       provider.createCredential(credentialIssuer, configuration, {
-        holderJwk,
+        proofHeader,
         keyAlg: 'ES256',
       }),
       {

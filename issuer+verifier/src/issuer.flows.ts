@@ -101,7 +101,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
   const key$ = context.providers.get('issuer-signature-key-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
-  const did$ = context.providers.get('did-provider')
 
   return {
     async findIssuerMetadata(id) {
@@ -286,36 +285,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         })
       }
 
-      let holderJwk = {}
-      if (
-        configuration.cryptographic_binding_methods_supported &&
-        configuration.format === 'dc+sd-jwt'
-      ) {
-        if (verifyProof.header.jwk) {
-          holderJwk = verifyProof.header.jwk
-        } else if (verifyProof.header.kid) {
-          const didSplit = verifyProof.header.kid.split(':')
-          if (didSplit.length < 3 || didSplit[0] !== 'did') {
-            throw raise('INVALID_PROOF', {
-              message: `Invalid DID format: ${verifyProof.header.kid}`,
-            })
-          }
-          const didProvider = selectProvider(did$, didSplit[1])
-          const didDoc = await didProvider.resolveDid(verifyProof.header.kid)
-          if (
-            !didDoc ||
-            !didDoc.verificationMethod ||
-            didDoc.verificationMethod.length === 0 ||
-            !didDoc.verificationMethod[0].publicKeyJwk
-          ) {
-            throw raise('INVALID_PROOF', {
-              message: 'Unsupported did type detected.',
-            })
-          }
-          holderJwk = didDoc.verificationMethod[0].publicKeyJwk
-        }
-      }
-
       const verifiableCredential = await issueCredentialProvider.createCredential(
         issuer,
         configuration,
@@ -323,7 +292,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           subject: options?.subject ?? subject,
           claims: options?.claims,
           keyAlg: options?.alg ?? 'ES256',
-          holderJwk,
+          proofHeader: verifyProof.header,
         }
       )
 

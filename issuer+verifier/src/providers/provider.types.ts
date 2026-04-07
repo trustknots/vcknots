@@ -339,7 +339,7 @@ export type IssueCredentialCreateCredentialOptions = {
   claims?: Record<string, unknown>
   subject?: string
   keyAlg?: string
-  holderJwk?: Record<string, unknown>
+  proofHeader?: ProofJwtHeader
   nonDisclosableClaims?: string[]
 }
 
