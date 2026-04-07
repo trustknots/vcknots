@@ -453,7 +453,6 @@ func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
 		name         string
 		identifier   string
 		expectedPath string
-		allowHttp    bool
 		discovery    func(common.URIField) error
 	}{
 		{
