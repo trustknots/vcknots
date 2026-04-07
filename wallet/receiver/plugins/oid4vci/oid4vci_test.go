@@ -206,7 +206,7 @@ func TestOid4vciReceiver_FetchAuthorizationServerMetadata(t *testing.T) {
 
 		_, err := receiver.FetchAuthorizationServerMetadata(endpoint, types.Oid4vci)
 		if err == nil {
-			t.Fatal("FetchIssuerMetadata should be error when issuer's schema is http")
+			t.Fatal("FetchAuthorizationServerMetadata should be error when issuer's schema is http")
 		}
 	})
 
@@ -287,7 +287,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 
 		_, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code")
 		if err == nil {
-			t.Fatal("FetchIssuerMetadata should be error when issuer's schema is http")
+			t.Fatal("FetchAccessToken should be error when issuer's schema is http")
 		}
 	})
 
@@ -369,7 +369,7 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 
 		_, err := receiver.ReceiveCredential(types.Oid4vci, endpoint, "jwt_vc_json", accessToken, nil, nil)
 		if err == nil {
-			t.Fatal("FetchIssuerMetadata should be error when issuer's schema is http")
+			t.Fatal("ReceiveCredential should be error when issuer's schema is http")
 		}
 	})
 
