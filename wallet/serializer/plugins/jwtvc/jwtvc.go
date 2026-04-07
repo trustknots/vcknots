@@ -28,6 +28,26 @@ func NewJwtVcSerializer() (*JwtVcSerializer, error) {
 	return &JwtVcSerializer{}, nil
 }
 
+// JwtVcPresentationOptions contains options for JWT VC presentation serialization
+type JwtVcPresentationOptions struct {
+	Audience string
+	Nonce    string
+}
+
+func (o *JwtVcPresentationOptions) IsSerializePresentationOptions() {}
+
+func (o *JwtVcPresentationOptions) SetAudience(audience string) {
+	if o != nil {
+		o.Audience = audience
+	}
+}
+
+func (o *JwtVcPresentationOptions) SetNonce(nonce string) {
+	if o != nil {
+		o.Nonce = nonce
+	}
+}
+
 // SerializeCredential serializes a credential to JWT VC format
 func (s *JwtVcSerializer) SerializeCredential(flavor credential.SupportedSerializationFlavor, cred *credential.Credential) ([]byte, error) {
 	if flavor != credential.JwtVc {
@@ -164,6 +184,16 @@ func (s *JwtVcSerializer) SerializePresentation(flavor credential.SupportedSeria
 		customClaims["nonce"] = *presentation.Nonce
 	}
 
+	// Set Nonce, Audience
+	if opts, ok := options.(*JwtVcPresentationOptions); ok && opts != nil {
+		if len(opts.Nonce) >= 1  {
+			customClaims["nonce"] = opts.Nonce
+		}
+		if len(opts.Audience) >= 1 {
+			customClaims["aud"] = opts.Audience
+		}
+	}
+
 	// Merge claims into a single map
 	allClaims := make(map[string]any)
 	if claims.Issuer != "" {
@@ -215,6 +245,13 @@ func (s *JwtVcSerializer) DeserializePresentation(flavor credential.SupportedSer
 
 	// This method is not fully implemented in the original Dart code
 	return nil, types.NewFormatError(flavor, errors.New("not implemented"), "DeserializePresentation not implemented for JWT VC format")
+}
+
+func (s *JwtVcSerializer) GetDefaultOption(flavor credential.SupportedSerializationFlavor) (types.SerializePresentationOptions, error) {
+	if flavor != credential.JwtVc {
+		return nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected JWT VC format")
+	}
+	return &JwtVcPresentationOptions{}, nil
 }
 
 // convertCredentialFromJSON converts JSON payload to Credential struct

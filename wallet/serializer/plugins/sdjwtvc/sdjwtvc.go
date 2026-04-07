@@ -49,6 +49,19 @@ type SdJwtVcPresentationOptions struct {
 // IsSerializePresentationOptions implements the marker interface
 func (o *SdJwtVcPresentationOptions) IsSerializePresentationOptions() {}
 
+func (o *SdJwtVcPresentationOptions) SetAudience(audience string) {
+	if o != nil {
+		o.Audience = audience
+	}
+}
+
+func (o *SdJwtVcPresentationOptions) SetNonce(nonce string) {
+	if o != nil {
+		o.Nonce = nonce
+	}
+}
+
+
 // CombinedFormatForPresentation represents an SD-JWT in combined format for presentation
 // Format: <Issuer-signed JWT>~<Disclosure 1>~<Disclosure 2>~...~<Disclosure N>~<optional KB-JWT>
 type CombinedFormatForPresentation struct {
@@ -743,4 +756,11 @@ func (s *SdJwtVcSerializer) DeserializePresentation(flavor credential.SupportedS
 	}
 
 	return presentation, nil
+}
+
+func (s *SdJwtVcSerializer) GetDefaultOption(flavor credential.SupportedSerializationFlavor) (types.SerializePresentationOptions, error) {
+	if flavor != credential.SDJwtVC {
+		return nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected SD-JWT VC format")
+	}
+	return &SdJwtVcPresentationOptions{}, nil
 }
