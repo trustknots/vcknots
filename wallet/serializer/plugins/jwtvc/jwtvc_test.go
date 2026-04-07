@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/keystore"
 )
@@ -578,9 +579,7 @@ func TestJwtVcPresentationOptions_SetAudience(t *testing.T) {
 			o := JwtVcPresentationOptions{}
 			o.SetAudience(tt.audience)
 
-			if o.Audience != tt.audience {
-				t.Errorf("Failed to set audience")
-			}
+			require.Equal(t, tt.audience, o.Audience, "Failed to set audience")
 		})
 	}
 }
@@ -598,9 +597,7 @@ func TestJwtVcPresentationOptions_SetNonce(t *testing.T) {
 			o := JwtVcPresentationOptions{}
 			o.SetNonce(tt.nonce)
 
-			if o.Nonce != tt.nonce {
-				t.Errorf("Failed to set nonce")
-			}
+			require.Equal(t, tt.nonce, o.Nonce, "Failed to set nonce")
 		})
 	}
 }
