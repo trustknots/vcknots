@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +18,22 @@ import (
 	commonX509 "github.com/trustknots/vcknots/wallet/common/x509"
 	"github.com/trustknots/vcknots/wallet/presenter/types"
 )
+
+const envEnforceHTTPSResponseURI = "VCKNOTS_ENFORCE_HTTPS_RESPONSE_URI"
+
+func shouldEnforceHTTPSResponseURI() bool {
+	raw, exists := os.LookupEnv(envEnforceHTTPSResponseURI)
+	if !exists {
+		return true
+	}
+
+	v, err := strconv.ParseBool(strings.TrimSpace(raw))
+	if err != nil {
+		return true
+	}
+
+	return v
+}
 
 type Oid4vpPresenter struct {
 	X509TrustChainRoots     *x509.CertPool
@@ -295,7 +313,7 @@ func (b *requestBuilder) validate() error {
 		if err != nil {
 			return fmt.Errorf("response_uri must be URI: %w", err)
 		}
-		if !strings.EqualFold(responseURI.Scheme, "https") {
+		if shouldEnforceHTTPSResponseURI() && !strings.EqualFold(responseURI.Scheme, "https") {
 			return fmt.Errorf("response_uri must use https scheme")
 		}
 	}
