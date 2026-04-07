@@ -428,7 +428,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
 Endpoint to create a credential offer:
 
 ```typescript
-app.post('issue/configurations/:configuration/offer', async (c) => {
+app.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
       const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
@@ -454,7 +454,7 @@ app.post('issue/configurations/:configuration/offer', async (c) => {
 **Request**
 
 ```bash
-curl -X POST http://localhost:8080/issue/configurations/UniversityDegreeCredential/offer
+curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer
 ```
 
 **Response**
@@ -516,7 +516,7 @@ curl  http://localhost:8080/.well-known/oauth-authorization-server
 Endpoint to issue an access token:
 
 ```typescript
-app.post("authz/token", async (c) => {
+app.post("/token", async (c) => {
   const request = await c.req.formData();
   const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()));
   console.log("tokenRequest:", tokenRequest);
@@ -534,7 +534,7 @@ app.post("authz/token", async (c) => {
 **Request**
 
 ```bash
-curl -X POST http://localhost:8080/authz/token \
+curl -X POST http://localhost:8080/token \
   -H "Content-Type: application/json" \
   -d ' {
     "grant_type": "urn:ietf:params:oauth:grant-type:pre-authorized_code",
@@ -677,7 +677,7 @@ curl -X DELETE http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
 Endpoint to issue a credential:
 
 ```typescript
-app.post('issue/credentials', async (c) => {
+app.post('/credentials', async (c) => {
   try {
     const issuer = AuthorizationServerIssuer(baseUrl)
 
@@ -734,7 +734,7 @@ app.post('issue/credentials', async (c) => {
 **Request**
 
 ```bash
-curl -X POST http://localhost:8080/issue/credentials \
+curl -X POST http://localhost:8080/credentials \
   -H "Authorization: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjgwODAiLCJzdWIiOiJmZGMzMzIzYmM3MTg0ZmJkYWE0NTc2YTgwODU2OGE0MSIsImV4cCI6MTc2MTk3ODAwNSwiaWF0IjoxNzYxODkxNjA1fQ.PBKg31GJbIIKqtQL6gpZYoIM_PGlY681u4Rjjhxek38Kzl3prEBggXcqjUq3l-cBRYC1KS1fcJY6jUiUllwyJw" \
   -H "Content-Type: application/json" \
   --data '{

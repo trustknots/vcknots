@@ -112,7 +112,7 @@ export const issueCredentialJwt = (
         issuer: credentialIssuer,
         issuanceDate: today.toISOString(),
         credentialSubject: {
-          ...(options?.subject ? { id: options.subject } : {}),
+          ...(options?.subject !== undefined ? { id: options.subject } : {}),
           ...credentialSubject,
         },
       }

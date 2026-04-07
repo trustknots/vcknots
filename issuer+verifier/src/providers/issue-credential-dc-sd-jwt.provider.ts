@@ -181,7 +181,7 @@ export const issueCredentialSDJWT = (
           const value = getClaimValue(claimsSource, claim.path)
           if (claim.mandatory === true && value === undefined) {
             throw raise('INVALID_CLAIMS', {
-              message: `Claim ${claim.path.join('.')} is not defined as mandatory in the credential definition.`,
+              message: `Mandatory claim ${claim.path.join('.')} is missing.`,
             })
           }
           if (value === undefined) {
