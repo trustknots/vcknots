@@ -2,8 +2,8 @@
 	"credential_issuer": "https://issuer.example.com",
 	"authorization_servers": ["https://authz.example.com"],
 	"credential_endpoint": "https://issuer.example.com/credential",
-	"batch_credential_endpoint": "https://issuer.example.com/batch_credential",
 	"deferred_credential_endpoint": "https://issuer.example.com/deferred_credential",
+	"nonce_endpoint": "https://issuer.example.com/nonce",
 	"credential_response_encryption": {
 		"alg_values_supported": ["ECDH-ES"],
 		"enc_values_supported": ["A128GCM"],
