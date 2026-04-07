@@ -22,6 +22,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
 	"github.com/trustknots/vcknots/wallet/receiver"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
+	"github.com/trustknots/vcknots/wallet/serializer/plugins/jwtvc"
 	"github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
@@ -1266,6 +1267,22 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 			Nonce:    "request-nonce",
 		},
 	}
+
+	t.Run("copies oid4vp request values into jwt-vc options", func(t *testing.T) {
+		opts := &jwtvc.JwtVcPresentationOptions{
+			Audience: "old-audience",
+			Nonce:    "old-nonce",
+		}
+
+		applyOID4VPRequestOptions(req, opts)
+
+		if opts.Audience != req.ClientID {
+			t.Fatalf("expected audience %q, got %q", req.ClientID, opts.Audience)
+		}
+		if opts.Nonce != req.Nonce {
+			t.Fatalf("expected nonce %q, got %q", req.Nonce, opts.Nonce)
+		}
+	})
 
 	t.Run("copies oid4vp request values into sd-jwt options", func(t *testing.T) {
 		opts := &sdjwtvc.SdJwtVcPresentationOptions{

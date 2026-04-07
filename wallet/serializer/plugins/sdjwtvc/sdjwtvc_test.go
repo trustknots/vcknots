@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/serializer/types"
 )
@@ -1305,5 +1306,41 @@ func TestSerializeDeserializeRoundTrip(t *testing.T) {
 
 	if len(deserializedPres.Credentials) != 1 {
 		t.Errorf("expected 1 credential in deserialized presentation")
+	}
+}
+
+func TestSdJwtVcPresentationOptions_SetAudience(t *testing.T) {
+	tests := []struct {
+		name string
+		audience string
+	}{
+		{name: "audience-sample1", audience: "x509_san_dns:localhost"},
+		{name: "audience-sample2", audience: "did:web:example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := SdJwtVcPresentationOptions{}
+			o.SetAudience(tt.audience)
+
+			require.Equal(t, tt.audience, o.Audience, "Failed to set audience")
+		})
+	}
+}
+
+func TestSdJwtVcPresentationOptions_SetNonce(t *testing.T) {
+	tests := []struct {
+		name string
+		nonce string
+	}{
+		{name: "nonce-sample1", nonce: "asldkfjad4e4"},
+		{name: "nonce-sample2", nonce: "78qrgaig"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := SdJwtVcPresentationOptions{}
+			o.SetNonce(tt.nonce)
+
+			require.Equal(t, tt.nonce, o.Nonce, "Failed to set nonce")
+		})
 	}
 }

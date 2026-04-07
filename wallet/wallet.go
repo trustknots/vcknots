@@ -607,12 +607,18 @@ func (w *Wallet) PresentCredential(uriString string, key IKeyEntry, options seri
 		return err
 	}
 
-	applyOID4VPRequestOptions(req, options)
-
 	credentials, flavor, err := w.selectCredentialsForPresentation(req)
 	if err != nil {
 		return err
 	}
+
+	if options == nil {
+		options, err = w.serializer.GetDefaultOption(*flavor)
+		if err != nil {
+			return err
+		}
+	}
+	applyOID4VPRequestOptions(req, options)
 
 	descriptorMap, err := w.buildDescriptorMap(credentials, flavor)
 	if err != nil {
@@ -782,20 +788,11 @@ func (w *Wallet) buildPresentation(credentials []*SavedCredential, flavor *crede
 }
 
 func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, options serializerTypes.SerializePresentationOptions) {
-	if req == nil || req.OAuthAuthzRequest == nil {
+	if options == nil || req == nil || req.OAuthAuthzRequest == nil {
 		return
 	}
-
-	sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions)
-	if !ok {
-		return
-	}
-	if sdOpts == nil {
-		return
-	}
-
-	sdOpts.Audience = req.ClientID
-	sdOpts.Nonce = req.Nonce
+	options.SetAudience(req.ClientID)
+	options.SetNonce(req.Nonce)
 }
 
 // submitPresentation serializes and submits the presentation to the verifier.
