@@ -16,12 +16,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
+	"github.com/trustknots/vcknots/wallet/env"
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
 	"github.com/trustknots/vcknots/wallet/presenter"
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
 	"github.com/trustknots/vcknots/wallet/receiver"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
+	"github.com/trustknots/vcknots/wallet/serializer/plugins/jwtvc"
 	"github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
@@ -805,6 +807,9 @@ func TestController_ReceiveCredential_WithMockServer_Integration(t *testing.T) {
 	}
 
 	// First test metadata fetch to debug
+	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(http_allowed)
+	env.SetHTTPAllowed(true)
 	metadata, err := controller.FetchCredentialIssuerMetadata(serverURL, receiverTypes.Oid4vci)
 	if err != nil {
 		t.Fatalf("FetchCredentialIssuerMetadata failed: %v", err)
@@ -838,6 +843,9 @@ func TestController_FetchCredentialIssuerMetadata_WithMockServer(t *testing.T) {
 
 	serverURL, _ := url.Parse(server.URL())
 
+	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(http_allowed)
+	env.SetHTTPAllowed(true)
 	metadata, err := controller.FetchCredentialIssuerMetadata(serverURL, receiverTypes.Oid4vci)
 	if err != nil {
 		t.Errorf("FetchCredentialIssuerMetadata failed: %v", err)
@@ -880,6 +888,9 @@ func TestController_PresentCredential_WithMockServer_Integration(t *testing.T) {
 		Key:  newMockKeyEntry(),
 	}
 
+	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(http_allowed)
+	env.SetHTTPAllowed(true)
 	savedCredential, err := controller.ReceiveCredential(receiveReq)
 	if err != nil {
 		t.Logf("Failed to receive credential for presentation test: %v", err)
@@ -942,6 +953,9 @@ func TestController_FetchCredentialIssuerMetadata_ErrorPaths_Integration(t *test
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+			defer env.SetHTTPAllowed(http_allowed)
+			env.SetHTTPAllowed(true)
 			serverURL := tt.setupURL()
 			_, err := controller.FetchCredentialIssuerMetadata(serverURL, tt.receiverType)
 
@@ -1297,6 +1311,22 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 			Nonce:    "request-nonce",
 		},
 	}
+
+	t.Run("copies oid4vp request values into jwt-vc options", func(t *testing.T) {
+		opts := &jwtvc.JwtVcPresentationOptions{
+			Audience: "old-audience",
+			Nonce:    "old-nonce",
+		}
+
+		applyOID4VPRequestOptions(req, opts)
+
+		if opts.Audience != req.ClientID {
+			t.Fatalf("expected audience %q, got %q", req.ClientID, opts.Audience)
+		}
+		if opts.Nonce != req.Nonce {
+			t.Fatalf("expected nonce %q, got %q", req.Nonce, opts.Nonce)
+		}
+	})
 
 	t.Run("copies oid4vp request values into sd-jwt options", func(t *testing.T) {
 		opts := &sdjwtvc.SdJwtVcPresentationOptions{
