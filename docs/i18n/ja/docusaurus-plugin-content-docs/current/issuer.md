@@ -535,7 +535,7 @@ app.post('issue/credentials', async (c) => {
         401
       )
     }
-    // Credential 発行
+    // Credential 発行（JWT proof 検証には proofJwt でトークン取得フローを伝える）
     const credential = await issuerFlow.issueCredential(CredentialIssuer(baseUrl), parse, {
       alg: 'ES256',
       cnonce: {
@@ -546,8 +546,8 @@ app.post('issue/credentials', async (c) => {
         family_name: 'Smith',
         degree: '5',
         gpa: 'test',
-      }
-,
+      },
+      proofJwt: { usePreAuth: true },
     })
 
     return c.json(credential)
@@ -768,12 +768,21 @@ issueCredential(
 
 クレデンシャルレスポンスの型定義は[issuer+verifier/src/credential-response.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-response.types.ts)を参照してください。
 
+**JWT クレデンシャルプルーフ（`proofs.jwt`）について**
+
+リクエストに JWT 形式のクレデンシャルプルーフが含まれる場合、Issuer はメタデータの `credential_issuer` と `options.proofJwt` から検証コンテキストを組み立て、[credential-proof-jwt プロバイダー](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/providers/credential-proof-jwt.provider.ts)に渡して `aud` / `iss` 等を OID4VCI に沿って検証します。
+
+- **事前認可コードフロー**でアクセストークンを得ている場合: `proofJwt: { usePreAuth: true }`。プルーフ JWT に **`iss` クレームを付けない**必要があります。
+- **認可コードフロー**など通常のクライアント文脈の場合: `proofJwt: { usePreAuth: false, clientId: '...' }`（当該クレデンシャルリクエストの OAuth `client_id`）。`iss` はその `client_id` または Credential Issuer Identifier と一致する必要があります。
+
+`proofJwt` を省略した場合、JWT プルーフは「認可コード側」の扱い（`usePreAuth: false`）となり、`clientId` 未指定時は `iss` の比較対象が Credential Issuer Identifier のみ実質有効になります。フローに合わせて明示的に設定してください。
+
 **エラーケース**:
 - `ISSUER_NOT_FOUND`: 未登録のIssuerが設定された
 - `PROVIDER_NOT_FOUND`:  未対応の`format`が設定された
 - `INVALID_REQUEST`: `format`が未設定
 - `UNSUPPORTED_CREDENTIAL_TYPE`: 指定された`credential_definition`もしくは`proof_type`がサポートされていない
-- `INVALID_CREDENTIAL_REQUES`: `proof`が見つからないかサポートされていない
+- `INVALID_CREDENTIAL_REQUEST`: `proof`が見つからないかサポートされていない、設定 ID 不備など
 - `INVALID_PROOF`: `proof`が検証できない、未サポートのheaderが設定された、`nonce`が見つからない
 - `UNSUPPORTED_ISSUER_KEY_ALG`: Issuerの署名アルゴリズムがサポートされていない
 - `AUTHZ_ISSUER_KEY_NOT_FOUND`: Issuerの鍵が見つからない
@@ -785,8 +794,8 @@ issueCredential(
 定義は[issuer+verifier/src/credential-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-request.types.ts)を参照してください。
 
 #### IssueOptions{#IssueOptions}
-クレデンシャル発行オプションを定義する型です。アルゴリズムやクレームなどを設定できます。
-定義は下記のとおりです。
+クレデンシャル発行オプションを定義する型です。アルゴリズムやクレーム、JWT プルーフ検証用のヒントなどを設定できます。
+定義は下記のとおりです（実装は [issuer.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/issuer.flows.ts) を参照）。
 
 ```typescript
 type IssueOptions = {
@@ -795,6 +804,12 @@ type IssueOptions = {
     c_nonce_expires_in: number
   }
   claims?: Record<string, unknown>
+  subject?: string
+  /** アクセストークン取得フローに応じた JWT proof の iss 検証などに使用 */
+  proofJwt?: {
+    usePreAuth: boolean
+    clientId?: string
+  }
 }
 ```
 

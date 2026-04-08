@@ -102,12 +102,25 @@ const credential = await issuer.issueCredential(
     claims: {
       name: 'Alice',
       from: 'Wonderland'
-    }
+    },
+    // JWT proof（`proofs.jwt`）検証用。アクセストークンが事前認可コード由来なら true、認可コード由来なら false + clientId
+    proofJwt: { usePreAuth: true },
   }
 )
 
 console.log('Issued Credential:', credential)
 ```
+
+**JWT クレデンシャルプルーフ（`proofs.jwt`）と `options.proofJwt`**
+
+OID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一致し、`iss` はフローに応じて扱われます。`issueCredential` は内部で `credential-proof-provider` の `verifyProof` に **検証コンテキスト**（Credential Issuer と事前認可かどうか、必要なら OAuth `client_id`）を渡すため、JWT proof を検証するときは次の `options.proofJwt` を実際のトークン取得フローに合わせて指定してください。
+
+| 状況 | 指定の目安 |
+|------|------------|
+| アクセストークンが **事前認可コード（Pre-Authorized Code）** グラントで得られた場合 | `proofJwt: { usePreAuth: true }`。proof JWT に **`iss` は含めない**（仕様上の扱い）。 |
+| **認可コード** 等、通常の OAuth クライアント文脈の場合 | `proofJwt: { usePreAuth: false, clientId: '<そのリクエストの client_id>' }`。`iss` はその `client_id` または Credential Issuer Identifier と一致する必要があります。 |
+
+`proofJwt` を誤ると `aud` / `iss` の検証が意図とずれ、`INVALID_PROOF` となります。
 
 #### 4. Nonce 管理（オプション）
 
