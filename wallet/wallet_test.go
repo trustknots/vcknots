@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
+	"github.com/trustknots/vcknots/wallet/env"
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
 	"github.com/trustknots/vcknots/wallet/presenter"
@@ -775,6 +776,9 @@ func TestController_ReceiveCredential_WithMockServer_Integration(t *testing.T) {
 	}
 
 	// First test metadata fetch to debug
+	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(http_allowed)
+	env.SetHTTPAllowed(true)
 	metadata, err := controller.FetchCredentialIssuerMetadata(serverURL, receiverTypes.Oid4vci)
 	if err != nil {
 		t.Fatalf("FetchCredentialIssuerMetadata failed: %v", err)
@@ -808,6 +812,9 @@ func TestController_FetchCredentialIssuerMetadata_WithMockServer(t *testing.T) {
 
 	serverURL, _ := url.Parse(server.URL())
 
+	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(http_allowed)
+	env.SetHTTPAllowed(true)
 	metadata, err := controller.FetchCredentialIssuerMetadata(serverURL, receiverTypes.Oid4vci)
 	if err != nil {
 		t.Errorf("FetchCredentialIssuerMetadata failed: %v", err)
@@ -850,6 +857,9 @@ func TestController_PresentCredential_WithMockServer_Integration(t *testing.T) {
 		Key:  newMockKeyEntry(),
 	}
 
+	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(http_allowed)
+	env.SetHTTPAllowed(true)
 	savedCredential, err := controller.ReceiveCredential(receiveReq)
 	if err != nil {
 		t.Logf("Failed to receive credential for presentation test: %v", err)
@@ -912,6 +922,9 @@ func TestController_FetchCredentialIssuerMetadata_ErrorPaths_Integration(t *test
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+			defer env.SetHTTPAllowed(http_allowed)
+			env.SetHTTPAllowed(true)
 			serverURL := tt.setupURL()
 			_, err := controller.FetchCredentialIssuerMetadata(serverURL, tt.receiverType)
 
