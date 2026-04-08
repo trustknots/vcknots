@@ -126,6 +126,18 @@ describe('CredentialProofJwtProvider', () => {
       assert.equal(result.payload.aud, credentialIssuer)
     })
 
+    it('should verify auth-code flow when iss claim is omitted (OPTIONAL per OID4VCI)', async () => {
+      const provider = setupProvider()
+      const proof = await createTestProof(
+        { aud: credentialIssuer, nonce: 'test-nonce' },
+        'ES256',
+        testKid
+      )
+      const result = await provider.verifyProof(proof, authCodeCtx)
+      assert.ok(result)
+      assert.strictEqual(result.payload.iss, undefined)
+    })
+
     it('should throw INVALID_PROOF for malformed JWT', async () => {
       const provider = setupProvider()
       await assert.rejects(provider.verifyProof('invalid-jwt'), (err: VcknotsError) => {
@@ -229,6 +241,19 @@ describe('CredentialProofJwtProvider', () => {
       })
     })
 
+    it('should throw INVALID_PROOF if iss is non-string in pre-auth flow', async () => {
+      const provider = setupProvider()
+      const proof = await createTestProof(
+        { aud: credentialIssuer, nonce: 'n', iss: 12345 } as unknown as JWTPayload,
+        'ES256',
+        testKid
+      )
+      await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
+        name: 'INVALID_PROOF',
+        message: 'iss claim must omitted using case Pre-Authorized Code Flow.',
+      })
+    })
+
     it('should verify auth-code flow when iss equals credential issuer identifier', async () => {
       const provider = setupProvider()
       const proof = await createTestProof(
@@ -239,6 +264,20 @@ describe('CredentialProofJwtProvider', () => {
       const result = await provider.verifyProof(proof, authCodeCtx)
       assert.ok(result)
       assert.equal(result?.payload.iss, credentialIssuer)
+    })
+
+    it('should throw INVALID_PROOF if iss is non-string in auth-code flow when iss is present', async () => {
+      const provider = setupProvider()
+      const proof = await createTestProof(
+        { aud: credentialIssuer, nonce: 'n', iss: 99 } as unknown as JWTPayload,
+        'ES256',
+        testKid
+      )
+      await assert.rejects(provider.verifyProof(proof, authCodeCtx), {
+        name: 'INVALID_PROOF',
+        message:
+          'iss claim must be the client_id of the Client making the Credential request or the Credential Issuer Identifier.',
+      })
     })
 
     it('should throw INVALID_PROOF if iss is neither client_id nor credential issuer in auth-code flow', async () => {

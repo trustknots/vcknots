@@ -96,24 +96,34 @@ export const credentialProofJWT = (): CredentialProofProvider & WithProviderRegi
 
       const ctx = verificationContext
 
-      if (ctx.usePreAuth && typeof protectedProof.payload.iss === 'string') {
-        throw raise('INVALID_PROOF', {
-          message: 'iss claim must omitted using case Pre-Authorized Code Flow.',
-        })
-      }
-      if (
+      const payloadClaims = protectedProof.payload
+      const hasIss = Object.prototype.hasOwnProperty.call(payloadClaims, 'iss')
+      const issValue = payloadClaims.iss
+
+      if (ctx.usePreAuth) {
+        if (hasIss) {
+          throw raise('INVALID_PROOF', {
+            message: 'iss claim must omitted using case Pre-Authorized Code Flow.',
+          })
+        }
+      } else {
         // OID4VCI JWT proof: iss claim must the client_id of the Client making the Credential request.
         // OID4VCI JWT proof: iss claim must be omitted using case Pre-Authorized Code Flow.
         // TODO:check auth-code flow
-        !ctx.usePreAuth &&
-        typeof protectedProof.payload.iss === 'string' &&
-        protectedProof.payload.iss !== ctx.clientId &&
-        protectedProof.payload.iss !== ctx.credentialIssuer
-      ) {
-        throw raise('INVALID_PROOF', {
-          message:
-            'iss claim must be the client_id of the Client making the Credential request or the Credential Issuer Identifier.',
-        })
+        if (hasIss) {
+          if (typeof issValue !== 'string') {
+            throw raise('INVALID_PROOF', {
+              message:
+                'iss claim must be the client_id of the Client making the Credential request or the Credential Issuer Identifier.',
+            })
+          }
+          if (issValue !== ctx.clientId && issValue !== ctx.credentialIssuer) {
+            throw raise('INVALID_PROOF', {
+              message:
+                'iss claim must be the client_id of the Client making the Credential request or the Credential Issuer Identifier.',
+            })
+          }
+        }
       }
       if (protectedProof.payload.aud !== ctx.credentialIssuer) {
         throw raise('INVALID_PROOF', {
