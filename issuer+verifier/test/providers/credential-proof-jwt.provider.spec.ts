@@ -304,13 +304,7 @@ describe('CredentialProofJwtProvider', () => {
     })
 
     it('should throw INVALID_PROOF when verifyProof is called without OID4VCI context', async () => {
-      const provider = credentialProofJWT()
-      mock.method(provider.providers, 'get', (name: string) => {
-        if (name === 'did-provider') {
-          return [mockDidProvider]
-        }
-        return []
-      })
+      const provider = setupProvider()
       const proof = await createTestProof({ aud: credentialIssuer }, 'ES256', testKid)
       await assert.rejects(provider.verifyProof(proof), {
         name: 'INVALID_PROOF',
@@ -320,19 +314,10 @@ describe('CredentialProofJwtProvider', () => {
     })
 
     it('should verify when verifyProof receives context', async () => {
-      const provider = credentialProofJWT()
-      mock.method(provider.providers, 'get', (name: string) => {
-        if (name === 'did-provider') {
-          return [mockDidProvider]
-        }
-        return []
-      })
+      const provider = setupProvider()
       const payload = { aud: credentialIssuer, nonce: 'test-nonce' }
       const proof = await createTestProof(payload, 'ES256', testKid)
-      const result = await provider.verifyProof(proof, {
-        usePreAuth: true,
-        credentialIssuer,
-      })
+      const result = await provider.verifyProof(proof, preAuthCtx)
       assert.ok(result)
       assert.equal(result?.payload.aud, credentialIssuer)
     })
