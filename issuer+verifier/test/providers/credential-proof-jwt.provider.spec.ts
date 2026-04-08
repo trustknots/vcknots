@@ -237,7 +237,7 @@ describe('CredentialProofJwtProvider', () => {
       )
       await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
         name: 'INVALID_PROOF',
-        message: 'iss claim must omitted using case Pre-Authorized Code Flow.',
+        message: 'iss claim must be omitted when using Pre-Authorized Code Flow.',
       })
     })
 
@@ -250,7 +250,7 @@ describe('CredentialProofJwtProvider', () => {
       )
       await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
         name: 'INVALID_PROOF',
-        message: 'iss claim must omitted using case Pre-Authorized Code Flow.',
+        message: 'iss claim must be omitted when using Pre-Authorized Code Flow.',
       })
     })
 

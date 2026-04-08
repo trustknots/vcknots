@@ -103,7 +103,7 @@ export const credentialProofJWT = (): CredentialProofProvider & WithProviderRegi
       if (ctx.usePreAuth) {
         if (hasIss) {
           throw raise('INVALID_PROOF', {
-            message: 'iss claim must omitted using case Pre-Authorized Code Flow.',
+            message: 'iss claim must be omitted when using Pre-Authorized Code Flow.',
           })
         }
       } else {
