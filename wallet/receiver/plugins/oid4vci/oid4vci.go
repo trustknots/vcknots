@@ -13,6 +13,7 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/trustknots/vcknots/wallet/common"
+	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
 
@@ -22,6 +23,9 @@ type Oid4vciReceiver struct{}
 // It handles common patterns: URL construction, status checking, body reading, and JSON parsing.
 func (o *Oid4vciReceiver) doRequest(method string, endpoint common.URIField, path string, body io.Reader, target interface{}) error {
 	endpointURL := url.URL(endpoint)
+	if !env.IsHTTPAllowed() && !strings.EqualFold(endpointURL.Scheme, "https") {
+		return fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
+	}
 
 	if path == "/.well-known/oauth-authorization-server" {
 		// Special handling for metadata discovery as per RFC 8414 §3
@@ -134,6 +138,9 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	}
 
 	endpointURL := url.URL(endpoint)
+	if !env.IsHTTPAllowed() && !strings.EqualFold(endpointURL.Scheme, "https") {
+		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
+	}
 
 	// Prepare credential request body
 	reqBody := map[string]interface{}{
@@ -184,9 +191,6 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to receive credential; status: %d; endpoint: %s; response: %s", resp.StatusCode, endpointURL.String(), string(bodyBytes))
-	}
-	if err != nil {
-		return nil, err
 	}
 
 	if len(bodyBytes) == 0 {
