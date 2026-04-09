@@ -8,6 +8,7 @@ import { CredentialOffer } from './credential-offer.types'
 import { CredentialRequest } from './credential-request.types'
 import { CredentialResponse } from './credential-response.types'
 import { err, raise } from './errors/vcknots.error'
+import type { CredentialProofJwtVerifyContext } from './credential-proof-jwt.types'
 import { selectProvider } from './providers/provider.utils'
 import { VcknotsContext } from './vcknots.context'
 import { JwtVcIssuerResponse } from './jwt-vc-issuer.types'
@@ -34,6 +35,11 @@ type IssueOptions = {
   }
   claims?: Record<string, unknown>
   subject?: string
+  /** OID4VCI JWT proof iss rules: set usePreAuth true when the access token came from pre-authorized_code (anonymous) grant. */
+  proofJwt?: {
+    usePreAuth: boolean
+    clientId?: string
+  }
 }
 
 export const isUri = (value: string): boolean => {
@@ -236,7 +242,17 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
 
         const credentialProofProvider = selectProvider(credentialProof$, proofsObjects.proofType)
         for (const proof of proofsObjects.proofValue) {
-          verifyProof = await credentialProofProvider.verifyProof(proof)
+          const proofJwtCtx: CredentialProofJwtVerifyContext | undefined =
+            proofsObjects.proofType === ProofTypes.JWT
+              ? options?.proofJwt?.usePreAuth === true
+                ? { usePreAuth: true, credentialIssuer: metadata.credential_issuer }
+                : {
+                    usePreAuth: false,
+                    credentialIssuer: metadata.credential_issuer,
+                    clientId: options?.proofJwt?.clientId,
+                  }
+              : undefined
+          verifyProof = await credentialProofProvider.verifyProof(proof, proofJwtCtx)
           if (!verifyProof) {
             throw err('INVALID_PROOF', {
               message: 'Failed to verify Proof.',

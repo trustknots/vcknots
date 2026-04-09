@@ -2,24 +2,12 @@ import { decodeJwt, decodeProtectedHeader, importJWK, jwtVerify } from 'jose'
 import { ProofJwt } from '../credential.types'
 import { raise } from '../errors/vcknots.error'
 import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
-import { CredentialProofProvider } from './provider.types'
+import type { CredentialProofJwtVerifyContext } from '../credential-proof-jwt.types'
+import type { CredentialProofProvider } from './provider.types'
 import { selectProvider } from './provider.utils'
 import { DiVpProof } from '../proofs.types'
 
-export type CredentialProofProviderOptions =
-  | {
-      usePreAuth: false
-      clientId?: string
-      credentialIssuer: string
-    }
-  | {
-      usePreAuth: true
-      credentialIssuer: string
-    }
-
-export const credentialProofJWT = (
-  options?: CredentialProofProviderOptions
-): CredentialProofProvider & WithProviderRegistry => {
+export const credentialProofJWT = (): CredentialProofProvider & WithProviderRegistry => {
   return {
     kind: 'credential-proof-provider',
     name: 'default-credential-proof-jwt-provider',
@@ -27,7 +15,10 @@ export const credentialProofJWT = (
 
     ...withProviderRegistry,
 
-    async verifyProof(proof: string | DiVpProof): Promise<ProofJwt | null> {
+    async verifyProof(
+      proof: string | DiVpProof,
+      verificationContext?: CredentialProofJwtVerifyContext
+    ): Promise<ProofJwt | null> {
       if (typeof proof !== 'string') {
         throw raise('INVALID_PROOF', {
           message: 'Unsupported proof type.',
@@ -95,27 +86,51 @@ export const credentialProofJWT = (
           message: 'Unsupported Proof Payload.',
         })
       }
-      if (options) {
-        if (options.usePreAuth && typeof protectedProof.payload.iss === 'string') {
+
+      if (!verificationContext) {
+        throw raise('INVALID_PROOF', {
+          message:
+            'Credential proof verification requires credentialIssuer and usePreAuth (OID4VCI). Pass CredentialProofJwtVerifyContext as the second argument to verifyProof().',
+        })
+      }
+
+      const ctx = verificationContext
+
+      const payloadClaims = protectedProof.payload
+      const hasIss = Object.prototype.hasOwnProperty.call(payloadClaims, 'iss')
+      const issValue = payloadClaims.iss
+
+      if (ctx.usePreAuth) {
+        if (hasIss) {
           throw raise('INVALID_PROOF', {
-            message: 'iss claim must omitted using case Pre-Authorized Code Flow.',
+            message: 'iss claim must be omitted when using Pre-Authorized Code Flow.',
           })
         }
-        if (
-          !options.usePreAuth &&
-          typeof protectedProof.payload.iss === 'string' &&
-          protectedProof.payload.iss !== options.clientId
-        ) {
-          throw raise('INVALID_PROOF', {
-            message: 'iss claim must the client_id of the Client making the Credential request.',
-          })
-        }
-        if (protectedProof.payload.aud !== options.credentialIssuer) {
-          throw raise('INVALID_PROOF', {
-            message: 'aud claim must be the Credential Issuer Identifier.',
-          })
+      } else {
+        // OID4VCI JWT proof: iss claim must the client_id of the Client making the Credential request.
+        // OID4VCI JWT proof: iss claim must be omitted using case Pre-Authorized Code Flow.
+        // TODO:check auth-code flow
+        if (hasIss) {
+          if (typeof issValue !== 'string') {
+            throw raise('INVALID_PROOF', {
+              message:
+                'iss claim must be the client_id of the Client making the Credential request or the Credential Issuer Identifier.',
+            })
+          }
+          if (issValue !== ctx.clientId && issValue !== ctx.credentialIssuer) {
+            throw raise('INVALID_PROOF', {
+              message:
+                'iss claim must be the client_id of the Client making the Credential request or the Credential Issuer Identifier.',
+            })
+          }
         }
       }
+      if (protectedProof.payload.aud !== ctx.credentialIssuer) {
+        throw raise('INVALID_PROOF', {
+          message: 'aud claim must be the Credential Issuer Identifier.',
+        })
+      }
+
       const iss =
         typeof protectedProof.payload.iss === 'string' ? protectedProof.payload.iss : undefined
       const nonce =

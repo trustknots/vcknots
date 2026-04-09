@@ -466,6 +466,152 @@ describe('IssuerFlow', () => {
       )
     })
 
+    it('should pass auth-code JWT verify context to credential proof provider when proofJwt is omitted', async () => {
+      const issuer = CredentialIssuer('did:example:issuer')
+      const metadata: CredentialIssuerMetadata = {
+        credential_issuer: issuer,
+        credential_endpoint: 'https://example.com/credentials',
+        credential_configurations_supported: {
+          University_Degree: {
+            format: CredentialFormats.JWT_VC_JSON,
+            credential_definition: {
+              type: ['VerifiableCredential', 'UniversityDegreeCredential'],
+            },
+            credential_signing_alg_values_supported: ['ES256'],
+            proof_types_supported: {
+              jwt: {
+                proof_signing_alg_values_supported: ['ES256K'],
+              },
+            },
+          },
+        },
+      }
+      const credentialRequest = createCredentialRequest()
+      const verifiedProof = {
+        header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
+        payload: { iss: 'did:example:user', aud: issuer, nonce: 'nonce' },
+      }
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+      mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
+      mock.method(mockIssueCredentialProvider, 'createCredential', async () => 'signed.jwt')
+      mockIssueCredentialProvider.canHandle.mock.mockImplementation(
+        (format) => format === CredentialFormats.JWT_VC_JSON
+      )
+      mockCredentialProofProvider.canHandle.mock.mockImplementation(
+        (type) => type === ProofTypes.JWT
+      )
+
+      await issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' })
+
+      assert.equal(mockCredentialProofProvider.verifyProof.mock.callCount(), 1)
+      const verifyArgs = mockCredentialProofProvider.verifyProof.mock.calls[0].arguments
+      assert.strictEqual(verifyArgs[0], 'dummy-proof-jwt')
+      assert.deepStrictEqual(verifyArgs[1], {
+        usePreAuth: false,
+        credentialIssuer: issuer,
+        clientId: undefined,
+      })
+    })
+
+    it('should pass pre-auth JWT verify context when options.proofJwt.usePreAuth is true', async () => {
+      const issuer = CredentialIssuer('did:example:issuer')
+      const metadata: CredentialIssuerMetadata = {
+        credential_issuer: issuer,
+        credential_endpoint: 'https://example.com/credentials',
+        credential_configurations_supported: {
+          University_Degree: {
+            format: CredentialFormats.JWT_VC_JSON,
+            credential_definition: {
+              type: ['VerifiableCredential', 'UniversityDegreeCredential'],
+            },
+            credential_signing_alg_values_supported: ['ES256'],
+            proof_types_supported: {
+              jwt: {
+                proof_signing_alg_values_supported: ['ES256K'],
+              },
+            },
+          },
+        },
+      }
+      const credentialRequest = createCredentialRequest()
+      const verifiedProof = {
+        header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
+        payload: { aud: issuer, nonce: 'nonce' },
+      }
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+      mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
+      mock.method(mockIssueCredentialProvider, 'createCredential', async () => 'signed.jwt')
+      mockIssueCredentialProvider.canHandle.mock.mockImplementation(
+        (format) => format === CredentialFormats.JWT_VC_JSON
+      )
+      mockCredentialProofProvider.canHandle.mock.mockImplementation(
+        (type) => type === ProofTypes.JWT
+      )
+
+      await issuerFlow.issueCredential(issuer, credentialRequest, {
+        alg: 'ES256',
+        proofJwt: { usePreAuth: true },
+      })
+
+      assert.deepStrictEqual(
+        mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1],
+        {
+          usePreAuth: true,
+          credentialIssuer: issuer,
+        }
+      )
+    })
+
+    it('should pass clientId in JWT verify context for authorization-code-style flow', async () => {
+      const issuer = CredentialIssuer('did:example:issuer')
+      const metadata: CredentialIssuerMetadata = {
+        credential_issuer: issuer,
+        credential_endpoint: 'https://example.com/credentials',
+        credential_configurations_supported: {
+          University_Degree: {
+            format: CredentialFormats.JWT_VC_JSON,
+            credential_definition: {
+              type: ['VerifiableCredential', 'UniversityDegreeCredential'],
+            },
+            credential_signing_alg_values_supported: ['ES256'],
+            proof_types_supported: {
+              jwt: {
+                proof_signing_alg_values_supported: ['ES256K'],
+              },
+            },
+          },
+        },
+      }
+      const credentialRequest = createCredentialRequest()
+      const verifiedProof = {
+        header: { kid: 'did:example:user#key-1', alg: 'ES256K' },
+        payload: { iss: 'did:example:user', aud: issuer, nonce: 'nonce' },
+      }
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+      mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
+      mock.method(mockIssueCredentialProvider, 'createCredential', async () => 'signed.jwt')
+      mockIssueCredentialProvider.canHandle.mock.mockImplementation(
+        (format) => format === CredentialFormats.JWT_VC_JSON
+      )
+      mockCredentialProofProvider.canHandle.mock.mockImplementation(
+        (type) => type === ProofTypes.JWT
+      )
+
+      await issuerFlow.issueCredential(issuer, credentialRequest, {
+        alg: 'ES256',
+        proofJwt: { usePreAuth: false, clientId: 'oauth-client-1' },
+      })
+
+      assert.deepStrictEqual(
+        mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1],
+        {
+          usePreAuth: false,
+          credentialIssuer: issuer,
+          clientId: 'oauth-client-1',
+        }
+      )
+    })
+
     it('should issue a credential with claims for a valid request', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')

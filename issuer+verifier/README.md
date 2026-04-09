@@ -102,12 +102,26 @@ const credential = await issuer.issueCredential(
     claims: {
       name: 'Alice',
       from: 'Wonderland'
-    }
+    },
+    // JWT proof (`proofs.jwt`) verification: set usePreAuth when the access token came from the
+    // pre-authorized code grant; for the authorization-code flow use false and pass clientId.
+    proofJwt: { usePreAuth: true },
   }
 )
 
 console.log('Issued Credential:', credential)
 ```
+
+**JWT credential proofs (`proofs.jwt`) and `options.proofJwt`**
+
+For OID4VCI JWT proofs, `aud` must match the Credential Issuer Identifier, and `iss` is validated according to the flow. `issueCredential` builds a **verification context** (credential issuer, whether the token is pre-authorized, and optionally the OAuth `client_id`) and passes it to the credential-proof provider’s `verifyProof`. When verifying JWT proofs, set `options.proofJwt` to match how the wallet obtained its access token:
+
+| Situation | What to pass |
+|-----------|----------------|
+| Access token from the **pre-authorized code** grant | `proofJwt: { usePreAuth: true }`. The proof JWT must **not** include an **`iss`** claim (per the intended OID4VCI rules). |
+| **Authorization code** or other normal OAuth client context | `proofJwt: { usePreAuth: false, clientId: '<client_id for this credential request>' }`. `iss` must equal that `client_id` or the Credential Issuer Identifier. |
+
+If `proofJwt` does not match the real flow, `aud` / `iss` checks may fail with `INVALID_PROOF`. 
 
 #### 4. Nonce Management (Optional)
 

@@ -535,7 +535,7 @@ app.post('issue/credentials', async (c) => {
         401
       )
     }
-    // Credential Issuance
+    // Credential issuance (pass proofJwt so JWT proof verification uses the correct OID4VCI context)
     const credential = await issuerFlow.issueCredential(CredentialIssuer(baseUrl), parse, {
       alg: 'ES256',
       cnonce: {
@@ -546,8 +546,8 @@ app.post('issue/credentials', async (c) => {
         family_name: 'Smith',
         degree: '5',
         gpa: 'test',
-      }
-,
+      },
+      proofJwt: { usePreAuth: true },
     })
 
     return c.json(credential)
@@ -767,12 +767,21 @@ issueCredential(
 
 For the type definition of the credential response, see [issuer+verifier/src/credential-response.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-response.types.ts).
 
+**JWT credential proofs (`proofs.jwt`)**
+
+When the request includes JWT credential proofs, the issuer flow builds a verification context from issuer metadata (`credential_issuer`) and `options.proofJwt`, and passes it to the [credential-proof-jwt provider](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/providers/credential-proof-jwt.provider.ts) so claims such as `aud` and `iss` are checked per OID4VCI.
+
+- **Pre-authorized code flow**: use `proofJwt: { usePreAuth: true }`. The proof JWT must **not** carry an **`iss`** claim.
+- **Authorization code flow** (or similar client-bound context): use `proofJwt: { usePreAuth: false, clientId: '...' }` with the OAuth `client_id` for that credential request. `iss` must equal that `client_id` or the Credential Issuer Identifier.
+
+If you omit `proofJwt`, JWT proofs are treated like the authorization-code path (`usePreAuth: false`). With no `clientId`, only the Credential Issuer Identifier is effectively available for `iss` comparison when `iss` is present. Set `proofJwt` explicitly to match your token flow.
+
 **Error cases**:
 - `ISSUER_NOT_FOUND`: An unregistered Issuer is configured
 - `PROVIDER_NOT_FOUND`: An unsupported `format` is configured
 - `INVALID_REQUEST`: `format` is not set
 - `UNSUPPORTED_CREDENTIAL_TYPE`: The specified `credential_definition` or `proof_type` is not supported
-- `INVALID_CREDENTIAL_REQUES`: The `proof` is missing or not supported
+- `INVALID_CREDENTIAL_REQUEST`: The `proof` is missing or not supported, or the configuration id is invalid, etc.
 - `INVALID_PROOF`: The `proof` cannot be verified, an unsupported header is set, or a `nonce` is missing
 - `UNSUPPORTED_ISSUER_KEY_ALG`: The Issuer’s signing algorithm is not supported
 - `AUTHZ_ISSUER_KEY_NOT_FOUND`: The Issuer’s key cannot be found
@@ -784,8 +793,8 @@ Defines the type for a credential issuance request. You can configure items such
 For the definition, see [issuer+verifier/src/credential-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-request.types.ts).
 
 #### IssueOptions{#IssueOptions}
-Defines the type for credential issuance options. You can configure items such as algorithms and claims.
-The definition is as follows.
+Defines the type for credential issuance options. You can configure algorithms, claims, hints for JWT proof verification, and more.
+The definition is as follows (see [issuer.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/issuer.flows.ts) for the implementation).
 
 ```typescript
 type IssueOptions = {
@@ -794,6 +803,12 @@ type IssueOptions = {
     c_nonce_expires_in: number
   }
   claims?: Record<string, unknown>
+  subject?: string
+  /** Used for JWT proof `iss` validation etc., depending on how the access token was obtained */
+  proofJwt?: {
+    usePreAuth: boolean
+    clientId?: string
+  }
 }
 ```
 
