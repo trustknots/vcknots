@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, it, before, mock } from 'node:test'
-import { credentialProofJWT } from '../../src/providers/credential-proof-jwt.provider'
+import {
+  credentialProofJWT,
+  OID4VCI_JWT_PROOF_TYP,
+} from '../../src/providers/credential-proof-jwt.provider'
 import type { CredentialProofJwtVerifyContext } from '../../src/credential-proof-jwt.types'
 import { CredentialIssuer } from '../../src/credential-issuer.types'
 import type { CredentialProofProvider, DidProvider } from '../../src/providers/provider.types'
@@ -61,7 +64,7 @@ describe('CredentialProofJwtProvider', () => {
     customHeader?: object
   ) => {
     return await new SignJWT(payload)
-      .setProtectedHeader({ alg, kid, ...customHeader })
+      .setProtectedHeader({ alg, kid, typ: OID4VCI_JWT_PROOF_TYP, ...customHeader })
       .setIssuedAt()
       .sign(keys.privateKey)
   }
@@ -110,6 +113,7 @@ describe('CredentialProofJwtProvider', () => {
       assert.equal(result.payload.aud, credentialIssuer)
       assert.equal(result.payload.nonce, 'test-nonce')
       assert.equal(result.header.alg, 'ES256')
+      assert.equal(result.header.typ, OID4VCI_JWT_PROOF_TYP)
       assert.equal(result.header.kid, testKid)
       assert.strictEqual(result.payload.iss, undefined)
     })
@@ -149,12 +153,38 @@ describe('CredentialProofJwtProvider', () => {
     it('should throw INVALID_PROOF if kid is missing in header', async () => {
       const provider = setupProvider()
       const proof = await new SignJWT({ aud: credentialIssuer })
-        .setProtectedHeader({ alg: 'ES256' }) // No kid
+        .setProtectedHeader({ alg: 'ES256', typ: OID4VCI_JWT_PROOF_TYP }) // No kid
         .sign(keys.privateKey)
       await assert.rejects(provider.verifyProof(proof), (err: VcknotsError) => {
         assert.equal(err.name, 'INVALID_PROOF')
         assert.equal(err.message, 'Unsupported Proof Header.')
         return true
+      })
+    })
+
+    it('should throw INVALID_PROOF if typ is not openid4vci-proof+jwt', async () => {
+      const provider = setupProvider()
+      const proof = await createTestProof(
+        { aud: credentialIssuer },
+        'ES256',
+        testKid,
+        { typ: 'JWT' }
+      )
+      await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
+        name: 'INVALID_PROOF',
+        message: `Proof JWT header typ must be "${OID4VCI_JWT_PROOF_TYP}".`,
+      })
+    })
+
+    it('should throw INVALID_PROOF if typ is missing in header', async () => {
+      const provider = setupProvider()
+      const proof = await new SignJWT({ aud: credentialIssuer })
+        .setProtectedHeader({ alg: 'ES256', kid: testKid })
+        .setIssuedAt()
+        .sign(keys.privateKey)
+      await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
+        name: 'INVALID_PROOF',
+        message: `Proof JWT header typ must be "${OID4VCI_JWT_PROOF_TYP}".`,
       })
     })
 
@@ -209,7 +239,7 @@ describe('CredentialProofJwtProvider', () => {
       const provider = setupProvider()
       const otherKeys = await generateKeyPair('ES256')
       const proof = await new SignJWT({ aud: credentialIssuer })
-        .setProtectedHeader({ alg: 'ES256', kid: testKid })
+        .setProtectedHeader({ alg: 'ES256', kid: testKid, typ: OID4VCI_JWT_PROOF_TYP })
         .setIssuedAt()
         .sign(otherKeys.privateKey) // Signed with a different key
       await assert.rejects(provider.verifyProof(proof), (err: Error & { code?: string }) => {
@@ -223,7 +253,7 @@ describe('CredentialProofJwtProvider', () => {
       const provider = setupProvider()
       const issuedAt = new Date(Date.now() - 400 * 1000)
       const proof = await new SignJWT({ aud: credentialIssuer, nonce: 'n' })
-        .setProtectedHeader({ alg: 'ES256', kid: testKid })
+        .setProtectedHeader({ alg: 'ES256', kid: testKid, typ: OID4VCI_JWT_PROOF_TYP })
         .setIssuedAt(issuedAt)
         .sign(keys.privateKey)
       await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
@@ -242,7 +272,7 @@ describe('CredentialProofJwtProvider', () => {
       })
       const issuedAt = new Date(Date.now() - 400 * 1000)
       const proof = await new SignJWT({ aud: credentialIssuer, nonce: 'n' })
-        .setProtectedHeader({ alg: 'ES256', kid: testKid })
+        .setProtectedHeader({ alg: 'ES256', kid: testKid, typ: OID4VCI_JWT_PROOF_TYP })
         .setIssuedAt(issuedAt)
         .sign(keys.privateKey)
       const result = await provider.verifyProof(proof, preAuthCtx)

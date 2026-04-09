@@ -10,6 +10,9 @@ import { DiVpProof } from '../proofs.types'
 const DEFAULT_PROOF_JWT_MAX_TOKEN_AGE_SECONDS = 300
 const DEFAULT_PROOF_JWT_CLOCK_TOLERANCE_SECONDS = 60
 
+/** OID4VCI §7.2.1.1 — JWT proof JOSE header `typ` (explicit typing per RFC 8725 §3.11). */
+export const OID4VCI_JWT_PROOF_TYP = 'openid4vci-proof+jwt'
+
 /** Options for {@link credentialProofJWT} (proof JWT `iat` window per OID4VCI §7.2.2). */
 export type CredentialProofJwtFactoryOptions = {
   /** Maximum age of proof JWT `iat` in seconds. Default: 300 (5 minutes). */
@@ -60,6 +63,11 @@ export const credentialProofJWT = (
       if (typeof proofAlg !== 'string') {
         throw raise('INVALID_PROOF', {
           message: 'Unsupported Proof Header alg value.',
+        })
+      }
+      if (proofJwtHeader.typ !== OID4VCI_JWT_PROOF_TYP) {
+        throw raise('INVALID_PROOF', {
+          message: `Proof JWT header typ must be "${OID4VCI_JWT_PROOF_TYP}".`,
         })
       }
       let publicKeyJwk: JsonWebKey
