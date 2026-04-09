@@ -252,6 +252,29 @@ cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
 ```
 
+### Wallet 実行時の環境変数
+
+`VCKNOTS_CERT_PATH` に加えて、wallet の実行時挙動は `wallet/env/env.go` で定義された環境変数で制御されます。
+
+| 環境変数 | 既定値 | 説明 |
+| :---- | :---- | :---- |
+| `VCKNOTS_WALLET_HTTP_ALLOWED` | `false`（未設定/空） | `true` を設定すると、Wallet の HTTP 通信で HTTP エンドポイントを許可します（ローカル開発/テスト用途）。 |
+| `VCKNOTS_WALLET_DEBUG` | `false`（未設定/空） | デバッグモードを有効化します。デバッグモード時は HTTP 許可動作も有効になります。 |
+
+挙動の要点:
+- `VCKNOTS_WALLET_HTTP_ALLOWED=true` または `VCKNOTS_WALLET_DEBUG=true` のいずれかで、`IsHTTPAllowed()` は `true` になります。
+- 両方とも未設定（または `true` 以外）の場合、`IsHTTPAllowed()` は `false` となり、HTTPS 必須の検証が有効のままになります。
+
+設定例（ローカル開発のみ）:
+
+```bash
+export VCKNOTS_WALLET_HTTP_ALLOWED=true
+# または
+export VCKNOTS_WALLET_DEBUG=true
+```
+
+> ⚠️ **セキュリティ警告**: 本番環境では `VCKNOTS_WALLET_HTTP_ALLOWED` を有効化しないでください。HTTPS 必須検証を維持してください。
+
 ---
 
 ## トラブルシューティング

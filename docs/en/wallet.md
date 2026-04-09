@@ -443,6 +443,13 @@ This section explains the main Go type definitions used when interacting with th
     - ⚠️ **Critical warning:** `InsecureSkipX509Verify: true` should only be used for conformance testing or local development environments. **Never** use this in production. It introduces a security risk.
     - Conformance tests may intentionally use non-standard certificates (self-signed, CA:TRUE settings, etc.), which is why this option is necessary.
 
+7. **Wallet runtime environment variables (`wallet/env/env.go`):**
+    - The wallet uses the prefix `VCKNOTS_WALLET_` for runtime flags.
+    - `VCKNOTS_WALLET_HTTP_ALLOWED=true` allows HTTP endpoints for wallet HTTP calls (intended for local development/testing only).
+    - `VCKNOTS_WALLET_DEBUG=true` enables debug mode and also enables HTTP allowance behavior.
+    - `IsHTTPAllowed()` returns `true` if either of the above values is `true`; otherwise it returns `false`.
+    - **Production guidance:** Keep both variables unset (or `false`) so HTTPS-only validation remains active.
+
 ## 7. Troubleshooting
 
 * **Q: `go mod download` fails with `package... is private` or `404 Not Found`.**  

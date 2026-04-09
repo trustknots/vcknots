@@ -442,6 +442,13 @@ vcknots/wallet ライブラリの Controller とのインタラクションに�
     - ⚠️ **重大な警告**: `InsecureSkipX509Verify: true`は、コンフォーマンステストやローカル開発環境でのみ使用してください。本番環境では**絶対に**使用しないでください。これはセキュリティリスクを招きます。
     - コンフォーマンステストでは、意図的に非標準的な証明書（自己署名、CA:TRUE設定など）を使用することがあるため、このオプションが必要になります。
 
+7. **Wallet 実行時の環境変数（`wallet/env/env.go`）:**
+    - Wallet の実行時フラグは `VCKNOTS_WALLET_` プレフィックスで管理されます。
+    - `VCKNOTS_WALLET_HTTP_ALLOWED=true` を設定すると、Wallet の HTTP 通信で HTTP エンドポイントを許可します（ローカル開発/テスト用途）。
+    - `VCKNOTS_WALLET_DEBUG=true` はデバッグモードを有効化し、同時に HTTP 許可動作も有効化します。
+    - `IsHTTPAllowed()` は、上記いずれかが `true` のとき `true` を返し、それ以外は `false` を返します。
+    - **本番運用の指針:** 本番環境では両方未設定（または `false`）のままにし、HTTPS 必須検証を維持してください。
+
 ## 7. トラブルシューティング
 
 * **Q: `go mod download` が `package... is private` または `404 Not Found` で失敗する。**  
