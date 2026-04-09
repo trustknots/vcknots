@@ -90,6 +90,9 @@ describe('CredentialProofJwtProvider', () => {
   })
 
   describe('verifyProof', () => {
+    const prohibitedProofJwtAlgMessage =
+      'Proof JWT alg must not be "none" or a symmetric (MAC) algorithm.'
+
     const setupProvider = (): CredentialProofProvider & WithProviderRegistry => {
       const provider = credentialProofJWT()
       // Mock the get method of the provider registry
@@ -147,6 +150,63 @@ describe('CredentialProofJwtProvider', () => {
       await assert.rejects(provider.verifyProof('invalid-jwt'), (err: VcknotsError) => {
         assert.equal(err.name, 'INVALID_PROOF')
         return true
+      })
+    })
+
+    const unverifiedProofJwt = (
+      header: Record<string, unknown>,
+      payload: Record<string, unknown>
+    ): string => {
+      const enc = (obj: Record<string, unknown>) =>
+        Buffer.from(JSON.stringify(obj)).toString('base64url')
+      return `${enc(header)}.${enc(payload)}.x`
+    }
+
+    it('should throw INVALID_PROOF if alg is none', async () => {
+      const provider = setupProvider()
+      const proof = unverifiedProofJwt(
+        { alg: 'none', typ: OID4VCI_JWT_PROOF_TYP, kid: testKid },
+        { aud: credentialIssuer, iat: Math.floor(Date.now() / 1000) }
+      )
+      await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
+        name: 'INVALID_PROOF',
+        message: prohibitedProofJwtAlgMessage,
+      })
+    })
+
+    it('should throw INVALID_PROOF if alg is None (case-insensitive)', async () => {
+      const provider = setupProvider()
+      const proof = unverifiedProofJwt(
+        { alg: 'None', typ: OID4VCI_JWT_PROOF_TYP, kid: testKid },
+        { aud: credentialIssuer, iat: Math.floor(Date.now() / 1000) }
+      )
+      await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
+        name: 'INVALID_PROOF',
+        message: prohibitedProofJwtAlgMessage,
+      })
+    })
+
+    it('should throw INVALID_PROOF if alg is HS256', async () => {
+      const provider = setupProvider()
+      const proof = unverifiedProofJwt(
+        { alg: 'HS256', typ: OID4VCI_JWT_PROOF_TYP, kid: testKid },
+        { aud: credentialIssuer, iat: Math.floor(Date.now() / 1000) }
+      )
+      await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
+        name: 'INVALID_PROOF',
+        message: prohibitedProofJwtAlgMessage,
+      })
+    })
+
+    it('should throw INVALID_PROOF if alg is hs384 (HMAC / symmetric family)', async () => {
+      const provider = setupProvider()
+      const proof = unverifiedProofJwt(
+        { alg: 'hs384', typ: OID4VCI_JWT_PROOF_TYP, kid: testKid },
+        { aud: credentialIssuer, iat: Math.floor(Date.now() / 1000) }
+      )
+      await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
+        name: 'INVALID_PROOF',
+        message: prohibitedProofJwtAlgMessage,
       })
     })
 

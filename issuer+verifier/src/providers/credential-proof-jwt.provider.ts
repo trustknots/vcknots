@@ -10,8 +10,17 @@ import { DiVpProof } from '../proofs.types'
 const DEFAULT_PROOF_JWT_MAX_TOKEN_AGE_SECONDS = 300
 const DEFAULT_PROOF_JWT_CLOCK_TOLERANCE_SECONDS = 60
 
-/** OID4VCI §7.2.1.1 — JWT proof JOSE header `typ` (explicit typing per RFC 8725 §3.11). */
+/** OID4VCI §F.1 — JWT proof JOSE header `typ` (explicit typing per RFC 8725 §3.11). */
 export const OID4VCI_JWT_PROOF_TYP = 'openid4vci-proof+jwt'
+
+/** OID4VCI §7.2.1.1 — `alg` MUST NOT be `none` or an IANA symmetric (HMAC) JWS algorithm. */
+function isProhibitedProofJwtAlg(alg: string): boolean {
+  const trimmed = alg.trim()
+  if (trimmed.length === 0) return true
+  if (trimmed.toLowerCase() === 'none') return true
+  // JWA HMAC family: HS256, HS384, HS512, HS512/256, …
+  return /^hs/i.test(trimmed)
+}
 
 /** Options for {@link credentialProofJWT} (proof JWT `iat` window per OID4VCI §7.2.2). */
 export type CredentialProofJwtFactoryOptions = {
@@ -63,6 +72,11 @@ export const credentialProofJWT = (
       if (typeof proofAlg !== 'string') {
         throw raise('INVALID_PROOF', {
           message: 'Unsupported Proof Header alg value.',
+        })
+      }
+      if (isProhibitedProofJwtAlg(proofAlg)) {
+        throw raise('INVALID_PROOF', {
+          message: 'Proof JWT alg must not be "none" or a symmetric (MAC) algorithm.',
         })
       }
       if (proofJwtHeader.typ !== OID4VCI_JWT_PROOF_TYP) {
