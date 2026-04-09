@@ -451,7 +451,9 @@ func TestController_PresentCredential_ErrorPaths_Integration(t *testing.T) {
 
 func TestController_parseAuthorizationRequest_RejectsNonHTTPSResponseURI(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
-	t.Setenv("VCKNOTS_ENFORCE_HTTPS_RESPONSE_URI", "true")
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(false)
 
 	presentationDefinition := url.QueryEscape(`{"id":"test-def"}`)
 	uri := fmt.Sprintf(
@@ -466,7 +468,9 @@ func TestController_parseAuthorizationRequest_RejectsNonHTTPSResponseURI(t *test
 
 func TestController_parseAuthorizationRequest_AllowsNonHTTPSResponseURI_WhenValidationDisabled(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
-	t.Setenv("VCKNOTS_ENFORCE_HTTPS_RESPONSE_URI", "false")
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
 
 	presentationDefinition := url.QueryEscape(`{"id":"test-def"}`)
 	uri := fmt.Sprintf(
