@@ -13,7 +13,7 @@ const DEFAULT_PROOF_JWT_CLOCK_TOLERANCE_SECONDS = 60
 /** OID4VCI §F.1 — JWT proof JOSE header `typ` (explicit typing per RFC 8725 §3.11). */
 export const OID4VCI_JWT_PROOF_TYP = 'openid4vci-proof+jwt'
 
-/** OID4VCI §7.2.1.1 — `alg` MUST NOT be `none` or an IANA symmetric (HMAC) JWS algorithm. */
+/** OID4VCI §F.1 — `alg` MUST NOT be `none` or an IANA symmetric (HMAC) JWS algorithm. */
 function isProhibitedProofJwtAlg(alg: string): boolean {
   const trimmed = alg.trim()
   if (trimmed.length === 0) return true
@@ -22,7 +22,7 @@ function isProhibitedProofJwtAlg(alg: string): boolean {
   return /^hs/i.test(trimmed)
 }
 
-/** Options for {@link credentialProofJWT} (proof JWT `iat` window per OID4VCI §7.2.2). */
+/** Options for {@link credentialProofJWT} (proof JWT `iat` validation per OID4VCI 1.0 §F.1). */
 export type CredentialProofJwtFactoryOptions = {
   /** Maximum age of proof JWT `iat` in seconds. Default: 300 (5 minutes). */
   maxTokenAgeSeconds?: number
