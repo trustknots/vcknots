@@ -7,7 +7,24 @@ import type { CredentialProofProvider } from './provider.types'
 import { selectProvider } from './provider.utils'
 import { DiVpProof } from '../proofs.types'
 
-export const credentialProofJWT = (): CredentialProofProvider & WithProviderRegistry => {
+const DEFAULT_PROOF_JWT_MAX_TOKEN_AGE_SECONDS = 300
+const DEFAULT_PROOF_JWT_CLOCK_TOLERANCE_SECONDS = 60
+
+/** Options for {@link credentialProofJWT} (proof JWT `iat` window per OID4VCI §7.2.2). */
+export type CredentialProofJwtFactoryOptions = {
+  /** Maximum age of proof JWT `iat` in seconds. Default: 300 (5 minutes). */
+  maxTokenAgeSeconds?: number
+  /** Clock skew tolerance in seconds for time-based claims. Default: 60. */
+  clockToleranceSeconds?: number
+}
+
+export const credentialProofJWT = (
+  factoryOptions?: CredentialProofJwtFactoryOptions
+): CredentialProofProvider & WithProviderRegistry => {
+  const maxTokenAge = factoryOptions?.maxTokenAgeSeconds ?? DEFAULT_PROOF_JWT_MAX_TOKEN_AGE_SECONDS
+  const clockTolerance =
+    factoryOptions?.clockToleranceSeconds ?? DEFAULT_PROOF_JWT_CLOCK_TOLERANCE_SECONDS
+
   return {
     kind: 'credential-proof-provider',
     name: 'default-credential-proof-jwt-provider',
@@ -76,6 +93,20 @@ export const credentialProofJWT = (): CredentialProofProvider & WithProviderRegi
       const keyJwk = await importJWK(publicKeyJwk, proofAlg)
       const protectedProof = await jwtVerify(proof, keyJwk, {
         algorithms: [proofAlg],
+        maxTokenAge,
+        clockTolerance,
+      }).catch((e: unknown) => {
+        const code =
+          e !== null && typeof e === 'object' && 'code' in e
+            ? String((e as { code: unknown }).code)
+            : undefined
+        if (code === 'ERR_JWT_EXPIRED' || code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') {
+          throw raise('INVALID_PROOF', {
+            message: 'Proof JWT is outside the allowed issuance time window.',
+            cause: e,
+          })
+        }
+        throw e
       })
 
       if (

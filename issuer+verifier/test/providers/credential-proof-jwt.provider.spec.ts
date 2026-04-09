@@ -219,6 +219,36 @@ describe('CredentialProofJwtProvider', () => {
       })
     })
 
+    it('should throw INVALID_PROOF when proof JWT iat exceeds factory maxTokenAge', async () => {
+      const provider = setupProvider()
+      const issuedAt = new Date(Date.now() - 400 * 1000)
+      const proof = await new SignJWT({ aud: credentialIssuer, nonce: 'n' })
+        .setProtectedHeader({ alg: 'ES256', kid: testKid })
+        .setIssuedAt(issuedAt)
+        .sign(keys.privateKey)
+      await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
+        name: 'INVALID_PROOF',
+        message: 'Proof JWT is outside the allowed issuance time window.',
+      })
+    })
+
+    it('should verify when iat is within a larger factory maxTokenAgeSeconds', async () => {
+      const provider = credentialProofJWT({ maxTokenAgeSeconds: 600 })
+      mock.method(provider.providers, 'get', (name: string) => {
+        if (name === 'did-provider') {
+          return [mockDidProvider]
+        }
+        return []
+      })
+      const issuedAt = new Date(Date.now() - 400 * 1000)
+      const proof = await new SignJWT({ aud: credentialIssuer, nonce: 'n' })
+        .setProtectedHeader({ alg: 'ES256', kid: testKid })
+        .setIssuedAt(issuedAt)
+        .sign(keys.privateKey)
+      const result = await provider.verifyProof(proof, preAuthCtx)
+      assert.ok(result)
+    })
+
     it('should throw INVALID_PROOF if payload claims are invalid (missing aud)', async () => {
       const provider = setupProvider()
       const proof = await createTestProof({ iss: clientId }, 'ES256', testKid) // Missing aud
