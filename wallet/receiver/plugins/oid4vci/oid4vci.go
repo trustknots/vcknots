@@ -126,17 +126,12 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 
 	// Prepare credential request body
 	reqBody := map[string]interface{}{
-		"format": format,
-	}
-
-	if credentialDefinition != nil {
-		reqBody["credential_definition"] = credentialDefinition
+		"credential_configuration_id": format,
 	}
 
 	if jwtProof != nil {
-		reqBody["proof"] = map[string]interface{}{
-			"proof_type": "jwt",
-			"jwt":        *jwtProof,
+		reqBody["proofs"] = map[string]interface{}{
+			"jwt": []string{*jwtProof},
 		}
 	}
 
@@ -174,9 +169,6 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to receive credential; status: %d; endpoint: %s; response: %s", resp.StatusCode, endpointURL.String(), string(bodyBytes))
 	}
-	if err != nil {
-		return nil, err
-	}
 
 	if len(bodyBytes) == 0 {
 		return nil, fmt.Errorf("credential response is empty")
@@ -188,9 +180,29 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 		return nil, err
 	}
 
-	credential, ok := credentialResponse["credential"]
-	if !ok {
-		return nil, fmt.Errorf("no credential found in response")
+	var credential interface{}
+
+	credentialsRaw, hasCredentials := credentialResponse["credentials"]
+	if hasCredentials {
+		credentials, ok := credentialsRaw.([]interface{})
+		if !ok || len(credentials) == 0 {
+			return nil, fmt.Errorf("credentials response is invalid or empty")
+		}
+		credentialWrapper, ok := credentials[0].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("first credential entry has invalid format")
+		}
+		var found bool
+		credential, found = credentialWrapper["credential"]
+		if !found {
+			return nil, fmt.Errorf("credential field missing in first credentials entry")
+		}
+	} else {
+		var ok bool
+		credential, ok = credentialResponse["credential"]
+		if !ok {
+			return nil, fmt.Errorf("no credential found in response")
+		}
 	}
 
 	credentialStr, ok := credential.(string)

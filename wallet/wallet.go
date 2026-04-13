@@ -22,6 +22,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -529,6 +531,57 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 	return accessToken, nil
 }
 
+type credentialNonceResponse struct {
+	CNonce *string `json:"c_nonce"`
+	Nonce  *string `json:"nonce"`
+}
+
+// fetchCredentialNonce retrieves nonce used for proof generation from nonce endpoint.
+func (w *Wallet) fetchCredentialNonce(issuerMetadata *receiverTypes.CredentialIssuerMetadata) (*string, error) {
+	if issuerMetadata.NonceEndpoint == nil {
+		return nil, fmt.Errorf("nonce endpoint is missing on credential issuer metadata")
+	}
+
+	req, err := http.NewRequest(http.MethodPost, issuerMetadata.NonceEndpoint.String(), http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create nonce request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch nonce: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read nonce response: %w", err)
+	}
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("nonce endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	if len(bodyBytes) == 0 {
+		return nil, fmt.Errorf("nonce endpoint returned empty response")
+	}
+
+	var nonceResponse credentialNonceResponse
+	if err := json.Unmarshal(bodyBytes, &nonceResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse nonce response: %w", err)
+	}
+
+	if nonceResponse.CNonce != nil && *nonceResponse.CNonce != "" {
+		return nonceResponse.CNonce, nil
+	}
+	if nonceResponse.Nonce != nil && *nonceResponse.Nonce != "" {
+		return nonceResponse.Nonce, nil
+	}
+
+	return nil, fmt.Errorf("nonce response does not contain c_nonce or nonce")
+}
+
 // requestCredential requests the credential from the issuer with JWT proof.
 func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata *receiverTypes.CredentialIssuerMetadata, accessToken *receiverTypes.CredentialIssuanceAccessToken) (*string, error) {
 	did, err := w.GenerateDID(DIDCreateOptions{
@@ -539,7 +592,14 @@ func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata 
 		return nil, fmt.Errorf("failed to generate DID: %w", err)
 	}
 
-	proof, err := w.generateJWTProof(req.Key, did, accessToken.CNonce, issuerMetadata.CredentialIssuer)
+	credentialConfigurationID := req.CredentialOffer.CredentialConfigurationIDs[0]
+
+	nonce, err := w.fetchCredentialNonce(issuerMetadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch nonce from nonce endpoint: %w", err)
+	}
+
+	proof, err := w.generateJWTProof(req.Key, did, nonce, issuerMetadata.CredentialIssuer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate JWT proof: %w", err)
 	}
@@ -547,11 +607,9 @@ func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata 
 	credentialJWT, err := w.receiver.ReceiveCredential(
 		req.Type,
 		issuerMetadata.CredentialEndpoint,
-		"jwt_vc_json",
+		credentialConfigurationID,
 		*accessToken,
-		&receiverTypes.CredentialDefinition{
-			Type: append(req.CredentialOffer.CredentialConfigurationIDs, "VerifiableCredential"),
-		},
+		nil,
 		&proof,
 	)
 	if err != nil {

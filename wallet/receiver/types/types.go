@@ -65,6 +65,7 @@ const (
 type CredentialIssuerMetadata struct {
 	CredentialIssuer                 string                             `json:"credential_issuer"`
 	CredentialEndpoint               common.URIField                    `json:"credential_endpoint"`
+	NonceEndpoint                    *common.URIField                   `json:"nonce_endpoint,omitempty"`
 	AuthorizationServers             []common.URIField                  `json:"authorization_servers,omitempty"`
 	Display                          []CredentialIssuerMetadataDisplay  `json:"display,omitempty"`
 	CredentialConfigurationSupported map[string]CredentialConfiguration `json:"credential_configurations_supported,omitempty"`

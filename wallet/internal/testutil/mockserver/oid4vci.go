@@ -76,6 +76,9 @@ func (is *OID4VCIIssuerServer) setupRoutes() {
 	// Token endpoint
 	is.server.HandleFunc("/token", is.handleToken)
 
+	// Nonce endpoint
+	is.server.HandleFunc("/nonce", is.handleNonce)
+
 	// Credential endpoint
 	is.server.HandleFunc("/credential", is.handleCredential)
 }
@@ -87,6 +90,7 @@ func (is *OID4VCIIssuerServer) handleCredentialIssuerMetadata(w http.ResponseWri
 	metadata := map[string]interface{}{
 		"credential_issuer":                   baseURL,
 		"credential_endpoint":                 baseURL + "/credential",
+		"nonce_endpoint":                      baseURL + "/nonce",
 		"authorization_servers":               []string{baseURL},
 		"credential_configurations_supported": is.config.CredentialConfigurations,
 	}
@@ -118,6 +122,25 @@ func (is *OID4VCIIssuerServer) handleToken(w http.ResponseWriter, r *http.Reques
 	JSONResponse(w, http.StatusOK, is.config.TokenResponse)
 }
 
+// handleNonce handles the nonce endpoint
+func (is *OID4VCIIssuerServer) handleNonce(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		ErrorResponse(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
+		return
+	}
+
+	nonce := "mock-nonce"
+	if configuredNonce, ok := is.config.TokenResponse["c_nonce"].(string); ok && configuredNonce != "" {
+		nonce = configuredNonce
+	}
+
+	response := map[string]interface{}{
+		"c_nonce": nonce,
+	}
+
+	JSONResponse(w, http.StatusOK, response)
+}
+
 // handleCredential handles the credential endpoint
 func (is *OID4VCIIssuerServer) handleCredential(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -129,8 +152,10 @@ func (is *OID4VCIIssuerServer) handleCredential(w http.ResponseWriter, r *http.R
 	// In a real implementation, this would process the request and issue appropriate credentials
 	defaultCredentialJWT := "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlLmNvbSIsInN1YiI6ImRpZDprZXk6ejZNa2lvNFdEbWR0Z0VvNGY5SHE2aTZ0blc4V0Z3a25RUTRLSFVZOTlCR1k0RVZyIiwidHlwZSI6WyJWZXJpZmlhYmxlQ3JlZGVudGlhbCJdLCJpYXQiOjE2MjAyMzk4MDB9.mockSignature"
 
-	response := map[string]string{
-		"credential": defaultCredentialJWT,
+	response := map[string]interface{}{
+		"credentials": []map[string]string{{
+			"credential": defaultCredentialJWT,
+		}},
 	}
 
 	JSONResponse(w, http.StatusOK, response)
