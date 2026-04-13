@@ -14,6 +14,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 	commonX509 "github.com/trustknots/vcknots/wallet/common/x509"
+	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/presenter/types"
 )
 
@@ -288,6 +289,16 @@ func (b *requestBuilder) validate() error {
 
 	if b.req.Nonce == "" {
 		return fmt.Errorf("nonce is required")
+	}
+
+	if b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost {
+		responseURI, err := url.Parse(b.req.ResponseURI)
+		if err != nil {
+			return fmt.Errorf("response_uri must be URI: %w", err)
+		}
+		if !env.IsHTTPAllowed() && !strings.EqualFold(responseURI.Scheme, "https") {
+			return fmt.Errorf("response_uri must use https scheme")
+		}
 	}
 
 	return nil
