@@ -114,6 +114,7 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	receivingTypes types.SupportedReceivingTypes,
 	endpoint common.URIField,
 	credentialConfigurationID string,
+	credentialIdentifier *string,
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
@@ -125,8 +126,11 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	endpointURL := url.URL(endpoint)
 
 	// Prepare credential request body
-	reqBody := map[string]interface{}{
-		"credential_configuration_id": credentialConfigurationID,
+	reqBody := map[string]interface{}{}
+	if credentialIdentifier != nil && *credentialIdentifier != "" {
+		reqBody["credential_identifier"] = *credentialIdentifier
+	} else {
+		reqBody["credential_configuration_id"] = credentialConfigurationID
 	}
 
 	if jwtProof != nil {

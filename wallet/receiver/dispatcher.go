@@ -125,11 +125,13 @@ func (d *ReceivingDispatcher) ReceiveCredential(
 	receivingType types.SupportedReceivingTypes,
 	endpoint common.URIField,
 	credentialConfigurationID string,
+	credentialIdentifier *string,
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
 ) (*string, error) {
-	if credentialConfigurationID == "" {
+	hasCredentialIdentifier := credentialIdentifier != nil && *credentialIdentifier != ""
+	if credentialConfigurationID == "" && !hasCredentialIdentifier {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "receive_credential", types.ErrInvalidCredentialResponse)
 	}
 
@@ -138,7 +140,7 @@ func (d *ReceivingDispatcher) ReceiveCredential(
 		return nil, err
 	}
 
-	credential, err := plugin.ReceiveCredential(receivingType, endpoint, credentialConfigurationID, accessToken, credentialDefinition, jwtProof)
+	credential, err := plugin.ReceiveCredential(receivingType, endpoint, credentialConfigurationID, credentialIdentifier, accessToken, credentialDefinition, jwtProof)
 	if err != nil {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "receive_credential", err)
 	}

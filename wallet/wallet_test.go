@@ -619,6 +619,25 @@ func TestController_generateJWTProof_Integration(t *testing.T) {
 	if parts != 2 {
 		t.Errorf("expected JWT to have 2 dots (3 parts), got %d dots", parts)
 	}
+
+	proofParts := strings.Split(proof, ".")
+	if len(proofParts) != 3 {
+		t.Fatalf("expected JWT to have 3 parts, got %d", len(proofParts))
+	}
+
+	headerBytes, err := base64.RawURLEncoding.DecodeString(proofParts[0])
+	if err != nil {
+		t.Fatalf("failed to decode JWT header: %v", err)
+	}
+
+	var header map[string]interface{}
+	if err := json.Unmarshal(headerBytes, &header); err != nil {
+		t.Fatalf("failed to parse JWT header: %v", err)
+	}
+
+	if header["typ"] != "openid4vci-proof+jwt" {
+		t.Fatalf("expected JWT header typ to be openid4vci-proof+jwt, got %v", header["typ"])
+	}
 }
 
 func TestController_generateJWTProof_WithoutNonce_Integration(t *testing.T) {
@@ -721,6 +740,65 @@ func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointFails(
 	}
 	if nonce == nil || *nonce != cnonce {
 		t.Fatalf("expected nonce fallback %q, got %v", cnonce, nonce)
+	}
+}
+
+func TestAccessTokenCredentialIdentifier(t *testing.T) {
+	tests := []struct {
+		name        string
+		accessToken *receiverTypes.CredentialIssuanceAccessToken
+		want        *string
+	}{
+		{
+			name:        "nil access token",
+			accessToken: nil,
+			want:        nil,
+		},
+		{
+			name: "no authorization details",
+			accessToken: &receiverTypes.CredentialIssuanceAccessToken{
+				Token: "test-token",
+			},
+			want: nil,
+		},
+		{
+			name: "authorization details without identifiers",
+			accessToken: &receiverTypes.CredentialIssuanceAccessToken{
+				AuthorizationDetails: []receiverTypes.CredentialIssuanceAuthorizationDetail{
+					{Type: "openid_credential"},
+				},
+			},
+			want: nil,
+		},
+		{
+			name: "first non-empty credential identifier is selected",
+			accessToken: &receiverTypes.CredentialIssuanceAccessToken{
+				AuthorizationDetails: []receiverTypes.CredentialIssuanceAuthorizationDetail{
+					{Type: "openid_credential", CredentialIdentifiers: []string{"", "cred-id-1"}},
+					{Type: "openid_credential", CredentialIdentifiers: []string{"cred-id-2"}},
+				},
+			},
+			want: &[]string{"cred-id-1"}[0],
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := accessTokenCredentialIdentifier(tt.accessToken)
+			if tt.want == nil {
+				if got != nil {
+					t.Fatalf("expected nil, got %v", *got)
+				}
+				return
+			}
+
+			if got == nil {
+				t.Fatal("expected non-nil credential identifier")
+			}
+			if *got != *tt.want {
+				t.Fatalf("expected %s, got %s", *tt.want, *got)
+			}
+		})
 	}
 }
 

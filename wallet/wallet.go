@@ -310,7 +310,7 @@ func (w *Wallet) convertEntryToSavedCredential(entry types.CredentialEntry) (*Sa
 func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfile, nonce *string, aud string, includeIssuer bool) (string, error) {
 	header := map[string]interface{}{
 		"alg": "ES256",
-		"typ": "JWT",
+		"typ": "openid4vci-proof+jwt",
 		"kid": did.ID,
 	}
 
@@ -539,11 +539,33 @@ type credentialNonceResponse struct {
 	Nonce  *string `json:"nonce"`
 }
 
+var nonceHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
 func accessTokenNonce(accessToken *receiverTypes.CredentialIssuanceAccessToken) *string {
 	if accessToken == nil || accessToken.CNonce == nil || *accessToken.CNonce == "" {
 		return nil
 	}
 	return accessToken.CNonce
+}
+
+func accessTokenCredentialIdentifier(accessToken *receiverTypes.CredentialIssuanceAccessToken) *string {
+	if accessToken == nil {
+		return nil
+	}
+
+	for _, authorizationDetail := range accessToken.AuthorizationDetails {
+		for _, identifier := range authorizationDetail.CredentialIdentifiers {
+			if identifier == "" {
+				continue
+			}
+			identifierCopy := identifier
+			return &identifierCopy
+		}
+	}
+
+	return nil
 }
 
 // fetchCredentialNonce retrieves nonce used for proof generation from nonce endpoint,
@@ -565,7 +587,7 @@ func (w *Wallet) fetchCredentialNonce(issuerMetadata *receiverTypes.CredentialIs
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := nonceHTTPClient.Do(req)
 	if err != nil {
 		if fallbackNonce != nil {
 			return fallbackNonce, nil
@@ -629,6 +651,10 @@ func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata 
 	}
 
 	credentialConfigurationID := req.CredentialOffer.CredentialConfigurationIDs[0]
+	credentialIdentifier := accessTokenCredentialIdentifier(accessToken)
+	if credentialIdentifier != nil {
+		credentialConfigurationID = ""
+	}
 
 	nonce, err := w.fetchCredentialNonce(issuerMetadata, accessToken)
 	if err != nil {
@@ -644,6 +670,7 @@ func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata 
 		req.Type,
 		issuerMetadata.CredentialEndpoint,
 		credentialConfigurationID,
+		credentialIdentifier,
 		*accessToken,
 		nil,
 		&proof,

@@ -197,13 +197,19 @@ const (
 )
 
 // RFC 6749
+type CredentialIssuanceAuthorizationDetail struct {
+	Type                  string   `json:"type,omitempty"`
+	CredentialIdentifiers []string `json:"credential_identifiers,omitempty"`
+}
+
 type CredentialIssuanceAccessToken struct {
-	Token           string  `json:"access_token"`
-	TokenType       string  `json:"token_type"`
-	ExpiresIn       int     `json:"expires_in,omitempty"`
-	RefreshToken    *string `json:"refresh_token,omitempty"`
-	CNonce          *string `json:"c_nonce,omitempty"`
-	CNonceExpiresIn *int    `json:"c_nonce_expires_in,omitempty"`
+	Token                string                                  `json:"access_token"`
+	TokenType            string                                  `json:"token_type"`
+	ExpiresIn            int                                     `json:"expires_in,omitempty"`
+	RefreshToken         *string                                 `json:"refresh_token,omitempty"`
+	CNonce               *string                                 `json:"c_nonce,omitempty"`
+	CNonceExpiresIn      *int                                    `json:"c_nonce_expires_in,omitempty"`
+	AuthorizationDetails []CredentialIssuanceAuthorizationDetail `json:"authorization_details,omitempty"`
 }
 
 // Receiver defines the interface for credential receiving components
@@ -222,6 +228,7 @@ type Receiver interface {
 		receivingType SupportedReceivingTypes,
 		endpoint common.URIField,
 		credentialConfigurationID string,
+		credentialIdentifier *string,
 		accessToken CredentialIssuanceAccessToken,
 		credentialDefinition *CredentialDefinition,
 		jwtProof *string,
