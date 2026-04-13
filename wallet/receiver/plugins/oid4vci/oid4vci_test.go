@@ -2,12 +2,15 @@ package oid4vci
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/common"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
 	"github.com/trustknots/vcknots/wallet/receiver/types"
@@ -237,15 +240,21 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		defer captureServer.Close()
 
 		var capturedBody map[string]interface{}
+		handlerErrCh := make(chan error, 1)
 		captureServer.HandleFunc("/credential", func(w http.ResponseWriter, r *http.Request) {
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
-				t.Errorf("failed to read request body: %v", err)
+				handlerErrCh <- fmt.Errorf("failed to read request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
 			}
 
 			if err := json.Unmarshal(bodyBytes, &capturedBody); err != nil {
-				t.Errorf("failed to parse request body: %v", err)
+				handlerErrCh <- fmt.Errorf("failed to parse request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
 			}
+			handlerErrCh <- nil
 
 			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
 				"credentials": []map[string]string{{
@@ -259,39 +268,26 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		proof := "eyJhbGciOiJFUzI1NiJ9.eyJub25jZSI6InRlc3QifQ.signature"
 
 		credential, err := receiver.ReceiveCredential(types.Oid4vci, captureEndpoint, "test-config", accessToken, nil, &proof)
-		if err != nil {
-			t.Fatalf("Expected no error, got %v", err)
-		}
-		if credential == nil || *credential == "" {
-			t.Fatal("Expected non-empty credential")
-		}
+		require.NoError(t, err)
+		require.NotNil(t, credential)
+		require.NotEmpty(t, *credential)
+		require.NoError(t, <-handlerErrCh)
 
-		if _, exists := capturedBody["format"]; exists {
-			t.Error("format should not be present in credential request body")
-		}
-		if _, exists := capturedBody["proof"]; exists {
-			t.Error("proof should not be present in credential request body")
-		}
+		_, exists := capturedBody["format"]
+		assert.False(t, exists, "format should not be present in credential request body")
+		_, exists = capturedBody["proof"]
+		assert.False(t, exists, "proof should not be present in credential request body")
 
 		credentialConfigurationID, ok := capturedBody["credential_configuration_id"].(string)
-		if !ok {
-			t.Fatal("credential_configuration_id must be present as string")
-		}
-		if credentialConfigurationID != "test-config" {
-			t.Errorf("credential_configuration_id = %s, want test-config", credentialConfigurationID)
-		}
+		require.True(t, ok, "credential_configuration_id must be present as string")
+		assert.Equal(t, "test-config", credentialConfigurationID)
 
 		proofs, ok := capturedBody["proofs"].(map[string]interface{})
-		if !ok {
-			t.Fatal("proofs must be present as object")
-		}
+		require.True(t, ok, "proofs must be present as object")
 		jwtProofs, ok := proofs["jwt"].([]interface{})
-		if !ok || len(jwtProofs) != 1 {
-			t.Fatalf("proofs.jwt must contain one JWT value")
-		}
-		if jwtProofs[0] != proof {
-			t.Errorf("proofs.jwt[0] = %v, want %s", jwtProofs[0], proof)
-		}
+		require.True(t, ok, "proofs.jwt must be present as array")
+		require.Len(t, jwtProofs, 1, "proofs.jwt must contain one JWT value")
+		assert.Equal(t, proof, jwtProofs[0])
 	})
 
 	t.Run("Server error", func(t *testing.T) {
