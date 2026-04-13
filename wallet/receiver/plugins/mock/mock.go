@@ -87,7 +87,7 @@ func (m *MockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTy
 func (m *MockReceiver) ReceiveCredential(
 	receivingType types.SupportedReceivingTypes,
 	endpoint common.URIField,
-	format string,
+	credentialConfigurationID string,
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,

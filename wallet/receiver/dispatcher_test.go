@@ -37,7 +37,7 @@ func (m *mockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTy
 func (m *mockReceiver) ReceiveCredential(
 	receivingType types.SupportedReceivingTypes,
 	endpoint common.URIField,
-	format string,
+	credentialConfigurationID string,
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
@@ -170,10 +170,10 @@ func TestReceivingDispatcher_ReceiveCredential(t *testing.T) {
 		}
 	})
 
-	t.Run("Empty format", func(t *testing.T) {
+	t.Run("Empty credential configuration ID", func(t *testing.T) {
 		_, err := dispatcher.ReceiveCredential(types.Oid4vci, common.URIField{}, "", accessToken, nil, nil)
 		if err == nil {
-			t.Fatal("Expected error for empty format")
+			t.Fatal("Expected error for empty credential configuration ID")
 		}
 	})
 

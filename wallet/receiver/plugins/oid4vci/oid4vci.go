@@ -113,7 +113,7 @@ func (o *Oid4vciReceiver) FetchAccessToken(receivingTypes types.SupportedReceivi
 func (o *Oid4vciReceiver) ReceiveCredential(
 	receivingTypes types.SupportedReceivingTypes,
 	endpoint common.URIField,
-	format string,
+	credentialConfigurationID string,
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
@@ -126,7 +126,7 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 
 	// Prepare credential request body
 	reqBody := map[string]interface{}{
-		"credential_configuration_id": format,
+		"credential_configuration_id": credentialConfigurationID,
 	}
 
 	if jwtProof != nil {
@@ -185,8 +185,11 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	credentialsRaw, hasCredentials := credentialResponse["credentials"]
 	if hasCredentials {
 		credentials, ok := credentialsRaw.([]interface{})
-		if !ok || len(credentials) == 0 {
-			return nil, fmt.Errorf("credentials response is invalid or empty")
+		if !ok {
+			return nil, fmt.Errorf("credentials response has invalid type")
+		}
+		if len(credentials) != 1 {
+			return nil, fmt.Errorf("credentials response must contain exactly one credential, got %d", len(credentials))
 		}
 		credentialWrapper, ok := credentials[0].(map[string]interface{})
 		if !ok {

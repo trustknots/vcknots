@@ -4,12 +4,15 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/trustknots/vcknots/wallet/common"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
@@ -597,7 +600,7 @@ func TestController_generateJWTProof_Integration(t *testing.T) {
 	}
 	nonce := "test-nonce"
 
-	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud")
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", true)
 	if err != nil {
 		t.Errorf("generateJWTProof returned error: %v", err)
 	}
@@ -627,13 +630,97 @@ func TestController_generateJWTProof_WithoutNonce_Integration(t *testing.T) {
 		TypeID: "did:key",
 	}
 
-	proof, err := controller.generateJWTProof(key, did, nil, "test-aud")
+	proof, err := controller.generateJWTProof(key, did, nil, "test-aud", true)
 	if err != nil {
 		t.Errorf("generateJWTProof returned error: %v", err)
 	}
 
 	if proof == "" {
 		t.Error("expected non-empty proof")
+	}
+}
+
+func TestController_generateJWTProof_WithoutIssuer_Integration(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	key := newMockKeyEntry()
+	did := &idprofTypes.IdentityProfile{
+		ID:     "did:key:test123",
+		TypeID: "did:key",
+	}
+	nonce := "test-nonce"
+
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", false)
+	if err != nil {
+		t.Fatalf("generateJWTProof returned error: %v", err)
+	}
+
+	parts := strings.Split(proof, ".")
+	if len(parts) != 3 {
+		t.Fatalf("expected JWT to have 3 parts, got %d", len(parts))
+	}
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatalf("failed to decode JWT payload: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("failed to parse JWT payload: %v", err)
+	}
+
+	if _, exists := payload["iss"]; exists {
+		t.Fatal("iss claim must be omitted")
+	}
+}
+
+func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointMissing(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	cnonce := "token-c-nonce"
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{CNonce: &cnonce}
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{}
+
+	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	if err != nil {
+		t.Fatalf("fetchCredentialNonce returned error: %v", err)
+	}
+	if nonce == nil || *nonce != cnonce {
+		t.Fatalf("expected nonce fallback %q, got %v", cnonce, nonce)
+	}
+}
+
+func TestController_fetchCredentialNonce_ReturnsNilWhenNoNonceSource(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	nonce, err := controller.fetchCredentialNonce(&receiverTypes.CredentialIssuerMetadata{}, &receiverTypes.CredentialIssuanceAccessToken{})
+	if err != nil {
+		t.Fatalf("fetchCredentialNonce returned unexpected error: %v", err)
+	}
+	if nonce != nil {
+		t.Fatalf("expected nil nonce, got %v", *nonce)
+	}
+}
+
+func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointFails(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	nonceEndpoint, err := common.ParseURIField("http://127.0.0.1:1/nonce")
+	if err != nil {
+		t.Fatalf("failed to parse nonce endpoint: %v", err)
+	}
+
+	cnonce := "token-c-nonce"
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{CNonce: &cnonce}
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
+
+	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	if err != nil {
+		t.Fatalf("fetchCredentialNonce returned error: %v", err)
+	}
+	if nonce == nil || *nonce != cnonce {
+		t.Fatalf("expected nonce fallback %q, got %v", cnonce, nonce)
 	}
 }
 

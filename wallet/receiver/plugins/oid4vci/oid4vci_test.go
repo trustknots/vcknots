@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/trustknots/vcknots/wallet/common"
-	"github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
+	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
 
 type RoundTripFunc func(req *http.Request) *http.Response
@@ -331,7 +331,25 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		noCredURL, _ := url.Parse(noCredServer.URL())
 		_, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*noCredURL), "test-config", accessToken, nil, nil)
 		if err == nil {
-			t.Fatal("Expected error when no credential is in the response")
+			t.Fatal("Expected error when no credential is present in the response")
+		}
+	})
+
+	t.Run("Multiple credentials in response", func(t *testing.T) {
+		multiCredServer := mockserver.NewMockServer()
+		defer multiCredServer.Close()
+
+		multiCredServer.SetJSONResponse("/credential", http.StatusOK, map[string]interface{}{
+			"credentials": []map[string]string{
+				{"credential": "cred-1"},
+				{"credential": "cred-2"},
+			},
+		})
+
+		multiCredURL, _ := url.Parse(multiCredServer.URL())
+		_, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*multiCredURL), "test-config", accessToken, nil, nil)
+		if err == nil {
+			t.Fatal("Expected error when multiple credentials are present in the response")
 		}
 	})
 }

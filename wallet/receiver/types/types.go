@@ -221,7 +221,7 @@ type Receiver interface {
 	ReceiveCredential(
 		receivingType SupportedReceivingTypes,
 		endpoint common.URIField,
-		format string,
+		credentialConfigurationID string,
 		accessToken CredentialIssuanceAccessToken,
 		credentialDefinition *CredentialDefinition,
 		jwtProof *string,

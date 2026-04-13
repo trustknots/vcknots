@@ -124,12 +124,12 @@ func (d *ReceivingDispatcher) FetchAccessToken(receivingType types.SupportedRece
 func (d *ReceivingDispatcher) ReceiveCredential(
 	receivingType types.SupportedReceivingTypes,
 	endpoint common.URIField,
-	format string,
+	credentialConfigurationID string,
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
 ) (*string, error) {
-	if format == "" {
+	if credentialConfigurationID == "" {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "receive_credential", types.ErrInvalidCredentialResponse)
 	}
 
@@ -138,7 +138,7 @@ func (d *ReceivingDispatcher) ReceiveCredential(
 		return nil, err
 	}
 
-	credential, err := plugin.ReceiveCredential(receivingType, endpoint, format, accessToken, credentialDefinition, jwtProof)
+	credential, err := plugin.ReceiveCredential(receivingType, endpoint, credentialConfigurationID, accessToken, credentialDefinition, jwtProof)
 	if err != nil {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "receive_credential", err)
 	}
