@@ -449,6 +449,41 @@ func TestController_PresentCredential_ErrorPaths_Integration(t *testing.T) {
 	}
 }
 
+func TestController_parseAuthorizationRequest_RejectsNonHTTPSResponseURI(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(false)
+
+	presentationDefinition := url.QueryEscape(`{"id":"test-def"}`)
+	uri := fmt.Sprintf(
+		"openid4vp://present?client_id=redirect_uri:https://example.com/cb&response_type=vp_token&nonce=test-nonce&presentation_definition=%s&response_mode=direct_post&response_uri=http://example.com/response",
+		presentationDefinition,
+	)
+
+	_, _, err := controller.parseAuthorizationRequest(uri)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "response_uri must use https scheme")
+}
+
+func TestController_parseAuthorizationRequest_AllowsNonHTTPSResponseURI_WhenValidationDisabled(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	presentationDefinition := url.QueryEscape(`{"id":"test-def"}`)
+	uri := fmt.Sprintf(
+		"openid4vp://present?client_id=redirect_uri:https://example.com/cb&response_type=vp_token&nonce=test-nonce&presentation_definition=%s&response_mode=direct_post&response_uri=http://example.com/response",
+		presentationDefinition,
+	)
+
+	_, endpoint, err := controller.parseAuthorizationRequest(uri)
+	require.NoError(t, err)
+	require.NotNil(t, endpoint)
+	assert.Equal(t, "http", endpoint.Scheme)
+}
+
 func TestController_PresentCredential_MissingRequiredFields_Integration(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 

@@ -252,6 +252,29 @@ cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
 ```
 
+### Wallet Runtime Environment Variables
+
+In addition to `VCKNOTS_CERT_PATH`, the wallet runtime behavior is controlled by environment variables defined in `wallet/env/env.go`.
+
+| Variable | Default | Description |
+| :---- | :---- | :---- |
+| `VCKNOTS_WALLET_HTTP_ALLOWED` | `false` (unset/empty) | When set to `true`, HTTP endpoints are allowed for wallet HTTP calls (for local development/testing). |
+| `VCKNOTS_WALLET_DEBUG` | `false` (unset/empty) | Enables debug mode. Debug mode also enables HTTP allowance behavior. |
+
+Behavior summary:
+- `IsHTTPAllowed()` becomes `true` when either `VCKNOTS_WALLET_HTTP_ALLOWED=true` or `VCKNOTS_WALLET_DEBUG=true`.
+- If both are unset (or not equal to `true`), `IsHTTPAllowed()` is `false`, and HTTPS-only validation remains active.
+
+Example (local development only):
+
+```bash
+export VCKNOTS_WALLET_HTTP_ALLOWED=true
+# or
+export VCKNOTS_WALLET_DEBUG=true
+```
+
+> ⚠️ **Security warning**: Do not enable `VCKNOTS_WALLET_HTTP_ALLOWED` in production. Keep HTTPS-only validation enabled.
+
 ---
 
 ## Troubleshooting
