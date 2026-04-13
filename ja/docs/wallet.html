@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.1">
 <title data-rh="true">Wallet機能のセットアップと使用方法 | trustknots/vcknots</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://trustknots.github.io/vcknots/ja/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://trustknots.github.io/vcknots/ja/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://trustknots.github.io/vcknots/ja/docs/wallet"><meta data-rh="true" property="og:locale" content="ja"><meta data-rh="true" property="og:locale:alternate" content="en"><meta data-rh="true" name="docusaurus_locale" content="ja"><meta data-rh="true" name="docsearch:language" content="ja"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Wallet機能のセットアップと使用方法 | trustknots/vcknots"><meta data-rh="true" name="description" content="このチュートリアルは、VCKnotsのwallet ライブラリのセットアップ、主要機能のサンプル実装、および本番環境での利用に向けた重要な考慮事項について解説します。"><meta data-rh="true" property="og:description" content="このチュートリアルは、VCKnotsのwallet ライブラリのセットアップ、主要機能のサンプル実装、および本番環境での利用に向けた重要な考慮事項について解説します。"><link data-rh="true" rel="icon" href="/vcknots/ja/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://trustknots.github.io/vcknots/ja/docs/wallet"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/docs/wallet" hreflang="en"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/ja/docs/wallet" hreflang="ja"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/docs/wallet" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Wallet機能のセットアップと使用方法","item":"https://trustknots.github.io/vcknots/ja/docs/wallet"}]}</script><link rel="stylesheet" href="/vcknots/ja/assets/css/styles.a17968be.css">
-<script src="/vcknots/ja/assets/js/runtime~main.06d007cf.js" defer="defer"></script>
+<script src="/vcknots/ja/assets/js/runtime~main.56999b9b.js" defer="defer"></script>
 <script src="/vcknots/ja/assets/js/main.c72b3cd2.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -179,6 +179,16 @@
 <li><strong>テスト設定（<code>InsecureSkipX509Verify: true</code>）</strong>: 証明書チェーンの検証をスキップし、x5cヘッダーから証明書を直接抽出します。SANと<code>client_id</code>の照合のみを実行します。</li>
 <li>⚠️ <strong>重大な警告</strong>: <code>InsecureSkipX509Verify: true</code>は、コンフォーマンステストやローカル開発環境でのみ使用してください。本番環境では<strong>絶対に</strong>使用しないでください。これはセキュリティリスクを招きます。</li>
 <li>コンフォーマンステストでは、意図的に非標準的な証明書（自己署名、CA<!-- -->:TRUE<!-- -->設定など）を使用することがあるため、このオプションが必要になります。</li>
+</ul>
+</li>
+<li>
+<p><strong>Wallet 実行時の環境変数（<code>wallet/env/env.go</code>）:</strong></p>
+<ul>
+<li>Wallet の実行時フラグは <code>VCKNOTS_WALLET_</code> プレフィックスで管理されます。</li>
+<li><code>VCKNOTS_WALLET_HTTP_ALLOWED=true</code> を設定すると、Wallet の HTTP 通信で HTTP エンドポイントを許可します（ローカル開発/テスト用途）。</li>
+<li><code>VCKNOTS_WALLET_DEBUG=true</code> はデバッグモードを有効化し、同時に HTTP 許可動作も有効化します。</li>
+<li><code>IsHTTPAllowed()</code> は、上記いずれかが <code>true</code> のとき <code>true</code> を返し、それ以外は <code>false</code> を返します。</li>
+<li><strong>本番運用の指針:</strong> 本番環境では両方未設定（または <code>false</code>）のままにし、HTTPS 必須検証を維持してください。</li>
 </ul>
 </li>
 </ol>

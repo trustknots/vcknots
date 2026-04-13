@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.1">
 <title data-rh="true">How to Set Up and Use the Wallet Feature | trustknots/vcknots</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://trustknots.github.io/vcknots/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://trustknots.github.io/vcknots/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://trustknots.github.io/vcknots/docs/wallet"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" property="og:locale:alternate" content="ja"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="How to Set Up and Use the Wallet Feature | trustknots/vcknots"><meta data-rh="true" name="description" content="This tutorial explains how to set up the VCKnots wallet library, provides sample implementations of its main features, and describes important considerations for using it in production environments."><meta data-rh="true" property="og:description" content="This tutorial explains how to set up the VCKnots wallet library, provides sample implementations of its main features, and describes important considerations for using it in production environments."><link data-rh="true" rel="icon" href="/vcknots/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://trustknots.github.io/vcknots/docs/wallet"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/docs/wallet" hreflang="en"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/ja/docs/wallet" hreflang="ja"><link data-rh="true" rel="alternate" href="https://trustknots.github.io/vcknots/docs/wallet" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"How to Set Up and Use the Wallet Feature","item":"https://trustknots.github.io/vcknots/docs/wallet"}]}</script><link rel="stylesheet" href="/vcknots/assets/css/styles.a17968be.css">
-<script src="/vcknots/assets/js/runtime~main.f14ec886.js" defer="defer"></script>
+<script src="/vcknots/assets/js/runtime~main.b0a099aa.js" defer="defer"></script>
 <script src="/vcknots/assets/js/main.002b3a68.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -179,6 +179,16 @@ It includes the logic to generate ES256 signatures (SHA-256 hash) commonly requi
 <li><strong>Test configuration (<code>InsecureSkipX509Verify: true</code>):</strong> Skips certificate chain validation and extracts the certificate directly from the <code>x5c</code> header. Only SAN-to-<code>client_id</code> matching is performed.</li>
 <li>⚠️ <strong>Critical warning:</strong> <code>InsecureSkipX509Verify: true</code> should only be used for conformance testing or local development environments. <strong>Never</strong> use this in production. It introduces a security risk.</li>
 <li>Conformance tests may intentionally use non-standard certificates (self-signed, CA<!-- -->:TRUE<!-- --> settings, etc.), which is why this option is necessary.</li>
+</ul>
+</li>
+<li>
+<p><strong>Wallet runtime environment variables (<code>wallet/env/env.go</code>):</strong></p>
+<ul>
+<li>The wallet uses the prefix <code>VCKNOTS_WALLET_</code> for runtime flags.</li>
+<li><code>VCKNOTS_WALLET_HTTP_ALLOWED=true</code> allows HTTP endpoints for wallet HTTP calls (intended for local development/testing only).</li>
+<li><code>VCKNOTS_WALLET_DEBUG=true</code> enables debug mode and also enables HTTP allowance behavior.</li>
+<li><code>IsHTTPAllowed()</code> returns <code>true</code> if either of the above values is <code>true</code>; otherwise it returns <code>false</code>.</li>
+<li><strong>Production guidance:</strong> Keep both variables unset (or <code>false</code>) so HTTPS-only validation remains active.</li>
 </ul>
 </li>
 </ol>
