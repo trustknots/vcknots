@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/common"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
@@ -704,45 +706,33 @@ func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointMissin
 	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{}
 
 	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
-	if err != nil {
-		t.Fatalf("fetchCredentialNonce returned error: %v", err)
-	}
-	if nonce == nil || *nonce != cnonce {
-		t.Fatalf("expected nonce fallback %q, got %v", cnonce, nonce)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, nonce)
+	assert.Equal(t, cnonce, *nonce)
 }
 
 func TestController_fetchCredentialNonce_ReturnsNilWhenNoNonceSource(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
 	nonce, err := controller.fetchCredentialNonce(&receiverTypes.CredentialIssuerMetadata{}, &receiverTypes.CredentialIssuanceAccessToken{})
-	if err != nil {
-		t.Fatalf("fetchCredentialNonce returned unexpected error: %v", err)
-	}
-	if nonce != nil {
-		t.Fatalf("expected nil nonce, got %v", *nonce)
-	}
+	require.NoError(t, err)
+	require.Nil(t, nonce)
 }
 
 func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointFails(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
 	nonceEndpoint, err := common.ParseURIField("http://127.0.0.1:1/nonce")
-	if err != nil {
-		t.Fatalf("failed to parse nonce endpoint: %v", err)
-	}
+	require.NoError(t, err)
 
 	cnonce := "token-c-nonce"
 	accessToken := &receiverTypes.CredentialIssuanceAccessToken{CNonce: &cnonce}
 	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
 
 	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
-	if err != nil {
-		t.Fatalf("fetchCredentialNonce returned error: %v", err)
-	}
-	if nonce == nil || *nonce != cnonce {
-		t.Fatalf("expected nonce fallback %q, got %v", cnonce, nonce)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, nonce)
+	assert.Equal(t, cnonce, *nonce)
 }
 
 func TestController_fetchCredentialNonce_UsesNonceEndpointWhenFallbackMissing(t *testing.T) {
@@ -760,20 +750,15 @@ func TestController_fetchCredentialNonce_UsesNonceEndpointWhenFallbackMissing(t 
 	defer server.Close()
 
 	nonceEndpoint, err := common.ParseURIField(server.URL)
-	if err != nil {
-		t.Fatalf("failed to parse nonce endpoint: %v", err)
-	}
+	require.NoError(t, err)
 
 	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
 	accessToken := &receiverTypes.CredentialIssuanceAccessToken{}
 
 	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
-	if err != nil {
-		t.Fatalf("fetchCredentialNonce returned error: %v", err)
-	}
-	if nonce == nil || *nonce != nonceValue {
-		t.Fatalf("expected nonce %q from endpoint, got %v", nonceValue, nonce)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, nonce)
+	assert.Equal(t, nonceValue, *nonce)
 }
 
 func TestController_fetchCredentialNonce_ReturnsErrorWhenEndpointFailsWithoutFallback(t *testing.T) {
@@ -785,23 +770,15 @@ func TestController_fetchCredentialNonce_ReturnsErrorWhenEndpointFailsWithoutFal
 	defer server.Close()
 
 	nonceEndpoint, err := common.ParseURIField(server.URL)
-	if err != nil {
-		t.Fatalf("failed to parse nonce endpoint: %v", err)
-	}
+	require.NoError(t, err)
 
 	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
 	accessToken := &receiverTypes.CredentialIssuanceAccessToken{}
 
 	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
-	if err == nil {
-		t.Fatal("expected error when nonce endpoint fails without fallback c_nonce")
-	}
-	if nonce != nil {
-		t.Fatalf("expected nil nonce on error, got %q", *nonce)
-	}
-	if !strings.Contains(err.Error(), "nonce endpoint returned status") {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.Error(t, err)
+	require.Nil(t, nonce)
+	assert.Contains(t, err.Error(), "nonce endpoint returned status")
 }
 
 func TestAccessTokenCredentialIdentifier(t *testing.T) {
@@ -866,18 +843,12 @@ func TestAccessTokenCredentialIdentifier(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := accessTokenCredentialIdentifier(tt.accessToken)
 			if tt.want == nil {
-				if got != nil {
-					t.Fatalf("expected nil, got %v", *got)
-				}
+				require.Nil(t, got)
 				return
 			}
 
-			if got == nil {
-				t.Fatal("expected non-nil credential identifier")
-			}
-			if *got != *tt.want {
-				t.Fatalf("expected %s, got %s", *tt.want, *got)
-			}
+			require.NotNil(t, got)
+			assert.Equal(t, *tt.want, *got)
 		})
 	}
 }
