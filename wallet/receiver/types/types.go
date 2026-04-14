@@ -196,11 +196,13 @@ const (
 	SelfSignedTlsClientAuth TokenEndpointAuthMethod = "self_signed_tls_client_auth"
 )
 
-// RFC 6749
+// RFC 9396 (Rich Authorization Requests)
 type CredentialIssuanceAuthorizationDetail struct {
 	Type                  string   `json:"type,omitempty"`
 	CredentialIdentifiers []string `json:"credential_identifiers,omitempty"`
 }
+
+const AuthorizationDetailTypeOpenIDCredential = "openid_credential"
 
 type CredentialIssuanceAccessToken struct {
 	Token                string                                  `json:"access_token"`

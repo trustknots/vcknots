@@ -556,6 +556,9 @@ func accessTokenCredentialIdentifier(accessToken *receiverTypes.CredentialIssuan
 	}
 
 	for _, authorizationDetail := range accessToken.AuthorizationDetails {
+		if authorizationDetail.Type != receiverTypes.AuthorizationDetailTypeOpenIDCredential {
+			continue
+		}
 		for _, identifier := range authorizationDetail.CredentialIdentifiers {
 			if identifier == "" {
 				continue

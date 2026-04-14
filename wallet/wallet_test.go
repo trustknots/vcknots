@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -743,6 +745,65 @@ func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointFails(
 	}
 }
 
+func TestController_fetchCredentialNonce_UsesNonceEndpointWhenFallbackMissing(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	nonceValue := "nonce-from-endpoint"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"nonce":"` + nonceValue + `"}`))
+	}))
+	defer server.Close()
+
+	nonceEndpoint, err := common.ParseURIField(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse nonce endpoint: %v", err)
+	}
+
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{}
+
+	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	if err != nil {
+		t.Fatalf("fetchCredentialNonce returned error: %v", err)
+	}
+	if nonce == nil || *nonce != nonceValue {
+		t.Fatalf("expected nonce %q from endpoint, got %v", nonceValue, nonce)
+	}
+}
+
+func TestController_fetchCredentialNonce_ReturnsErrorWhenEndpointFailsWithoutFallback(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "temporary failure", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	nonceEndpoint, err := common.ParseURIField(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse nonce endpoint: %v", err)
+	}
+
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{}
+
+	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	if err == nil {
+		t.Fatal("expected error when nonce endpoint fails without fallback c_nonce")
+	}
+	if nonce != nil {
+		t.Fatalf("expected nil nonce on error, got %q", *nonce)
+	}
+	if !strings.Contains(err.Error(), "nonce endpoint returned status") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestAccessTokenCredentialIdentifier(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -765,7 +826,26 @@ func TestAccessTokenCredentialIdentifier(t *testing.T) {
 			name: "authorization details without identifiers",
 			accessToken: &receiverTypes.CredentialIssuanceAccessToken{
 				AuthorizationDetails: []receiverTypes.CredentialIssuanceAuthorizationDetail{
-					{Type: "openid_credential"},
+					{Type: receiverTypes.AuthorizationDetailTypeOpenIDCredential},
+				},
+			},
+			want: nil,
+		},
+		{
+			name: "ignores non-openid_credential authorization details",
+			accessToken: &receiverTypes.CredentialIssuanceAccessToken{
+				AuthorizationDetails: []receiverTypes.CredentialIssuanceAuthorizationDetail{
+					{Type: "resource_access", CredentialIdentifiers: []string{"unrelated-id"}},
+					{Type: receiverTypes.AuthorizationDetailTypeOpenIDCredential, CredentialIdentifiers: []string{"cred-id-2"}},
+				},
+			},
+			want: &[]string{"cred-id-2"}[0],
+		},
+		{
+			name: "returns nil when only non-openid_credential details exist",
+			accessToken: &receiverTypes.CredentialIssuanceAccessToken{
+				AuthorizationDetails: []receiverTypes.CredentialIssuanceAuthorizationDetail{
+					{Type: "resource_access", CredentialIdentifiers: []string{"unrelated-id"}},
 				},
 			},
 			want: nil,
@@ -774,8 +854,8 @@ func TestAccessTokenCredentialIdentifier(t *testing.T) {
 			name: "first non-empty credential identifier is selected",
 			accessToken: &receiverTypes.CredentialIssuanceAccessToken{
 				AuthorizationDetails: []receiverTypes.CredentialIssuanceAuthorizationDetail{
-					{Type: "openid_credential", CredentialIdentifiers: []string{"", "cred-id-1"}},
-					{Type: "openid_credential", CredentialIdentifiers: []string{"cred-id-2"}},
+					{Type: receiverTypes.AuthorizationDetailTypeOpenIDCredential, CredentialIdentifiers: []string{"", "cred-id-1"}},
+					{Type: receiverTypes.AuthorizationDetailTypeOpenIDCredential, CredentialIdentifiers: []string{"cred-id-2"}},
 				},
 			},
 			want: &[]string{"cred-id-1"}[0],
