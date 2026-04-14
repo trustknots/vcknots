@@ -328,18 +328,9 @@ func main() {
 		oid4vpURI = os.Args[1]
 		logger.Info("Using OID4VP URI from command line", "uri", oid4vpURI)
 
-		req, err := presenterDisp.ParseRequestURI(oid4vpURI)
-		if err != nil {
-			logger.Error("Failed to parse OID4VP request", "error", err)
-			os.Exit(1)
-		}
-		logger.Info("Parsed OID4VP request", "nonce", req.Nonce, "client_id", req.ClientID)
-
 		options = &sdjwtvc.SdJwtVcPresentationOptions{
-			SelectedClaims:    []string{"given_name", "family_name"},
+			SelectedClaims:    []string{"given_name"},
 			RequireKeyBinding: true,
-			Audience:          req.ClientID,
-			Nonce:             req.Nonce,
 		}
 	} else {
 		oid4vpURI = fetchOID4VPURIFromServer(savedCred, logger)
