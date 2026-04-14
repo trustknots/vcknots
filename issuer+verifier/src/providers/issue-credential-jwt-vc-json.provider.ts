@@ -4,6 +4,7 @@ import * as z from 'zod'
 import { CredentialConfigurationSupported, CredentialIssuer } from '../credential-issuer.types'
 import { CredentialFormats } from '../credential-request.types'
 import { raise } from '../errors/vcknots.error'
+import { getClaimValue, setClaimValue } from './issue-credential.utils'
 import { IssueCredentialProvider, IssueCredentialCreateCredentialOptions } from './provider.types'
 import { withProviderRegistry, WithProviderRegistry } from './provider.registry'
 import { selectProvider } from './provider.utils'
@@ -11,48 +12,6 @@ import * as jose from 'jose'
 
 export type IssueCredentialProviderOptions = {
   identifier?: () => string
-}
-
-const forbiddenPathSegments = new Set(['__proto__', 'constructor', 'prototype'])
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-
-const assertSafePath = (path: string[]): void => {
-  for (const segment of path) {
-    if (forbiddenPathSegments.has(segment)) {
-      throw raise('INVALID_CLAIMS', {
-        message: `Unsupported claim path segment: ${segment}`,
-      })
-    }
-  }
-}
-
-const getClaimValue = (claims: Record<string, unknown>, path: string[]): unknown => {
-  assertSafePath(path)
-  let current: unknown = claims
-  for (const segment of path) {
-    if (!isPlainObject(current) || !Object.prototype.hasOwnProperty.call(current, segment)) {
-      return undefined
-    }
-    current = current[segment]
-  }
-  return current
-}
-
-const setClaimValue = (target: Record<string, unknown>, path: string[], value: unknown): void => {
-  assertSafePath(path)
-  let current = target
-  for (const segment of path.slice(0, -1)) {
-    const next = Object.prototype.hasOwnProperty.call(current, segment)
-      ? current[segment]
-      : undefined
-    if (!isPlainObject(next)) {
-      current[segment] = {}
-    }
-    current = current[segment] as Record<string, unknown>
-  }
-  current[path[path.length - 1]] = value
 }
 
 export const issueCredentialJwt = (
