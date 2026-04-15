@@ -58,7 +58,6 @@ export const createServer = (options?: VcknotsOptions) => {
     issuerMetadataConfig.credential_issuer = CredentialIssuer(baseUrl)
     issuerMetadataConfig.authorization_servers = [baseUrl]
     issuerMetadataConfig.credential_endpoint = `${baseUrl}/credentials`
-    issuerMetadataConfig.batch_credential_endpoint = `${baseUrl}/batch_credential`
     issuerMetadataConfig.deferred_credential_endpoint = `${baseUrl}/deferred_credential`
     issuerMetadataConfig.nonce_endpoint = `${baseUrl}/nonce`
     if (!(await initializeIssuerMetadata(issuerMetadataConfig))) {

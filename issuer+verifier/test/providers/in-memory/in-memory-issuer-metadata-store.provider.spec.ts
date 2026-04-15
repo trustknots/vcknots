@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
-  CredentialConfiguration,
+  CredentialConfigurationSupported,
   CredentialIssuer,
   CredentialIssuerMetadata,
 } from '../../../src/credential-issuer.types'
@@ -12,11 +12,15 @@ describe('InMemoryIssuerMetadataProvider', () => {
     credential_issuer: CredentialIssuer('https://example.com/issuer'),
     credential_endpoint: 'https://example.com/issuer/credential',
     authorization_servers: ['https://example.com/authz'],
-    batch_credential_endpoint: 'https://example.com/issuer-full/batch_credential',
+    batch_credential_issuance: {
+      batch_size: 2,
+    },
     deferred_credential_endpoint: 'https://example.com/issuer-full/deferred_credential',
-    credential_response_encryption_alg_values_supported: ['ECDH-ES+A256KW'],
-    credential_response_encryption_enc_values_supported: ['A256GCM'],
-    require_credential_response_encryption: true,
+    credential_response_encryption: {
+      alg_values_supported: ['ECDH-ES+A256KW'],
+      enc_values_supported: ['A256GCM'],
+      encryption_required: true,
+    },
     credential_configurations_supported: {
       EmployeeID_jwt_vc_json: {
         format: 'jwt_vc_json',
@@ -25,10 +29,31 @@ describe('InMemoryIssuerMetadataProvider', () => {
         cryptographic_suites_supported: ['ES256K'],
         credential_definition: {
           type: ['VerifiableCredential', 'EmployeeIDCredential'],
-          credentialSubject: {
-            employee_id: { mandatory: true, value_type: 'string' },
-            given_name: { display: [{ name: 'Given Name', locale: 'en-US' }] },
-          },
+        },
+        credential_metadata: {
+          claims: [
+            {
+              path: ['employee_id'],
+              mandatory: true,
+            },
+            {
+              path: ['given_name'],
+              display: [{ name: 'Given Name', locale: 'en-US' }],
+            },
+          ],
+          display: [
+            {
+              name: 'Employee ID',
+              locale: 'en-US',
+              logo: {
+                uri: 'https://example.com/logo.png',
+                alt_text: 'Employee ID Logo',
+              },
+              description: 'Digital Employee ID Card',
+              background_color: '#0000FF',
+              text_color: '#FFFFFF',
+            },
+          ],
         },
         proof_types_supported: {
           jwt: {
@@ -36,20 +61,7 @@ describe('InMemoryIssuerMetadataProvider', () => {
           },
         },
         credential_signing_alg_values_supported: ['ES256'],
-        display: [
-          {
-            name: 'Employee ID',
-            locale: 'en-US',
-            logo: {
-              uri: 'https://example.com/logo.png',
-              alt_text: 'Employee ID Logo',
-            },
-            description: 'Digital Employee ID Card',
-            background_color: '#0000FF',
-            text_color: '#FFFFFF',
-          },
-        ],
-      } satisfies CredentialConfiguration, // Type assertion
+      } satisfies CredentialConfigurationSupported, // Type assertion
     },
     display: [
       {

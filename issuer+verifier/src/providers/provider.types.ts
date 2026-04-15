@@ -5,7 +5,7 @@ import {
 import { ClientId } from '../client-id.types'
 import { Nonce } from '../nonce.types'
 import {
-  CredentialConfiguration,
+  CredentialConfigurationSupported,
   CredentialConfigurationId,
   CredentialIssuer,
   CredentialIssuerMetadata,
@@ -345,6 +345,8 @@ export type IssueCredentialCreateCredentialOptions = {
   claims?: Record<string, unknown>
   subject?: string
   keyAlg?: string
+  proofHeader?: ProofJwtHeader
+  nonDisclosableClaims?: string[]
 }
 
 export type IssueCredentialProvider = {
@@ -354,7 +356,7 @@ export type IssueCredentialProvider = {
 
   createCredential(
     credentialIssuer: CredentialIssuer,
-    configuration: CredentialConfiguration,
+    configuration: CredentialConfigurationSupported,
     options?: IssueCredentialCreateCredentialOptions
   ): Promise<string>
   canHandle(format: CredentialFormats): boolean

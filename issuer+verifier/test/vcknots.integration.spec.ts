@@ -65,11 +65,12 @@ describe('Vcknots', () => {
     credential_issuer: 'https://example.com/issuer/1',
     credential_endpoint: 'https://example.com/issuer/1/offer',
     authorization_servers: ['https://example.com/authz'],
-    batch_credential_endpoint: 'https://example.com/issuer-full/batch_credential',
-    deferred_credential_endpoint: 'https://example.com/issuer-full/deferred_credential',
-    credential_response_encryption_alg_values_supported: ['ECDH-ES+A256KW'],
-    credential_response_encryption_enc_values_supported: ['A256GCM'],
-    require_credential_response_encryption: true,
+    nonce_endpoint: 'https://example.com/issuer/1/nonce',
+    credential_response_encryption: {
+      alg_values_supported: ['ECDH-ES+A256KW'],
+      enc_values_supported: ['A256GCM'],
+      encryption_required: true,
+    },
     credential_configurations_supported: {
       EmployeeID_jwt_vc_json: {
         format: 'jwt_vc_json',
@@ -78,12 +79,31 @@ describe('Vcknots', () => {
         cryptographic_suites_supported: ['ES256K'],
         credential_definition: {
           type: ['VerifiableCredential', 'EmployeeIDCredential'],
-          credentialSubject: {
-            employee_id: { mandatory: true, value_type: 'string' },
-            given_name: {
+        },
+        credential_metadata: {
+          claims: [
+            {
+              path: ['employee_id'],
+              mandatory: true,
+            },
+            {
+              path: ['given_name'],
               display: [{ name: 'Given Name', locale: 'en-US' }],
             },
-          },
+          ],
+          display: [
+            {
+              name: 'Employee ID',
+              locale: 'en-US',
+              logo: {
+                uri: 'https://example.com/logo.png',
+                alt_text: 'Employee ID Logo',
+              },
+              description: 'Digital Employee ID Card',
+              background_color: '#0000FF',
+              text_color: '#FFFFFF',
+            },
+          ],
         },
         proof_types_supported: {
           jwt: {
@@ -91,19 +111,6 @@ describe('Vcknots', () => {
           },
         },
         credential_signing_alg_values_supported: ['ES256'],
-        display: [
-          {
-            name: 'Employee ID',
-            locale: 'en-US',
-            logo: {
-              uri: 'https://example.com/logo.png',
-              alt_text: 'Employee ID Logo',
-            },
-            description: 'Digital Employee ID Card',
-            background_color: '#0000FF',
-            text_color: '#FFFFFF',
-          },
-        ],
       },
     },
   })

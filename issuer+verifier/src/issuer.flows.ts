@@ -14,6 +14,7 @@ import { VcknotsContext } from './vcknots.context'
 import { JwtVcIssuerResponse } from './jwt-vc-issuer.types'
 import { DiVpProof, Proofs, ProofTypes } from './proofs.types'
 import { ProofJwt } from './credential.types'
+import { calculateJwkThumbprint } from 'jose'
 
 type OfferOptions =
   | {
@@ -123,10 +124,25 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const issuerKeys = await keyStore$.fetch(id)
       if (issuerKeys && issuerKeys.length > 0) {
         jwtVcIssuerMetadata.jwks = {
-          keys: issuerKeys.map((keypair) => {
-            const { publicKey } = keypair
-            return publicKey
-          }),
+          keys: await Promise.all(
+            issuerKeys.map(async (keypair) => {
+              const { publicKey } = keypair
+              if (publicKey.kid) {
+                return publicKey
+              }
+              try {
+                const kid = await calculateJwkThumbprint(publicKey)
+                return {
+                  ...publicKey,
+                  kid,
+                }
+              } catch (e) {
+                throw err('INVALID_ISSUER_KEY', {
+                  message: `Failed to calculate kid for issuer ${id} key.`,
+                })
+              }
+            })
+          ),
         }
       }
       return jwtVcIssuerMetadata
@@ -219,8 +235,9 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       }
 
       // https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html#name-credential-request-2
-      const credentialConfiguration = metadata.credential_configurations_supported
-      const configuration = credentialConfiguration[credentialRequest.credential_configuration_id]
+      const credentialConfigurationSupported = metadata.credential_configurations_supported
+      const configuration =
+        credentialConfigurationSupported[credentialRequest.credential_configuration_id]
       if (!configuration) {
         throw err('UNKNOWN_CREDENTIAL_CONFIGURATION', {
           message: `Credential configuration ${credentialRequest.credential_configuration_id} is not supported by issuer ${issuer}.`,
@@ -286,6 +303,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           subject: options?.subject ?? subject,
           claims: options?.claims,
           keyAlg: options?.alg ?? 'ES256',
+          proofHeader: verifyProof.header,
         }
       )
 

@@ -26,6 +26,7 @@ import { certificate } from './certificate.provider'
 import { transactionData } from './transaction-data.provider'
 import { verifyVerifiablePresentation } from './verify-presentation-jwt-vp-json.provider'
 import { verifyVerifiablePresentationDcSdJwt } from './verify-presentation-dc-sd-jwt.provider'
+import { issueCredentialSDJWT } from './issue-credential-dc-sd-jwt.provider'
 
 type ArrayUnless<P extends Provider> = P['single'] extends true ? P : P[]
 
@@ -63,6 +64,7 @@ const initializeDefaultProviders = (
   issuerSignatureKey(),
   authzSignatureKey(),
   issueCredentialJwt(),
+  issueCredentialSDJWT(),
   did(),
   presentationExchange(),
   dcql(),

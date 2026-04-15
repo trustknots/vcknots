@@ -96,8 +96,7 @@ serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, a
     ...issuerMetadataConfig,
     credential_issuer: CredentialIssuer(baseUrl),
     authorization_servers: [baseUrl],
-    credential_endpoint: `${baseUrl}/issue/credentials`,
-    batch_credential_endpoint: `${baseUrl}/batch_credential`,
+    credential_endpoint: `${baseUrl}/credentials`,
     deferred_credential_endpoint: `${baseUrl}/deferred_credential`,
     nonce_endpoint: `${baseUrl}/nonce`,  
   })
@@ -166,89 +165,261 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
 
 ```json
 {
-	"credential_issuer": "http://localhost:8080",
-	"authorization_servers": [
-		"http://localhost:8080"
-	],
-	"credential_endpoint": "http://localhost:8080/issue/credentials",
-	"batch_credential_endpoint": "http://localhost:8080/issue/batch_credential",
-	"deferred_credential_endpoint": "http://localhost:8080/issue/deferred_credential",
-	"nonce_endpoint": "http://localhost:8080/nonce",
-	"credential_configurations_supported": {
-		"UniversityDegreeCredential": {
-			"format": "jwt_vc_json",
-			"scope": "UniversityDegree",
-			"cryptographic_binding_methods_supported": [
-				"did:example"
-			],
-			"credential_definition": {
-				"type": [
-					"VerifiableCredential",
-					"UniversityDegreeCredential"
-				],
-				"credentialSubject": {
-					"given_name": {
-						"mandatory": true,
-						"value_type": "string",
-						"display": [
-							{
-								"name": "Given Name",
-								"locale": "en-US"
-							}
-						]
-					},
-					"family_name": {
-						"display": [
-							{
-								"name": "Surname",
-								"locale": "en-US"
-							}
-						]
-					},
-					"degree": {},
-					"gpa": {
-						"display": [
-							{
-								"name": "GPA"
-							}
-						]
-					}
-				}
-			},
-			"proof_types_supported": {
-				"jwt": {
-					"proof_signing_alg_values_supported": [
-						"ES256"
-					]
-				}
-			},
-			"credential_signing_alg_values_supported": [
-				"ES256"
-			],
-			"display": [
-				{
-					"name": "University Credential",
-					"locale": "en-US",
-					"logo": {
-						"uri": "https://university.example.edu/public/logo.png",
-						"alt_text": "a square logo of a university"
-					},
-					"background_color": "#12107c",
-					"text_color": "#FFFFFF"
-				}
-			]
-		}
-	},
-	"display": [
-		{
-			"name": "Example University",
-			"locale": "en-US"
-		},
-		{
-			"name": "Example Université",
-			"locale": "fr-FR"
-		}
-	]
+    "credential_issuer": "http://localhost:8080",
+    "authorization_servers": [
+        "http://localhost:8080"
+    ],
+    "credential_endpoint": "http://localhost:8080/credentials",
+    "nonce_endpoint": "http://localhost:8080/nonce",
+    "deferred_credential_endpoint": "http://localhost:8080/deferred_credential",
+    "credential_response_encryption": {
+        "alg_values_supported": [
+            "ECDH-ES"
+        ],
+        "enc_values_supported": [
+            "A128GCM"
+        ],
+        "encryption_required": false
+    },
+    "credential_configurations_supported": {
+        "UniversityDegreeCredential": {
+            "format": "jwt_vc_json",
+            "scope": "UniversityDegree",
+            "cryptographic_binding_methods_supported": [
+                "jwk"
+            ],
+            "proof_types_supported": {
+                "jwt": {
+                    "proof_signing_alg_values_supported": [
+                        "ES256"
+                    ]
+                }
+            },
+            "credential_signing_alg_values_supported": [
+                "ES256"
+            ],
+            "credential_metadata": {
+                "display": [
+                    {
+                        "name": "University Credential",
+                        "locale": "en-US",
+                        "logo": {
+                            "uri": "https://university.example.edu/public/logo.png",
+                            "alt_text": "a square logo of a university"
+                        },
+                        "background_color": "#12107c",
+                        "text_color": "#FFFFFF"
+                    }
+                ],
+                "claims": [
+                    {
+                        "path": [
+                            "given_name"
+                        ],
+                        "mandatory": true,
+                        "display": [
+                            {
+                                "name": "Given Name",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Given Name",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "family_name"
+                        ],
+                        "display": [
+                            {
+                                "name": "Surname",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Surname",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "degree"
+                        ],
+                        "display": [
+                            {
+                                "name": "Degree",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Degree",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "gpa"
+                        ],
+                        "display": [
+                            {
+                                "name": "GPA",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "GPA",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "credential_definition": {
+                "type": [
+                    "VerifiableCredential",
+                    "UniversityDegreeCredential"
+                ]
+            }
+        },
+        "UniversityDegreeCredentialSdJwt": {
+            "format": "dc+sd-jwt",
+            "scope": "UniversityDegreeSdJwt",
+            "cryptographic_binding_methods_supported": [
+                "jwk",
+                "did:key"
+            ],
+            "proof_types_supported": {
+                "jwt": {
+                    "proof_signing_alg_values_supported": [
+                        "ES256"
+                    ]
+                }
+            },
+            "credential_signing_alg_values_supported": [
+                "ES256"
+            ],
+            "credential_metadata": {
+                "display": [
+                    {
+                        "name": "University Credential (SD-JWT)",
+                        "locale": "en-US",
+                        "logo": {
+                            "uri": "https://university.example.edu/public/logo.png",
+                            "alt_text": "a square logo of a university"
+                        },
+                        "background_color": "#12107c",
+                        "text_color": "#FFFFFF"
+                    }
+                ],
+                "claims": [
+                    {
+                        "path": [
+                            "given_name"
+                        ],
+                        "display": [
+                            {
+                                "name": "Given Name",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Given Name",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "family_name"
+                        ],
+                        "display": [
+                            {
+                                "name": "Surname",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Surname",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "degree"
+                        ],
+                        "display": [
+                            {
+                                "name": "Degree",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Degree",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "gpa"
+                        ],
+                        "display": [
+                            {
+                                "name": "GPA",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "GPA",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "address",
+                            "country"
+                        ],
+                        "display": [
+                            {
+                                "name": "Country",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Country",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "address",
+                            "region"
+                        ],
+                        "display": [
+                            {
+                                "name": "Region",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Region",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "vct": "UniversityDegreeCredential"
+        }
+    },
+    "display": [
+        {
+            "name": "Example University",
+            "locale": "en-US"
+        },
+        {
+            "name": "Example Université",
+            "locale": "fr-FR"
+        }
+    ]
 }
 ```
 
@@ -257,7 +428,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
 クレデンシャルオファーを作成するエンドポイント：
 
 ```typescript
-app.post('issue/configurations/:configuration/offer', async (c) => {
+app.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
       const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
@@ -283,7 +454,7 @@ app.post('issue/configurations/:configuration/offer', async (c) => {
 **リクエスト**
 
 ```bash
-curl -X POST http://localhost:8080/issue/configurations/UniversityDegreeCredential/offer
+curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer
 ```
 
 **レスポンス**
@@ -345,7 +516,7 @@ curl  http://localhost:8080/.well-known/oauth-authorization-server
 アクセストークンを発行するエンドポイント：
 
 ```typescript
-app.post("authz/token", async (c) => {
+app.post("/token", async (c) => {
   const request = await c.req.formData();
   const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()));
   console.log("tokenRequest:", tokenRequest);
@@ -363,7 +534,7 @@ app.post("authz/token", async (c) => {
 **リクエスト**
 
 ```bash
-curl -X POST http://localhost:8080/authz/token \
+curl -X POST http://localhost:8080/token \
   -H "Content-Type: application/json" \
   -d ' {
     "grant_type": "urn:ietf:params:oauth:grant-type:pre-authorized_code",
@@ -506,7 +677,7 @@ curl -X DELETE http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
 クレデンシャルを発行するエンドポイント：
 
 ```typescript
-app.post('issue/credentials', async (c) => {
+app.post('/credentials', async (c) => {
   try {
     const issuer = AuthorizationServerIssuer(baseUrl)
 
@@ -563,7 +734,7 @@ app.post('issue/credentials', async (c) => {
 **リクエスト**
 
 ```bash
-curl -X POST http://localhost:8080/issue/credentials \
+curl -X POST http://localhost:8080/credentials \
   -H "Authorization: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjgwODAiLCJzdWIiOiJmZGMzMzIzYmM3MTg0ZmJkYWE0NTc2YTgwODU2OGE0MSIsImV4cCI6MTc2MTk3ODAwNSwiaWF0IjoxNzYxODkxNjA1fQ.PBKg31GJbIIKqtQL6gpZYoIM_PGlY681u4Rjjhxek38Kzl3prEBggXcqjUq3l-cBRYC1KS1fcJY6jUiUllwyJw" \
   -H "Content-Type: application/json" \
   --data '{
@@ -888,7 +1059,6 @@ createAccessToken<T extends GrantType>(
     }
     [GrantType.PreAuthorizedCode]: {
       ttlSec?: number
-      c_nonce_expire_in?: number
     }
   }
   ```
@@ -899,9 +1069,7 @@ createAccessToken<T extends GrantType>(
 {
   access_token: `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`,
   token_type: 'bearer',
-  expires_in: option?.ttlSec ?? 86400,
-  c_nonce: cnonce,
-  c_nonce_expires_in: option?.c_nonce_expire_in ?? 60 * 5 * 1000, // 5 minutes
+  expires_in: option?.ttlSec ?? 86400
 }
 ```
 
@@ -928,7 +1096,6 @@ type TokenRequestOptions = {
   }
   [GrantType.PreAuthorizedCode]: {
     ttlSec?: number
-    c_nonce_expire_in?: number
   }
 }
 ```

@@ -17,22 +17,6 @@ const logoDetailsSchema = z.object({
 })
 
 /**
- * Zod schema for ClaimDisplay.
- * Display properties for a specific Claim.
- */
-const claimDisplaySchema = z.object({
-  /**
-   * The human-readable name (label) for the claim.
-   */
-  name: z.string().optional(),
-
-  /**
-   * (Optional) String representing the locale of the display information.
-   */
-  locale: z.string().optional(),
-})
-
-/**
  * Zod schema for IssuerDisplay.
  * Display properties for an Issuer.
  */
@@ -44,6 +28,7 @@ const issuerDisplaySchema = z.object({
 
   /**
    * (Optional) String representing the locale of the display information, e.g., "en-US", "ja-JP".
+   * MUST be only one object for each language identifier
    */
   locale: z.string().optional(),
 
@@ -51,43 +36,28 @@ const issuerDisplaySchema = z.object({
    * (Optional) URL of the issuer's logo.
    */
   logo: logoDetailsSchema.optional(),
+})
 
+const credentialMetadataBackgroundImageSchema = z.object({
   /**
-   * (Optional) A description of the issuer.
+   * URL of the background image.
    */
-  description: z.string().optional(),
-
-  /**
-   * (Optional) Background color for the issuer's display card (HEX string).
-   */
-  background_color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/, 'Must be a valid HEX color code')
-    .optional(),
-
-  background_image: z.string().optional(),
-
-  /**
-   * (Optional) Text color for the issuer's display card (HEX string).
-   */
-  text_color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/, 'Must be a valid HEX color code')
-    .optional(),
+  uri: z.string().url(),
 })
 
 /**
- * Zod schema for CredentialDisplay.
- * Display properties for a Credential.
+ * Zod schema for CredentialMetadataDisplay.
+ * Default display properties for a Credential inside credential_metadata.
  */
-const credentialDisplaySchema = z.object({
+const credentialMetadataDisplaySchema = z.object({
   /**
-   * The name of the credential to be displayed to the end-user.
+   * The display name of the credential.
    */
-  name: z.string().optional(),
+  name: z.string(),
 
   /**
-   * (Optional) String representing the locale of the display information, e.g., "en-US", "ja-JP".
+   * (Optional) Locale for the display metadata.
+   * MUST be only one object for each language identifier.
    */
   locale: z.string().optional(),
 
@@ -102,53 +72,79 @@ const credentialDisplaySchema = z.object({
   description: z.string().optional(),
 
   /**
-   * (Optional) Background color for the credential's display card (HEX string).
+   * (Optional) Background color for the credential display card (HEX string).
    */
   background_color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, 'Must be a valid HEX color code')
     .optional(),
 
-  background_image: z.string().optional(),
+  /**
+   * (Optional) Background image for the credential display card.
+   */
+  background_image: credentialMetadataBackgroundImageSchema.optional(),
 
   /**
-   * (Optional) Text color for the credential's display card (HEX string).
+   * (Optional) Text color for the credential display card (HEX string).
    */
   text_color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, 'Must be a valid HEX color code')
     .optional(),
-
-  /**
-   * (Optional) Title for the credential display.
-   */
-  title: z.string().optional(), // As per Credential Manifest spec, could be an object too.
-
-  /**
-   * (Optional) Subtitle for the credential display.
-   */
-  subtitle: z.string().optional(), // As per Credential Manifest spec, could be an object too.
 })
 
 /**
- * Zod schema for ClaimDetails.
- * Details about a specific claim within the credentialSubject.
+ * Zod schema for CredentialMetadataClaimDisplay.
+ * Display properties for a claim in credential_metadata.
  */
-const claimDetailsSchema = z.object({
+const credentialMetadataClaimDisplaySchema = z.object({
   /**
-   * (Optional) If true, this claim must be present in the credential.
+   * (Optional) The display name of the claim.
+   */
+  name: z.string().optional(),
+
+  /**
+   * (Optional) Locale for the claim display metadata.
+   * MUST be only one object for each language identifier.
+   */
+  locale: z.string().optional(),
+})
+
+/**
+ * Zod schema for CredentialMetadataClaim.
+ * Describes how a claim in the credential is displayed to the end-user.
+ */
+const credentialMetadataClaimSchema = z.object({
+  /**
+   * A non-empty claims path pointer array that specifies the claim path in the credential.
+   */
+  path: z.array(z.string()).nonempty(),
+
+  /**
+   * (Optional) Indicates whether the issuer always includes this claim.
    */
   mandatory: z.boolean().optional(),
 
   /**
-   * (Optional) The data type of the claim, e.g., "string", "number", "date".
+   * (Optional) Localized display metadata for the claim.
    */
-  value_type: z.string().optional(),
+  display: z.array(credentialMetadataClaimDisplaySchema).nonempty().optional(),
+})
+
+/**
+ * Zod schema for CredentialMetadata.
+ * Metadata relevant to the usage and display of issued credentials.
+ */
+const credentialMetadataSchema = z.object({
+  /**
+   * (Optional) Localized display metadata for the credential.
+   */
+  display: z.array(credentialMetadataDisplaySchema).nonempty().optional(),
 
   /**
-   * (Optional) Display properties for this specific claim.
+   * (Optional) Claim description objects used in issuer metadata.
    */
-  display: z.array(claimDisplaySchema).optional(),
+  claims: z.array(credentialMetadataClaimSchema).nonempty().optional(),
 })
 
 /**
@@ -163,11 +159,11 @@ const credentialDefinitionSchema = z.object({
   type: z.array(z.string()).nonempty(),
 
   /**
-   * (Optional) A JSON object that defines the claims structure within the `credentialSubject`
-   * of the Verifiable Credential. Keys are claim names, and values can be objects
-   * specifying details like `mandatory` or display properties.
+   * An array of URIs representing the contexts of the credential, as per W3C Verifiable Credentials specification.
+   * the first item is a URI with the value https://www.w3.org/2018/credentials/v1
+   * for Credential Format Identifier is ldp_vc
    */
-  credentialSubject: z.record(z.string(), claimDetailsSchema).optional(),
+  '@context': z.array(z.string()).optional(),
 })
 
 /**
@@ -182,12 +178,73 @@ const proofTypeSupportedSchema = z.object({
   proof_signing_alg_values_supported: z.array(z.string()),
 })
 
+const encryptionJwkSchema = z
+  .object({
+    kid: z.string(),
+  })
+  .and(z.record(z.string(), z.unknown()))
+
+const encryptionJwksSchema = z.object({
+  keys: z.array(encryptionJwkSchema).nonempty(),
+})
+
+const credentialRequestEncryptionSchema = z.object({
+  /**
+   * Public keys used by the wallet for request encryption key agreement.
+   */
+  jwks: encryptionJwksSchema,
+
+  /**
+   * Supported JWE enc values for encrypted credential requests.
+   */
+  enc_values_supported: z.array(z.string()).nonempty(),
+
+  /**
+   * Supported JWE zip values for encrypted credential requests.
+   */
+  zip_values_supported: z.array(z.string()).nonempty().optional(),
+
+  /**
+   * Whether encryption is required for every credential request.
+   */
+  encryption_required: z.boolean(),
+})
+
+const credentialResponseEncryptionSchema = z.object({
+  /**
+   * Supported JWE alg values for encrypted credential responses.
+   */
+  alg_values_supported: z.array(z.string()).nonempty(),
+
+  /**
+   * Supported JWE enc values for encrypted credential responses.
+   */
+  enc_values_supported: z.array(z.string()).nonempty(),
+
+  /**
+   * Supported JWE zip values for encrypted credential responses.
+   */
+  zip_values_supported: z.array(z.string()).nonempty().optional(),
+
+  /**
+   * Whether encryption is required for every credential response.
+   */
+  encryption_required: z.boolean(),
+})
+
+const batchCredentialIssuanceSchema = z.object({
+  /**
+   * Maximum supported proofs array size for a batch request.
+   */
+  batch_size: z.number().int().min(2),
+})
+
 /**
  * Zod schema for CredentialConfigurationSupported.
  * Describes a supported credential configuration by the Issuer.
  * This is part of `credential_configurations_supported` in `CredentialIssuerMetadata`.
  */
-const credentialConfigurationSchema = z.object({
+const credentialConfigurationSupportedSchema = z.object({
   /**
    * The format of the credential, e.g., "jwt_vc_json", "ldp_vc".
    * Can also be an array of supported formats.
@@ -212,11 +269,6 @@ const credentialConfigurationSchema = z.object({
   cryptographic_suites_supported: z.array(z.string()).optional(),
 
   /**
-   * An object defining the structure and type of the credential.
-   */
-  credential_definition: credentialDefinitionSchema,
-
-  /**
    * (Optional) An object mapping proof types to their supported signing algorithms.
    * E.g., { "jwt": { "proof_signing_alg_values_supported": ["ES256"] } }.
    * If not present, the Wallet must use a proof type appropriate for the credential format.
@@ -230,15 +282,27 @@ const credentialConfigurationSchema = z.object({
   credential_signing_alg_values_supported: z.array(z.string()).optional(),
 
   /**
-   * (Optional) Information about the credential type for display purposes in the wallet.
+   * (Optional) Metadata relevant to the usage and display of the issued credential.
    */
-  display: z.array(credentialDisplaySchema).optional(),
+  credential_metadata: credentialMetadataSchema.optional(),
 
   /**
-   * (Optional for VCI spec, but often used) Order of claims.
-   * If present, it's an array of claim names specifying the order in which they should be displayed.
+   * An object defining the structure and type of the credential.
+   * for W3C Verifiable Credentials
    */
-  order: z.array(z.string()).optional(),
+  credential_definition: credentialDefinitionSchema.optional(),
+
+  /**
+   * String identifying the Credential type
+   * for Mobile Documents or mdocs (ISO/IEC 18013)
+   */
+  doctype: z.string().optional(),
+
+  /**
+   * String designating the type of the Credential
+   * for IETF SD-JWT VC
+   */
+  vct: z.string().optional(),
 })
 
 const credentialIssuerSchema = z.string().url().brand('CredentialIssuer')
@@ -269,9 +333,9 @@ const credentialIssuerMetadataSchema = z.object({
   credential_endpoint: z.string().url(),
 
   /**
-   * (Optional) URL of the Batch Credential Endpoint.
+   * URL of the Credential Issuer's Nonce Endpoint.
    */
-  batch_credential_endpoint: z.string().url().optional(),
+  nonce_endpoint: z.string().url().optional(),
 
   /**
    * (Optional) URL of the Deferred Credential Endpoint.
@@ -279,27 +343,24 @@ const credentialIssuerMetadataSchema = z.object({
   deferred_credential_endpoint: z.string().url().optional(),
 
   /**
-   * (Optional) URL of the Nonce Endpoint.
+   * URL of the Credential Issuer's Notification Endpoint
    */
-  nonce_endpoint: z.string().url().optional(),
+  notification_endpoint: z.string().url().optional(),
 
   /**
-   * (Optional) A JSON array of strings representing supported JWA [RFC7518]
-   * encryption algorithm (alg values) for encrypting credential responses.
+   * (Optional) Information about support for credential request encryption on top of TLS.
    */
-  credential_response_encryption_alg_values_supported: z.array(z.string()).optional(),
+  credential_request_encryption: credentialRequestEncryptionSchema.optional(),
 
   /**
-   * (Optional) A JSON array of strings representing supported JWA [RFC7518]
-   * encryption algorithm (enc values) for encrypting credential responses.
+   * (Optional) Information about support for credential response encryption on top of TLS.
    */
-  credential_response_encryption_enc_values_supported: z.array(z.string()).optional(),
+  credential_response_encryption: credentialResponseEncryptionSchema.optional(),
 
   /**
-   * (Optional) Boolean value specifying whether the issuer requires credential
-   * responses to be encrypted. Default is false.
+   * (Optional) Information about support for issuing multiple credentials in a single batch.
    */
-  require_credential_response_encryption: z.boolean().optional(),
+  batch_credential_issuance: batchCredentialIssuanceSchema.optional(),
 
   /**
    * (Optional) A JSON object map where keys are credential configuration IDs
@@ -309,7 +370,7 @@ const credentialIssuerMetadataSchema = z.object({
    * https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html#name-credential-issuer-metadata-p
    * REQUIRED. Object that describes specifics of the Credential that the Credential Issuer supports issuance of.
    */
-  credential_configurations_supported: z.record(z.string(), credentialConfigurationSchema),
+  credential_configurations_supported: z.record(z.string(), credentialConfigurationSupportedSchema),
   // .optional(),
 
   /**
@@ -328,12 +389,20 @@ export type CredentialConfigurationId = z.infer<typeof credentialConfigurationId
 
 export type CredentialIssuer = z.infer<typeof credentialIssuerSchema>
 export type CredentialIssuerMetadata = z.infer<typeof credentialIssuerMetadataSchema>
-export type CredentialConfiguration = z.infer<typeof credentialConfigurationSchema>
+export type CredentialConfigurationSupported = z.infer<
+  typeof credentialConfigurationSupportedSchema
+>
 export type CredentialDefinition = z.infer<typeof credentialDefinitionSchema>
-export type ClaimDetails = z.infer<typeof claimDetailsSchema>
 export type IssuerDisplay = z.infer<typeof issuerDisplaySchema>
-export type CredentialDisplay = z.infer<typeof credentialDisplaySchema>
-export type ClaimDisplay = z.infer<typeof claimDisplaySchema>
+export type CredentialMetadata = z.infer<typeof credentialMetadataSchema>
+export type CredentialMetadataDisplay = z.infer<typeof credentialMetadataDisplaySchema>
+export type CredentialMetadataClaim = z.infer<typeof credentialMetadataClaimSchema>
+export type CredentialMetadataClaimDisplay = z.infer<typeof credentialMetadataClaimDisplaySchema>
+export type EncryptionJwk = z.infer<typeof encryptionJwkSchema>
+export type EncryptionJwks = z.infer<typeof encryptionJwksSchema>
+export type CredentialRequestEncryption = z.infer<typeof credentialRequestEncryptionSchema>
+export type CredentialResponseEncryption = z.infer<typeof credentialResponseEncryptionSchema>
+export type BatchCredentialIssuance = z.infer<typeof batchCredentialIssuanceSchema>
 export type LogoDetails = z.infer<typeof logoDetailsSchema>
 export type ProofTypeSupported = z.infer<typeof proofTypeSupportedSchema>
 
@@ -348,9 +417,28 @@ export const CredentialIssuerMetadata = (value?: {
   credential_issuer?: string
   authorization_servers?: string[]
   credential_endpoint?: string
-  batch_credential_endpoint?: string
-  deferred_credential_endpoint?: string
   nonce_endpoint?: string
+  deferred_credential_endpoint?: string
+  notification_endpoint?: string
+  credential_request_encryption?: {
+    jwks: {
+      keys: ({
+        kid: string
+      } & Record<string, unknown>)[]
+    }
+    enc_values_supported: string[]
+    zip_values_supported?: string[]
+    encryption_required: boolean
+  }
+  credential_response_encryption?: {
+    alg_values_supported: string[]
+    enc_values_supported: string[]
+    zip_values_supported?: string[]
+    encryption_required: boolean
+  }
+  batch_credential_issuance?: {
+    batch_size: number
+  }
   credential_response_encryption_alg_values_supported?: string[]
   credential_response_encryption_enc_values_supported?: string[]
   require_credential_response_encryption?: boolean
@@ -361,37 +449,43 @@ export const CredentialIssuerMetadata = (value?: {
       cryptographic_binding_methods_supported?: string[]
       cryptographic_suites_supported?: string[]
       credential_definition?: {
+        '@context'?: string[]
         type?: string[]
-        credentialSubject?: {
-          [key: string]: {
-            mandatory?: boolean
-            value_type?: string
-            display?: { name?: string; locale?: string }[]
-          }
-        }
       }
+      doctype?: string
+      vct?: string
       proof_types_supported?: {
         [key: string]: {
           proof_signing_alg_values_supported: string[]
         }
       }
       credential_signing_alg_values_supported?: string[]
-      display?: {
-        name?: string
-        locale?: string
-        logo?: {
-          uri?: string
-          alt_text?: string
-        }
-        description?: string
-        background_color?: string
-        background_image?: string
-        text_color?: string
-      }[]
-      order?: string[]
+      credential_metadata?: {
+        display?: {
+          name: string
+          locale?: string
+          logo?: {
+            uri?: string
+            alt_text?: string
+          }
+          description?: string
+          background_color?: string
+          background_image?: {
+            uri: string
+          }
+          text_color?: string
+        }[]
+        claims?: {
+          path: string[]
+          mandatory?: boolean
+          display?: {
+            name?: string
+            locale?: string
+          }[]
+        }[]
+      }
     }
   }
-  credential_manifest_uri?: string
   display?: {
     name?: string
     locale?: string
@@ -399,8 +493,5 @@ export const CredentialIssuerMetadata = (value?: {
       uri?: string
       alt_text?: string
     }
-    description?: string
-    background_color?: string
-    text_color?: string
   }[]
 }) => credentialIssuerMetadataSchema.parse(value)

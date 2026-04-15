@@ -462,6 +462,7 @@ describe('IssuerFlow', () => {
           subject: 'did:example:user#key-1',
           claims: undefined,
           keyAlg: 'ES256',
+          proofHeader: verifiedProof.header,
         }
       )
     })
@@ -675,6 +676,7 @@ describe('IssuerFlow', () => {
         subject: 'did:example:user#key-1',
         claims,
         keyAlg: 'ES256',
+        proofHeader: verifiedProof.header,
       })
     })
 
