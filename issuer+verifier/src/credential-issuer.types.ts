@@ -309,81 +309,133 @@ const credentialIssuerSchema = z.string().url().brand('CredentialIssuer')
 
 const credentialConfigurationIdSchema = z.string().brand('CredentialConfigurationId')
 
+const validateUniqueLocaleArray = <T extends { locale?: string }>(
+  arr: T[] | undefined,
+  ctx: z.RefinementCtx,
+  path: (string | number)[]
+) => {
+  if (!arr) return
+  const localeList = new Set<string>()
+  arr.forEach((item, i) => {
+    if (item.locale === undefined) return
+    const loc = typeof item.locale === 'string' ? item.locale.trim().toLowerCase() : item.locale
+    if (localeList.has(loc)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `duplicate display locale: ${loc}`,
+        path: [...path, i, 'locale'],
+      })
+    }
+    localeList.add(loc)
+  })
+}
+
 /**
  * Zod schema for CredentialIssuerMetadata.
  * Represents the metadata of a Credential Issuer.
  * This is typically published at a well-known URI (`/.well-known/openid-credential-issuer`).
  * Based on OpenID for Verifiable Credential Issuance specification.
  */
-const credentialIssuerMetadataSchema = z.object({
-  /**
-   * The issuer's identifier (URL).
-   */
-  credential_issuer: credentialIssuerSchema,
+const credentialIssuerMetadataSchema = z
+  .object({
+    /**
+     * The issuer's identifier (URL).
+     */
+    credential_issuer: credentialIssuerSchema,
 
-  /**
-   * URL of the issuer's OAuth 2.0 Authorization Server.
-   * Required if the issuer uses OAuth 2.0 for authorization.
-   */
-  authorization_servers: z.array(z.string().url()).optional(),
+    /**
+     * URL of the issuer's OAuth 2.0 Authorization Server.
+     * Required if the issuer uses OAuth 2.0 for authorization.
+     */
+    authorization_servers: z.array(z.string().url()).optional(),
 
-  /**
-   * URL of the Credential Endpoint.
-   */
-  credential_endpoint: z.string().url(),
+    /**
+     * URL of the Credential Endpoint.
+     */
+    credential_endpoint: z.string().url(),
 
-  /**
-   * URL of the Credential Issuer's Nonce Endpoint.
-   */
-  nonce_endpoint: z.string().url().optional(),
+    /**
+     * URL of the Credential Issuer's Nonce Endpoint.
+     */
+    nonce_endpoint: z.string().url().optional(),
 
-  /**
-   * (Optional) URL of the Deferred Credential Endpoint.
-   */
-  deferred_credential_endpoint: z.string().url().optional(),
+    /**
+     * (Optional) URL of the Deferred Credential Endpoint.
+     */
+    deferred_credential_endpoint: z.string().url().optional(),
 
-  /**
-   * URL of the Credential Issuer's Notification Endpoint
-   */
-  notification_endpoint: z.string().url().optional(),
+    /**
+     * URL of the Credential Issuer's Notification Endpoint
+     */
+    notification_endpoint: z.string().url().optional(),
 
-  /**
-   * (Optional) Information about support for credential request encryption on top of TLS.
-   */
-  credential_request_encryption: credentialRequestEncryptionSchema.optional(),
+    /**
+     * (Optional) Information about support for credential request encryption on top of TLS.
+     */
+    credential_request_encryption: credentialRequestEncryptionSchema.optional(),
 
-  /**
-   * (Optional) Information about support for credential response encryption on top of TLS.
-   */
-  credential_response_encryption: credentialResponseEncryptionSchema.optional(),
+    /**
+     * (Optional) Information about support for credential response encryption on top of TLS.
+     */
+    credential_response_encryption: credentialResponseEncryptionSchema.optional(),
 
-  /**
-   * (Optional) Information about support for issuing multiple credentials in a single batch.
-   */
-  batch_credential_issuance: batchCredentialIssuanceSchema.optional(),
+    /**
+     * (Optional) Information about support for issuing multiple credentials in a single batch.
+     */
+    batch_credential_issuance: batchCredentialIssuanceSchema.optional(),
 
-  /**
-   * (Optional) A JSON object map where keys are credential configuration IDs
-   * and values are objects containing metadata about the supported credential type.
-   * This effectively replaces or complements `credential_manifest_uri`.
-   * fix
-   * https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html#name-credential-issuer-metadata-p
-   * REQUIRED. Object that describes specifics of the Credential that the Credential Issuer supports issuance of.
-   */
-  credential_configurations_supported: z.record(z.string(), credentialConfigurationSupportedSchema),
-  // .optional(),
+    /**
+     * (Optional) A JSON object map where keys are credential configuration IDs
+     * and values are objects containing metadata about the supported credential type.
+     * This effectively replaces or complements `credential_manifest_uri`.
+     * fix
+     * https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html#name-credential-issuer-metadata-p
+     * REQUIRED. Object that describes specifics of the Credential that the Credential Issuer supports issuance of.
+     */
+    credential_configurations_supported: z.record(
+      z.string(),
+      credentialConfigurationSupportedSchema
+    ),
+    // .optional(),
 
-  /**
-   * (Optional) URL of the Credential Manifest for this issuer.
-   * This manifest contains a list of credential types the issuer can issue.
-   */
-  credential_manifest_uri: z.string().url().optional(),
+    /**
+     * (Optional) URL of the Credential Manifest for this issuer.
+     * This manifest contains a list of credential types the issuer can issue.
+     */
+    credential_manifest_uri: z.string().url().optional(),
 
-  /**
-   * (Optional) Information about the issuer for display purposes in the wallet.
-   */
-  display: z.array(issuerDisplaySchema).optional(),
-})
+    /**
+     * (Optional) Information about the issuer for display purposes in the wallet.
+     */
+    display: z.array(issuerDisplaySchema).optional(),
+  })
+  .superRefine((data, ctx) => {
+    // Validate that issuerDisplay locales are unique
+    validateUniqueLocaleArray(data.display, ctx, ['display'])
+
+    for (const [id, config] of Object.entries(data.credential_configurations_supported ?? {})) {
+      // Validate that credentialMetadataDisplay locales are unique
+      validateUniqueLocaleArray(config.credential_metadata?.display, ctx, [
+        'credential_configurations_supported',
+        id,
+        'credential_metadata',
+        'display',
+      ])
+
+      // Validate that credentialMetadataClaimDisplay locales are unique
+      const claims = config.credential_metadata?.claims ?? []
+      claims.forEach((claim, index) => {
+        validateUniqueLocaleArray(claim.display, ctx, [
+          'credential_configurations_supported',
+          id,
+          'credential_metadata',
+          'claims',
+          index,
+          'display',
+        ])
+      })
+    }
+  })
 
 export type CredentialConfigurationId = z.infer<typeof credentialConfigurationIdSchema>
 
