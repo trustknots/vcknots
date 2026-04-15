@@ -258,11 +258,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
               message: 'Failed to verify Proof.',
             })
           }
-          if (!verifyProof.header.kid) {
-            throw err('INVALID_PROOF', {
-              message: 'Unsupported proof header.',
-            })
-          }
           subject = verifyProof.header.kid
 
           if (options?.cnonce) {
