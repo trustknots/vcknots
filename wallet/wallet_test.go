@@ -4,12 +4,19 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/trustknots/vcknots/wallet/common"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
@@ -597,7 +604,7 @@ func TestController_generateJWTProof_Integration(t *testing.T) {
 	}
 	nonce := "test-nonce"
 
-	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud")
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", true)
 	if err != nil {
 		t.Errorf("generateJWTProof returned error: %v", err)
 	}
@@ -616,6 +623,25 @@ func TestController_generateJWTProof_Integration(t *testing.T) {
 	if parts != 2 {
 		t.Errorf("expected JWT to have 2 dots (3 parts), got %d dots", parts)
 	}
+
+	proofParts := strings.Split(proof, ".")
+	if len(proofParts) != 3 {
+		t.Fatalf("expected JWT to have 3 parts, got %d", len(proofParts))
+	}
+
+	headerBytes, err := base64.RawURLEncoding.DecodeString(proofParts[0])
+	if err != nil {
+		t.Fatalf("failed to decode JWT header: %v", err)
+	}
+
+	var header map[string]interface{}
+	if err := json.Unmarshal(headerBytes, &header); err != nil {
+		t.Fatalf("failed to parse JWT header: %v", err)
+	}
+
+	if header["typ"] != "openid4vci-proof+jwt" {
+		t.Fatalf("expected JWT header typ to be openid4vci-proof+jwt, got %v", header["typ"])
+	}
 }
 
 func TestController_generateJWTProof_WithoutNonce_Integration(t *testing.T) {
@@ -627,13 +653,203 @@ func TestController_generateJWTProof_WithoutNonce_Integration(t *testing.T) {
 		TypeID: "did:key",
 	}
 
-	proof, err := controller.generateJWTProof(key, did, nil, "test-aud")
+	proof, err := controller.generateJWTProof(key, did, nil, "test-aud", true)
 	if err != nil {
 		t.Errorf("generateJWTProof returned error: %v", err)
 	}
 
 	if proof == "" {
 		t.Error("expected non-empty proof")
+	}
+}
+
+func TestController_generateJWTProof_WithoutIssuer_Integration(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	key := newMockKeyEntry()
+	did := &idprofTypes.IdentityProfile{
+		ID:     "did:key:test123",
+		TypeID: "did:key",
+	}
+	nonce := "test-nonce"
+
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", false)
+	if err != nil {
+		t.Fatalf("generateJWTProof returned error: %v", err)
+	}
+
+	parts := strings.Split(proof, ".")
+	if len(parts) != 3 {
+		t.Fatalf("expected JWT to have 3 parts, got %d", len(parts))
+	}
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatalf("failed to decode JWT payload: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("failed to parse JWT payload: %v", err)
+	}
+
+	if _, exists := payload["iss"]; exists {
+		t.Fatal("iss claim must be omitted")
+	}
+}
+
+func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointMissing(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	cnonce := "token-c-nonce"
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{CNonce: &cnonce}
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{}
+
+	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	require.NoError(t, err)
+	require.NotNil(t, nonce)
+	assert.Equal(t, cnonce, *nonce)
+}
+
+func TestController_fetchCredentialNonce_ReturnsNilWhenNoNonceSource(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	nonce, err := controller.fetchCredentialNonce(&receiverTypes.CredentialIssuerMetadata{}, &receiverTypes.CredentialIssuanceAccessToken{})
+	require.NoError(t, err)
+	require.Nil(t, nonce)
+}
+
+func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointFails(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	nonceEndpoint, err := common.ParseURIField("http://127.0.0.1:1/nonce")
+	require.NoError(t, err)
+
+	cnonce := "token-c-nonce"
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{CNonce: &cnonce}
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
+
+	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	require.NoError(t, err)
+	require.NotNil(t, nonce)
+	assert.Equal(t, cnonce, *nonce)
+}
+
+func TestController_fetchCredentialNonce_UsesNonceEndpointWhenFallbackMissing(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	nonceValue := "nonce-from-endpoint"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"nonce":"` + nonceValue + `"}`))
+	}))
+	defer server.Close()
+
+	nonceEndpoint, err := common.ParseURIField(server.URL)
+	require.NoError(t, err)
+
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{}
+
+	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	require.NoError(t, err)
+	require.NotNil(t, nonce)
+	assert.Equal(t, nonceValue, *nonce)
+}
+
+func TestController_fetchCredentialNonce_ReturnsErrorWhenEndpointFailsWithoutFallback(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "temporary failure", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	nonceEndpoint, err := common.ParseURIField(server.URL)
+	require.NoError(t, err)
+
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{}
+
+	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	require.Error(t, err)
+	require.Nil(t, nonce)
+	assert.Contains(t, err.Error(), "nonce endpoint returned status")
+}
+
+func TestAccessTokenCredentialIdentifier(t *testing.T) {
+	tests := []struct {
+		name        string
+		accessToken *receiverTypes.CredentialIssuanceAccessToken
+		want        *string
+	}{
+		{
+			name:        "nil access token",
+			accessToken: nil,
+			want:        nil,
+		},
+		{
+			name: "no authorization details",
+			accessToken: &receiverTypes.CredentialIssuanceAccessToken{
+				Token: "test-token",
+			},
+			want: nil,
+		},
+		{
+			name: "authorization details without identifiers",
+			accessToken: &receiverTypes.CredentialIssuanceAccessToken{
+				AuthorizationDetails: []receiverTypes.CredentialIssuanceAuthorizationDetail{
+					{Type: receiverTypes.AuthorizationDetailTypeOpenIDCredential},
+				},
+			},
+			want: nil,
+		},
+		{
+			name: "ignores non-openid_credential authorization details",
+			accessToken: &receiverTypes.CredentialIssuanceAccessToken{
+				AuthorizationDetails: []receiverTypes.CredentialIssuanceAuthorizationDetail{
+					{Type: "resource_access", CredentialIdentifiers: []string{"unrelated-id"}},
+					{Type: receiverTypes.AuthorizationDetailTypeOpenIDCredential, CredentialIdentifiers: []string{"cred-id-2"}},
+				},
+			},
+			want: &[]string{"cred-id-2"}[0],
+		},
+		{
+			name: "returns nil when only non-openid_credential details exist",
+			accessToken: &receiverTypes.CredentialIssuanceAccessToken{
+				AuthorizationDetails: []receiverTypes.CredentialIssuanceAuthorizationDetail{
+					{Type: "resource_access", CredentialIdentifiers: []string{"unrelated-id"}},
+				},
+			},
+			want: nil,
+		},
+		{
+			name: "first non-empty credential identifier is selected",
+			accessToken: &receiverTypes.CredentialIssuanceAccessToken{
+				AuthorizationDetails: []receiverTypes.CredentialIssuanceAuthorizationDetail{
+					{Type: receiverTypes.AuthorizationDetailTypeOpenIDCredential, CredentialIdentifiers: []string{"", "cred-id-1"}},
+					{Type: receiverTypes.AuthorizationDetailTypeOpenIDCredential, CredentialIdentifiers: []string{"cred-id-2"}},
+				},
+			},
+			want: &[]string{"cred-id-1"}[0],
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := accessTokenCredentialIdentifier(tt.accessToken)
+			if tt.want == nil {
+				require.Nil(t, got)
+				return
+			}
+
+			require.NotNil(t, got)
+			assert.Equal(t, *tt.want, *got)
+		})
 	}
 }
 

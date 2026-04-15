@@ -22,6 +22,7 @@ package main
 // Available Endpoints (for Mode 1):
 // - Offer Endpoint: http://localhost:8080/configurations/:configurationId/offer
 // - Token Endpoint: http://localhost:8080/token
+// - Nonce Endpoint: http://localhost:8080/nonce
 // - Credential Endpoint: http://localhost:8080/credentials
 // - Authorization Request (no JAR): http://localhost:8080/request
 // - Authorization Request (JAR): http://localhost:8080/request-object

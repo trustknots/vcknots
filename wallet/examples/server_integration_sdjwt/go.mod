@@ -13,7 +13,7 @@ require (
 	go.etcd.io/bbolt v1.4.3 // indirect
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9 // indirect
 	golang.org/x/sys v0.37.0 // indirect
-	golang.org/x/text v0.3.3 // indirect
+	golang.org/x/text v0.34.0 // indirect
 )
 
 replace github.com/trustknots/vcknots/wallet => ../..

@@ -22,6 +22,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -305,17 +307,19 @@ func (w *Wallet) convertEntryToSavedCredential(entry types.CredentialEntry) (*Sa
 }
 
 // generateJWTProof generates a JWT proof for credential requests.
-func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfile, nonce *string, aud string) (string, error) {
+func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfile, nonce *string, aud string, includeIssuer bool) (string, error) {
 	header := map[string]interface{}{
 		"alg": "ES256",
-		"typ": "JWT",
+		"typ": "openid4vci-proof+jwt",
 		"kid": did.ID,
 	}
 
 	payload := map[string]interface{}{
-		"iss": did.ID,
 		"iat": time.Now().Unix(),
 		"aud": aud,
+	}
+	if includeIssuer {
+		payload["iss"] = did.ID
 	}
 
 	if nonce != nil && *nonce != "" {
@@ -344,6 +348,7 @@ func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfil
 	b64Signature := base64.RawURLEncoding.EncodeToString(signature)
 	return signingInput + "." + b64Signature, nil
 }
+
 // GetCredentialEntries retrieves credential entries with optional filtering.
 func (w *Wallet) GetCredentialEntries(req GetCredentialEntriesRequest) ([]*SavedCredential, int, error) {
 	if req.Filter != nil {
@@ -529,6 +534,115 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 	return accessToken, nil
 }
 
+type credentialNonceResponse struct {
+	CNonce *string `json:"c_nonce"`
+	Nonce  *string `json:"nonce"`
+}
+
+var nonceHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
+func accessTokenNonce(accessToken *receiverTypes.CredentialIssuanceAccessToken) *string {
+	if accessToken == nil || accessToken.CNonce == nil || *accessToken.CNonce == "" {
+		return nil
+	}
+	return accessToken.CNonce
+}
+
+func accessTokenCredentialIdentifier(accessToken *receiverTypes.CredentialIssuanceAccessToken) *string {
+	if accessToken == nil {
+		return nil
+	}
+
+	for _, authorizationDetail := range accessToken.AuthorizationDetails {
+		if authorizationDetail.Type != receiverTypes.AuthorizationDetailTypeOpenIDCredential {
+			continue
+		}
+		for _, identifier := range authorizationDetail.CredentialIdentifiers {
+			if identifier == "" {
+				continue
+			}
+			identifierCopy := identifier
+			return &identifierCopy
+		}
+	}
+
+	return nil
+}
+
+// fetchCredentialNonce retrieves nonce used for proof generation from nonce endpoint,
+// and falls back to c_nonce in the access token when nonce endpoint is not available.
+func (w *Wallet) fetchCredentialNonce(issuerMetadata *receiverTypes.CredentialIssuerMetadata, accessToken *receiverTypes.CredentialIssuanceAccessToken) (*string, error) {
+	fallbackNonce := accessTokenNonce(accessToken)
+
+	if issuerMetadata.NonceEndpoint == nil {
+		return fallbackNonce, nil
+	}
+
+	req, err := http.NewRequest(http.MethodPost, issuerMetadata.NonceEndpoint.String(), http.NoBody)
+	if err != nil {
+		if fallbackNonce != nil {
+			return fallbackNonce, nil
+		}
+		return nil, fmt.Errorf("failed to create nonce request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := nonceHTTPClient.Do(req)
+	if err != nil {
+		if fallbackNonce != nil {
+			return fallbackNonce, nil
+		}
+		return nil, fmt.Errorf("failed to fetch nonce: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		if fallbackNonce != nil {
+			return fallbackNonce, nil
+		}
+		return nil, fmt.Errorf("failed to read nonce response: %w", err)
+	}
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		if fallbackNonce != nil {
+			return fallbackNonce, nil
+		}
+		return nil, fmt.Errorf("nonce endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	if len(bodyBytes) == 0 {
+		if fallbackNonce != nil {
+			return fallbackNonce, nil
+		}
+		return nil, fmt.Errorf("nonce endpoint returned empty response")
+	}
+
+	var nonceResponse credentialNonceResponse
+	if err := json.Unmarshal(bodyBytes, &nonceResponse); err != nil {
+		if fallbackNonce != nil {
+			return fallbackNonce, nil
+		}
+		return nil, fmt.Errorf("failed to parse nonce response: %w", err)
+	}
+
+	if nonceResponse.CNonce != nil && *nonceResponse.CNonce != "" {
+		return nonceResponse.CNonce, nil
+	}
+	if nonceResponse.Nonce != nil && *nonceResponse.Nonce != "" {
+		return nonceResponse.Nonce, nil
+	}
+
+	if fallbackNonce != nil {
+		return fallbackNonce, nil
+	}
+
+	return nil, fmt.Errorf("nonce response does not contain c_nonce or nonce")
+}
+
 // requestCredential requests the credential from the issuer with JWT proof.
 func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata *receiverTypes.CredentialIssuerMetadata, accessToken *receiverTypes.CredentialIssuanceAccessToken) (*string, error) {
 	did, err := w.GenerateDID(DIDCreateOptions{
@@ -539,7 +653,18 @@ func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata 
 		return nil, fmt.Errorf("failed to generate DID: %w", err)
 	}
 
-	proof, err := w.generateJWTProof(req.Key, did, accessToken.CNonce, issuerMetadata.CredentialIssuer)
+	credentialConfigurationID := req.CredentialOffer.CredentialConfigurationIDs[0]
+	credentialIdentifier := accessTokenCredentialIdentifier(accessToken)
+	if credentialIdentifier != nil {
+		credentialConfigurationID = ""
+	}
+
+	nonce, err := w.fetchCredentialNonce(issuerMetadata, accessToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch nonce for credential proof: %w", err)
+	}
+
+	proof, err := w.generateJWTProof(req.Key, did, nonce, issuerMetadata.CredentialIssuer, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate JWT proof: %w", err)
 	}
@@ -547,11 +672,10 @@ func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata 
 	credentialJWT, err := w.receiver.ReceiveCredential(
 		req.Type,
 		issuerMetadata.CredentialEndpoint,
-		"jwt_vc_json",
+		credentialConfigurationID,
+		credentialIdentifier,
 		*accessToken,
-		&receiverTypes.CredentialDefinition{
-			Type: append(req.CredentialOffer.CredentialConfigurationIDs, "VerifiableCredential"),
-		},
+		nil,
 		&proof,
 	)
 	if err != nil {

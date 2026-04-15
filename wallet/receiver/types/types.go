@@ -65,6 +65,7 @@ const (
 type CredentialIssuerMetadata struct {
 	CredentialIssuer                 string                             `json:"credential_issuer"`
 	CredentialEndpoint               common.URIField                    `json:"credential_endpoint"`
+	NonceEndpoint                    *common.URIField                   `json:"nonce_endpoint,omitempty"`
 	AuthorizationServers             []common.URIField                  `json:"authorization_servers,omitempty"`
 	Display                          []CredentialIssuerMetadataDisplay  `json:"display,omitempty"`
 	CredentialConfigurationSupported map[string]CredentialConfiguration `json:"credential_configurations_supported,omitempty"`
@@ -195,14 +196,22 @@ const (
 	SelfSignedTlsClientAuth TokenEndpointAuthMethod = "self_signed_tls_client_auth"
 )
 
-// RFC 6749
+// RFC 9396 (Rich Authorization Requests)
+type CredentialIssuanceAuthorizationDetail struct {
+	Type                  string   `json:"type,omitempty"`
+	CredentialIdentifiers []string `json:"credential_identifiers,omitempty"`
+}
+
+const AuthorizationDetailTypeOpenIDCredential = "openid_credential"
+
 type CredentialIssuanceAccessToken struct {
-	Token           string  `json:"access_token"`
-	TokenType       string  `json:"token_type"`
-	ExpiresIn       int     `json:"expires_in,omitempty"`
-	RefreshToken    *string `json:"refresh_token,omitempty"`
-	CNonce          *string `json:"c_nonce,omitempty"`
-	CNonceExpiresIn *int    `json:"c_nonce_expires_in,omitempty"`
+	Token                string                                  `json:"access_token"`
+	TokenType            string                                  `json:"token_type"`
+	ExpiresIn            int                                     `json:"expires_in,omitempty"`
+	RefreshToken         *string                                 `json:"refresh_token,omitempty"`
+	CNonce               *string                                 `json:"c_nonce,omitempty"`
+	CNonceExpiresIn      *int                                    `json:"c_nonce_expires_in,omitempty"`
+	AuthorizationDetails []CredentialIssuanceAuthorizationDetail `json:"authorization_details,omitempty"`
 }
 
 // Receiver defines the interface for credential receiving components
@@ -220,7 +229,8 @@ type Receiver interface {
 	ReceiveCredential(
 		receivingType SupportedReceivingTypes,
 		endpoint common.URIField,
-		format string,
+		credentialConfigurationID string,
+		credentialIdentifier *string,
 		accessToken CredentialIssuanceAccessToken,
 		credentialDefinition *CredentialDefinition,
 		jwtProof *string,

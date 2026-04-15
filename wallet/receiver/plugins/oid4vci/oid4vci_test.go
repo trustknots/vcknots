@@ -1,14 +1,19 @@
 package oid4vci
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/common"
-	"github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
+	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
 
 type RoundTripFunc func(req *http.Request) *http.Response
@@ -216,7 +221,7 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 	endpoint := common.URIField(*serverURL)
 
 	t.Run("Happy path", func(t *testing.T) {
-		credential, err := receiver.ReceiveCredential(types.Oid4vci, endpoint, "jwt_vc_json", accessToken, nil, nil)
+		credential, err := receiver.ReceiveCredential(types.Oid4vci, endpoint, "test-config", nil, accessToken, nil, nil)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -230,6 +235,107 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		}
 	})
 
+	t.Run("Request uses credential_configuration_id and proofs", func(t *testing.T) {
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		var capturedBody map[string]interface{}
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/credential", func(w http.ResponseWriter, r *http.Request) {
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				handlerErrCh <- fmt.Errorf("failed to read request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			if err := json.Unmarshal(bodyBytes, &capturedBody); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to parse request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credentials": []map[string]string{{
+					"credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
+				}},
+			})
+		})
+
+		captureURL, _ := url.Parse(captureServer.URL() + "/credential")
+		captureEndpoint := common.URIField(*captureURL)
+		proof := "eyJhbGciOiJFUzI1NiJ9.eyJub25jZSI6InRlc3QifQ.signature"
+
+		credential, err := receiver.ReceiveCredential(types.Oid4vci, captureEndpoint, "test-config", nil, accessToken, nil, &proof)
+		require.NoError(t, err)
+		require.NotNil(t, credential)
+		require.NotEmpty(t, *credential)
+		require.NoError(t, <-handlerErrCh)
+
+		_, exists := capturedBody["format"]
+		assert.False(t, exists, "format should not be present in credential request body")
+		_, exists = capturedBody["proof"]
+		assert.False(t, exists, "proof should not be present in credential request body")
+
+		credentialConfigurationID, ok := capturedBody["credential_configuration_id"].(string)
+		require.True(t, ok, "credential_configuration_id must be present as string")
+		assert.Equal(t, "test-config", credentialConfigurationID)
+
+		proofs, ok := capturedBody["proofs"].(map[string]interface{})
+		require.True(t, ok, "proofs must be present as object")
+		jwtProofs, ok := proofs["jwt"].([]interface{})
+		require.True(t, ok, "proofs.jwt must be present as array")
+		require.Len(t, jwtProofs, 1, "proofs.jwt must contain one JWT value")
+		assert.Equal(t, proof, jwtProofs[0])
+	})
+
+	t.Run("Request uses credential_identifier when provided", func(t *testing.T) {
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		var capturedBody map[string]interface{}
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/credential", func(w http.ResponseWriter, r *http.Request) {
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				handlerErrCh <- fmt.Errorf("failed to read request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			if err := json.Unmarshal(bodyBytes, &capturedBody); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to parse request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credentials": []map[string]string{{
+					"credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
+				}},
+			})
+		})
+
+		captureURL, _ := url.Parse(captureServer.URL() + "/credential")
+		captureEndpoint := common.URIField(*captureURL)
+		credentialIdentifier := "cred-id-1"
+
+		credential, err := receiver.ReceiveCredential(types.Oid4vci, captureEndpoint, "test-config", &credentialIdentifier, accessToken, nil, nil)
+		require.NoError(t, err)
+		require.NotNil(t, credential)
+		require.NotEmpty(t, *credential)
+		require.NoError(t, <-handlerErrCh)
+
+		identifier, ok := capturedBody["credential_identifier"].(string)
+		require.True(t, ok, "credential_identifier must be present as string")
+		assert.Equal(t, credentialIdentifier, identifier)
+
+		_, exists := capturedBody["credential_configuration_id"]
+		assert.False(t, exists, "credential_configuration_id should not be present when credential_identifier is used")
+	})
+
 	t.Run("Server error", func(t *testing.T) {
 		// Create a separate server for error testing
 		errorServer := mockserver.NewMockServer()
@@ -238,7 +344,7 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		errorServer.SetErrorResponse("/credential", http.StatusInternalServerError)
 
 		errorURL, _ := url.Parse(errorServer.URL())
-		_, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*errorURL), "jwt_vc_json", accessToken, nil, nil)
+		_, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*errorURL), "test-config", nil, accessToken, nil, nil)
 		if err == nil {
 			t.Fatal("Expected error for server error")
 		}
@@ -251,7 +357,7 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		invalidJSONServer.SetTextResponse("/credential", http.StatusOK, "{invalid-json")
 
 		invalidJSONURL, _ := url.Parse(invalidJSONServer.URL())
-		_, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*invalidJSONURL), "jwt_vc_json", accessToken, nil, nil)
+		_, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*invalidJSONURL), "test-config", nil, accessToken, nil, nil)
 		if err == nil {
 			t.Fatal("Expected error for invalid JSON response")
 		}
@@ -265,9 +371,27 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		noCredServer.SetJSONResponse("/credential", http.StatusOK, map[string]string{"status": "success"})
 
 		noCredURL, _ := url.Parse(noCredServer.URL())
-		_, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*noCredURL), "jwt_vc_json", accessToken, nil, nil)
+		_, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*noCredURL), "test-config", nil, accessToken, nil, nil)
 		if err == nil {
-			t.Fatal("Expected error when no credential is in the response")
+			t.Fatal("Expected error when no credential is present in the response")
+		}
+	})
+
+	t.Run("Multiple credentials in response", func(t *testing.T) {
+		multiCredServer := mockserver.NewMockServer()
+		defer multiCredServer.Close()
+
+		multiCredServer.SetJSONResponse("/credential", http.StatusOK, map[string]interface{}{
+			"credentials": []map[string]string{
+				{"credential": "cred-1"},
+				{"credential": "cred-2"},
+			},
+		})
+
+		multiCredURL, _ := url.Parse(multiCredServer.URL())
+		_, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*multiCredURL), "test-config", nil, accessToken, nil, nil)
+		if err == nil {
+			t.Fatal("Expected error when multiple credentials are present in the response")
 		}
 	})
 }

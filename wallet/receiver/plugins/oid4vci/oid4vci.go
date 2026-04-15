@@ -113,7 +113,8 @@ func (o *Oid4vciReceiver) FetchAccessToken(receivingTypes types.SupportedReceivi
 func (o *Oid4vciReceiver) ReceiveCredential(
 	receivingTypes types.SupportedReceivingTypes,
 	endpoint common.URIField,
-	format string,
+	credentialConfigurationID string,
+	credentialIdentifier *string,
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
@@ -125,18 +126,16 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	endpointURL := url.URL(endpoint)
 
 	// Prepare credential request body
-	reqBody := map[string]interface{}{
-		"format": format,
-	}
-
-	if credentialDefinition != nil {
-		reqBody["credential_definition"] = credentialDefinition
+	reqBody := map[string]interface{}{}
+	if credentialIdentifier != nil && *credentialIdentifier != "" {
+		reqBody["credential_identifier"] = *credentialIdentifier
+	} else {
+		reqBody["credential_configuration_id"] = credentialConfigurationID
 	}
 
 	if jwtProof != nil {
-		reqBody["proof"] = map[string]interface{}{
-			"proof_type": "jwt",
-			"jwt":        *jwtProof,
+		reqBody["proofs"] = map[string]interface{}{
+			"jwt": []string{*jwtProof},
 		}
 	}
 
@@ -174,9 +173,6 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to receive credential; status: %d; endpoint: %s; response: %s", resp.StatusCode, endpointURL.String(), string(bodyBytes))
 	}
-	if err != nil {
-		return nil, err
-	}
 
 	if len(bodyBytes) == 0 {
 		return nil, fmt.Errorf("credential response is empty")
@@ -188,9 +184,32 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 		return nil, err
 	}
 
-	credential, ok := credentialResponse["credential"]
-	if !ok {
-		return nil, fmt.Errorf("no credential found in response")
+	var credential interface{}
+
+	credentialsRaw, hasCredentials := credentialResponse["credentials"]
+	if hasCredentials {
+		credentials, ok := credentialsRaw.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("credentials response has invalid type")
+		}
+		if len(credentials) != 1 {
+			return nil, fmt.Errorf("credentials response must contain exactly one credential, got %d", len(credentials))
+		}
+		credentialWrapper, ok := credentials[0].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("first credential entry has invalid format")
+		}
+		var found bool
+		credential, found = credentialWrapper["credential"]
+		if !found {
+			return nil, fmt.Errorf("credential field missing in first credentials entry")
+		}
+	} else {
+		var ok bool
+		credential, ok = credentialResponse["credential"]
+		if !ok {
+			return nil, fmt.Errorf("no credential found in response")
+		}
 	}
 
 	credentialStr, ok := credential.(string)
