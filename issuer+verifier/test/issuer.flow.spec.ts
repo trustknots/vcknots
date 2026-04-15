@@ -893,8 +893,7 @@ describe('IssuerFlow', () => {
       })
     })
 
-    it('should throw "INVALID_PROOF" if verified proof has no kid in header', async () => {
-      // 1. Arrange
+    it('should issue a credential when verified proof header has no kid (e.g. jwk/x5c binding)', async () => {
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
         credential_issuer: issuer,
@@ -911,20 +910,33 @@ describe('IssuerFlow', () => {
         proofs: { jwt: ['dummy-jwt'] },
       })
       const verifiedProofWithoutKid = {
-        header: { alg: 'ES256K' }, // kid is missing
+        header: { alg: 'ES256K' },
         payload: { iss: 'did:example:user', aud: issuer, nonce: 'nonce' },
       }
+      const signedCredential = 'signed.credential.jwt'
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProofWithoutKid)
+      mock.method(mockIssueCredentialProvider, 'createCredential', async () => signedCredential)
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
+      mockIssueCredentialProvider.canHandle.mock.mockImplementation(
+        (format) => format === CredentialFormats.JWT_VC_JSON
+      )
 
-      // 2. Act & 3. Assert
-      await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
-        name: 'INVALID_PROOF',
-        message: 'Unsupported proof header.',
-      })
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' })
+
+      assert.ok(response)
+      assert.equal(response.credentials?.[0]?.credential, signedCredential)
+      assert.equal(mockIssueCredentialProvider.createCredential.mock.callCount(), 1)
+      assert.deepStrictEqual(
+        mockIssueCredentialProvider.createCredential.mock.calls[0].arguments[2],
+        {
+          subject: undefined,
+          claims: undefined,
+          keyAlg: 'ES256',
+        }
+      )
     })
 
     it('should issue a credential when a valid c_nonce proof is provided', async () => {

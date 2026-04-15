@@ -770,12 +770,26 @@ issueCredential(
 
 **JWT クレデンシャルプルーフ（`proofs.jwt`）について**
 
-リクエストに JWT 形式のクレデンシャルプルーフが含まれる場合、Issuer はメタデータの `credential_issuer` と `options.proofJwt` から検証コンテキストを組み立て、[credential-proof-jwt プロバイダー](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/providers/credential-proof-jwt.provider.ts)に渡して `aud` / `iss` 等を OID4VCI に沿って検証します。
-
 - **事前認可コードフロー**でアクセストークンを得ている場合: `proofJwt: { usePreAuth: true }`。プルーフ JWT に **`iss` クレームを付けない**必要があります。
-- **認可コードフロー**など通常のクライアント文脈の場合: `proofJwt: { usePreAuth: false, clientId: '...' }`（当該クレデンシャルリクエストの OAuth `client_id`）。`iss` はその `client_id` または Credential Issuer Identifier と一致する必要があります。
+- **認可コードフロー**：未対応
 
-`proofJwt` を省略した場合、JWT プルーフは「認可コード側」の扱い（`usePreAuth: false`）となり、`clientId` 未指定時は `iss` の比較対象が Credential Issuer Identifier のみ実質有効になります。フローに合わせて明示的に設定してください。
+
+#### JWT proof の JOSE 保護ヘッダ
+
+JOSE 保護ヘッダの検証内容は [credential-proof-jwt.provider.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/providers/credential-proof-jwt.provider.ts) を参照してください。根拠となる記述は [OpenID for Verifiable Credential Issuance 1.0 — JWT proof type](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-jwt-proof-type) を参照してください（仕様の章・節番号は改訂で変わる場合があります）。
+
+- **`typ`**: `openid4vci-proof+jwt` であること（RFC 8725 に基づく明示的タイピング）。
+- **`alg`**: `none` および IANA JWA の **対称署名（MAC、`HS*` で始まる識別子）** は拒否されます。
+- **`kid` / `jwk` / `x5c`**: **同時に複数を含めてはいけません**。また **少なくともいずれか 1 つは必須**です（いずれも無い場合も `INVALID_PROOF`）。
+- **`trust_chain`**: 現在未対応です。
+
+keyごとの動き:
+
+| ヘッダ | 動き |
+|--------|------|
+| **`kid`** | DID URL（`did:…` とオプションの `#fragment`）として **`did-provider`** で解決し、該当する `verificationMethod` の公開鍵で署名を検証します。 |
+| **`jwk`** | ヘッダ内の JWK で検証します。**秘密鍵材料（例: `d`）が含まれる JWK は拒否**されます。 |
+| **`x5c`** | 証明書チェーンを **`certificate-provider`** で検証したうえで、先頭証明書の公開鍵で検証します。`x5c` を使う構成では、Vcknots 初期化時に **`certificate-provider` をプロバイダ一覧へ登録**してください。 |
 
 **エラーケース**:
 - `ISSUER_NOT_FOUND`: 未登録のIssuerが設定された
@@ -783,7 +797,7 @@ issueCredential(
 - `INVALID_REQUEST`: `format`が未設定
 - `UNSUPPORTED_CREDENTIAL_TYPE`: 指定された`credential_definition`もしくは`proof_type`がサポートされていない
 - `INVALID_CREDENTIAL_REQUEST`: `proof`が見つからないかサポートされていない、設定 ID 不備など
-- `INVALID_PROOF`: `proof`が検証できない、未サポートのheaderが設定された、`nonce`が見つからない
+- `INVALID_PROOF`: `proof`が検証できない、OID4VCI の JWT proof に合わないヘッダ（`typ` / `alg` / `kid`・`jwk`・`x5c` の組み合わせなど）、未サポートの header、`nonce`が見つからない
 - `UNSUPPORTED_ISSUER_KEY_ALG`: Issuerの署名アルゴリズムがサポートされていない
 - `AUTHZ_ISSUER_KEY_NOT_FOUND`: Issuerの鍵が見つからない
 - `INTERNAL_SERVER_ERROR`: 署名に失敗した

@@ -769,12 +769,25 @@ For the type definition of the credential response, see [issuer+verifier/src/cre
 
 **JWT credential proofs (`proofs.jwt`)**
 
-When the request includes JWT credential proofs, the issuer flow builds a verification context from issuer metadata (`credential_issuer`) and `options.proofJwt`, and passes it to the [credential-proof-jwt provider](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/providers/credential-proof-jwt.provider.ts) so claims such as `aud` and `iss` are checked per OID4VCI.
-
 - **Pre-authorized code flow**: use `proofJwt: { usePreAuth: true }`. The proof JWT must **not** carry an **`iss`** claim.
-- **Authorization code flow** (or similar client-bound context): use `proofJwt: { usePreAuth: false, clientId: '...' }` with the OAuth `client_id` for that credential request. `iss` must equal that `client_id` or the Credential Issuer Identifier.
+- **Authorization code flow**: Not supported.
 
-If you omit `proofJwt`, JWT proofs are treated like the authorization-code path (`usePreAuth: false`). With no `clientId`, only the Credential Issuer Identifier is effectively available for `iss` comparison when `iss` is present. Set `proofJwt` explicitly to match your token flow.
+#### JWT proof JOSE protected header
+
+For protected-header validation behavior, see [credential-proof-jwt.provider.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/providers/credential-proof-jwt.provider.ts). The normative description is in [OpenID for Verifiable Credential Issuance 1.0 — JWT proof type](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-jwt-proof-type) (chapter and section numbers may change in revised specifications).
+
+- **`typ`**: Must be `openid4vci-proof+jwt` (explicit typing per RFC 8725).
+- **`alg`**: `none` and symmetric signatures (MAC, IANA JWA identifiers starting with `HS*`) are rejected.
+- **`kid` / `jwk` / `x5c`**: **Must not appear more than one at a time.** **At least one** of them is required (if none are present, the result is `INVALID_PROOF`).
+- **`trust_chain`**: Not currently supported.
+
+Per-header behavior:
+
+| Header | Behavior |
+|--------|----------|
+| **`kid`** | Resolved as a DID URL (`did:…` with an optional `#fragment`) via **`did-provider`**; the signature is verified with the public key of the matching `verificationMethod`. |
+| **`jwk`** | Verification uses the JWK in the header. JWKs that include **private key material (e.g. `d`)** are rejected. |
+| **`x5c`** | The certificate chain is validated with **`certificate-provider`**, then the signature is verified with the public key of the leaf certificate. When using `x5c`, register **`certificate-provider`** in the provider list when initializing Vcknots. |
 
 **Error cases**:
 - `ISSUER_NOT_FOUND`: An unregistered Issuer is configured
@@ -782,7 +795,7 @@ If you omit `proofJwt`, JWT proofs are treated like the authorization-code path 
 - `INVALID_REQUEST`: `format` is not set
 - `UNSUPPORTED_CREDENTIAL_TYPE`: The specified `credential_definition` or `proof_type` is not supported
 - `INVALID_CREDENTIAL_REQUEST`: The `proof` is missing or not supported, or the configuration id is invalid, etc.
-- `INVALID_PROOF`: The `proof` cannot be verified, an unsupported header is set, or a `nonce` is missing
+- `INVALID_PROOF`: The `proof` cannot be verified, the header does not conform to OID4VCI JWT proof rules (e.g. `typ` / `alg` / combinations of `kid`, `jwk`, and `x5c`), an unsupported header is set, or a `nonce` is missing
 - `UNSUPPORTED_ISSUER_KEY_ALG`: The Issuer’s signing algorithm is not supported
 - `AUTHZ_ISSUER_KEY_NOT_FOUND`: The Issuer’s key cannot be found
 - `INTERNAL_SERVER_ERROR`: Signing failed
