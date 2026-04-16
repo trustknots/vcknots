@@ -11,11 +11,13 @@ import {
 } from '@trustknots/vcknots/verifier'
 import { randomUUID } from 'node:crypto'
 import { handleError } from '../utils/error-handler.js'
+import { createDirectPostVpAudTransactionStore } from '../utils/direct-post-vp-aud-transaction-store.js'
 
 export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
   const verifyApp = new Hono()
 
   const verifierFlow = initializeVerifierFlow(context)
+  const vpAudTx = createDirectPostVpAudTransactionStore()
 
   type PayloadResult =
     | { ok: true; payload: Partial<VerifierAuthorizationResponse> }
@@ -78,6 +80,17 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           400
         )
       }
+      const state =
+        typeof body.state === 'string' && body.state.trim() !== '' ? body.state.trim() : undefined
+      if (state === undefined) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'state is required.',
+          },
+          400
+        )
+      }
       const client_id = validateClientIdScheme(body.client_id as string)
 
       const query = PresentationExchange({
@@ -122,8 +135,13 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           base_url: baseUrl,
         }
       )
+      const registered = vpAudTx.register(client_id, state)
+      if (!registered.ok) {
+        return c.json(registered.error, 400)
+      }
+      console.log('[verify] direct_post transaction_id:', registered.transactionId)
 
-      const encoded = Object.entries(request)
+      const encoded = Object.entries({ ...request, state })
         .map(([key, value]) => {
           const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
           return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
@@ -164,12 +182,22 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       // Validate it using the AuthorizationResponse
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
 
-      // Add additional validation as needed
-      const vppayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
-      console.log('Verified VP Payload:', vppayload)
+      const audResolved = vpAudTx.resolveExpectedAudFromWalletState(authorizationResponse.state)
+      if (!audResolved.ok) {
+        return c.json(audResolved.error, 400)
+      }
+      console.log('[verify] expectedAud:', audResolved.aud)
+      const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
+        expectedAud: audResolved.aud,
+      })
+      if (authorizationResponse.state != null && authorizationResponse.state !== '') {
+        vpAudTx.consume(audResolved.transactionId, authorizationResponse.state)
+      }
+      console.log('Verified VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
       const errorResponse = handleError(err)
+      console.log('error Response:', errorResponse)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400
       return c.json(errorResponse, status)
     }
@@ -177,6 +205,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   verifyApp.post('/callback-kbjwt', async (c) => {
     try {
+      console.log('callback-kbjwt')
       const verifierId = VerifierClientId(baseUrl)
       const contentType = normalizeContentType(c.req.header('content-type') ?? '')
 
@@ -197,18 +226,23 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
       // Validate it using the AuthorizationResponse
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-      const isKbjwt: boolean = true
-
-      // Add additional validation as needed
-      const vpPayload = await verifierFlow.verifyPresentations(
-        verifierId,
-        authorizationResponse,
-        isKbjwt
-      )
+      const audResolved = vpAudTx.resolveExpectedAudFromWalletState(authorizationResponse.state)
+      if (!audResolved.ok) {
+        return c.json(audResolved.error, 400)
+      }
+      console.log('[verify] expectedAud (callback-kbjwt):', audResolved.aud)
+      const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
+        expectedAud: audResolved.aud,
+        isKbJwt: true,
+      })
+      if (authorizationResponse.state != null && authorizationResponse.state !== '') {
+        vpAudTx.consume(audResolved.transactionId, authorizationResponse.state)
+      }
       console.log('Verified KBJWT VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
       const errorResponse = handleError(err)
+      console.log('error Response:', errorResponse)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400
       return c.json(errorResponse, status)
     }
@@ -314,6 +348,14 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
             : {}),
         }
       )
+      const registered = vpAudTx.register(requestObject.client_id, requestObject.state)
+      if (!registered.ok) {
+        return c.json(registered.error, 400)
+      }
+      console.log('[verify] direct_post transaction_id:', registered.transactionId)
+      // const params = requestObject.is_request_uri
+      //   ? request
+      //   : { ...request, state: requestObject.state }
       const encoded = Object.entries(request)
         .map(([key, value]) => {
           const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
@@ -331,6 +373,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   verifyApp.get('/request.jwt/:request-object-Id', async (c) => {
     try {
+      console.log('request-object-Id:', c.req.param('request-object-Id'))
       const verifierId = VerifierClientId(baseUrl)
       const requestObjectId = VerifierRequestObjectId(c.req.param('request-object-Id'))
       const jar = await verifierFlow.findRequestObject(verifierId, requestObjectId)
@@ -347,6 +390,50 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
   verifyApp.get('/verified', async (c) => {
     console.log('Verified received from get request')
     return c.json({ message: 'DONE!!' }, 200)
+  })
+
+  verifyApp.get('/presentation-transaction/:transactionId', async (c) => {
+    const transactionId = c.req.param('transactionId')?.trim() ?? ''
+    if (transactionId === '') {
+      return c.json(
+        { error: 'invalid_request', error_description: 'transactionId is required' },
+        400
+      )
+    }
+    const result = vpAudTx.getById(transactionId)
+    if (result.kind === 'not_found') {
+      return c.json(
+        { error: 'not_found', error_description: 'transaction_id is unknown or already removed' },
+        404
+      )
+    }
+    if (result.kind === 'expired') {
+      return c.json({ error: 'not_found', error_description: 'transaction_id has expired' }, 404)
+    }
+    return c.json({
+      transaction_id: transactionId,
+      state: result.state,
+      client_id: result.clientId,
+      expires_at: result.expiresAt,
+    })
+  })
+
+  verifyApp.delete('/presentation-transaction/:transactionId', async (c) => {
+    const transactionId = c.req.param('transactionId')?.trim() ?? ''
+    if (transactionId === '') {
+      return c.json(
+        { error: 'invalid_request', error_description: 'transactionId is required' },
+        400
+      )
+    }
+    const result = vpAudTx.deleteById(transactionId)
+    if (!result.ok) {
+      return c.json(
+        { error: 'not_found', error_description: 'transaction_id is unknown or already removed' },
+        404
+      )
+    }
+    return c.json({ ok: true }, 200)
   })
 
   return verifyApp

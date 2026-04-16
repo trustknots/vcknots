@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { before, describe, it, mock } from 'node:test'
+import { exportJWK, generateKeyPair } from 'jose'
 import {
   CredentialConfigurationId,
   CredentialIssuer,
@@ -15,13 +16,10 @@ import {
   CredentialProofProvider,
   IssueCredentialProvider,
   IssuerMetadataStoreProvider,
-  IssuerSignatureKeyProvider,
   IssuerSignatureKeyStoreProvider,
   PreAuthorizedCodeProvider,
   PreAuthorizedCodeStoreProvider,
 } from '../src/providers'
-import { SignatureKeyPair } from '../src/signature-key.types'
-import { Jwk } from '../src/jwk.type'
 import { VcknotsContext, initializeContext } from '../src/vcknots.context'
 import { ProofTypes } from '../src/proofs.types'
 
@@ -59,16 +57,8 @@ describe('IssuerFlow', () => {
     single: true,
     save: mock.fn(),
     fetch: mock.fn(),
-  } satisfies IssuerSignatureKeyStoreProvider
-
-  const mockIssuerSignatureKeyProvider = {
-    kind: 'issuer-signature-key-provider',
-    name: 'mock-issuer-signature-key-provider',
-    single: false,
-    generate: mock.fn(),
     sign: mock.fn(),
-    canHandle: mock.fn(),
-  } satisfies IssuerSignatureKeyProvider
+  } satisfies IssuerSignatureKeyStoreProvider
 
   const mockCredentialOfferProvider = {
     kind: 'credential-offer-provider',
@@ -127,7 +117,6 @@ describe('IssuerFlow', () => {
         mockPreAuthCodeStoreProvider,
         mockIssueCredentialProvider,
         mockIssuerKeyStoreProvider,
-        mockIssuerSignatureKeyProvider,
         mockCredentialOfferProvider,
         mockCredentialProofProvider,
         mockNonceProvider,
@@ -180,19 +169,17 @@ describe('IssuerFlow', () => {
       credential_endpoint: 'https://example.com/credentials',
       credential_configurations_supported: {},
     }
-    const keyPair: SignatureKeyPair = {
-      privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-      publicKey: { alg: 'ES256', kty: 'EC', kid: 'key-1' } as Jwk,
-    }
+    const keys = await generateKeyPair('ES256', { extractable: true })
+    const expectedJwk = await exportJWK(keys.publicKey)
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
-    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
+    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => keys.publicKey)
 
     const found = await issuerFlow.findJwtVcIssuerMetadata(issuer)
 
     assert.deepStrictEqual(found, {
       issuer: issuer,
       jwks: {
-        keys: [keyPair.publicKey],
+        keys: [expectedJwk],
       },
     })
     assert.equal(mockIssuerMetadataProvider.fetch.mock.callCount(), 1)
@@ -207,7 +194,7 @@ describe('IssuerFlow', () => {
       credential_configurations_supported: {},
     }
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
-    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [])
+    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => null)
 
     const found = await issuerFlow.findJwtVcIssuerMetadata(issuer)
 
@@ -244,12 +231,6 @@ describe('IssuerFlow', () => {
         },
       },
     }
-    const keyPair: SignatureKeyPair = {
-      privateKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-      publicKey: { alg: 'ES256', kty: 'EC' } as Jwk,
-    }
-    mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
-    mockIssuerSignatureKeyProvider.generate.mock.mockImplementation(async () => keyPair)
 
     await issuerFlow.createIssuerMetadata(metadata)
 
@@ -257,18 +238,12 @@ describe('IssuerFlow', () => {
     assert.deepStrictEqual(mockIssuerMetadataProvider.save.mock.calls[0].arguments[0], metadata)
 
     assert.equal(
-      mockIssuerSignatureKeyProvider.generate.mock.callCount(),
-      1,
-      'keyGenerator.generateKeyPair should be called'
-    )
-
-    assert.equal(
       mockIssuerKeyStoreProvider.save.mock.callCount(),
       1,
       'keyStore.save should be called'
     )
     assert.deepStrictEqual(mockIssuerKeyStoreProvider.save.mock.calls[0].arguments[0], issuer)
-    assert.deepStrictEqual(mockIssuerKeyStoreProvider.save.mock.calls[0].arguments[1], [keyPair])
+    assert.deepStrictEqual(mockIssuerKeyStoreProvider.save.mock.calls[0].arguments[1], 'ES256')
   })
 
   it('should throw if no key generator can handle the algorithm', async () => {
@@ -286,7 +261,11 @@ describe('IssuerFlow', () => {
         },
       },
     }
-    mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation(() => false)
+    mock.method(mockIssuerKeyStoreProvider, 'save', async () => {
+      throw Object.assign(new Error('No provider found which can handle: RS256'), {
+        name: 'PROVIDER_NOT_FOUND',
+      })
+    })
 
     await assert.rejects(issuerFlow.createIssuerMetadata(metadata), {
       name: 'PROVIDER_NOT_FOUND',
@@ -432,6 +411,7 @@ describe('IssuerFlow', () => {
         payload: { iss: 'did:example:user', aud: issuer, nonce: 'nonce' },
       }
       const signedCredential = 'signed.credential.jwt'
+      const keys = await generateKeyPair('ES256', { extractable: true })
 
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
@@ -554,13 +534,10 @@ describe('IssuerFlow', () => {
         proofJwt: { usePreAuth: true },
       })
 
-      assert.deepStrictEqual(
-        mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1],
-        {
-          usePreAuth: true,
-          credentialIssuer: issuer,
-        }
-      )
+      assert.deepStrictEqual(mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1], {
+        usePreAuth: true,
+        credentialIssuer: issuer,
+      })
     })
 
     it('should pass clientId in JWT verify context for authorization-code-style flow', async () => {
@@ -603,14 +580,11 @@ describe('IssuerFlow', () => {
         proofJwt: { usePreAuth: false, clientId: 'oauth-client-1' },
       })
 
-      assert.deepStrictEqual(
-        mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1],
-        {
-          usePreAuth: false,
-          credentialIssuer: issuer,
-          clientId: 'oauth-client-1',
-        }
-      )
+      assert.deepStrictEqual(mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1], {
+        usePreAuth: false,
+        credentialIssuer: issuer,
+        clientId: 'oauth-client-1',
+      })
     })
 
     it('should issue a credential with claims for a valid request', async () => {

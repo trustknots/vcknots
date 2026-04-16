@@ -12,14 +12,19 @@ export type FirestoreProviderOptions = {
 }
 
 // Resolves a Firestore instance from the given options, or falls back to the default.
-export const resolveFirestore = (options?: FirestoreProviderOptions): Firestore =>
-  options?.databaseId
+export const resolveFirestore = (options?: FirestoreProviderOptions): Firestore => {
+  // Get the singleton instance of Firestore
+  const instance = options?.databaseId
     ? options.app
       ? getFirestore(options.app, options.databaseId)
       : getFirestore(options.databaseId)
     : options?.app
       ? getFirestore(options.app)
       : getFirestore()
+
+  // This configuration is applied only once per instance
+  return configureInstance(instance)
+}
 
 // Returns all Firestore-backed providers.
 export const firestore = (options?: FirestoreProviderOptions): Provider[] => {

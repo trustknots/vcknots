@@ -68,10 +68,13 @@ cd ../
 pnpm install
 
 # issuer+verifierモジュールのbuild
-pnpm -F @trustknots/vcknots build    
+pnpm -F @trustknots/vcknots build
+
+# サーバーコアモジュールのbuild
+pnpm -F @trustknots/server-core build
 
 # サーバーモジュールのbuild
-pnpm -F @trustknots/server build    
+pnpm -F @trustknots/server build
 
 # サーバーを起動
 pnpm -F @trustknots/server start
@@ -123,9 +126,13 @@ Authz metadata initialized
 cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 go run server_integration_jwtvc.go
 
-# SD-JWT 統合テスト
+# SD-JWT 統合テスト（kb-jwt なし）
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go
+
+# SD-JWT 統合テスト（kb-jwt あり）
+cd /path/to/vcknots/wallet/examples/server_integration_sdjwt+kbjwt
+go run server_integration_sdjwt_kbjwt.go
 ```
 
 
@@ -182,9 +189,12 @@ go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_
 コンフォーマンステストモードでは、以下の設定が自動的に適用されます：
 
 - **証明書検証**: システムルート証明書プールを使用
+- **証明書チェーン検証スキップ**: `InsecureSkipX509Verify: true` が自動設定され、自己署名証明書や非標準証明書を使用するコンフォーマンステストサーバーとの通信を可能にします
 - **選択クレーム**: `given_name`と`family_name`を選択
 - **キーバインディング**: 必須（`RequireKeyBinding: true`）
 - **Audience/Nonce**: リクエストURIから自動的に抽出
+
+> ⚠️ **警告**: `InsecureSkipX509Verify: true` はコンフォーマンステストやローカル開発時のみ有効です。本番環境では**絶対に**使用しないでください。
 
 ---
 
@@ -210,6 +220,7 @@ go run server_integration_sdjwt.go "openid4vp://authorize?..."
 ```
 - 外部のOID4VPコンフォーマンステストサービスに対してテスト
 - システムルート証明書プールを使用
+- `InsecureSkipX509Verify: true` を自動設定（非標準証明書に対応）
 
 ### ファイル構成
 
@@ -218,8 +229,11 @@ examples/
 ├── server_integration_jwtvc/
 │   └── server_integration_jwtvc.go   # JWT-VC 統合テスト
 ├── server_integration_sdjwt/
-│   ├── server_integration_sdjwt.go   # SD-JWT 統合テスト
+│   ├── server_integration_sdjwt.go   # SD-JWT 統合テスト（kb-jwt なし）
 │   └── example_sd_jwt.txt            # サンプル SD-JWT クレデンシャル
+├── server_integration_sdjwt+kbjwt/
+│   ├── server_integration_sdjwt_kbjwt.go # kb-jwt 付き SD-JWT 統合テスト
+│   └── example_sd_jwt.txt                 # サンプル SD-JWT クレデンシャル
 ├── custom_dispatcher/                 # カスタムディスパッチャー実装例
 ├── custom_plugin/                     # カスタムプラグイン実装例
 └── README.md                          # このファイル
@@ -229,10 +243,56 @@ examples/
 - 証明書: `../../../server/samples/certificate-openid-test/certificate_openid.pem`
 - SD-JWT サンプル: `example_sd_jwt.txt` (server_integration_sdjwt/ 内)
 
+kb-jwt 付き検証を行う場合は `server_integration_sdjwt+kbjwt` を利用してください。このサンプルは `dc+sd-jwt` を要求し、`http://localhost:8080/callback-kbjwt` に送信し、`x509_san_dns:localhost` に一致する audience と固定 nonce を使って KB-JWT を付与します。
+
 別の証明書を使用する場合は、`VCKNOTS_CERT_PATH` 環境変数を設定してください：
 
 ```bash
 cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
 ```
+
+### Wallet 実行時の環境変数
+
+`VCKNOTS_CERT_PATH` に加えて、wallet の実行時挙動は `wallet/env/env.go` で定義された環境変数で制御されます。
+
+| 環境変数 | 既定値 | 説明 |
+| :---- | :---- | :---- |
+| `VCKNOTS_WALLET_HTTP_ALLOWED` | `false`（未設定/空） | `true` を設定すると、Wallet の HTTP 通信で HTTP エンドポイントを許可します（ローカル開発/テスト用途）。 |
+| `VCKNOTS_WALLET_DEBUG` | `false`（未設定/空） | デバッグモードを有効化します。デバッグモード時は HTTP 許可動作も有効になります。 |
+
+挙動の要点:
+- `VCKNOTS_WALLET_HTTP_ALLOWED=true` または `VCKNOTS_WALLET_DEBUG=true` のいずれかで、`IsHTTPAllowed()` は `true` になります。
+- 両方とも未設定（または `true` 以外）の場合、`IsHTTPAllowed()` は `false` となり、HTTPS 必須の検証が有効のままになります。
+
+設定例（ローカル開発のみ）:
+
+```bash
+export VCKNOTS_WALLET_HTTP_ALLOWED=true
+# または
+export VCKNOTS_WALLET_DEBUG=true
+```
+
+> ⚠️ **セキュリティ警告**: 本番環境では `VCKNOTS_WALLET_HTTP_ALLOWED` を有効化しないでください。HTTPS 必須検証を維持してください。
+
+---
+
+## トラブルシューティング
+
+### `client_id` 検証エラー（コンフォーマンステスト）
+
+コンフォーマンステストは、意図的に不正な `client_id` を送信してウォレットの検証ロジックをテストします。
+
+- **エラー例**:
+  - `invalid client_id: duplicate prefix detected`（例: `x509_san_dns:x509_san_dns:...`）
+  - `SAN of the certificate and client_id did not match`
+- これらのエラーは**期待される動作**であり、ウォレットが正しくセキュリティチェックを実施していることを示します。
+
+### `x509: certificate is not standards compliant` エラー
+
+コンフォーマンステストサーバーは、テスト目的で自己署名証明書や非標準的な証明書構造を使用することがあります。
+
+- **状況**: サーバー統合テスト（`引数なしモード`）で発生する場合、証明書ファイルが正しく設定されていない可能性があります。
+- **状況**: コンフォーマンステスト（`引数ありモード`）では `InsecureSkipX509Verify: true` が自動設定されるため、通常は発生しません。
+- **解決策（サーバー統合テスト向け）**: 正しい証明書ファイルが `../../../server/samples/certificate-openid-test/certificate_openid.pem` に配置されていることを確認するか、`VCKNOTS_CERT_PATH` で指定してください。
 

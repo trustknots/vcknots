@@ -105,7 +105,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const cnonce$ = context.providers.get('nonce-provider')
   const cnonceStore$ = context.providers.get('nonce-store-provider')
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
-  const key$ = context.providers.get('issuer-signature-key-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
 
   return {
@@ -121,8 +120,27 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const jwtVcIssuerMetadata: JwtVcIssuerResponse = {
         issuer: metadata.credential_issuer,
       }
-      const issuerKeys = await keyStore$.fetch(id)
-      if (issuerKeys && issuerKeys.length > 0) {
+      const algs = Array.from(
+        Object.values(metadata.credential_configurations_supported ?? {})
+          .flatMap((it) => it.credential_signing_alg_values_supported ?? [])
+          .reduce((acc, it) => {
+            acc.add(it)
+            return acc
+          }, new Set<string>())
+      )
+      const keyAlgs = algs.length === 0 ? ['ES256'] : algs
+      const keys = (
+        await Promise.all(
+          keyAlgs.map(async (alg) => {
+            const issuerKey = await keyStore$.fetch(id, alg)
+            if (!issuerKey) {
+              return null
+            }
+            return jwkSchema.parse(await exportJWK(issuerKey))
+          })
+        )
+      ).filter((key) => key !== null)
+      if (keys.length > 0) {
         jwtVcIssuerMetadata.jwks = {
           keys: await Promise.all(
             issuerKeys.map(async (keypair) => {
@@ -163,14 +181,11 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           }, new Set<string>())
       )
 
-      const pairs = await Promise.all(
+      await Promise.all(
         algs.map(async (alg) => {
-          const provider = selectProvider(key$, alg)
-          return await provider.generate()
+          return await keyStore$.save(issuer.credential_issuer, alg)
         })
       )
-
-      await keyStore$.save(issuer.credential_issuer, pairs)
       await metadataStore$.save(issuer)
     },
     async offerCredential(issuer, configurations, options) {

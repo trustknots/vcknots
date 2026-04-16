@@ -14,6 +14,8 @@ import { VerifiableCredential } from '../../src/credential.types'
 import { DidDocument, JsonWebKey as DidJsonWebKey } from '../../src/did.types'
 
 describe('verifyVerifiablePresentation provider', () => {
+  const expectedAud = 'https://verifier.example/expected-aud'
+
   let provider: ReturnType<typeof verifyVerifiablePresentation>
   let mockCnonceStore: NonceStoreProvider
   let mockCredentialVerifier: VerifyCredentialProvider
@@ -116,12 +118,19 @@ describe('verifyVerifiablePresentation provider', () => {
     mock.restoreAll()
   })
 
-  const createVpJwt = async (payload: object, kid?: string | null) => {
+  const createVpJwt = async (
+    payload: object,
+    kid?: string | null,
+    options?: { includeDefaultAud?: boolean }
+  ) => {
     const protectedHeader: jose.JWTHeaderParameters = { alg: 'ES256' }
     if (kid !== null) {
       protectedHeader.kid = kid ?? `${holderDid}#${await jose.calculateJwkThumbprint(holderJwk)}`
     }
-    return await new jose.SignJWT(payload as jose.JWTPayload)
+    const p = payload as Record<string, unknown>
+    const body =
+      options?.includeDefaultAud === false ? { ...p } : { aud: expectedAud, ...p }
+    return await new jose.SignJWT(body as jose.JWTPayload)
       .setProtectedHeader(protectedHeader)
       .sign(holderKeyPair.privateKey)
   }
@@ -135,12 +144,74 @@ describe('verifyVerifiablePresentation provider', () => {
       },
     })
 
-    const result = await provider.verify(vpJwt, { kind: 'jwt_vp_json' })
+    const result = await provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud })
     assert.ok(result)
     assert.strictEqual(result.nonce, 'test-nonce')
     assert.ok('vp' in result)
     const vp = result.vp as { verifiableCredential: unknown[] }
     assert.strictEqual(vp.verifiableCredential.length, 1)
+  })
+
+  test('should throw INVALID_VP_TOKEN when VP JWT is missing aud', async () => {
+    const vpJwt = await createVpJwt(
+      {
+        nonce: 'test-nonce',
+        vp: {
+          type: ['VerifiablePresentation'],
+          verifiableCredential: [vcJwt],
+        },
+      },
+      undefined,
+      { includeDefaultAud: false }
+    )
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
+      name: 'INVALID_VP_TOKEN',
+      message: /missing aud claim/,
+    })
+  })
+
+  test('should throw INVALID_VP_TOKEN when VP JWT aud does not match expectedAud', async () => {
+    const wrongAud = 'https://verifier.example/wrong-aud'
+    const vpJwt = await createVpJwt({
+      aud: wrongAud,
+      nonce: 'test-nonce',
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt],
+      },
+    })
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
+      name: 'INVALID_VP_TOKEN',
+      message: /aud does not match expected client_id/,
+    })
+  })
+
+  test('should accept aud as string array when it includes expectedAud', async () => {
+    const vpJwt = await createVpJwt({
+      aud: [expectedAud, 'https://verifier.example/other'],
+      nonce: 'test-nonce',
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt],
+      },
+    })
+    const result = await provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud })
+    assert.strictEqual(result.nonce, 'test-nonce')
+  })
+
+  test('should throw INVALID_VP_TOKEN when aud array does not include expectedAud', async () => {
+    const vpJwt = await createVpJwt({
+      aud: ['https://verifier.example/other-1', 'https://verifier.example/other-2'],
+      nonce: 'test-nonce',
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt],
+      },
+    })
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
+      name: 'INVALID_VP_TOKEN',
+      message: /aud does not match expected client_id/,
+    })
   })
 
   test('should throw an error for unsupported kind', async () => {
@@ -153,7 +224,7 @@ describe('verifyVerifiablePresentation provider', () => {
   })
 
   test('should throw an error for invalid vp_token', async () => {
-    await assert.rejects(provider.verify('invalid-jwt', { kind: 'jwt_vp_json' }), {
+    await assert.rejects(provider.verify('invalid-jwt', { kind: 'jwt_vp_json', expectedAud }), {
       name: 'INVALID_VP_TOKEN',
     })
   })
@@ -166,7 +237,7 @@ describe('verifyVerifiablePresentation provider', () => {
         verifiableCredential: [vcJwt],
       },
     })
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
       name: 'INVALID_NONCE',
       message: 'nonce is not valid.',
     })
@@ -195,23 +266,31 @@ describe('verifyVerifiablePresentation provider', () => {
         verifiableCredential: [],
       },
     })
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
       name: 'INVALID_CREDENTIAL',
       message: 'No credentials is included',
     })
   })
 
   test('should throw if vc is not a string', async () => {
+    // Embedded VC object must satisfy Zod (string | VC object); `{}` fails at schema parse.
+    const embeddedVcAsObject = {
+      '@context': ['https://www.w3.org/2018/credentials/v1'],
+      type: ['VerifiableCredential'],
+      issuer: 'https://issuer.example.com',
+      issuanceDate: new Date().toISOString(),
+      credentialSubject: { id: 'https://subject.example.com/credential-subject' },
+    }
     const vpJwt = await createVpJwt({
       nonce: 'test-nonce',
       vp: {
         type: ['VerifiablePresentation'],
-        verifiableCredential: [{}],
+        verifiableCredential: [embeddedVcAsObject],
       },
     })
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
-      name: 'INVALID_VP_TOKEN',
-      // message: 'VC represented as object is not supported.',
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
+      name: 'ILLEGAL_ARGUMENT',
+      message: 'VC represented as object is not supported.',
     })
   })
 
@@ -224,7 +303,7 @@ describe('verifyVerifiablePresentation provider', () => {
         verifiableCredential: [vcJwt],
       },
     })
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
       name: 'INVALID_CREDENTIAL',
       message: 'credential is not valid.',
     })
@@ -242,7 +321,7 @@ describe('verifyVerifiablePresentation provider', () => {
       null
     )
 
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
       name: 'INVALID_VP_TOKEN',
       message: /Missing key id in the header/,
     })
@@ -260,7 +339,7 @@ describe('verifyVerifiablePresentation provider', () => {
       'did:unsupported:123'
     )
 
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
       name: 'PROVIDER_NOT_FOUND',
       message: 'No provider found which can handle: unsupported',
     })
@@ -275,7 +354,7 @@ describe('verifyVerifiablePresentation provider', () => {
         verifiableCredential: [vcJwt],
       },
     })
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
       name: 'INVALID_VP_TOKEN',
       message: /Cannot resolve DID/,
     })
@@ -302,7 +381,7 @@ describe('verifyVerifiablePresentation provider', () => {
         verifiableCredential: [vcJwt],
       },
     })
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
       name: 'INVALID_VP_TOKEN',
       message: /Cannot find verification method/,
     })
@@ -327,7 +406,7 @@ describe('verifyVerifiablePresentation provider', () => {
         verifiableCredential: [vcJwt],
       },
     })
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
       name: 'INVALID_VP_TOKEN',
       message: /Cannot find verification method/,
     })
@@ -342,7 +421,7 @@ describe('verifyVerifiablePresentation provider', () => {
         verifiableCredential: [vcJwt],
       },
     })
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
       name: 'INVALID_PROOF',
       message: 'jwt is not valid.',
     })
@@ -357,7 +436,7 @@ describe('verifyVerifiablePresentation provider', () => {
         verifiableCredential: [vcJwt],
       },
     })
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json' }), {
+    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
       name: 'HOLDER_BINDING_FAILED',
       message: 'Holder binding verification failed.',
     })

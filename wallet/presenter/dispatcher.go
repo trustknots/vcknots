@@ -8,6 +8,8 @@ import (
 	"github.com/trustknots/vcknots/wallet/presenter/types"
 )
 
+type PresentationRequest = types.PresentationRequest
+
 type PresentationDispatcher struct {
 	plugins map[types.SupportedPresentationProtocol]types.Presenter
 }
@@ -55,7 +57,7 @@ func (d *PresentationDispatcher) getPlugin(protocol types.SupportedPresentationP
 	return plugin, nil
 }
 
-func (d *PresentationDispatcher) Present(protocol SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission PresentationSubmission) error {
+func (d *PresentationDispatcher) Present(protocol SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission PresentationSubmission, request *PresentationRequest) error {
 	if len(serializedPresentation) == 0 {
 		return types.NewPresenterError(protocol, endpoint.String(), "present", types.ErrInvalidPresentation)
 	}
@@ -65,7 +67,7 @@ func (d *PresentationDispatcher) Present(protocol SupportedPresentationProtocol,
 		return err
 	}
 
-	if err := plugin.Present(protocol, endpoint, serializedPresentation, presentationSubmission); err != nil {
+	if err := plugin.Present(protocol, endpoint, serializedPresentation, presentationSubmission, request); err != nil {
 		return types.NewPresenterError(protocol, endpoint.String(), "present", err)
 	}
 

@@ -114,8 +114,11 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       // Validate it using the AuthorizationResponse
       const authorizationResponse = VerifierAuthorizationResponse(json)
 
-      // Add additional validation as needed
-      await verifierFlow.verifyPresentations(verifierId, authorizationResponse)
+      // Same pattern as server/core: expectedAud = redirect_uri:<this verifier's response_uri>
+      const responseUri = `${baseUrl}/verifiers/${encodeURIComponent(verifierId)}/callback`
+      await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
+        expectedAud: ClientIdentifier(`redirect_uri:${responseUri}`),
+      })
 
       return c.json({
         message: 'Callback received successfully',

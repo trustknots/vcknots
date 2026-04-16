@@ -19,11 +19,14 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
     ...withProviderRegistry,
 
     async verify(vp, options): Promise<VpTokenPayload> {
-      if (options && options.kind !== 'jwt_vp_json') {
+      if (!options || options.kind !== 'jwt_vp_json') {
         throw err('ILLEGAL_ARGUMENT', {
-          message: `${options.kind} is not supported.`,
+          message: options?.kind
+            ? `${options.kind} is not supported.`
+            : 'verify options are required.',
         })
       }
+      const { expectedAud } = options
       // TODO: review where the processing is located
       const credentials: [
         VerifiableCredential,

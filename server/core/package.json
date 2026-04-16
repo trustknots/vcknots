@@ -1,6 +1,6 @@
 {
 	"name": "@trustknots/server-core",
-	"version": "0.1.0",
+	"version": "0.1.2",
 	"private": true,
 	"type": "module",
 	"main": "lib/index.js",
@@ -29,6 +29,10 @@
 		"./utils/error-handler": {
 			"types": "./lib/utils/error-handler.d.ts",
 			"default": "./lib/utils/error-handler.js"
+		},
+		"./utils/direct-post-vp-aud-transaction-store": {
+			"types": "./lib/utils/direct-post-vp-aud-transaction-store.d.ts",
+			"default": "./lib/utils/direct-post-vp-aud-transaction-store.js"
 		}
 	},
 	"scripts": {
@@ -38,8 +42,8 @@
 		"lint": "biome lint ./src"
 	},
 	"dependencies": {
-		"@hono/node-server": "^1.19.5",
+		"@hono/node-server": "1.19.9",
 		"@trustknots/vcknots": "workspace:*",
-		"hono": "^4.9.9"
+		"hono": "4.11.4"
 	}
 }
