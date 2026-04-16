@@ -51,8 +51,16 @@ func NewPresenterError(protocol SupportedPresentationProtocol, endpoint, op stri
 	}
 }
 
+// PresentationRequest contains the information needed to present a credential
+type PresentationRequest struct {
+	State                       string 
+	ClientMetadata              interface{} 
+	AuthorizationEncryptedRespAlg string
+	AuthorizationEncryptedRespEnc string
+}
+
 type Presenter interface {
-	Present(protocol SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission PresentationSubmission) error
+	Present(protocol SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission PresentationSubmission, request *PresentationRequest) error
 }
 
 type SupportedPresentationProtocol int

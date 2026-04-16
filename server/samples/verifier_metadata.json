@@ -9,6 +9,10 @@
 		"dc+sd-jwt": {
 			"sd-jwt_alg_values": ["ES256", "ES384"],
 			"kb-jwt_alg_values": ["ES256", "ES384"]
+		},
+		"sd_jwt_vc": {
+			"sd-jwt_alg_values": ["ES256", "ES384"],
+			"kb-jwt_alg_values": ["ES256", "ES384"]
 		}
 	}
 }

@@ -19,11 +19,14 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
     ...withProviderRegistry,
 
     async verify(vp, options): Promise<VpTokenPayload> {
-      if (options && options.kind !== 'jwt_vp_json') {
+      if (!options || options.kind !== 'jwt_vp_json') {
         throw err('ILLEGAL_ARGUMENT', {
-          message: `${options.kind} is not supported.`,
+          message: options?.kind
+            ? `${options.kind} is not supported.`
+            : 'verify options are required.',
         })
       }
+      const { expectedAud } = options
       // TODO: review where the processing is located
       const credentials: [
         VerifiableCredential,
@@ -59,6 +62,19 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
 
       const nonce = Nonce({ nonce: vpPayload.nonce })
       const nonceStore$ = this.providers.get('nonce-store-provider')
+      const aud = vpPayload.aud
+      const audMatches =
+        typeof aud === 'string'
+          ? aud === expectedAud
+          : Array.isArray(aud) && aud.some((a) => typeof a === 'string' && a === expectedAud)
+      if (!audMatches) {
+        throw err('INVALID_VP_TOKEN', {
+          message:
+            aud === undefined
+              ? 'VP token is missing aud claim required for client binding.'
+              : 'VP token aud does not match expected client_id.',
+        })
+      }
       const nonceValid = await nonceStore$.validate(nonce)
       if (!nonceValid) {
         throw err('INVALID_NONCE', {
