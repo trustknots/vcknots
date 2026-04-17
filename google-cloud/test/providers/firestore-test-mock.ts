@@ -14,12 +14,13 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
 
   // Fake Firestore instance backed by the in-memory store, injected via DI.
   const mockFirestore = {
+    settings: () => {},
     doc: (path: string) => {
-      const ref = {
+      const docRef = {
         get: async () => ({
           exists: store.has(path),
           data: () => store.get(path),
-          ref,
+          ref: docRef,
         }),
         set: async (data: Record<string, unknown>, options?: { merge?: boolean }) => {
           if (options?.merge) {
@@ -33,7 +34,7 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
           store.delete(path)
         },
       }
-      return ref
+      return docRef
     },
   } as unknown as Firestore
 

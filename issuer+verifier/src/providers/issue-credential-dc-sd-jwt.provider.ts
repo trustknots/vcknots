@@ -9,6 +9,7 @@ import { withProviderRegistry, WithProviderRegistry } from './provider.registry'
 import { selectProvider } from './provider.utils'
 import * as crypto from 'node:crypto'
 import * as jose from 'jose'
+import { jwkSchema } from '../jwk.type'
 
 export type IssueCredentialProviderOptions = {
   identifier?: () => string
@@ -171,14 +172,14 @@ export const issueCredentialSDJWT = (
         })
       }
       const keyStore$ = this.providers.get('issuer-signature-key-store-provider')
-      const issuerKeys = await keyStore$.fetch(credentialIssuer)
-      const keys = issuerKeys.find((keypair) => keypair.privateKey.alg === keyAlg)
-      if (!keys) {
+      const issuerKey = await keyStore$.fetch(credentialIssuer, keyAlg)
+      if (!issuerKey) {
         throw raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
           message: 'Issuer key not found.',
         })
       }
-      const kid = await jose.calculateJwkThumbprint(keys.publicKey)
+      const jwk = jwkSchema.parse(await jose.exportJWK(issuerKey))
+      const kid = await jose.calculateJwkThumbprint(jwk)
 
       const jwtHeader = {
         alg: keyAlg,
@@ -204,9 +205,7 @@ export const issueCredentialSDJWT = (
         })
       }
 
-      const key$ = this.providers.get('issuer-signature-key-provider')
-      const keyProvider = selectProvider(key$, keyAlg)
-      const signature = await keyProvider.sign(keys.privateKey, keyAlg, jwtPayload, jwtHeader)
+      const signature = await keyStore$.sign(credentialIssuer, keyAlg, jwtPayload, jwtHeader)
       if (!signature) {
         throw raise('INTERNAL_SERVER_ERROR', {
           message: 'Cannot sign credentials.',

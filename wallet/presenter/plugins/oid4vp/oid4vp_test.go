@@ -16,8 +16,9 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-	"github.com/trustknots/vcknots/wallet/presenter/types"
+	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
+	"github.com/trustknots/vcknots/wallet/presenter/types"
 )
 
 func TestOid4vpPresenter_Present(t *testing.T) {
@@ -89,7 +90,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 				endpoint = *presenterURL
 			}
 			p := &Oid4vpPresenter{}
-			err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testSubmission)
+			err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testSubmission, nil)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Oid4vpPresenter.Present() error = %v, wantErr %v", err, tt.wantErr)
@@ -113,7 +114,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		hijackURL, _ := url.Parse(hijackServer.URL() + "/present")
 
 		p := &Oid4vpPresenter{}
-		err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testSubmission)
+		err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testSubmission, nil)
 
 		if err == nil {
 			t.Error("Expected error for hijacked connection, got nil")
@@ -155,7 +156,7 @@ func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
 			"id": "test-def",
 		},
 		"redirect_uri":    "http://example.com/callback",
-		"response_uri":    "http://example.com/response",
+		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
 
@@ -182,7 +183,7 @@ func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
 	}{
 		{
 			name:    "Query parameters",
-			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/callback&response_type=vp_token&nonce=test-nonce&presentation_definition=%7B%22id%22%3A%22test-def%22%7D&response_mode=direct_post&response_uri=http://example.com/response",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/callback&response_type=vp_token&nonce=test-nonce&presentation_definition=%7B%22id%22%3A%22test-def%22%7D&response_mode=direct_post&response_uri=https://example.com/response",
 			setup:   nil,
 			wantErr: false,
 		},
@@ -287,7 +288,7 @@ func TestOid4vpPresenter_WithRequestObject_TypHeader(t *testing.T) {
 			"id": "test-def",
 		},
 		"redirect_uri":    "http://example.com/callback",
-		"response_uri":    "http://example.com/response",
+		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
 
@@ -393,7 +394,7 @@ func TestOid4vpPresenter_WithRequestObject_IssClaimIgnored(t *testing.T) {
 			"id": "test-def",
 		},
 		"redirect_uri":    "http://example.com/callback",
-		"response_uri":    "http://example.com/response",
+		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
 
@@ -454,7 +455,7 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 				"id": "test-def",
 			},
 			"redirect_uri":    "http://example.com/callback",
-			"response_uri":    "http://example.com/response",
+			"response_uri":    "https://example.com/response",
 			"client_metadata": clientMetadata,
 		}
 
@@ -549,7 +550,7 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 				"id": "test-def",
 			},
 			"redirect_uri":    "http://example.com/callback",
-			"response_uri":    "http://example.com/response",
+			"response_uri":    "https://example.com/response",
 			"client_metadata": clientMetadata,
 		}
 
@@ -574,6 +575,9 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 // Additional validations for query params and builder flows
 func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testing.T) {
 	p := &Oid4vpPresenter{}
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(false)
 
 	tests := []struct {
 		name    string
@@ -599,6 +603,12 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 			wantErr: true,
 			errSub:  "missing required parameters: response_uri",
 		},
+		{
+			name:    "response_mode=direct_post rejects non-https response_uri",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&response_uri=http://example.com/response",
+			wantErr: true,
+			errSub:  "response_uri must use https scheme",
+		},
 	}
 
 	for _, tt := range tests {
@@ -611,6 +621,25 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 				t.Fatalf("expected error to contain %q, got %v", tt.errSub, err)
 			}
 		})
+	}
+}
+
+func TestOid4vpPresenter_ParsePresentationRequest_AllowsNonHTTPSResponseURI_WhenValidationDisabled(t *testing.T) {
+	p := &Oid4vpPresenter{}
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&response_uri=http://example.com/response"
+	req, err := p.ParsePresentationRequest(uri)
+	if err != nil {
+		t.Fatalf("expected no error when HTTPS validation is disabled, got: %v", err)
+	}
+	if req == nil {
+		t.Fatal("expected non-nil request")
+	}
+	if req.ResponseURI != "http://example.com/response" {
+		t.Fatalf("expected response_uri to be preserved, got: %s", req.ResponseURI)
 	}
 }
 
@@ -648,6 +677,31 @@ func TestOid4vpPresenter_ClientIDParsingAndRedirectMismatch(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "redirect_uri mismatch") {
 			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("client_id with duplicate prefix", func(t *testing.T) {
+		// Duplicate prefix: x509_san_dns:x509_san_dns:demo.example.com
+		uri := "openid4vp://present?client_id=x509_san_dns:x509_san_dns:demo.example.com&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=fragment"
+		_, err := p.ParsePresentationRequest(uri)
+		if err == nil {
+			t.Fatal("expected error for duplicate prefix in client_id")
+		}
+		if !strings.Contains(err.Error(), "duplicate prefix") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("client_id with trailing whitespace", func(t *testing.T) {
+		// Trailing whitespace should be trimmed
+		uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb%20&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&response_uri=https://example.com/cb"
+		req, err := p.ParsePresentationRequest(uri)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Should successfully parse after trimming
+		if req.ClientID != "redirect_uri:http://example.com/cb" {
+			t.Fatalf("expected trimmed client_id, got: %s", req.ClientID)
 		}
 	})
 }
@@ -717,7 +771,7 @@ func TestOid4vpPresenter_RequestParameterJWT_Success(t *testing.T) {
 			"id": "test-def",
 		},
 		"redirect_uri":    "http://example.com/callback",
-		"response_uri":    "http://example.com/response",
+		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
 
