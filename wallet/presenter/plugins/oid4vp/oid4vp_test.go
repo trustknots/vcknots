@@ -881,3 +881,38 @@ func TestOid4vpPresenter_RequestObject_WithX5C_X509SanDNS_SuccessAndFailures(t *
 		t.Fatalf("expected hostname mismatch error, got: %v", err)
 	}
 }
+
+func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
+	t.Run("Delete default User-Agent header (GET)", func(t *testing.T) {
+		m := mockserver.NewMockServer()
+		defer m.Close()
+
+		m.HandleFunc("/request-object", func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("User-Agent") != "" {
+				t.Fatalf("User-Agent is not empty string")
+			}
+		})
+
+		requestObjectURI, _ := url.Parse(m.URL() + "/request-object")
+
+		rb := requestBuilder{}
+		rb.WithRequestObjectURI(requestObjectURI.String(), RequestURIMethodGET)
+	})
+
+	t.Run("Delete default User-Agent header (POST)", func(t *testing.T) {
+		m :=mockserver.NewMockServer()
+		defer m.Close()
+
+		m.HandleFunc("/request-object",func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("User-Agent") != ""{
+				t.Fatalf("User-Agent is not empty string")
+			}
+		})
+		
+
+		requestObjectURI, _ := url.Parse(m.URL() + "/request-object")
+
+		rb := requestBuilder{}
+		rb.WithRequestObjectURI(requestObjectURI.String(),RequestURIMethodPOST)
+	})
+}

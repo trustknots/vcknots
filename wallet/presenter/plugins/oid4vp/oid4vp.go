@@ -712,6 +712,7 @@ func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMetho
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
+	req.Header.Set("User-Agent", "")
 	resp, err := client.Do(req)
 	if err != nil {
 		b.errValidation = fmt.Errorf("failed to send %s request to %s: %w", method, uri, err)
