@@ -554,13 +554,10 @@ describe('IssuerFlow', () => {
         proofJwt: { usePreAuth: true },
       })
 
-      assert.deepStrictEqual(
-        mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1],
-        {
-          usePreAuth: true,
-          credentialIssuer: issuer,
-        }
-      )
+      assert.deepStrictEqual(mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1], {
+        usePreAuth: true,
+        credentialIssuer: issuer,
+      })
     })
 
     it('should pass clientId in JWT verify context for authorization-code-style flow', async () => {
@@ -603,14 +600,11 @@ describe('IssuerFlow', () => {
         proofJwt: { usePreAuth: false, clientId: 'oauth-client-1' },
       })
 
-      assert.deepStrictEqual(
-        mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1],
-        {
-          usePreAuth: false,
-          credentialIssuer: issuer,
-          clientId: 'oauth-client-1',
-        }
-      )
+      assert.deepStrictEqual(mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1], {
+        usePreAuth: false,
+        credentialIssuer: issuer,
+        clientId: 'oauth-client-1',
+      })
     })
 
     it('should issue a credential with claims for a valid request', async () => {
@@ -937,6 +931,7 @@ describe('IssuerFlow', () => {
           subject: undefined,
           claims: undefined,
           keyAlg: 'ES256',
+          proofHeader: verifiedProofWithoutKid.header,
         }
       )
     })
