@@ -20,17 +20,17 @@ import { jwkSchema } from './jwk.type'
 
 type OfferOptions =
   | {
-      usePreAuth: false
-      state?: unknown
-    }
+    usePreAuth: false
+    state?: unknown
+  }
   | {
-      usePreAuth: true
-      txCode?: {
-        inputMode?: 'numeric' | 'text'
-        length?: number
-        description?: string
-      }
+    usePreAuth: true
+    txCode?: {
+      inputMode?: 'numeric' | 'text'
+      length?: number
+      description?: string
     }
+  }
 type IssueOptions = {
   alg: string
   cnonce?: {
@@ -277,10 +277,10 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
               ? options?.proofJwt?.usePreAuth === true
                 ? { usePreAuth: true, credentialIssuer: metadata.credential_issuer }
                 : {
-                    usePreAuth: false,
-                    credentialIssuer: metadata.credential_issuer,
-                    clientId: options?.proofJwt?.clientId,
-                  }
+                  usePreAuth: false,
+                  credentialIssuer: metadata.credential_issuer,
+                  clientId: options?.proofJwt?.clientId,
+                }
               : undefined
           verifyProof = await credentialProofProvider.verifyProof(proof, proofJwtCtx)
           if (!verifyProof) {

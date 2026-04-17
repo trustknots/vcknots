@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/common"
+	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
 	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
@@ -34,7 +36,24 @@ func TestOid4vciReceiver_FetchIssuerMetadata(t *testing.T) {
 	serverURL, _ := url.Parse(issuer.URL())
 	endpoint := common.URIField(*serverURL)
 
+	t.Run("https is required", func(t *testing.T) {
+		dbg_mode := env.IsDebugMode()
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetDebugMode(dbg_mode)
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetDebugMode(false); env.SetHTTPAllowed(false)
+
+		_, err := receiver.FetchIssuerMetadata(endpoint, types.Oid4vci)
+		if err == nil {
+			t.Fatal("FetchIssuerMetadata should be error when issuer's schema is http")
+		}
+	})
+
 	t.Run("Happy path", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		metadata, err := receiver.FetchIssuerMetadata(endpoint, types.Oid4vci)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -57,6 +76,10 @@ func TestOid4vciReceiver_FetchIssuerMetadata(t *testing.T) {
 	})
 
 	t.Run("Server error", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		// Create a separate server for error testing
 		errorServer := mockserver.NewMockServer()
 		defer errorServer.Close()
@@ -71,6 +94,10 @@ func TestOid4vciReceiver_FetchIssuerMetadata(t *testing.T) {
 	})
 
 	t.Run("Empty response body", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		emptyServer := mockserver.NewMockServer()
 		defer emptyServer.Close()
 
@@ -84,6 +111,10 @@ func TestOid4vciReceiver_FetchIssuerMetadata(t *testing.T) {
 	})
 
 	t.Run("Invalid JSON response", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		invalidJSONServer := mockserver.NewMockServer()
 		defer invalidJSONServer.Close()
 
@@ -93,6 +124,69 @@ func TestOid4vciReceiver_FetchIssuerMetadata(t *testing.T) {
 		_, err := receiver.FetchIssuerMetadata(common.URIField(*invalidJSONURL), types.Oid4vci)
 		if err == nil {
 			t.Fatal("Expected error for invalid JSON response")
+		}
+	})
+
+	t.Run("Trailing slash in endpoint", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		metadata := types.CredentialIssuerMetadata{
+			CredentialIssuer: "http://example.com",
+		}
+		// Use a raw handler to bypass ServeMux's automatic path cleaning and redirects
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Check RequestURI for double slashes before any normalization
+			if strings.Contains(r.RequestURI, "//") {
+				http.Error(w, "Double slash detected: "+r.RequestURI, http.StatusBadRequest)
+				return
+			}
+			mockserver.JSONResponse(w, http.StatusOK, metadata)
+		}))
+		defer server.Close()
+
+		// Create endpoint WITH trailing slash
+		endpointURL, _ := url.Parse(server.URL + "/")
+		endpoint := common.URIField(*endpointURL)
+
+		res, err := receiver.FetchIssuerMetadata(endpoint, types.Oid4vci)
+		if err != nil {
+			t.Fatalf("Expected no error with trailing slash, got %v. If this is a 400 error, it means a double slash was detected.", err)
+		}
+		if res.CredentialIssuer != metadata.CredentialIssuer {
+			t.Errorf("Expected metadata, got %v", res)
+		}
+	})
+
+	t.Run("Trailing slash in endpoint with path component", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		metadata := types.CredentialIssuerMetadata{
+			CredentialIssuer: "http://example.com/issuer",
+		}
+		// Use a raw handler to bypass ServeMux's automatic path cleaning and redirects
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.RequestURI, "//") {
+				http.Error(w, "Double slash detected: "+r.RequestURI, http.StatusBadRequest)
+				return
+			}
+			mockserver.JSONResponse(w, http.StatusOK, metadata)
+		}))
+		defer server.Close()
+
+		// Create endpoint WITH path and trailing slash
+		endpointURL, _ := url.Parse(server.URL + "/issuer/")
+		endpoint := common.URIField(*endpointURL)
+
+		res, err := receiver.FetchIssuerMetadata(endpoint, types.Oid4vci)
+		if err != nil {
+			t.Fatalf("Expected no error with trailing slash and path, got %v. If this is a 400 error, it means a double slash was detected.", err)
+		}
+		if res.CredentialIssuer != metadata.CredentialIssuer {
+			t.Errorf("Expected metadata, got %v", res)
 		}
 	})
 }
@@ -107,7 +201,24 @@ func TestOid4vciReceiver_FetchAuthorizationServerMetadata(t *testing.T) {
 	serverURL, _ := url.Parse(issuer.URL())
 	endpoint := common.URIField(*serverURL)
 
+	t.Run("https is required", func(t *testing.T) {
+		dbg_mode := env.IsDebugMode()
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetDebugMode(dbg_mode)
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetDebugMode(false); env.SetHTTPAllowed(false)
+
+		_, err := receiver.FetchAuthorizationServerMetadata(endpoint, types.Oid4vci)
+		if err == nil {
+			t.Fatal("FetchAuthorizationServerMetadata should be error when issuer's schema is http")
+		}
+	})
+
 	t.Run("Happy path", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		metadata, err := receiver.FetchAuthorizationServerMetadata(endpoint, types.Oid4vci)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -126,6 +237,10 @@ func TestOid4vciReceiver_FetchAuthorizationServerMetadata(t *testing.T) {
 	})
 
 	t.Run("Server error", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		// Create a separate server for error testing
 		errorServer := mockserver.NewMockServer()
 		defer errorServer.Close()
@@ -140,6 +255,10 @@ func TestOid4vciReceiver_FetchAuthorizationServerMetadata(t *testing.T) {
 	})
 
 	t.Run("Invalid JSON response", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		invalidJSONServer := mockserver.NewMockServer()
 		defer invalidJSONServer.Close()
 
@@ -163,7 +282,24 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 	serverURL, _ := url.Parse(issuer.URL())
 	endpoint := common.URIField(*serverURL)
 
+	t.Run("https is required", func(t *testing.T) {
+		dbg_mode := env.IsDebugMode()
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetDebugMode(dbg_mode)
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetDebugMode(false); env.SetHTTPAllowed(false)
+
+		_, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code")
+		if err == nil {
+			t.Fatal("FetchAccessToken should be error when issuer's schema is http")
+		}
+	})
+
 	t.Run("Happy path", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		token, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code")
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -182,6 +318,10 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 	})
 
 	t.Run("Server error", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		// Create a separate server for error testing
 		errorServer := mockserver.NewMockServer()
 		defer errorServer.Close()
@@ -196,6 +336,10 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 	})
 
 	t.Run("Invalid JSON response", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		invalidJSONServer := mockserver.NewMockServer()
 		defer invalidJSONServer.Close()
 
@@ -220,7 +364,24 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 	serverURL, _ := url.Parse(issuer.URL() + "/credential")
 	endpoint := common.URIField(*serverURL)
 
+	t.Run("https is required", func(t *testing.T) {
+		dbg_mode := env.IsDebugMode()
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetDebugMode(dbg_mode)
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetDebugMode(false); env.SetHTTPAllowed(false)
+
+		_, err := receiver.ReceiveCredential(types.Oid4vci, endpoint, "test-config", nil, accessToken, nil, nil)
+		if err == nil {
+			t.Fatal("ReceiveCredential should be error when issuer's schema is http")
+		}
+	})
+
 	t.Run("Happy path", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		credential, err := receiver.ReceiveCredential(types.Oid4vci, endpoint, "test-config", nil, accessToken, nil, nil)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -337,6 +498,10 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 	})
 
 	t.Run("Server error", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		// Create a separate server for error testing
 		errorServer := mockserver.NewMockServer()
 		defer errorServer.Close()
@@ -351,6 +516,10 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 	})
 
 	t.Run("Invalid JSON response", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		invalidJSONServer := mockserver.NewMockServer()
 		defer invalidJSONServer.Close()
 
@@ -364,6 +533,10 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 	})
 
 	t.Run("No credential in response", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		noCredServer := mockserver.NewMockServer()
 		defer noCredServer.Close()
 
@@ -396,4 +569,98 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 	})
 }
 
-// TestOid4vciReceiver_WithMockServer tests OID4VCI receiver using the new mockserver package
+func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
+	receiver := &Oid4vciReceiver{}
+
+	tests := []struct {
+		name         string
+		identifier   string
+		expectedPath string
+		discovery    func(common.URIField) error
+	}{
+		{
+			name:         "Auth Server (Base URL)",
+			identifier:   "/",
+			expectedPath: "/.well-known/oauth-authorization-server",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchAuthorizationServerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+		{
+			name:         "Auth Server (With Path)",
+			identifier:   "/tenant1",
+			expectedPath: "/.well-known/oauth-authorization-server/tenant1",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchAuthorizationServerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+		{
+			name:         "Auth Server (With Trailing Slash)",
+			identifier:   "/tenant1/",
+			expectedPath: "/.well-known/oauth-authorization-server/tenant1",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchAuthorizationServerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+		{
+			name:         "Credential Issuer (Base URL)",
+			identifier:   "/",
+			expectedPath: "/.well-known/openid-credential-issuer",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchIssuerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+		{
+			name:         "Credential Issuer (With Path)",
+			identifier:   "/tenant2",
+			expectedPath: "/tenant2/.well-known/openid-credential-issuer",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchIssuerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+		{
+			name:         "Credential Issuer (With Trailing Slash)",
+			identifier:   "/tenant2/",
+			expectedPath: "/tenant2/.well-known/openid-credential-issuer",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchIssuerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+	}
+
+	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(http_allowed)
+	env.SetHTTPAllowed(true)
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == tt.expectedPath {
+					w.WriteHeader(http.StatusOK)
+					// Return minimal valid JSON for both types
+					fmt.Fprint(w, `{"issuer": "https://example.com", "credential_issuer": "https://example.com"}`)
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
+			}))
+			defer server.Close()
+
+			serverURL, _ := url.Parse(server.URL)
+			identifierURL := *serverURL
+			if tt.identifier != "/" {
+				identifierURL.Path = tt.identifier
+			}
+			endpoint := common.URIField(identifierURL)
+
+			if err := tt.discovery(endpoint); err != nil {
+				t.Errorf("Pattern %s failed: expected success at %s, got %v", tt.name, tt.expectedPath, err)
+			}
+		})
+	}
+}

@@ -102,8 +102,8 @@ describe('AuthzFlows', () => {
   describe('createAuthzServerMetadata()', () => {
     it('should create metadata and initialize the authz signing key with the default algorithm', async () => {
       mock.method(mockAuthzMetadataProvider, 'fetch', async () => null)
-      mock.method(mockAuthzKeyProvider, 'save', async () => {})
-      mock.method(mockAuthzMetadataProvider, 'save', async () => {})
+      mock.method(mockAuthzKeyProvider, 'save', async () => { })
+      mock.method(mockAuthzMetadataProvider, 'save', async () => { })
 
       await flow.createAuthzServerMetadata(sampleMetadata)
 
@@ -121,8 +121,8 @@ describe('AuthzFlows', () => {
 
     it('should pass the requested algorithm to the key store', async () => {
       mock.method(mockAuthzMetadataProvider, 'fetch', async () => null)
-      mock.method(mockAuthzKeyProvider, 'save', async () => {})
-      mock.method(mockAuthzMetadataProvider, 'save', async () => {})
+      mock.method(mockAuthzKeyProvider, 'save', async () => { })
+      mock.method(mockAuthzMetadataProvider, 'save', async () => { })
 
       await flow.createAuthzServerMetadata(sampleMetadata, { alg: 'ES256' })
 
@@ -153,7 +153,7 @@ describe('AuthzFlows', () => {
     describe('Pre-Authorized Code Flow', () => {
       beforeEach(() => {
         mock.method(mockCodeStoreProvider, 'validate', async () => true)
-        mock.method(mockCodeStoreProvider, 'delete', async () => {})
+        mock.method(mockCodeStoreProvider, 'delete', async () => { })
         mock.method(mockAuthzKeyProvider, 'sign', async () => sampleSignature)
         mock.method(mockAccessTokenProvider, 'createTokenPayload', async () => samplePayload)
       })

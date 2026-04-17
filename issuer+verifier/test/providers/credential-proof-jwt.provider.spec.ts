@@ -34,14 +34,8 @@ describe('CredentialProofJwtProvider', () => {
     return path
   }
 
-  const certificatePem = readFileSync(
-    resolveSamplePath('certificate_openid.pem'),
-    'utf-8'
-  )
-  const privateKeyPem = readFileSync(
-    resolveSamplePath('private_key_openid.pem'),
-    'utf-8'
-  )
+  const certificatePem = readFileSync(resolveSamplePath('certificate_openid.pem'), 'utf-8')
+  const privateKeyPem = readFileSync(resolveSamplePath('private_key_openid.pem'), 'utf-8')
 
   let keys: { publicKey: CryptoKey; privateKey: CryptoKey }
   let publicKeyJwk: JsonWebKey
@@ -359,12 +353,9 @@ describe('CredentialProofJwtProvider', () => {
 
     it('should throw INVALID_PROOF if typ is not openid4vci-proof+jwt', async () => {
       const provider = setupProvider()
-      const proof = await createTestProof(
-        { aud: credentialIssuer },
-        'ES256',
-        testKid,
-        { typ: 'JWT' }
-      )
+      const proof = await createTestProof({ aud: credentialIssuer }, 'ES256', testKid, {
+        typ: 'JWT',
+      })
       await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
         name: 'INVALID_PROOF',
         message: `Proof JWT header typ must be "${OID4VCI_JWT_PROOF_TYP}".`,

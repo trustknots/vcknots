@@ -519,7 +519,7 @@ describe('Vcknots', () => {
       })
       await vkWithPreSavedNonce.verifier
         .createVerifierMetadata(verifierId, metadata)
-        .catch(() => {})
+        .catch(() => { })
 
       const response: AuthorizationResponse = AuthorizationResponse({
         presentation_submission: {

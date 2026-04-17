@@ -321,7 +321,7 @@ describe('IssuerFlow', () => {
     })
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
     mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
-    mock.method(mockPreAuthCodeStoreProvider, 'save', async () => {})
+    mock.method(mockPreAuthCodeStoreProvider, 'save', async () => { })
     mock.method(mockCredentialOfferProvider, 'create', async () => offer)
 
     const result = await issuerFlow.offerCredential(issuer, configurations, options)
@@ -337,7 +337,7 @@ describe('IssuerFlow', () => {
     it('should create nonce, save to store, and return nonce string', async () => {
       const generatedNonce = { nonce: 'abc123def456', nonce_expires_in: 300000 }
       mock.method(mockNonceProvider, 'generate', async () => generatedNonce)
-      mock.method(mockNonceStoreProvider, 'save', async () => {})
+      mock.method(mockNonceStoreProvider, 'save', async () => { })
 
       const result = await issuerFlow.createNonce()
 
@@ -350,7 +350,7 @@ describe('IssuerFlow', () => {
     it('should pass ttlMs to generate when provided', async () => {
       const generatedNonce = { nonce: 'ttl-nonce', nonce_expires_in: 60000 }
       mock.method(mockNonceProvider, 'generate', async () => generatedNonce)
-      mock.method(mockNonceStoreProvider, 'save', async () => {})
+      mock.method(mockNonceStoreProvider, 'save', async () => { })
 
       await issuerFlow.createNonce(60000)
 
@@ -569,6 +569,10 @@ describe('IssuerFlow', () => {
         usePreAuth: true,
         credentialIssuer: issuer,
       })
+      assert.deepStrictEqual(mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1], {
+        usePreAuth: true,
+        credentialIssuer: issuer,
+      })
     })
 
     it('should pass clientId in JWT verify context for authorization-code-style flow', async () => {
@@ -611,6 +615,11 @@ describe('IssuerFlow', () => {
         proofJwt: { usePreAuth: false, clientId: 'oauth-client-1' },
       })
 
+      assert.deepStrictEqual(mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1], {
+        usePreAuth: false,
+        credentialIssuer: issuer,
+        clientId: 'oauth-client-1',
+      })
       assert.deepStrictEqual(mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1], {
         usePreAuth: false,
         credentialIssuer: issuer,
