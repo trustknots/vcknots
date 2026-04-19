@@ -321,9 +321,6 @@ func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfil
 		"iat": time.Now().Unix(),
 		"aud": aud,
 	}
-	if clientID != nil {
-		payload["iss"] = *clientID
-	}
 
 	if clientID != nil {
 		if strings.TrimSpace(*clientID) == "" {

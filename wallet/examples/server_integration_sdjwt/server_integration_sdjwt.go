@@ -45,6 +45,7 @@ import (
 	"github.com/trustknots/vcknots/wallet"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
+	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/examples/common"
 	"github.com/trustknots/vcknots/wallet/idprof"
 	"github.com/trustknots/vcknots/wallet/presenter"
@@ -235,6 +236,11 @@ func main() {
 	} else {
 		logger.Info("=== Server Integration Test Mode ===")
 		logger.Info("Make sure the server is running on http://localhost:8080")
+
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+		logger.Info("Enabled HTTP transport for local server integration testing")
 	}
 
 	appDir, err := os.UserConfigDir()

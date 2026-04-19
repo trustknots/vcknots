@@ -680,7 +680,7 @@ func TestController_generateJWTProof_AnonymousPreAuthorizedFlow_OmitsIss(t *test
 
 	if _, exists := payload["iss"]; exists {
 		t.Fatalf("expected iss claim to be omitted in anonymous pre-authorized flow, got %v", payload["iss"])
-}
+	}
 }
 
 func TestController_generateJWTProof_NonAnonymousFlow_EmptyClientIDReturnsError(t *testing.T) {

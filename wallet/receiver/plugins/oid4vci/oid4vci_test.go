@@ -41,7 +41,8 @@ func TestOid4vciReceiver_FetchIssuerMetadata(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetDebugMode(dbg_mode)
 		defer env.SetHTTPAllowed(http_allowed)
-		env.SetDebugMode(false); env.SetHTTPAllowed(false)
+		env.SetDebugMode(false)
+		env.SetHTTPAllowed(false)
 
 		_, err := receiver.FetchIssuerMetadata(endpoint, types.Oid4vci)
 		if err == nil {
@@ -206,7 +207,8 @@ func TestOid4vciReceiver_FetchAuthorizationServerMetadata(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetDebugMode(dbg_mode)
 		defer env.SetHTTPAllowed(http_allowed)
-		env.SetDebugMode(false); env.SetHTTPAllowed(false)
+		env.SetDebugMode(false)
+		env.SetHTTPAllowed(false)
 
 		_, err := receiver.FetchAuthorizationServerMetadata(endpoint, types.Oid4vci)
 		if err == nil {
@@ -287,7 +289,8 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetDebugMode(dbg_mode)
 		defer env.SetHTTPAllowed(http_allowed)
-		env.SetDebugMode(false); env.SetHTTPAllowed(false)
+		env.SetDebugMode(false)
+		env.SetHTTPAllowed(false)
 
 		_, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code")
 		if err == nil {
@@ -369,7 +372,8 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetDebugMode(dbg_mode)
 		defer env.SetHTTPAllowed(http_allowed)
-		env.SetDebugMode(false); env.SetHTTPAllowed(false)
+		env.SetDebugMode(false)
+		env.SetHTTPAllowed(false)
 
 		_, err := receiver.ReceiveCredential(types.Oid4vci, endpoint, "test-config", nil, accessToken, nil, nil)
 		if err == nil {
@@ -397,6 +401,10 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 	})
 
 	t.Run("Request uses credential_configuration_id and proofs", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		captureServer := mockserver.NewMockServer()
 		defer captureServer.Close()
 
@@ -452,6 +460,10 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 	})
 
 	t.Run("Request uses credential_identifier when provided", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		captureServer := mockserver.NewMockServer()
 		defer captureServer.Close()
 
@@ -551,6 +563,10 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 	})
 
 	t.Run("Multiple credentials in response", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
 		multiCredServer := mockserver.NewMockServer()
 		defer multiCredServer.Close()
 
@@ -637,7 +653,7 @@ func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
 	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 	defer env.SetHTTPAllowed(http_allowed)
 	env.SetHTTPAllowed(true)
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
