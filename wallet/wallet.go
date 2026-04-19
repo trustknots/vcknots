@@ -34,6 +34,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
 	"github.com/trustknots/vcknots/wallet/credstore/types"
+	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/idprof"
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
 	"github.com/trustknots/vcknots/wallet/presenter"
@@ -550,6 +551,8 @@ var nonceHTTPClient = &http.Client{
 	Timeout: 10 * time.Second,
 }
 
+const maxNonceResponseBodyBytes int64 = 4 << 10
+
 func accessTokenNonce(accessToken *receiverTypes.CredentialIssuanceAccessToken) *string {
 	if accessToken == nil || accessToken.CNonce == nil || *accessToken.CNonce == "" {
 		return nil
@@ -587,7 +590,15 @@ func (w *Wallet) fetchCredentialNonce(issuerMetadata *receiverTypes.CredentialIs
 		return fallbackNonce, nil
 	}
 
-	req, err := http.NewRequest(http.MethodPost, issuerMetadata.NonceEndpoint.String(), http.NoBody)
+	nonceEndpointURL := url.URL(*issuerMetadata.NonceEndpoint)
+	if !env.IsHTTPAllowed() && !strings.EqualFold(nonceEndpointURL.Scheme, "https") {
+		if fallbackNonce != nil {
+			return fallbackNonce, nil
+		}
+		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", nonceEndpointURL.Scheme)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, nonceEndpointURL.String(), http.NoBody)
 	if err != nil {
 		if fallbackNonce != nil {
 			return fallbackNonce, nil
@@ -606,12 +617,19 @@ func (w *Wallet) fetchCredentialNonce(issuerMetadata *receiverTypes.CredentialIs
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxNonceResponseBodyBytes+1))
 	if err != nil {
 		if fallbackNonce != nil {
 			return fallbackNonce, nil
 		}
 		return nil, fmt.Errorf("failed to read nonce response: %w", err)
+	}
+
+	if int64(len(bodyBytes)) > maxNonceResponseBodyBytes {
+		if fallbackNonce != nil {
+			return fallbackNonce, nil
+		}
+		return nil, fmt.Errorf("nonce endpoint response exceeds %d bytes", maxNonceResponseBodyBytes)
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
