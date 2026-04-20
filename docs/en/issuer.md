@@ -186,7 +186,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
             "format": "jwt_vc_json",
             "scope": "UniversityDegree",
             "cryptographic_binding_methods_supported": [
-                "jwk"
+                "did:key"
             ],
             "proof_types_supported": {
                 "jwt": {
@@ -214,6 +214,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
                 "claims": [
                     {
                         "path": [
+                            "credentialSubject",
                             "given_name"
                         ],
                         "mandatory": true,
@@ -230,6 +231,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
                     },
                     {
                         "path": [
+                            "credentialSubject",
                             "family_name"
                         ],
                         "display": [
@@ -245,6 +247,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
                     },
                     {
                         "path": [
+                            "credentialSubject",
                             "degree"
                         ],
                         "display": [
@@ -260,6 +263,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
                     },
                     {
                         "path": [
+                            "credentialSubject",
                             "gpa"
                         ],
                         "display": [
