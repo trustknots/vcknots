@@ -36,15 +36,13 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
 
   issueApp.post('/credentials', async (c) => {
     const issueClaimsSample = {
-      credentialSubject: {
-        given_name: 'test',
-        family_name: 'taro',
-        degree: '5',
-        gpa: 'test',
-        address: {
-          country: 'fuga',
-          region: 'xyz',
-        },
+      given_name: 'test',
+      family_name: 'taro',
+      degree: '5',
+      gpa: 'test',
+      address: {
+        country: 'fuga',
+        region: 'xyz',
       },
     }
 

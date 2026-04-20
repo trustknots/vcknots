@@ -14,6 +14,9 @@ export type IssueCredentialProviderOptions = {
   identifier?: () => string
 }
 
+const credentialSubjectPath = (path: string[]) =>
+  path[0] === 'credentialSubject' ? path.slice(1) : path
+
 export const issueCredentialJwt = (
   providerOptions?: IssueCredentialProviderOptions
 ): IssueCredentialProvider & WithProviderRegistry => {
@@ -48,14 +51,15 @@ export const issueCredentialJwt = (
       const defCredentialMetadataClaims = configuration.credential_metadata?.claims
       if (defCredentialMetadataClaims && defCredentialMetadataClaims.length > 0) {
         for (const claim of defCredentialMetadataClaims) {
-          const value = getClaimValue(claimsSource, claim.path)
+          const subjectPath = credentialSubjectPath(claim.path)
+          const value = getClaimValue(claimsSource, subjectPath)
           if (claim.mandatory === true && value === undefined) {
             throw raise('INVALID_CLAIMS', {
               message: `Claim ${claim.path.join('.')} is not defined as mandatory in the credential definition.`,
             })
           }
           if (value !== undefined) {
-            setClaimValue(credentialSubject, claim.path, value)
+            setClaimValue(credentialSubject, subjectPath, value)
           }
         }
       }
