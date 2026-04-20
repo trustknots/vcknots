@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -888,10 +887,10 @@ func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
 		m := mockserver.NewMockServer()
 		defer m.Close()
 
-		var called atomic.Bool
+		called :=false
 
 		m.HandleFunc("/request-object", func(w http.ResponseWriter, r *http.Request) {
-			called.Store(true)
+			called = true 
 			if ua := r.Header.Get("User-Agent"); ua != "" {
 				t.Errorf("User-Agent is not empty string, got %q",ua)
 			}
@@ -902,7 +901,7 @@ func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
 
 		rb := requestBuilder{}
 		rb.WithRequestObjectURI(requestObjectURI.String(), RequestURIMethodGET)
-		if !called.Load(){
+		if !called{
 			t.Fatal("handler was not invoked")
 		}
 	})
@@ -911,22 +910,21 @@ func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
 		m :=mockserver.NewMockServer()
 		defer m.Close()
 
-		var called atomic.Bool
+		called :=false
 
-		m.HandleFunc("/request-object",func(w http.ResponseWriter, r *http.Request) {
-			called.Store(true)
-			if ua := r.Header.Get("User-Agent"); ua != ""{
-				t.Errorf("User-Agent is not empty string,got %q",ua)
+		m.HandleFunc("/request-object", func(w http.ResponseWriter, r *http.Request) {
+			called = true 
+			if ua := r.Header.Get("User-Agent"); ua != "" {
+				t.Errorf("User-Agent is not empty string, got %q",ua)
 			}
 			w.WriteHeader(http.StatusOK)
 		})
-		
 
 		requestObjectURI, _ := url.Parse(m.URL() + "/request-object")
 
 		rb := requestBuilder{}
-		rb.WithRequestObjectURI(requestObjectURI.String(),RequestURIMethodPOST)
-		if !called.Load(){
+		rb.WithRequestObjectURI(requestObjectURI.String(), RequestURIMethodPOST)
+		if !called{
 			t.Fatal("handler was not invoked")
 		}
 	})
