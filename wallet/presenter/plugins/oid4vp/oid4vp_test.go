@@ -881,3 +881,51 @@ func TestOid4vpPresenter_RequestObject_WithX5C_X509SanDNS_SuccessAndFailures(t *
 		t.Fatalf("expected hostname mismatch error, got: %v", err)
 	}
 }
+
+func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
+	t.Run("Delete default User-Agent header (GET)", func(t *testing.T) {
+		m := mockserver.NewMockServer()
+		defer m.Close()
+
+		called := false
+
+		m.HandleFunc("/request-object", func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			if ua := r.Header.Get("User-Agent"); ua != "" {
+				t.Errorf("User-Agent is not empty string, got %q", ua)
+			}
+			w.WriteHeader(http.StatusOK)
+		})
+
+		requestObjectURI, _ := url.Parse(m.URL() + "/request-object")
+
+		rb := requestBuilder{}
+		rb.WithRequestObjectURI(requestObjectURI.String(), RequestURIMethodGET)
+		if !called {
+			t.Fatal("handler was not invoked")
+		}
+	})
+
+	t.Run("Delete default User-Agent header (POST)", func(t *testing.T) {
+		m := mockserver.NewMockServer()
+		defer m.Close()
+
+		called := false
+
+		m.HandleFunc("/request-object", func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			if ua := r.Header.Get("User-Agent"); ua != "" {
+				t.Errorf("User-Agent is not empty string, got %q", ua)
+			}
+			w.WriteHeader(http.StatusOK)
+		})
+
+		requestObjectURI, _ := url.Parse(m.URL() + "/request-object")
+
+		rb := requestBuilder{}
+		rb.WithRequestObjectURI(requestObjectURI.String(), RequestURIMethodPOST)
+		if !called {
+			t.Fatal("handler was not invoked")
+		}
+	})
+}
