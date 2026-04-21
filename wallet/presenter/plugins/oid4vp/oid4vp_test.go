@@ -887,12 +887,12 @@ func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
 		m := mockserver.NewMockServer()
 		defer m.Close()
 
-		called :=false
+		called := false
 
 		m.HandleFunc("/request-object", func(w http.ResponseWriter, r *http.Request) {
-			called = true 
+			called = true
 			if ua := r.Header.Get("User-Agent"); ua != "" {
-				t.Errorf("User-Agent is not empty string, got %q",ua)
+				t.Errorf("User-Agent is not empty string, got %q", ua)
 			}
 			w.WriteHeader(http.StatusOK)
 		})
@@ -901,21 +901,21 @@ func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
 
 		rb := requestBuilder{}
 		rb.WithRequestObjectURI(requestObjectURI.String(), RequestURIMethodGET)
-		if !called{
+		if !called {
 			t.Fatal("handler was not invoked")
 		}
 	})
 
 	t.Run("Delete default User-Agent header (POST)", func(t *testing.T) {
-		m :=mockserver.NewMockServer()
+		m := mockserver.NewMockServer()
 		defer m.Close()
 
-		called :=false
+		called := false
 
 		m.HandleFunc("/request-object", func(w http.ResponseWriter, r *http.Request) {
-			called = true 
+			called = true
 			if ua := r.Header.Get("User-Agent"); ua != "" {
-				t.Errorf("User-Agent is not empty string, got %q",ua)
+				t.Errorf("User-Agent is not empty string, got %q", ua)
 			}
 			w.WriteHeader(http.StatusOK)
 		})
@@ -924,7 +924,7 @@ func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
 
 		rb := requestBuilder{}
 		rb.WithRequestObjectURI(requestObjectURI.String(), RequestURIMethodPOST)
-		if !called{
+		if !called {
 			t.Fatal("handler was not invoked")
 		}
 	})
