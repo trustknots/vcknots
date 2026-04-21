@@ -254,6 +254,7 @@ type ReceiveCredentialRequest struct {
 	CredentialOffer      *CredentialOffer
 	Type                 receiverTypes.SupportedReceivingTypes
 	Key                  IKeyEntry
+	RequestedFormat      credential.SupportedSerializationFlavor
 	CachedIssuerMetadata *receiverTypes.CredentialIssuerMetadata
 }
 
@@ -289,6 +290,29 @@ type IKeyEntry interface {
 	Sign(data []byte) ([]byte, error)
 }
 
+type credentialRequestProofBindingMethod string
+
+const (
+	credentialRequestProofBindingMethodKID credentialRequestProofBindingMethod = "kid"
+	credentialRequestProofBindingMethodJWK credentialRequestProofBindingMethod = "jwk"
+)
+
+func resolveCredentialRequestProofBindingMethod(
+	credentialConfiguration *receiverTypes.CredentialConfiguration,
+) credentialRequestProofBindingMethod {
+	if credentialConfiguration == nil || credentialConfiguration.CryptographicBindingMethodsSupported == nil {
+		return credentialRequestProofBindingMethodKID
+	}
+
+	for _, method := range *credentialConfiguration.CryptographicBindingMethodsSupported {
+		if strings.EqualFold(strings.TrimSpace(method), "jwk") {
+			return credentialRequestProofBindingMethodJWK
+		}
+	}
+
+	return credentialRequestProofBindingMethodKID
+}
+
 // convertEntryToSavedCredential converts a CredentialEntry to SavedCredential.
 // Returns error if conversion fails (invalid flavor or deserialization error).
 func (w *Wallet) convertEntryToSavedCredential(entry types.CredentialEntry) (*SavedCredential, error) {
@@ -311,11 +335,24 @@ func (w *Wallet) convertEntryToSavedCredential(entry types.CredentialEntry) (*Sa
 // generateJWTProof generates a JWT proof for credential requests.
 // When clientID is nil, iss is omitted (anonymous pre-authorized flow).
 // When clientID is provided, it must be non-empty.
-func (w *Wallet) generateJWTProof(key IKeyEntry, did *idprofTypes.IdentityProfile, nonce *string, aud string, clientID *string) (string, error) {
+func (w *Wallet) generateJWTProof(
+	key IKeyEntry,
+	did *idprofTypes.IdentityProfile,
+	nonce *string,
+	aud string,
+	clientID *string,
+	proofBindingMethod credentialRequestProofBindingMethod,
+) (string, error) {
 	header := map[string]interface{}{
 		"alg": "ES256",
 		"typ": "openid4vci-proof+jwt",
-		"kid": did.ID,
+	}
+
+	if proofBindingMethod == credentialRequestProofBindingMethodJWK {
+		publicJWK := key.PublicKey()
+		header["jwk"] = publicJWK.Public()
+	} else {
+		header["kid"] = did.ID
 	}
 
 	payload := map[string]interface{}{
@@ -456,17 +493,22 @@ func (w *Wallet) ReceiveCredential(req ReceiveCredentialRequest) (*SavedCredenti
 		return nil, err
 	}
 
+	credentialConfigurationID, credentialConfiguration, serializationFlavor, err := w.selectCredentialConfiguration(req, issuerMetadata)
+	if err != nil {
+		return nil, err
+	}
+
 	accessToken, err := w.obtainAccessToken(req.Type, authMetadata, preAuthCode)
 	if err != nil {
 		return nil, err
 	}
 
-	credentialJWT, err := w.requestCredential(req, issuerMetadata, accessToken)
+	credentialJWT, err := w.requestCredential(req, issuerMetadata, accessToken, credentialConfigurationID, credentialConfiguration)
 	if err != nil {
 		return nil, err
 	}
 
-	return w.storeAndParseCredential(credentialJWT)
+	return w.storeAndParseCredential(credentialJWT, serializationFlavor)
 }
 
 // validateCredentialOffer validates the credential offer and extracts pre-authorization code.
@@ -490,6 +532,79 @@ func (w *Wallet) validateCredentialOffer(offer *CredentialOffer) (string, error)
 	}
 
 	return preAuthCode, nil
+}
+
+func oid4vciCredentialFormatToSerializationFlavor(format string) (credential.SupportedSerializationFlavor, error) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "jwt_vc_json", "jwt_vc", string(credential.JwtVc):
+		return credential.JwtVc, nil
+	case "dc+sd-jwt", string(credential.SDJwtVC):
+		return credential.SDJwtVC, nil
+	default:
+		return "", fmt.Errorf("unsupported credential format: %q", format)
+	}
+}
+
+func (w *Wallet) selectCredentialConfiguration(
+	req ReceiveCredentialRequest,
+	issuerMetadata *receiverTypes.CredentialIssuerMetadata,
+) (string, *receiverTypes.CredentialConfiguration, credential.SupportedSerializationFlavor, error) {
+	defaultConfigurationID := req.CredentialOffer.CredentialConfigurationIDs[0]
+	defaultFlavor := credential.JwtVc
+
+	if req.RequestedFormat != "" {
+		if req.RequestedFormat != credential.JwtVc && req.RequestedFormat != credential.SDJwtVC {
+			return "", nil, "", fmt.Errorf("unsupported requested serialization format: %s", req.RequestedFormat)
+		}
+
+		if issuerMetadata == nil || issuerMetadata.CredentialConfigurationSupported == nil {
+			return "", nil, "", fmt.Errorf("credential configuration metadata is required when requested format is specified")
+		}
+
+		for _, configID := range req.CredentialOffer.CredentialConfigurationIDs {
+			config, ok := issuerMetadata.CredentialConfigurationSupported[configID]
+			if !ok {
+				continue
+			}
+
+			flavor, err := oid4vciCredentialFormatToSerializationFlavor(config.Format)
+			if err != nil {
+				continue
+			}
+			if flavor == req.RequestedFormat {
+				configCopy := config
+				return configID, &configCopy, flavor, nil
+			}
+		}
+
+		return "", nil, "", fmt.Errorf("no credential configuration matches requested format: %s", req.RequestedFormat)
+	}
+
+	if issuerMetadata == nil || issuerMetadata.CredentialConfigurationSupported == nil {
+		return defaultConfigurationID, nil, defaultFlavor, nil
+	}
+
+	config, ok := issuerMetadata.CredentialConfigurationSupported[defaultConfigurationID]
+	if !ok {
+		return defaultConfigurationID, nil, defaultFlavor, nil
+	}
+
+	configCopy := config
+	flavor, err := oid4vciCredentialFormatToSerializationFlavor(config.Format)
+	if err != nil {
+		return defaultConfigurationID, &configCopy, defaultFlavor, nil
+	}
+
+	return defaultConfigurationID, &configCopy, flavor, nil
+}
+
+func shouldAttachCredentialRequestProof(req ReceiveCredentialRequest, credentialConfiguration *receiverTypes.CredentialConfiguration) bool {
+	if credentialConfiguration != nil && credentialConfiguration.CryptographicBindingMethodsSupported != nil {
+		return true
+	}
+
+	// Keep backward-compatible behavior for existing callers that do not specify format.
+	return req.RequestedFormat == ""
 }
 
 // fetchCredentialMetadata fetches issuer and authorization server metadata.
@@ -669,30 +784,58 @@ func (w *Wallet) fetchCredentialNonce(issuerMetadata *receiverTypes.CredentialIs
 }
 
 // requestCredential requests the credential from the issuer with JWT proof.
-func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata *receiverTypes.CredentialIssuerMetadata, accessToken *receiverTypes.CredentialIssuanceAccessToken) (*string, error) {
-	did, err := w.GenerateDID(DIDCreateOptions{
-		TypeID:    "did:key",
-		PublicKey: req.Key.PublicKey(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate DID: %w", err)
-	}
-
-	credentialConfigurationID := req.CredentialOffer.CredentialConfigurationIDs[0]
+func (w *Wallet) requestCredential(
+	req ReceiveCredentialRequest,
+	issuerMetadata *receiverTypes.CredentialIssuerMetadata,
+	accessToken *receiverTypes.CredentialIssuanceAccessToken,
+	credentialConfigurationID string,
+	credentialConfiguration *receiverTypes.CredentialConfiguration,
+) (*string, error) {
 	credentialIdentifier := accessTokenCredentialIdentifier(accessToken)
 	if credentialIdentifier != nil {
 		credentialConfigurationID = ""
 	}
 
-	nonce, err := w.fetchCredentialNonce(issuerMetadata, accessToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch nonce for credential proof: %w", err)
+	var proof *string
+	attachProof := shouldAttachCredentialRequestProof(req, credentialConfiguration)
+	if attachProof {
+		if req.Key == nil {
+			return nil, fmt.Errorf("key entry is required")
+		}
+
+		did, err := w.GenerateDID(DIDCreateOptions{
+			TypeID:    "did:key",
+			PublicKey: req.Key.PublicKey(),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate DID: %w", err)
+		}
+
+		nonce, err := w.fetchCredentialNonce(issuerMetadata, accessToken)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch nonce for credential proof: %w", err)
+		}
+
+		proofBindingMethod := resolveCredentialRequestProofBindingMethod(credentialConfiguration)
+
+		proofValue, err := w.generateJWTProof(
+			req.Key,
+			did,
+			nonce,
+			issuerMetadata.CredentialIssuer,
+			nil,
+			proofBindingMethod,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate JWT proof: %w", err)
+		}
+
+		proof = &proofValue
 	}
 
-	proof, err := w.generateJWTProof(req.Key, did, nonce, issuerMetadata.CredentialIssuer, nil)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate JWT proof: %w", err)
+	var credentialDefinition *receiverTypes.CredentialDefinition
+	if credentialConfiguration != nil {
+		credentialDefinition = credentialConfiguration.CredentialDefinition
 	}
 
 	credentialJWT, err := w.receiver.ReceiveCredential(
@@ -701,8 +844,8 @@ func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata 
 		credentialConfigurationID,
 		credentialIdentifier,
 		*accessToken,
-		nil,
-		&proof,
+		credentialDefinition,
+		proof,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive credential: %w", err)
@@ -712,12 +855,16 @@ func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata 
 }
 
 // storeAndParseCredential stores the credential and parses it for return.
-func (w *Wallet) storeAndParseCredential(credentialJWT *string) (*SavedCredential, error) {
+func (w *Wallet) storeAndParseCredential(credentialJWT *string, serializationFlavor credential.SupportedSerializationFlavor) (*SavedCredential, error) {
+	if serializationFlavor == "" {
+		serializationFlavor = credential.JwtVc
+	}
+
 	credentialEntry := types.CredentialEntry{
 		Id:         uuid.New().String(),
 		ReceivedAt: time.Now(),
 		Raw:        []byte(*credentialJWT),
-		MimeType:   "application/vc+jwt",
+		MimeType:   string(serializationFlavor),
 	}
 
 	if err := w.credStore.SaveCredentialEntry(credentialEntry, types.SupportedCredStoreTypes(0)); err != nil {

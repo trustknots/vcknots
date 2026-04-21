@@ -61,7 +61,6 @@ func (o *SdJwtVcPresentationOptions) SetNonce(nonce string) {
 	}
 }
 
-
 // CombinedFormatForPresentation represents an SD-JWT in combined format for presentation
 // Format: <Issuer-signed JWT>~<Disclosure 1>~<Disclosure 2>~...~<Disclosure N>~<optional KB-JWT>
 type CombinedFormatForPresentation struct {
@@ -391,18 +390,43 @@ func (s *SdJwtVcSerializer) DeserializeCredential(flavor credential.SupportedSer
 	}
 
 	// Get _sd_alg (default to sha-256 per spec)
-	sdAlg := "sha-256"
+	sdAlg := defaultHashAlgorithm
 	if algVal, ok := payloadMap["_sd_alg"].(string); ok {
-		sdAlg = algVal
+		sdAlg = normalizeSDHashAlgorithm(algVal)
+	}
+
+	// Parse _sd hashes and preserve them for caller-side processing.
+	sdHashes := make([]string, 0)
+	if sdRaw, exists := payloadMap["_sd"]; exists {
+		sdArray, ok := sdRaw.([]interface{})
+		if !ok {
+			return nil, types.NewInvalidCredentialError("_sd field must be an array", nil)
+		}
+		sdHashes = make([]string, 0, len(sdArray))
+		for _, hashRaw := range sdArray {
+			hashValue, ok := hashRaw.(string)
+			if !ok || hashValue == "" {
+				return nil, types.NewInvalidCredentialError("_sd entries must be non-empty strings", nil)
+			}
+			sdHashes = append(sdHashes, hashValue)
+		}
 	}
 
 	// Parse disclosures and build disclosed claims map
 	disclosedClaims := make(map[string]interface{})
+	parsedDisclosures := make([]credential.SDJwtDisclosure, 0, len(cf.Disclosures))
 	for _, discStr := range cf.Disclosures {
 		disc, err := parseDisclosure(discStr, sdAlg)
 		if err != nil {
 			return nil, types.NewDecodingError("failed to parse disclosure", err)
 		}
+		parsedDisclosures = append(parsedDisclosures, credential.SDJwtDisclosure{
+			Name:           disc.Name,
+			Value:          disc.Value,
+			Digest:         disc.Digest,
+			EncodedValue:   disc.EncodedValue,
+			IsArrayElement: disc.IsArrayElement,
+		})
 		if !disc.IsArrayElement && disc.Name != "" {
 			disclosedClaims[disc.Name] = disc.Value
 		}
@@ -468,6 +492,12 @@ func (s *SdJwtVcSerializer) DeserializeCredential(flavor credential.SupportedSer
 		Algorithm: alg,
 		Signature: sig,
 		Payload:   []byte(header + "." + payload),
+	}
+
+	cred.SDJwt = &credential.SDJwtCredentialMetadata{
+		SD:          sdHashes,
+		SDAlg:       sdAlg,
+		Disclosures: parsedDisclosures,
 	}
 
 	return cred, nil
