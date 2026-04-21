@@ -19,7 +19,7 @@ import (
 )
 
 type Oid4vpPresenter struct {
-	X509TrustChainRoots     *x509.CertPool
+	X509TrustChainRoots *x509.CertPool
 	// InsecureSkipX509Verify skips certificate verification for testing purposes.
 	// WARNING: This should NEVER be set to true in production environments.
 	// This is only for conformance testing with self-signed or non-standard certificates.
@@ -151,10 +151,10 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 func (p *Oid4vpPresenter) createJARMResponse(vpToken, presentationSubmission string, request *types.PresentationRequest, encAlg, encEnc string, verifierJWKS *jose.JSONWebKeySet) (string, error) {
 	// Create the response payload
 	payload := map[string]interface{}{
-		"vp_token":               vpToken,
+		"vp_token":                vpToken,
 		"presentation_submission": presentationSubmission,
 	}
-	
+
 	// Add state if present
 	if request != nil && request.State != "" {
 		payload["state"] = request.State
@@ -516,7 +516,7 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 	clientID, err := parseOID4VPClientID(b.req.ClientID)
 	if err == nil && clientID.prefix == OID4VPClientIDPrefixX509SanDNS {
 		var certificates *[]*x509.Certificate = nil
-		
+
 		if b.insecureSkipX509Verify {
 			// For testing: Parse certificates from x5c WITHOUT calling x509.Verify(),
 			// which in Go 1.20+ performs strict standards compliance checks that reject
@@ -712,6 +712,7 @@ func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMetho
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
+	req.Header.Set("User-Agent", "")
 	resp, err := client.Do(req)
 	if err != nil {
 		b.errValidation = fmt.Errorf("failed to send %s request to %s: %w", method, uri, err)
