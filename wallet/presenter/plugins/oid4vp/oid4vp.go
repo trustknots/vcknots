@@ -304,10 +304,10 @@ func (b *requestBuilder) validate() error {
 	return nil
 }
 
-// validateRedirectAndResponseURIExclusivity enforces the OID4VP rule that a
-// single request MUST NOT carry both redirect_uri and response_uri. response_uri
-// is used with response_mode=direct_post[.jwt]; redirect_uri is used otherwise.
-// Returns a non-nil error only when both values are present.
+// validateRedirectAndResponseURIExclusivity returns an error when the
+// redirect_uri and response_uri request parameters are both set. Per OID4VP
+// they are mutually exclusive on the wire: response_uri is used with
+// response_mode=direct_post[.jwt], redirect_uri otherwise.
 func validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam string) error {
 	if redirectURIFromParam != "" && responseURIFromParam != "" {
 		return fmt.Errorf("redirect_uri and response_uri must not both be present in the same request")

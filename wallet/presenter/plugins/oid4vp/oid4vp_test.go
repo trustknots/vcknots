@@ -604,6 +604,9 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 			wantErr: true,
 			errSub:  "response_uri must use https scheme",
 		},
+		// redirect_uri matches the client_id-derived value on purpose so the
+		// mismatch check (redirectURIFromParam vs redirectURIFromClientID) does
+		// not fire first and the new exclusivity check is exercised.
 		{
 			name:    "redirect_uri and response_uri must not coexist",
 			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&redirect_uri=http://example.com/cb&response_uri=https://example.com/response",
