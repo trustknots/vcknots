@@ -307,7 +307,7 @@ func (b *requestBuilder) validate() error {
 // validateRedirectAndResponseURIExclusivity returns an error when the
 // redirect_uri and response_uri request parameters are both set. Per OID4VP
 // they are mutually exclusive on the wire: response_uri is used with
-// response_mode=direct_post[.jwt], redirect_uri otherwise.
+// response_mode=direct_post (and its JWT variant), redirect_uri otherwise.
 func validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam string) error {
 	if redirectURIFromParam != "" && responseURIFromParam != "" {
 		return fmt.Errorf("redirect_uri and response_uri must not both be present in the same request")
