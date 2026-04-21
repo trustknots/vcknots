@@ -304,6 +304,17 @@ func (b *requestBuilder) validate() error {
 	return nil
 }
 
+// validateRedirectAndResponseURIExclusivity enforces the OID4VP rule that a
+// single request MUST NOT carry both redirect_uri and response_uri. response_uri
+// is used with response_mode=direct_post[.jwt]; redirect_uri is used otherwise.
+// Returns a non-nil error only when both values are present.
+func validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam string) error {
+	if redirectURIFromParam != "" && responseURIFromParam != "" {
+		return fmt.Errorf("redirect_uri and response_uri must not both be present in the same request")
+	}
+	return nil
+}
+
 // setParamsWithInterfaceMap sets the CredentialPresentationRequest fields from a map of any parameters,
 // tracking any missing required parameters.
 // Missing required parameters are recorded in b.errValidation and set as empty strings.
@@ -374,7 +385,14 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 
 	b.req.ResponseMode = OAuthAuthzReqResponseMode(getParam("response_mode", true))
 
-	b.req.ResponseURI = getParam("response_uri", b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost)
+	responseURIFromParam := getParam("response_uri", b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost)
+
+	if err := validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam); err != nil {
+		b.errValidation = err
+		return
+	}
+
+	b.req.ResponseURI = responseURIFromParam
 
 	if pd := getParam("presentation_definition", true); pd != "" {
 		// Handle presentation_definition as either string (JSON) or map

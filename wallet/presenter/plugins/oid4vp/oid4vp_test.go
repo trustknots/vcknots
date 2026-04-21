@@ -155,7 +155,6 @@ func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
 		"presentation_definition": map[string]any{
 			"id": "test-def",
 		},
-		"redirect_uri":    "http://example.com/callback",
 		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
@@ -287,7 +286,6 @@ func TestOid4vpPresenter_WithRequestObject_TypHeader(t *testing.T) {
 		"presentation_definition": map[string]any{
 			"id": "test-def",
 		},
-		"redirect_uri":    "http://example.com/callback",
 		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
@@ -393,7 +391,6 @@ func TestOid4vpPresenter_WithRequestObject_IssClaimIgnored(t *testing.T) {
 		"presentation_definition": map[string]any{
 			"id": "test-def",
 		},
-		"redirect_uri":    "http://example.com/callback",
 		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
@@ -454,7 +451,6 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 			"presentation_definition": map[string]any{
 				"id": "test-def",
 			},
-			"redirect_uri":    "http://example.com/callback",
 			"response_uri":    "https://example.com/response",
 			"client_metadata": clientMetadata,
 		}
@@ -549,7 +545,6 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 			"presentation_definition": map[string]any{
 				"id": "test-def",
 			},
-			"redirect_uri":    "http://example.com/callback",
 			"response_uri":    "https://example.com/response",
 			"client_metadata": clientMetadata,
 		}
@@ -608,6 +603,12 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&response_uri=http://example.com/response",
 			wantErr: true,
 			errSub:  "response_uri must use https scheme",
+		},
+		{
+			name:    "redirect_uri and response_uri must not coexist",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&redirect_uri=http://example.com/cb&response_uri=https://example.com/response",
+			wantErr: true,
+			errSub:  "redirect_uri and response_uri must not both be present",
 		},
 	}
 
@@ -770,7 +771,6 @@ func TestOid4vpPresenter_RequestParameterJWT_Success(t *testing.T) {
 		"presentation_definition": map[string]any{
 			"id": "test-def",
 		},
-		"redirect_uri":    "http://example.com/callback",
 		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
