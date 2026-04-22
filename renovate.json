@@ -23,7 +23,6 @@
 			"commitMessageTopic": "{{#if groupName}}{{groupName}}{{else}}{{#if (lookup upgrades 1)}}dependencies{{else}}{{depName}}{{/if}}{{/if}}"
 		}
 	},
-	"ignoreDeps": ["node"],
 	"packageRules": [
 		{
 			"matchManagers": ["gradle"],
@@ -77,7 +76,15 @@
 			"groupName": "docusaurus",
 			"rangeStrategy": "pin"
 		},
-
+		{
+			"matchManagers": ["nvm"],
+			"enabled": false
+		},
+		{
+			"matchDepNames": ["node"],
+			"matchFileNames": ["**/package.json"],
+			"enabled": false
+		},
 		{
 			"matchUpdateTypes": [
 				"pin",
