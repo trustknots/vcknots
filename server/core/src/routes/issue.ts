@@ -7,6 +7,7 @@ import {
 } from '@trustknots/vcknots/issuer'
 import { AuthorizationServerIssuer, initializeAuthzFlow } from '@trustknots/vcknots/authz'
 import { Hono } from 'hono'
+import { parseAuthorizationHeader } from '../utils/authorization-header.js'
 import { handleError } from '../utils/error-handler.js'
 
 export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
@@ -53,17 +54,30 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       const request = await c.req.json()
       const parse = CredentialRequest(request)
       // Verify AccessToken
-      const accessToken = c.req.header('Authorization')?.replace('Bearer ', '')
-      if (!accessToken) {
+      const authorization = parseAuthorizationHeader(c.req.header('Authorization'))
+      if (!authorization.ok) {
         return c.json(
           {
             error: 'invalid_token',
-            error_description: 'Access token is required.',
+            error_description:
+              authorization.reason === 'missing'
+                ? 'Access token is required.'
+                : 'Authorization header must use Bearer or DPoP scheme.',
           },
           401
         )
       }
-      const isValid = await authzFlow.verifyAccessToken(authz, accessToken)
+      if (authorization.value.scheme === 'dpop') {
+        return c.json(
+          {
+            error: 'invalid_token',
+            error_description: 'DPoP access tokens are not supported by this credential endpoint.',
+          },
+          401
+        )
+      }
+
+      const isValid = await authzFlow.verifyAccessToken(authz, authorization.value.token)
       console.log('isValid:', isValid)
       if (!isValid) {
         return c.json(
