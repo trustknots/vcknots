@@ -1,4 +1,5 @@
 import { Nonce } from './nonce.types'
+import { exportJWK } from 'jose'
 import {
   CredentialConfigurationId,
   CredentialIssuer,
@@ -15,6 +16,7 @@ import { JwtVcIssuerResponse } from './jwt-vc-issuer.types'
 import { DiVpProof, Proofs, ProofTypes } from './proofs.types'
 import { ProofJwt } from './credential.types'
 import { calculateJwkThumbprint } from 'jose'
+import { jwkSchema } from './jwk.type'
 
 type OfferOptions =
   | {
@@ -74,7 +76,9 @@ function getProofType(
       proofValue: proofs.attestation,
     }
   }
-  throw new Error('Unsupported proof type')
+  throw err('INVALID_CREDENTIAL_REQUEST', {
+    message: 'Unsupported proof type',
+  })
 }
 
 export type IssuerFlow = {
@@ -105,7 +109,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const cnonce$ = context.providers.get('nonce-provider')
   const cnonceStore$ = context.providers.get('nonce-store-provider')
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
-  const key$ = context.providers.get('issuer-signature-key-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
 
   return {
@@ -121,19 +124,28 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const jwtVcIssuerMetadata: JwtVcIssuerResponse = {
         issuer: metadata.credential_issuer,
       }
-      const issuerKeys = await keyStore$.fetch(id)
-      if (issuerKeys && issuerKeys.length > 0) {
-        jwtVcIssuerMetadata.jwks = {
-          keys: await Promise.all(
-            issuerKeys.map(async (keypair) => {
-              const { publicKey } = keypair
-              if (publicKey.kid) {
-                return publicKey
-              }
+      const algs = Array.from(
+        Object.values(metadata.credential_configurations_supported ?? {})
+          .flatMap((it) => it.credential_signing_alg_values_supported ?? [])
+          .reduce((acc, it) => {
+            acc.add(it)
+            return acc
+          }, new Set<string>())
+      )
+      const keyAlgs = algs.length === 0 ? ['ES256'] : algs
+      const keys = (
+        await Promise.all(
+          keyAlgs.map(async (alg) => {
+            const issuerKey = await keyStore$.fetch(id, alg)
+            if (!issuerKey) {
+              return null
+            }
+            const jwk = jwkSchema.parse(await exportJWK(issuerKey))
+            if (!jwk.kid) {
               try {
-                const kid = await calculateJwkThumbprint(publicKey)
+                const kid = await calculateJwkThumbprint(jwk)
                 return {
-                  ...publicKey,
+                  ...jwk,
                   kid,
                 }
               } catch (e) {
@@ -141,8 +153,14 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
                   message: `Failed to calculate kid for issuer ${id} key.`,
                 })
               }
-            })
-          ),
+            }
+            return jwk
+          })
+        )
+      ).filter((key) => key !== null)
+      if (keys.length > 0) {
+        jwtVcIssuerMetadata.jwks = {
+          keys,
         }
       }
       return jwtVcIssuerMetadata
@@ -163,14 +181,11 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           }, new Set<string>())
       )
 
-      const pairs = await Promise.all(
+      await Promise.all(
         algs.map(async (alg) => {
-          const provider = selectProvider(key$, alg)
-          return await provider.generate()
+          return await keyStore$.save(issuer.credential_issuer, alg)
         })
       )
-
-      await keyStore$.save(issuer.credential_issuer, pairs)
       await metadataStore$.save(issuer)
     },
     async offerCredential(issuer, configurations, options) {
@@ -258,6 +273,8 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         }
 
         const credentialProofProvider = selectProvider(credentialProof$, proofsObjects.proofType)
+        // not support multiple proofs for now, just verify the first one
+        // not support batch_credential_issuance
         for (const proof of proofsObjects.proofValue) {
           const proofJwtCtx: CredentialProofJwtVerifyContext | undefined =
             proofsObjects.proofType === ProofTypes.JWT

@@ -30,7 +30,7 @@ describe('AuthzRequestJARProvider', () => {
       return null
     }),
     save: mock.fn(async () => {}),
-    fetchPrivate: mock.fn(async () => null),
+    sign: mock.fn(async () => null),
   }
 
   const provider = authzRequestJARKid()

@@ -42,7 +42,7 @@ func WithDefaultConfig() func(*SerializationDispatcher) error {
 
 		sdJwtVcPlugin, err := sdjwtvc.NewSdJwtVcSerializer()
 		if err != nil {
-			return types.NewFormatError(credential.JwtVc, err, "failed to create SD-JWT VC serializer")
+			return types.NewFormatError(credential.SDJwtVC, err, "failed to create SD-JWT VC serializer")
 		}
 		d.RegisterPlugin(credential.SDJwtVC, sdJwtVcPlugin)
 
@@ -153,6 +153,15 @@ func (d *SerializationDispatcher) DeserializePresentation(flavor credential.Supp
 	}
 
 	return result, nil
+}
+
+func (d *SerializationDispatcher) GetDefaultOption(flavor credential.SupportedSerializationFlavor) (types.SerializePresentationOptions, error) {
+	plugin, err := d.getPlugin(flavor)
+	if err != nil {
+		return nil, err
+	}
+
+	return plugin.GetDefaultOption(flavor)
 }
 
 // GetSupportedFormats returns a list of supported serialization formats

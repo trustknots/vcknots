@@ -70,6 +70,9 @@ pnpm install
 # Build the issuer+verifier module
 pnpm -F @trustknots/vcknots build
 
+# Build the server-core module
+pnpm -F @trustknots/server-core build
+
 # Build the server module
 pnpm -F @trustknots/server build
 
@@ -123,9 +126,13 @@ Open a new terminal, navigate to each test directory, and run the server integra
 cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 go run server_integration_jwtvc.go
 
-# SD-JWT integration test
+# SD-JWT integration test (without kb-jwt)
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go
+
+# SD-JWT integration test (with kb-jwt)
+cd /path/to/vcknots/wallet/examples/server_integration_sdjwt+kbjwt
+go run server_integration_sdjwt_kbjwt.go
 ```
 
 
@@ -182,9 +189,12 @@ go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_
 Conformance Test mode automatically applies the following settings:
 
 - **Certificate Verification**: Uses system root certificate pool
+- **Certificate Chain Verification Skip**: `InsecureSkipX509Verify: true` is automatically set, enabling communication with conformance test servers that use self-signed or non-standard certificates
 - **Selected Claims**: Selects `given_name` and `family_name`
 - **Key Binding**: Required (`RequireKeyBinding: true`)
 - **Audience/Nonce**: Automatically extracted from the request URI
+
+> ⚠️ **Warning**: `InsecureSkipX509Verify: true` should only be used in conformance tests and local development. **Never** use this in production environments.
 
 ---
 
@@ -210,6 +220,7 @@ go run server_integration_sdjwt.go "openid4vp://authorize?..."
 ```
 - Tests against external OID4VP conformance test services
 - Uses system root certificate pool
+- `InsecureSkipX509Verify: true` is automatically set (supports non-standard certificates)
 
 ### File Structure
 
@@ -218,8 +229,11 @@ examples/
 ├── server_integration_jwtvc/
 │   └── server_integration_jwtvc.go   # JWT-VC integration test
 ├── server_integration_sdjwt/
-│   ├── server_integration_sdjwt.go   # SD-JWT integration test
+│   ├── server_integration_sdjwt.go   # SD-JWT integration test (without kb-jwt)
 │   └── example_sd_jwt.txt            # Sample SD-JWT credential
+├── server_integration_sdjwt+kbjwt/
+│   ├── server_integration_sdjwt_kbjwt.go # SD-JWT integration test with kb-jwt
+│   └── example_sd_jwt.txt                 # Sample SD-JWT credential
 ├── custom_dispatcher/                 # Example: custom dispatcher implementation
 ├── custom_plugin/                     # Example: custom plugin implementation
 └── README.md                          # This file
@@ -229,9 +243,54 @@ examples/
 - Certificate: `../../../server/samples/certificate-openid-test/certificate_openid.pem`
 - SD-JWT sample: `example_sd_jwt.txt` (in server_integration_sdjwt/)
 
+For KB-JWT verification, use the `server_integration_sdjwt+kbjwt` sample. It requests `dc+sd-jwt`, posts to `http://localhost:8080/callback-kbjwt`, and includes a fixed nonce plus KB-JWT audience matching `x509_san_dns:localhost`.
+
 If you need to use a different certificate, set the `VCKNOTS_CERT_PATH` environment variable:
 
 ```bash
 cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
 ```
+
+### Wallet Runtime Environment Variables
+
+In addition to `VCKNOTS_CERT_PATH`, the wallet runtime behavior is controlled by environment variables defined in `wallet/env/env.go`.
+
+| Variable | Default | Description |
+| :---- | :---- | :---- |
+| `VCKNOTS_WALLET_HTTP_ALLOWED` | `false` (unset/empty) | When set to `true`, HTTP endpoints are allowed for wallet HTTP calls (for local development/testing). |
+| `VCKNOTS_WALLET_DEBUG` | `false` (unset/empty) | Enables debug mode. Debug mode also enables HTTP allowance behavior. |
+
+Behavior summary:
+- `IsHTTPAllowed()` becomes `true` when either `VCKNOTS_WALLET_HTTP_ALLOWED=true` or `VCKNOTS_WALLET_DEBUG=true`.
+- If both are unset (or not equal to `true`), `IsHTTPAllowed()` is `false`, and HTTPS-only validation remains active.
+
+Example (local development only):
+
+```bash
+export VCKNOTS_WALLET_HTTP_ALLOWED=true
+# or
+export VCKNOTS_WALLET_DEBUG=true
+```
+
+> ⚠️ **Security warning**: Do not enable `VCKNOTS_WALLET_HTTP_ALLOWED` in production. Keep HTTPS-only validation enabled.
+
+---
+
+## Troubleshooting
+
+### `client_id` Validation Errors (Conformance Test)
+
+The conformance test suite intentionally sends malformed `client_id` values to test the wallet's validation logic.
+
+- **Example errors**:
+  - `invalid client_id: duplicate prefix detected` (e.g., `x509_san_dns:x509_san_dns:...`)
+  - `SAN of the certificate and client_id did not match`
+- These errors are **expected behavior** and indicate the wallet is correctly enforcing security checks.
+
+### `x509: certificate is not standards compliant` Error
+
+Conformance test servers may use self-signed or non-standard certificate structures for testing purposes.
+
+- **When running server integration test (no arguments)**: Check that the certificate file is correctly placed at `../../../server/samples/certificate-openid-test/certificate_openid.pem`, or specify it via `VCKNOTS_CERT_PATH`.
+- **When running conformance test (with URI argument)**: `InsecureSkipX509Verify: true` is set automatically, so this error should not appear.

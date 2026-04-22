@@ -1,9 +1,5 @@
-import { CompactSign, exportJWK, generateKeyPair, importJWK } from 'jose'
+import { exportJWK, generateKeyPair } from 'jose'
 import { IssuerSignatureKeyProvider } from './provider.types'
-import { ProofJwtHeader } from '../credential.types'
-import { Jwk } from '../jwk.type'
-import { JwtPayload } from '../jwt.types'
-import { raise } from '../errors'
 
 export type IssuerSignatureKeyProviderOptions = {
   alg?: string
@@ -28,19 +24,6 @@ export const issuerSignatureKey = (
       return {
         publicKey: { ...publicJwk, alg },
         privateKey: { ...privateJwk, alg },
-      }
-    },
-
-    async sign(privateKey: Jwk, keyAlg: string, jwtPayload: JwtPayload, jwtHeader: ProofJwtHeader) {
-      try {
-        const key = await importJWK(privateKey, keyAlg)
-        const signer = new CompactSign(new TextEncoder().encode(JSON.stringify(jwtPayload)))
-        signer.setProtectedHeader({ ...jwtHeader })
-        const jws = await signer.sign(key)
-        const [, , signature] = jws.split('.')
-        return signature
-      } catch (error) {
-        throw raise('INTERNAL_SERVER_ERROR', { message: `sign error: ${error}` })
       }
     },
 

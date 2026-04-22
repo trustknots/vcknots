@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
+	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/keystore"
 )
@@ -224,6 +226,81 @@ func TestSerializePresentation(t *testing.T) {
 	if presentationWithProof.Proof == nil {
 		t.Fatalf("expected proof to be non-nil")
 	}
+}
+
+func TestSerializePresentationWithBinding(t *testing.T) {
+	serializer, err := NewJwtVcSerializer()
+	if err != nil {
+		t.Fatalf("failed to create serializer: %v", err)
+	}
+
+	// Test with unsupported format
+	presentation := &credential.CredentialPresentation{}
+	key := createMockKeyEntry()
+	nonce := "test-nonce"
+	options := JwtVcPresentationOptions{
+		Audience: "https://example.com/verifier",
+		Nonce:    nonce,
+	}
+
+	// Test with valid JWT VC format
+	presentationID := "http://example.com/presentation/1"
+	holderID := "http://example.com/holder"
+
+	presentation = &credential.CredentialPresentation{
+		ID:     presentationID,
+		Types:  []string{"VerifiablePresentation"},
+		Holder: holderID,
+		Credentials: [][]byte{
+			[]byte("credential1"),
+			[]byte("credential2"),
+		},
+	}
+
+	jwtBytes, presentationWithProof, err := serializer.SerializePresentation(credential.JwtVc, presentation, key, &options)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(jwtBytes) == 0 {
+		t.Fatalf("expected non-empty JWT bytes")
+	}
+
+	if presentationWithProof == nil {
+		t.Fatalf("expected presentation with proof to be non-nil")
+	}
+
+	if presentationWithProof.Proof == nil {
+		t.Fatalf("expected proof to be non-nil")
+	}
+
+	tok, err := jwt.ParseSigned(string(jwtBytes), []jose.SignatureAlgorithm{presentationWithProof.Proof.Algorithm})
+	if err != nil {
+		t.Fatalf("failed to parse JWT: %v", err)
+	}
+
+	claims := make(map[string]interface{})
+	err = tok.UnsafeClaimsWithoutVerification(&claims)
+	if err != nil {
+		t.Fatalf("failed to extract claims: %v", err)
+	}
+
+	if aud, ok := claims["aud"]; ok {
+		if aud != options.Audience {
+			t.Errorf("expected aud %s, got %v", options.Audience, aud)
+		}
+	} else {
+		t.Error("expected aud claim to be present")
+	}
+
+	if nonce, ok := claims["nonce"]; ok {
+		if nonce != options.Nonce {
+			t.Errorf("expected nonce %s, got %v", options.Nonce, nonce)
+		}
+	} else {
+		t.Error("expected nonce claim to be present")
+	}
+
 }
 
 func TestDeserializePresentation(t *testing.T) {
@@ -487,4 +564,40 @@ func TestConvertCredentialFromJSON(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestJwtVcPresentationOptions_SetAudience(t *testing.T) {
+	tests := []struct {
+		name string
+		audience string
+	}{
+		{name: "audience-sample1", audience: "x509_san_dns:localhost"},
+		{name: "audience-sample2", audience: "did:web:example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := JwtVcPresentationOptions{}
+			o.SetAudience(tt.audience)
+
+			require.Equal(t, tt.audience, o.Audience, "Failed to set audience")
+		})
+	}
+}
+
+func TestJwtVcPresentationOptions_SetNonce(t *testing.T) {
+	tests := []struct {
+		name string
+		nonce string
+	}{
+		{name: "nonce-sample1", nonce: "asldkfjad4e4"},
+		{name: "nonce-sample2", nonce: "78qrgaig"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := JwtVcPresentationOptions{}
+			o.SetNonce(tt.nonce)
+
+			require.Equal(t, tt.nonce, o.Nonce, "Failed to set nonce")
+		})
+	}
 }

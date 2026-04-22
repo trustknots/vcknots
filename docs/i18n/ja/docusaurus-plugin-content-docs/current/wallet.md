@@ -429,6 +429,26 @@ vcknots/wallet ライブラリの Controller とのインタラクションに�
     - `credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())` は、デフォルトで `go.etcd.io/bbolt` （組み込みKVS）を `wallet.db` のようなローカルファイルに永続化しようと試みます。
     - 実行ディレクトリに書き込み権限があることを確認してください。
 
+5. **OID4VP `client_id` の厳格な検証:**
+    - このWalletは、OID4VPコンフォーマンステストに準拠するため、`client_id`の厳格な検証を実装しています。
+    - 重複プレフィックス（例: `x509_san_dns:x509_san_dns:...`）や不正な形式は自動的に拒否されます。
+    - `x509_san_dns:`スキームの場合、リクエストJWTの`x5c`ヘッダーから証明書を抽出し、証明書のSubject Alternative Name (SAN) DNSフィールドと`client_id`の値を照合します。
+    - 詳細は `wallet/presenter/plugins/oid4vp/oid4vp.go` の `parseOID4VPClientID()` 関数と `x509_san_dns` 検証ロジックを参照してください。
+
+6. **証明書検証のテスト設定（`InsecureSkipX509Verify`）:**
+    - `Oid4vpPresenter`構造体は、テスト環境用に`InsecureSkipX509Verify`オプションを提供しています。
+    - **デフォルト動作（本番環境）**: 完全な証明書チェーン検証を実行します。証明書は信頼されたルートCAにチェーンされている必要があります。
+    - **テスト設定（`InsecureSkipX509Verify: true`）**: 証明書チェーンの検証をスキップし、x5cヘッダーから証明書を直接抽出します。SANと`client_id`の照合のみを実行します。
+    - ⚠️ **重大な警告**: `InsecureSkipX509Verify: true`は、コンフォーマンステストやローカル開発環境でのみ使用してください。本番環境では**絶対に**使用しないでください。これはセキュリティリスクを招きます。
+    - コンフォーマンステストでは、意図的に非標準的な証明書（自己署名、CA:TRUE設定など）を使用することがあるため、このオプションが必要になります。
+
+7. **Wallet 実行時の環境変数（`wallet/env/env.go`）:**
+    - Wallet の実行時フラグは `VCKNOTS_WALLET_` プレフィックスで管理されます。
+    - `VCKNOTS_WALLET_HTTP_ALLOWED=true` を設定すると、Wallet の HTTP 通信で HTTP エンドポイントを許可します（ローカル開発/テスト用途）。
+    - `VCKNOTS_WALLET_DEBUG=true` はデバッグモードを有効化し、同時に HTTP 許可動作も有効化します。
+    - `IsHTTPAllowed()` は、上記いずれかが `true` のとき `true` を返し、それ以外は `false` を返します。
+    - **本番運用の指針:** 本番環境では両方未設定（または `false`）のままにし、HTTPS 必須検証を維持してください。
+
 ## 7. トラブルシューティング
 
 * **Q: `go mod download` が `package... is private` または `404 Not Found` で失敗する。**  
@@ -444,3 +464,20 @@ vcknots/wallet ライブラリの Controller とのインタラクションに�
 
 * **Q: `controller.ReceiveCredential` が `issuer metadata not found` で失敗する。**  
   * **A:** Node.jsサーバー は起動しているかもしれませんが、`/.well-known/openid-credential-issuer` エンドポイントが正しく機能していない可能性があります。`curl http://localhost:8080/.well-known/openid-credential-issuer` （または「4. Walletメタデータの登録」で指定されたIssuerのベースURL）を実行して、JSONメタデータが返されることを確認してください。
+
+* **Q: OID4VPコンフォーマンステストで `client_id` 検証エラーが発生する。**
+  * **A:** コンフォーマンステストは、意図的に不正な`client_id`（重複プレフィックス、末尾の空白など）を送信してWalletの検証ロジックをテストします。修正後のWalletは、このような不正な`client_id`を正しく拒否します。
+  * エラー例: `"invalid client_id: duplicate prefix detected"` または `"SAN of the certificate and client_id did not match"`
+  * これらのエラーは**期待される動作**であり、Walletが正しくセキュリティチェックを実施していることを示します。
+
+* **Q: OID4VPコンフォーマンステストで `x509: certificate is not standards compliant` エラーが発生する。**
+  * **A:** コンフォーマンステストサーバーは、テスト目的で自己署名証明書や非標準的な証明書構造を使用することがあります。
+  * **解決策**: テスト環境でのみ`InsecureSkipX509Verify: true`を設定してください：
+    ```go
+    p := &oid4vp.Oid4vpPresenter{
+        X509TrustChainRoots:    systemRoots,
+        InsecureSkipX509Verify: true,  // テスト環境のみ
+    }
+    ```
+  * ⚠️ **警告**: 本番環境では必ず`false`（またはこのフィールドを設定しない）にしてください。
+  * 詳細は [examples/README.ja.md](https://github.com/trustknots/vcknots/blob/main/wallet/examples/README.ja.md) の「コンフォーマンステストのトラブルシューティング」セクションを参照してください。

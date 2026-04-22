@@ -2,6 +2,7 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
 } from '../authorization-server.types'
+import type { ClientIdentifier } from '../client-id-scheme.types'
 import { ClientId } from '../client-id.types'
 import { Nonce } from '../nonce.types'
 import {
@@ -16,14 +17,13 @@ import { CredentialFormats } from '../credential-request.types'
 import { JwtVcJson, ProofJwt, ProofJwtHeader, VerifiableCredential } from '../credential.types'
 import { Dcql } from '../dcql.type'
 import { DidDocument } from '../did.types'
-import { Jwk } from '../jwk.type'
 import { JwtContent, JwtPayload } from '../jwt.types'
 import { PreAuthorizedCode } from '../pre-authorized-code.types'
 import { PresentationExchange } from '../presentation-exchange.types'
 import { VpTokenPayload } from '../presentation.types'
 import { RequestObjectId } from '../request-object-id.types'
 import { RequestObject } from '../request-object.types'
-import { Certificate, SignatureKeyPair, TmpVerifierSignatureKeyPair } from '../signature-key.types'
+import { Certificate, SignatureKeyPair, SignatureKeyEntry } from '../signature-key.types'
 import { DeepPartialUnknown } from '../type.utils'
 import { VerifierMetadata } from '../verifier-metadata.types'
 import type { CredentialProofJwtVerifyContext } from '../credential-proof-jwt.types'
@@ -71,8 +71,14 @@ export type AuthzSignatureKeyStoreProvider = {
   name: string
   single: true
 
-  save(authz: AuthorizationServerIssuer, pair: SignatureKeyPair): Promise<void>
-  fetch(authz: AuthorizationServerIssuer): Promise<SignatureKeyPair>
+  save(authz: AuthorizationServerIssuer, keyAlg: string, pair?: SignatureKeyEntry): Promise<void>
+  fetch(authz: AuthorizationServerIssuer, keyAlg: string): Promise<CryptoKey | null>
+  sign(
+    authz: AuthorizationServerIssuer,
+    keyAlg: string,
+    jwtPayload: JwtPayload,
+    jwtHeader: ProofJwtHeader
+  ): Promise<string | null>
 }
 
 export type IssuerSignatureKeyStoreProvider = {
@@ -80,8 +86,14 @@ export type IssuerSignatureKeyStoreProvider = {
   name: string
   single: true
 
-  save(issuer: CredentialIssuer, pairs: SignatureKeyPair[]): Promise<void>
-  fetch(issuer: CredentialIssuer): Promise<SignatureKeyPair[]>
+  save(issuer: CredentialIssuer, keyAlg: string, pair?: SignatureKeyEntry): Promise<void>
+  fetch(issuer: CredentialIssuer, keyAlg: string): Promise<CryptoKey | null>
+  sign(
+    issuer: CredentialIssuer,
+    keyAlg: string,
+    jwtPayload: JwtPayload,
+    jwtHeader: ProofJwtHeader
+  ): Promise<string | null>
 }
 
 export type VerifierSignatureKeyStoreProvider = {
@@ -89,9 +101,14 @@ export type VerifierSignatureKeyStoreProvider = {
   name: string
   single: true
 
-  save(verifier: ClientId, pairs: TmpVerifierSignatureKeyPair[]): Promise<void>
-  fetch(verifier: ClientId, alg: string): Promise<CryptoKey | null>
-  fetchPrivate(verifier: ClientId, alg: string): Promise<CryptoKey | null>
+  save(verifier: ClientId, keyAlg: string, pair?: SignatureKeyEntry): Promise<void>
+  fetch(verifier: ClientId, keyAlg: string): Promise<CryptoKey | null>
+  sign(
+    verifierId: ClientId,
+    keyAlg: string,
+    jwtPayload: JwtPayload,
+    jwtHeader: ProofJwtHeader
+  ): Promise<string | null>
 }
 
 export type VerifierCertificateStoreProvider = {
@@ -133,15 +150,33 @@ export type VerifyCredentialProvider = {
 export type VerifyVerifiablePresentationVerifyOptions =
   | {
       kind: 'jwt_vp_json'
+      /** VP JWT `aud` must equal this or be included if `aud` is an array. */
+      expectedAud: ClientIdentifier
     }
   | {
       kind: 'dc+sd-jwt'
       specifiedDisclosures?: string[]
-      isKbJwt?: boolean
-      expectedAud?: string
+      isKbJwt?: false
+      expectedAud?: ClientIdentifier
       expectedNonce?: string
       expectedTransactionDataHashes?: string[]
     }
+  | {
+      kind: 'dc+sd-jwt'
+      specifiedDisclosures?: string[]
+      isKbJwt: true
+      expectedAud: ClientIdentifier
+      expectedNonce?: string
+      expectedTransactionDataHashes?: string[]
+    }
+  // | {
+//     kind: 'dc+sd-jwt'
+//     specifiedDisclosures?: string[]
+//     isKbJwt?: boolean
+//     expectedAud?: ClientIdentifier
+//     expectedNonce?: string
+//     expectedTransactionDataHashes?: string[]
+//   }
 export type VerifyVerifiablePresentationProvider = {
   kind: 'verify-verifiable-presentation-provider'
   name: string
@@ -259,12 +294,6 @@ export type AuthzSignatureKeyProvider = {
   single: false
 
   generate(): Promise<SignatureKeyPair>
-  sign(
-    privateKey: Jwk,
-    keyAlg: string,
-    jwtPayload: JwtPayload,
-    jwtHeader: ProofJwtHeader
-  ): Promise<string | null>
   canHandle(keyAlg: string): boolean
 }
 
@@ -274,12 +303,6 @@ export type IssuerSignatureKeyProvider = {
   single: false
 
   generate(): Promise<SignatureKeyPair>
-  sign(
-    privateKey: Jwk,
-    keyAlg: string,
-    jwtPayload: JwtPayload,
-    jwtHeader: ProofJwtHeader
-  ): Promise<string | null>
   canHandle(keyAlg: string): boolean
 }
 
@@ -289,12 +312,6 @@ export type VerifierSignatureKeyProvider = {
   single: false
 
   generate(): Promise<SignatureKeyPair>
-  sign(
-    verifierId: ClientId,
-    keyAlg: string,
-    jwtPayload: JwtPayload,
-    jwtHeader: ProofJwtHeader
-  ): Promise<string | null>
   canHandle(keyAlg: string): boolean
 }
 

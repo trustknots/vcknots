@@ -19,11 +19,15 @@ import (
 	"github.com/trustknots/vcknots/wallet/common"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
+	"github.com/trustknots/vcknots/wallet/env"
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
 	"github.com/trustknots/vcknots/wallet/presenter"
+	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
 	"github.com/trustknots/vcknots/wallet/receiver"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
+	"github.com/trustknots/vcknots/wallet/serializer/plugins/jwtvc"
+	"github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
@@ -448,6 +452,41 @@ func TestController_PresentCredential_ErrorPaths_Integration(t *testing.T) {
 	}
 }
 
+func TestController_parseAuthorizationRequest_RejectsNonHTTPSResponseURI(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(false)
+
+	presentationDefinition := url.QueryEscape(`{"id":"test-def"}`)
+	uri := fmt.Sprintf(
+		"openid4vp://present?client_id=redirect_uri:https://example.com/cb&response_type=vp_token&nonce=test-nonce&presentation_definition=%s&response_mode=direct_post&response_uri=http://example.com/response",
+		presentationDefinition,
+	)
+
+	_, _, err := controller.parseAuthorizationRequest(uri)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "response_uri must use https scheme")
+}
+
+func TestController_parseAuthorizationRequest_AllowsNonHTTPSResponseURI_WhenValidationDisabled(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	presentationDefinition := url.QueryEscape(`{"id":"test-def"}`)
+	uri := fmt.Sprintf(
+		"openid4vp://present?client_id=redirect_uri:https://example.com/cb&response_type=vp_token&nonce=test-nonce&presentation_definition=%s&response_mode=direct_post&response_uri=http://example.com/response",
+		presentationDefinition,
+	)
+
+	_, endpoint, err := controller.parseAuthorizationRequest(uri)
+	require.NoError(t, err)
+	require.NotNil(t, endpoint)
+	assert.Equal(t, "http", endpoint.Scheme)
+}
+
 func TestController_PresentCredential_MissingRequiredFields_Integration(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
@@ -594,7 +633,7 @@ func TestController_FetchAuthorizationServerMetadata_Integration(t *testing.T) {
 	}
 }
 
-func TestController_generateJWTProof_Integration(t *testing.T) {
+func TestController_generateJWTProof_AnonymousPreAuthorizedFlow_OmitsIss(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
 	key := newMockKeyEntry()
@@ -604,7 +643,7 @@ func TestController_generateJWTProof_Integration(t *testing.T) {
 	}
 	nonce := "test-nonce"
 
-	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", true)
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", nil)
 	if err != nil {
 		t.Errorf("generateJWTProof returned error: %v", err)
 	}
@@ -629,18 +668,64 @@ func TestController_generateJWTProof_Integration(t *testing.T) {
 		t.Fatalf("expected JWT to have 3 parts, got %d", len(proofParts))
 	}
 
-	headerBytes, err := base64.RawURLEncoding.DecodeString(proofParts[0])
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(proofParts[1])
 	if err != nil {
-		t.Fatalf("failed to decode JWT header: %v", err)
+		t.Fatalf("failed to decode payload: %v", err)
 	}
 
-	var header map[string]interface{}
-	if err := json.Unmarshal(headerBytes, &header); err != nil {
-		t.Fatalf("failed to parse JWT header: %v", err)
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("failed to unmarshal payload: %v", err)
 	}
 
-	if header["typ"] != "openid4vci-proof+jwt" {
-		t.Fatalf("expected JWT header typ to be openid4vci-proof+jwt, got %v", header["typ"])
+	if _, exists := payload["iss"]; exists {
+		t.Fatalf("expected iss claim to be omitted in anonymous pre-authorized flow, got %v", payload["iss"])
+	}
+}
+
+func TestController_generateJWTProof_NonAnonymousFlow_EmptyClientIDReturnsError(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	key := newMockKeyEntry()
+	did := &idprofTypes.IdentityProfile{
+		ID:     "did:key:test123",
+		TypeID: "did:key",
+	}
+	nonce := "test-nonce"
+	emptyClientID := ""
+
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", &emptyClientID)
+	if err == nil {
+		t.Fatalf("expected error when clientID is empty, got nil")
+	}
+	if !strings.Contains(err.Error(), "clientID must be non-empty when provided") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if proof != "" {
+		t.Fatalf("expected empty proof on error, got %q", proof)
+	}
+}
+
+func TestController_generateJWTProof_NonAnonymousFlow_BlankClientIDReturnsError(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	key := newMockKeyEntry()
+	did := &idprofTypes.IdentityProfile{
+		ID:     "did:key:test123",
+		TypeID: "did:key",
+	}
+	nonce := "test-nonce"
+	blankClientID := "   "
+
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", &blankClientID)
+	if err == nil {
+		t.Fatalf("expected error when clientID is blank, got nil")
+	}
+	if !strings.Contains(err.Error(), "clientID must be non-empty when provided") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if proof != "" {
+		t.Fatalf("expected empty proof on error, got %q", proof)
 	}
 }
 
@@ -653,7 +738,7 @@ func TestController_generateJWTProof_WithoutNonce_Integration(t *testing.T) {
 		TypeID: "did:key",
 	}
 
-	proof, err := controller.generateJWTProof(key, did, nil, "test-aud", true)
+	proof, err := controller.generateJWTProof(key, did, nil, "test-aud", nil)
 	if err != nil {
 		t.Errorf("generateJWTProof returned error: %v", err)
 	}
@@ -673,7 +758,7 @@ func TestController_generateJWTProof_WithoutIssuer_Integration(t *testing.T) {
 	}
 	nonce := "test-nonce"
 
-	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", false)
+	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", nil)
 	if err != nil {
 		t.Fatalf("generateJWTProof returned error: %v", err)
 	}
@@ -721,6 +806,9 @@ func TestController_fetchCredentialNonce_ReturnsNilWhenNoNonceSource(t *testing.
 
 func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointFails(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
 
 	nonceEndpoint, err := common.ParseURIField("http://127.0.0.1:1/nonce")
 	require.NoError(t, err)
@@ -735,8 +823,29 @@ func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointFails(
 	assert.Equal(t, cnonce, *nonce)
 }
 
+func TestController_fetchCredentialNonce_RejectsNonHTTPSNonceEndpoint(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(false)
+
+	nonceEndpoint, err := common.ParseURIField("http://example.com/nonce")
+	require.NoError(t, err)
+
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{}
+
+	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	require.Error(t, err)
+	require.Nil(t, nonce)
+	assert.Contains(t, err.Error(), "unsupported URL scheme")
+}
+
 func TestController_fetchCredentialNonce_UsesNonceEndpointWhenFallbackMissing(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
 
 	nonceValue := "nonce-from-endpoint"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -763,6 +872,9 @@ func TestController_fetchCredentialNonce_UsesNonceEndpointWhenFallbackMissing(t 
 
 func TestController_fetchCredentialNonce_ReturnsErrorWhenEndpointFailsWithoutFallback(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "temporary failure", http.StatusInternalServerError)
@@ -779,6 +891,57 @@ func TestController_fetchCredentialNonce_ReturnsErrorWhenEndpointFailsWithoutFal
 	require.Error(t, err)
 	require.Nil(t, nonce)
 	assert.Contains(t, err.Error(), "nonce endpoint returned status")
+}
+
+func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenResponseTooLarge(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	largeNonce := strings.Repeat("a", int(maxNonceResponseBodyBytes))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"nonce":"` + largeNonce + `"}`))
+	}))
+	defer server.Close()
+
+	nonceEndpoint, err := common.ParseURIField(server.URL)
+	require.NoError(t, err)
+
+	fallback := "token-c-nonce"
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{CNonce: &fallback}
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
+
+	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	require.NoError(t, err)
+	require.NotNil(t, nonce)
+	assert.Equal(t, fallback, *nonce)
+}
+
+func TestController_fetchCredentialNonce_ReturnsErrorWhenResponseTooLargeWithoutFallback(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	largeNonce := strings.Repeat("a", int(maxNonceResponseBodyBytes))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"nonce":"` + largeNonce + `"}`))
+	}))
+	defer server.Close()
+
+	nonceEndpoint, err := common.ParseURIField(server.URL)
+	require.NoError(t, err)
+
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{}
+
+	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	require.Error(t, err)
+	require.Nil(t, nonce)
+	assert.Contains(t, err.Error(), "nonce endpoint response exceeds")
 }
 
 func TestAccessTokenCredentialIdentifier(t *testing.T) {
@@ -887,6 +1050,9 @@ func TestController_ReceiveCredential_WithMockServer_Integration(t *testing.T) {
 	}
 
 	// First test metadata fetch to debug
+	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(http_allowed)
+	env.SetHTTPAllowed(true)
 	metadata, err := controller.FetchCredentialIssuerMetadata(serverURL, receiverTypes.Oid4vci)
 	if err != nil {
 		t.Fatalf("FetchCredentialIssuerMetadata failed: %v", err)
@@ -920,6 +1086,9 @@ func TestController_FetchCredentialIssuerMetadata_WithMockServer(t *testing.T) {
 
 	serverURL, _ := url.Parse(server.URL())
 
+	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(http_allowed)
+	env.SetHTTPAllowed(true)
 	metadata, err := controller.FetchCredentialIssuerMetadata(serverURL, receiverTypes.Oid4vci)
 	if err != nil {
 		t.Errorf("FetchCredentialIssuerMetadata failed: %v", err)
@@ -962,6 +1131,9 @@ func TestController_PresentCredential_WithMockServer_Integration(t *testing.T) {
 		Key:  newMockKeyEntry(),
 	}
 
+	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(http_allowed)
+	env.SetHTTPAllowed(true)
 	savedCredential, err := controller.ReceiveCredential(receiveReq)
 	if err != nil {
 		t.Logf("Failed to receive credential for presentation test: %v", err)
@@ -1024,6 +1196,9 @@ func TestController_FetchCredentialIssuerMetadata_ErrorPaths_Integration(t *test
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+			defer env.SetHTTPAllowed(http_allowed)
+			env.SetHTTPAllowed(true)
 			serverURL := tt.setupURL()
 			_, err := controller.FetchCredentialIssuerMetadata(serverURL, tt.receiverType)
 
@@ -1370,4 +1545,88 @@ func TestController_PresentCredential_DetailedErrorPaths_Integration(t *testing.
 			})
 		}
 	})
+}
+
+func TestApplyOID4VPRequestOptions(t *testing.T) {
+	req := &oid4vp.CredentialPresentationRequest{
+		OAuthAuthzRequest: &oid4vp.OAuthAuthzRequest{
+			ClientID: "x509_san_dns:localhost",
+			Nonce:    "request-nonce",
+		},
+	}
+
+	t.Run("copies oid4vp request values into jwt-vc options", func(t *testing.T) {
+		opts := &jwtvc.JwtVcPresentationOptions{
+			Audience: "old-audience",
+			Nonce:    "old-nonce",
+		}
+
+		applyOID4VPRequestOptions(req, opts)
+
+		if opts.Audience != req.ClientID {
+			t.Fatalf("expected audience %q, got %q", req.ClientID, opts.Audience)
+		}
+		if opts.Nonce != req.Nonce {
+			t.Fatalf("expected nonce %q, got %q", req.Nonce, opts.Nonce)
+		}
+	})
+
+	t.Run("copies oid4vp request values into sd-jwt options", func(t *testing.T) {
+		opts := &sdjwtvc.SdJwtVcPresentationOptions{
+			RequireKeyBinding: false,
+			Audience:          "old-audience",
+			Nonce:             "old-nonce",
+		}
+
+		applyOID4VPRequestOptions(req, opts)
+
+		if opts.Audience != req.ClientID {
+			t.Fatalf("expected audience %q, got %q", req.ClientID, opts.Audience)
+		}
+		if opts.Nonce != req.Nonce {
+			t.Fatalf("expected nonce %q, got %q", req.Nonce, opts.Nonce)
+		}
+	})
+}
+
+func TestBuildDescriptorMap_UsesVPTokenRootPathForJwtVP(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	flavor := credential.JwtVc
+
+	descriptorMap, err := controller.buildDescriptorMap([]*SavedCredential{{}}, &flavor)
+	require.NoError(t, err)
+	require.Len(t, descriptorMap, 1)
+	require.Equal(t, "$", descriptorMap[0].Path)
+	require.NotNil(t, descriptorMap[0].PathNested)
+	require.Equal(t, "$.verifiableCredential[0]", descriptorMap[0].PathNested.Path)
+}
+
+func TestBuildDescriptorMap_UsesVPTokenRootPathForAllJwtDescriptors(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	flavor := credential.JwtVc
+
+	descriptorMap, err := controller.buildDescriptorMap([]*SavedCredential{{}, {}}, &flavor)
+	require.NoError(t, err)
+	require.Len(t, descriptorMap, 2)
+
+	for i, item := range descriptorMap {
+		require.Equalf(t, fmt.Sprintf("$[%d]", i), item.Path, "descriptorMap[%d].Path", i)
+		require.NotNilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
+		require.Equalf(t, fmt.Sprintf("$.verifiableCredential[%d]", i), item.PathNested.Path, "descriptorMap[%d].PathNested.Path", i)
+	}
+}
+
+func TestBuildDescriptorMap_UsesVPTokenRootPathForALLSdJwtDescriptors(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	flavor := credential.SDJwtVC
+
+	descriptorMap, err := controller.buildDescriptorMap([]*SavedCredential{{}, {}}, &flavor)
+	require.NoError(t, err)
+	require.Len(t, descriptorMap, 2)
+
+	for i, item := range descriptorMap {
+		require.Equalf(t, fmt.Sprintf("$[%d]", i), item.Path, "descriptorMap[%d].Path", i)
+		require.Equalf(t, "dc+sd-jwt", item.Format, "descriptorMap[%d].Format", i)
+		require.Nilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
+	}
 }

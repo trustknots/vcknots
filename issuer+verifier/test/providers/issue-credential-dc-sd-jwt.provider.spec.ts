@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
-import { calculateJwkThumbprint } from 'jose'
+import { calculateJwkThumbprint, exportJWK, generateKeyPair } from 'jose'
 
 import {
   CredentialConfigurationSupported,
@@ -8,15 +8,12 @@ import {
 } from '../../src/credential-issuer.types'
 import { CredentialFormats } from '../../src/credential-request.types'
 import { VcknotsError } from '../../src/errors/vcknots.error'
-import { Jwk } from '../../src/jwk.type'
 import { issueCredentialSDJWT } from '../../src/providers/issue-credential-dc-sd-jwt.provider'
 import {
   IssueCredentialProvider,
-  IssuerSignatureKeyProvider,
   IssuerSignatureKeyStoreProvider,
 } from '../../src/providers/provider.types'
 import { WithProviderRegistry } from '../../src/providers/provider.registry'
-import { SignatureKeyPair } from '../../src/signature-key.types'
 
 const decodeJwtSegment = (segment: string) =>
   JSON.parse(Buffer.from(segment, 'base64url').toString())
@@ -35,23 +32,6 @@ describe('issueCredentialSDJWT', () => {
   const proofHeader = {
     alg: 'ES256',
     jwk: holderJwk,
-  }
-  const keyPair: SignatureKeyPair = {
-    privateKey: {
-      alg: 'ES256',
-      kty: 'EC',
-      crv: 'P-256',
-      d: 'w3JFeaJ7TqG0p7qJ2Y2k1V3H8K0sHfYt7G0vG0p7m0Q',
-      x: 'ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ',
-      y: 'Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo',
-    } as Jwk,
-    publicKey: {
-      alg: 'ES256',
-      kty: 'EC',
-      crv: 'P-256',
-      x: 'ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ',
-      y: 'Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo',
-    } as Jwk,
   }
   const configuration: CredentialConfigurationSupported = {
     format: 'dc+sd-jwt',
@@ -75,23 +55,13 @@ describe('issueCredentialSDJWT', () => {
       single: true,
       save: mock.fn(),
       fetch: mock.fn(),
-    } satisfies IssuerSignatureKeyStoreProvider
-    const mockIssuerSignatureKeyProvider = {
-      kind: 'issuer-signature-key-provider',
-      name: 'mock-issuer-signature-key-provider',
-      single: false,
-      generate: mock.fn(),
       sign: mock.fn(),
-      canHandle: mock.fn(),
-    } satisfies IssuerSignatureKeyProvider
+    } satisfies IssuerSignatureKeyStoreProvider
 
     provider.providers = {
       get(kind) {
         if (kind === 'issuer-signature-key-store-provider') {
           return mockIssuerKeyStoreProvider
-        }
-        if (kind === 'issuer-signature-key-provider') {
-          return [mockIssuerSignatureKeyProvider]
         }
         throw new Error(`Unexpected provider kind: ${kind}`)
       },
@@ -100,7 +70,7 @@ describe('issueCredentialSDJWT', () => {
       },
     } as WithProviderRegistry['providers']
 
-    return { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider }
+    return { provider, mockIssuerKeyStoreProvider }
   }
 
   it('should have correct metadata and support dc+sd-jwt format', () => {
@@ -114,13 +84,13 @@ describe('issueCredentialSDJWT', () => {
   })
 
   it('should create a signed SD-JWT with disclosures and non-disclosable claims', async () => {
-    const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
-      createProvider()
-    const expectedKid = await calculateJwkThumbprint(keyPair.publicKey)
+    const { provider, mockIssuerKeyStoreProvider } = createProvider()
+    const keyPair = await generateKeyPair('ES256', { extractable: true })
+    const expectedJwk = await exportJWK(keyPair.publicKey)
+    const expectedKid = await calculateJwkThumbprint(expectedJwk)
 
-    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
-    mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signed-sd-jwt')
-    mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
+    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => keyPair.publicKey)
+    mock.method(mockIssuerKeyStoreProvider, 'sign', async () => 'signed-sd-jwt')
 
     const credential = await provider.createCredential(credentialIssuer, configuration, {
       subject: 'did:example:holder',
@@ -163,20 +133,19 @@ describe('issueCredentialSDJWT', () => {
       ['given_name', 'Alice'],
     ])
     assert.equal(mockIssuerKeyStoreProvider.fetch.mock.callCount(), 1)
-    assert.equal(mockIssuerSignatureKeyProvider.sign.mock.callCount(), 1)
+    assert.equal(mockIssuerKeyStoreProvider.sign.mock.callCount(), 1)
   })
 
   it('should create a compact SD-JWT without disclosures when no claims are provided', async () => {
-    const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
-      createProvider()
+    const { provider, mockIssuerKeyStoreProvider } = createProvider()
+    const keyPair = await generateKeyPair('ES256', { extractable: true })
     const noBindingConfiguration: CredentialConfigurationSupported = {
       format: 'dc+sd-jwt',
       vct: 'https://issuer.example.com/credentials/minimal',
     }
 
-    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
-    mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signed-sd-jwt')
-    mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
+    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => keyPair.publicKey)
+    mock.method(mockIssuerKeyStoreProvider, 'sign', async () => 'signed-sd-jwt')
 
     const credential = await provider.createCredential(credentialIssuer, noBindingConfiguration)
     const parts = credential.split('.')
@@ -279,12 +248,10 @@ describe('issueCredentialSDJWT', () => {
   })
 
   it('should throw if issuer key is not found', async () => {
-    const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
-      createProvider()
+    const { provider, mockIssuerKeyStoreProvider } = createProvider()
 
-    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [])
-    mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => 'signed-sd-jwt')
-    mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
+    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => null)
+    mock.method(mockIssuerKeyStoreProvider, 'sign', async () => 'signed-sd-jwt')
 
     await assert.rejects(
       provider.createCredential(credentialIssuer, configuration, {
@@ -301,12 +268,11 @@ describe('issueCredentialSDJWT', () => {
   })
 
   it('should throw if signing fails', async () => {
-    const { provider, mockIssuerKeyStoreProvider, mockIssuerSignatureKeyProvider } =
-      createProvider()
+    const { provider, mockIssuerKeyStoreProvider } = createProvider()
+    const keyPair = await generateKeyPair('ES256', { extractable: true })
 
-    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => [keyPair])
-    mock.method(mockIssuerSignatureKeyProvider, 'sign', async () => null)
-    mockIssuerSignatureKeyProvider.canHandle.mock.mockImplementation((alg) => alg === 'ES256')
+    mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => keyPair.publicKey)
+    mock.method(mockIssuerKeyStoreProvider, 'sign', async () => null)
 
     await assert.rejects(
       provider.createCredential(credentialIssuer, configuration, {
