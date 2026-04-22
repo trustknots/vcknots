@@ -448,11 +448,16 @@ describe('CredentialProofJwtProvider', () => {
         .setProtectedHeader({ alg: 'ES256', kid: testKid, typ: OID4VCI_JWT_PROOF_TYP })
         .setIssuedAt()
         .sign(otherKeys.privateKey) // Signed with a different key
-      await assert.rejects(provider.verifyProof(proof), (err: Error & { code?: string }) => {
-        // jose throws JWSSignatureVerificationFailed
-        assert.equal(err.code, 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED')
-        return true
-      })
+      await assert.rejects(
+        provider.verifyProof(proof),
+        (err: Error & { name?: string; message?: string; cause?: { code?: string } }) => {
+          assert.equal(err.name, 'INVALID_PROOF')
+          assert.match(err.message ?? '', /^Proof JWT verification failed:/)
+          // jose throws JWSSignatureVerificationFailed as the wrapped cause
+          assert.equal(err.cause?.code, 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED')
+          return true
+        }
+      )
     })
 
     it('should throw INVALID_PROOF when proof JWT iat exceeds factory maxTokenAge', async () => {

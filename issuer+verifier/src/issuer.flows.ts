@@ -20,17 +20,17 @@ import { jwkSchema } from './jwk.type'
 
 type OfferOptions =
   | {
-    usePreAuth: false
-    state?: unknown
-  }
-  | {
-    usePreAuth: true
-    txCode?: {
-      inputMode?: 'numeric' | 'text'
-      length?: number
-      description?: string
+      usePreAuth: false
+      state?: unknown
     }
-  }
+  | {
+      usePreAuth: true
+      txCode?: {
+        inputMode?: 'numeric' | 'text'
+        length?: number
+        description?: string
+      }
+    }
 type IssueOptions = {
   alg: string
   cnonce?: {
@@ -76,7 +76,9 @@ function getProofType(
       proofValue: proofs.attestation,
     }
   }
-  throw new Error('Unsupported proof type')
+  throw err('INVALID_CREDENTIAL_REQUEST', {
+    message: 'Unsupported proof type',
+  })
 }
 
 export type IssuerFlow = {
@@ -271,16 +273,18 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         }
 
         const credentialProofProvider = selectProvider(credentialProof$, proofsObjects.proofType)
+        // not support multiple proofs for now, just verify the first one
+        // not support batch_credential_issuance
         for (const proof of proofsObjects.proofValue) {
           const proofJwtCtx: CredentialProofJwtVerifyContext | undefined =
             proofsObjects.proofType === ProofTypes.JWT
               ? options?.proofJwt?.usePreAuth === true
                 ? { usePreAuth: true, credentialIssuer: metadata.credential_issuer }
                 : {
-                  usePreAuth: false,
-                  credentialIssuer: metadata.credential_issuer,
-                  clientId: options?.proofJwt?.clientId,
-                }
+                    usePreAuth: false,
+                    credentialIssuer: metadata.credential_issuer,
+                    clientId: options?.proofJwt?.clientId,
+                  }
               : undefined
           verifyProof = await credentialProofProvider.verifyProof(proof, proofJwtCtx)
           if (!verifyProof) {

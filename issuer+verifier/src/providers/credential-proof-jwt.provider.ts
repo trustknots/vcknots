@@ -253,7 +253,10 @@ export const credentialProofJWT = (
             cause: e,
           })
         }
-        throw e
+        throw raise('INVALID_PROOF', {
+          message: `Proof JWT verification failed: ${e instanceof Error ? e.message : String(e)}`,
+          cause: e,
+        })
       })
 
       if (
