@@ -6,15 +6,34 @@ import {
   initializeIssuerFlow,
 } from '@trustknots/vcknots/issuer'
 import { AuthorizationServerIssuer, initializeAuthzFlow } from '@trustknots/vcknots/authz'
-import { Hono } from 'hono'
+import { VcknotsError } from '@trustknots/vcknots/errors'
+import { Context, Hono } from 'hono'
 import { parseAuthorizationHeader } from '../utils/authorization-header.js'
 import { handleError } from '../utils/error-handler.js'
+import { buildBearerAuthenticateHeader } from '../utils/www-authenticate.js'
 
 export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   const issueApp = new Hono()
 
   const issuerFlow = initializeIssuerFlow(context)
   const authzFlow = initializeAuthzFlow(context)
+  const realm = baseUrl
+
+  const unauthorized = (
+    c: Context,
+    body: { error: string; error_description: string },
+    challenge: { error?: 'invalid_request' | 'invalid_token' | 'insufficient_scope' } = {}
+  ) => {
+    c.header(
+      'WWW-Authenticate',
+      buildBearerAuthenticateHeader({
+        realm,
+        error: challenge.error,
+        errorDescription: challenge.error ? body.error_description : undefined,
+      })
+    )
+    return c.json(body, 401)
+  }
 
   issueApp.post('/configurations/:configuration/offer', async (c) => {
     try {
@@ -56,36 +75,45 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       // Verify AccessToken
       const authorization = parseAuthorizationHeader(c.req.header('Authorization'))
       if (!authorization.ok) {
-        return c.json(
-          {
-            error: 'invalid_token',
-            error_description:
-              authorization.reason === 'missing'
-                ? 'Access token is required.'
-                : 'Authorization header must use Bearer or DPoP scheme.',
-          },
-          401
-        )
+        return unauthorized(c, {
+          error: 'invalid_token',
+          error_description:
+            authorization.reason === 'missing'
+              ? 'Access token is required.'
+              : 'Authorization header must use Bearer or DPoP scheme.',
+        })
       }
       if (authorization.value.scheme === 'dpop') {
-        return c.json(
-          {
-            error: 'invalid_token',
-            error_description: 'DPoP access tokens are not supported by this credential endpoint.',
-          },
-          401
-        )
+        return unauthorized(c, {
+          error: 'invalid_token',
+          error_description: 'DPoP access tokens are not supported by this credential endpoint.',
+        })
       }
 
-      const isValid = await authzFlow.verifyAccessToken(authz, authorization.value.token)
-      console.log('isValid:', isValid)
+      let isValid: boolean
+      try {
+        isValid = await authzFlow.verifyAccessToken(authz, authorization.value.token)
+      } catch (err) {
+        if (err instanceof VcknotsError && err.name === 'INVALID_ACCESS_TOKEN') {
+          return unauthorized(
+            c,
+            {
+              error: 'invalid_token',
+              error_description: err.message,
+            },
+            { error: 'invalid_token' }
+          )
+        }
+        throw err
+      }
       if (!isValid) {
-        return c.json(
+        return unauthorized(
+          c,
           {
             error: 'invalid_token',
             error_description: 'Access token is invalid.',
           },
-          401
+          { error: 'invalid_token' }
         )
       }
       // Issue Credential
