@@ -17,7 +17,7 @@ export type AuthorizationHeaderParseResult =
       scheme?: string
     }
 
-const authorizationHeaderPattern = /^(\S+)\s+(.+)$/
+const authorizationHeaderPattern = /^(\S+)\s+(\S+)$/
 const isAuthorizationScheme = (value: string): value is AuthorizationScheme =>
   supportedAuthorizationSchemes.some((scheme) => scheme === value)
 

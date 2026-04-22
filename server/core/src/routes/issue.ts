@@ -70,8 +70,6 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       const issuer = CredentialIssuer(baseUrl)
       const authz = AuthorizationServerIssuer(baseUrl)
 
-      const request = await c.req.json()
-      const parse = CredentialRequest(request)
       // Verify AccessToken
       const authorization = parseAuthorizationHeader(c.req.header('Authorization'))
       if (!authorization.ok) {
@@ -116,6 +114,8 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
           { error: 'invalid_token' }
         )
       }
+      const request = await c.req.json()
+      const parse = CredentialRequest(request)
       // Issue Credential
       const credential = await issuerFlow.issueCredential(issuer, parse, {
         alg: 'ES256',
