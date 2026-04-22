@@ -66,10 +66,13 @@
 		},
 		{
 			"matchManagers": ["nvm"],
-			"groupName": "node-version",
-			"rangeStrategy": "pin"
+			"enabled": false
 		},
-
+		{
+			"matchDepNames": ["node"],
+			"matchFileNames": ["**/package.json"],
+			"enabled": false
+		},
 		{
 			"matchUpdateTypes": [
 				"pin",
