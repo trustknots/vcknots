@@ -25,13 +25,6 @@
 	},
 	"packageRules": [
 		{
-			"matchManagers": ["gradle"],
-			"matchPaths": [
-				"wallet_wrappers/vcknots_wallet_dart_wrapper/example/android/**"
-			],
-			"enabled": false
-		},
-		{
 			"matchFileNames": ["issuer+verifier/**"],
 			"groupName": "issuer+verifier",
 			"rangeStrategy": "pin"
@@ -59,11 +52,6 @@
 		{
 			"matchFileNames": ["wallet/**"],
 			"groupName": "wallet",
-			"rangeStrategy": "pin"
-		},
-		{
-			"matchFileNames": ["wallet_wrappers/**"],
-			"groupName": "wallet-wrappers",
 			"rangeStrategy": "pin"
 		},
 		{
