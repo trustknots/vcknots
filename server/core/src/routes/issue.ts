@@ -1,4 +1,4 @@
-import { VcknotsContext } from '@trustknots/vcknots'
+import { resolveDpopMode, VcknotsContext } from '@trustknots/vcknots'
 import {
   CredentialConfigurationId,
   CredentialRequest,
@@ -136,7 +136,12 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
     try {
       const NONCE_TTL_MS = 2 * 60 * 1000 // 2 minutes
       const cnonce = await issuerFlow.createNonce(NONCE_TTL_MS)
+      const dpopMode = resolveDpopMode(context.options)
       c.header('Cache-Control', 'no-store')
+      if (dpopMode !== 'off') {
+        const dpopNonce = await issuerFlow.createNonce(NONCE_TTL_MS)
+        c.header('DPoP-Nonce', dpopNonce)
+      }
       return c.json(
         {
           c_nonce: cnonce,
