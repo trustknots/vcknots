@@ -69,6 +69,7 @@ To start this server, follow the steps below.
    - `FIRESTORE_DATABASE_ID`
    - `BASE_URL` (e.g., `http://localhost:8080`)
    - `PORT` (default: `8080`)
+   - `DPOP_MODE` (`off` / `optional` / `required`, default: `optional`)
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
 

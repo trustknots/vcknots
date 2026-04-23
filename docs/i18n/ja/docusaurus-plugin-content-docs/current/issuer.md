@@ -558,6 +558,22 @@ OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-creden
 
 Issuer メタデータに `nonce_endpoint` を設定すると、Wallet は `/.well-known/openid-credential-issuer` から取得したメタデータ経由で nonce エンドポイントの URL を参照します。
 
+DPoP 用 nonce も返したい場合は、サーバー設定で `oauth.senderConstrainedAccessToken.dpop.mode` を指定します。
+
+```typescript
+const context = initializeContext({
+  oauth: {
+    senderConstrainedAccessToken: {
+      dpop: {
+        mode: 'optional', // 'off' | 'optional' | 'required'
+      },
+    },
+  },
+})
+```
+
+`mode !== 'off'` の場合、`POST /nonce` は JSON ボディの `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返します。`c_nonce` と `DPoP-Nonce` は別の値です。
+
 #### POST /nonce - nonce（c_nonce）の作成
 
 ```typescript
@@ -565,7 +581,12 @@ app.post('/nonce', async (c) => {
   try {
     const NONCE_TTL_MS = 2 * 60 * 1000  // 2分
     const cnonce = await issuerFlow.createNonce(NONCE_TTL_MS)
+    const dpopMode = resolveDpopMode(context.options)
     c.header('Cache-Control', 'no-store')
+    if (dpopMode !== 'off') {
+      const dpopNonce = await issuerFlow.createNonce(NONCE_TTL_MS)
+      c.header('DPoP-Nonce', dpopNonce)
+    }
     return c.json({ c_nonce: cnonce }, 200)
   } catch (err) {
     const errorResponse = handleError(err)
@@ -580,16 +601,27 @@ app.post('/nonce', async (c) => {
 **リクエスト**
 
 ```bash
-curl -X POST http://localhost:8080/nonce
+curl -i -X POST http://localhost:8080/nonce
 ```
 
 **レスポンス**
 
-```json
+```http
+HTTP/1.1 200 OK
+Cache-Control: no-store
+DPoP-Nonce: 9288f7b2dffb42c2b08f2f4d4d8635d8
+Content-Type: application/json
+
 {
   "c_nonce": "3ccc7973abef4102ad70a871e200304b"
 }
 ```
+
+`oauth.senderConstrainedAccessToken.dpop.mode` が `off` の場合、`DPoP-Nonce` ヘッダは付きません。
+
+**実装例**:
+
+- [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts)
 
 #### GET /nonce/:nonce - nonceの有効性検証
 
@@ -1142,6 +1174,3 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 
 - **Q:クレデンシャル発行エラー**:`INVALID_PROOF`
     - **A：**  クレデンシャルリクエストのproof.jwtのheaderがkidを含んでいるかを確認してください。また、proof に含まれる `nonce` が有効かを確認してください。
-
-
-

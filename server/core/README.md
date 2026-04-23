@@ -46,6 +46,22 @@ Import from the package root (recommended):
 import { createApp, createServer } from '@trustknots/server-core'
 ```
 
+`createServer(options?)` also accepts OAuth-related configuration. For example, to enable DPoP nonce handling:
+
+```ts
+createServer({
+  oauth: {
+    senderConstrainedAccessToken: {
+      dpop: {
+        mode: 'optional',
+      },
+    },
+  },
+})
+```
+
+With this setting, the shared `POST /nonce` route can add a `DPoP-Nonce` response header when `mode !== 'off'`.
+
 You can also import route/util modules via subpath exports:
 
 ```ts
@@ -66,4 +82,3 @@ pnpm -F @trustknots/server-core build
 
 - This is a workspace package (private).
 - It depends on `@trustknots/vcknots`, `hono`, and `@hono/node-server`.
-

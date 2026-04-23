@@ -69,6 +69,7 @@ google-cloud/
    - `FIRESTORE_DATABASE_ID`
    - `BASE_URL`（例: `http://localhost:8080`）
    - `PORT`（既定値: `8080`）
+   - `DPOP_MODE`（`off` / `optional` / `required`。既定値: `optional`）
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
 

@@ -46,6 +46,22 @@ core/
 import { createApp, createServer } from '@trustknots/server-core'
 ```
 
+`createServer(options?)` では、OAuth 関連の設定も渡せます。例えば DPoP 用 nonce を有効にする場合は次のように指定します。
+
+```ts
+createServer({
+  oauth: {
+    senderConstrainedAccessToken: {
+      dpop: {
+        mode: 'optional',
+      },
+    },
+  },
+})
+```
+
+この設定を使うと、共有の `POST /nonce` ルートは `mode !== 'off'` の場合に `DPoP-Nonce` レスポンスヘッダーを追加できます。
+
 サブパス export で個別モジュールを import することもできます。
 
 ```ts

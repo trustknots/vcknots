@@ -53,6 +53,7 @@ single/
    # PORT: サーバーのポート番号（デフォルト: 8080）
    # PRIVATE_KEY_PATH: 秘密鍵ファイルのパス（デフォルト: ../samples/certificate-openid-test/private_key_openid.pem）
    # CERTIFICATE_PATH: 証明書ファイルのパス（デフォルト: ../samples/certificate-openid-test/certificate_openid.pem）
+   # DPOP_MODE: DPoP 設定（off, optional, required）
    ```
 
 2. **依存関係のインストール**（ルートディレクトリで実行）
@@ -235,10 +236,13 @@ nonce（c_nonce）の作成。OID4VCI の [nonce endpoint](https://openid.net/sp
 
 **レスポンスヘッダー:**
 - `Cache-Control: no-store` - キャッシュを無効化
+- `DPoP-Nonce: <nonce>` - `DPOP_MODE` が `off` 以外の場合に付与される DPoP 用 nonce
 
 **レスポンス:**
 - `200 OK` - `{ "c_nonce": string }`（nonce の有効期限は 2 分）
 - `400 Bad Request` / `500 Internal Server Error` - エラー時
+
+`c_nonce`（JSON ボディ）と `DPoP-Nonce`（レスポンスヘッダー）は別の値です。
 
 <a id="get-noncenonce"></a>
 #### `GET /nonce/:nonce`
@@ -398,4 +402,3 @@ Request Object JWT の取得。
 **レスポンス:**
 - `200 OK` - Request Object JWT（Content-Type: application/oauth-authz-req+jwt）
 - `400 Bad Request` - Request Object が見つからない場合
-

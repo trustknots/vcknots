@@ -126,6 +126,22 @@ OID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一致�
 
 OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) を使用する場合、Wallet はクレデンシャルリクエストを送信する前に `c_nonce` を取得できます。複数のクレデンシャルをリクエストする際に便利です。同一の nonce を有効期限内で再利用できます。
 
+HTTP サーバー実装で DPoP 用 nonce を返したい場合は、`VcknotsOptions` に DPoP ポリシーを保持できます:
+
+```typescript
+const vk = vcknots({
+  oauth: {
+    senderConstrainedAccessToken: {
+      dpop: {
+        mode: 'optional',
+      },
+    },
+  },
+})
+```
+
+サーバー実装側でこの設定を参照すると、`POST /nonce` の JSON ボディ `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返すかどうかを制御できます。`c_nonce` と `DPoP-Nonce` は別の値です。実装例は [server/core/src/routes/issue.ts](../server/core/src/routes/issue.ts) を参照してください。
+
 Issuer メタデータに `nonce_endpoint` を設定してください:
 
 ```typescript

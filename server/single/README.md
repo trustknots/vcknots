@@ -55,6 +55,7 @@ To start this server, follow the steps below.
    # PORT: Server port number (default: 8080)
    # PRIVATE_KEY_PATH: Path to private key file (default: ../samples/certificate-openid-test/private_key_openid.pem)
    # CERTIFICATE_PATH: Path to certificate file (default: ../samples/certificate-openid-test/certificate_openid.pem)
+   # DPOP_MODE: DPoP configuration (off, optional, required)
    ```
 
 2. **Install Dependencies** (Run from root directory)
@@ -241,10 +242,13 @@ Create a nonce (c_nonce). Corresponds to the OID4VCI [nonce endpoint](https://op
 
 **Response Headers:**
 - `Cache-Control: no-store` - Disable caching
+- `DPoP-Nonce: <nonce>` - A DPoP nonce returned when `DPOP_MODE` is not `off`
 
 **Response:**
 - `200 OK` - `{ "c_nonce": string }` (nonce validity is 2 minutes)
 - `400 Bad Request` / `500 Internal Server Error` - On error
+
+The JSON body `c_nonce` and the `DPoP-Nonce` response header are different values.
 
 <a id="get-noncenonce"></a>
 #### `GET /nonce/:nonce`
@@ -406,4 +410,3 @@ Get Request Object JWT.
 **Response:**
 - `200 OK` - Request Object JWT (Content-Type: application/oauth-authz-req+jwt)
 - `400 Bad Request` - Request Object not found
-
