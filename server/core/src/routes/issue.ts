@@ -11,6 +11,7 @@ import { Context, Hono } from 'hono'
 import { parseAuthorizationHeader } from '../utils/authorization-header.js'
 import { handleError } from '../utils/error-handler.js'
 import { buildBearerAuthenticateHeader } from '../utils/www-authenticate.js'
+import { JwtPayload } from '../../../../issuer+verifier/lib/jwt.types.js'
 
 export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   const issueApp = new Hono()
@@ -88,9 +89,9 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         })
       }
 
-      let isValid: boolean
+      let accessTokenPayload: JwtPayload
       try {
-        isValid = await authzFlow.verifyAccessToken(authz, authorization.value.token)
+        accessTokenPayload = await authzFlow.verifyAccessToken(authz, authorization.value.token)
       } catch (err) {
         if (err instanceof VcknotsError && err.name === 'INVALID_ACCESS_TOKEN') {
           return unauthorized(
@@ -104,18 +105,29 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         }
         throw err
       }
-      if (!isValid) {
+
+      const request = await c.req.json()
+      const parse = CredentialRequest(request)
+
+      const allowedConfigurationIds = Array.isArray(accessTokenPayload.credential_configuration_ids)
+        ? accessTokenPayload.credential_configuration_ids
+        : []
+
+      if (
+        !parse.credential_configuration_id ||
+        !allowedConfigurationIds.includes(parse.credential_configuration_id)
+      ) {
         return unauthorized(
           c,
           {
             error: 'invalid_token',
-            error_description: 'Access token is invalid.',
+            error_description:
+              'Access token is not bound to the requested credential_configuration_id.',
           },
           { error: 'invalid_token' }
         )
       }
-      const request = await c.req.json()
-      const parse = CredentialRequest(request)
+
       // Issue Credential
       const credential = await issuerFlow.issueCredential(issuer, parse, {
         alg: 'ES256',

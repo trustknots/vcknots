@@ -210,7 +210,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       }
 
       const code = await auth$.generate()
-      await codeStore$.save(code)
+      await codeStore$.save(code, configurations)
       const offer = await offer$.create(metadata, configurations, {
         usePreAuth: true,
         code,

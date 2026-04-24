@@ -6,13 +6,14 @@ export const accessToken = (): AccessTokenProvider => {
     name: 'default-access-token-provider',
     single: true,
 
-    async createTokenPayload(authz, code, options) {
+    async createTokenPayload(authz, code, credentialConfigurationIds, options) {
       const timeStamp = Math.floor(Date.now() / 1000)
       const payload = {
         iss: authz,
         sub: code,
         exp: timeStamp + (options?.ttlSec ?? 86400),
         iat: timeStamp,
+        credential_configuration_ids: credentialConfigurationIds,
       }
       return payload
     },

@@ -40,7 +40,7 @@ export type AuthzFlow = {
     authz: AuthorizationServerIssuer,
     accessToken: string,
     options?: { alg?: AuthzKeyAlg }
-  ): Promise<boolean>
+  ): Promise<JwtPayload>
 }
 
 export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
@@ -69,13 +69,17 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         case 'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
           const option = options as TokenRequestOptions[GrantType.PreAuthorizedCode]
           // Check pre-code validity
-          const isValid = await codeStore$.validate(tokenRequest['pre-authorized_code'])
-          if (!isValid) {
+
+          const credentialConfigurationIds = await codeStore$.validate(
+            tokenRequest['pre-authorized_code']
+          )
+
+          if (!credentialConfigurationIds) {
             throw err('PRE_AUTHORIZED_CODE_NOT_FOUND', {
               message: 'The provided pre-authorized code is invalid.',
             })
           }
-          // delete code from store
+
           await codeStore$.delete(tokenRequest['pre-authorized_code'])
 
           // TODO: if ix_code is provided, it should be validated
@@ -90,7 +94,8 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           const jwtPayload = await accessToken$.createTokenPayload(
             authz,
 
-            tokenRequest['pre-authorized_code']
+            tokenRequest['pre-authorized_code'],
+            credentialConfigurationIds
           )
           // sign with issuer private key
           const signature = await authzKey$.sign(authz, keyAlg, jwtPayload, jwtHeader)
@@ -122,7 +127,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         }
       }
     },
-    async verifyAccessToken(authz, accessToken: string, options): Promise<boolean> {
+    async verifyAccessToken(authz, accessToken: string, options): Promise<JwtPayload> {
       // TODO:  AccessToken Support (self-contained, Token Introspection) — prioritize self-contained.
       // self-contained check
       const [jwtHeader, jwtPayload, jwtSignature] = accessToken.split('.')
@@ -173,7 +178,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           message: 'Access token verification failed.',
         })
       }
-      return true
+      return decodedPayload
     },
   }
 }
