@@ -1,7 +1,5 @@
-import {
-  CredentialConfigurationId,
-  PreAuthorizedCodeStoreProvider,
-} from '@trustknots/vcknots/providers'
+import { PreAuthorizedCodeStoreProvider } from '@trustknots/vcknots/providers'
+import { CredentialConfigurationId } from '@trustknots/vcknots'
 import { Timestamp } from 'firebase-admin/firestore'
 import { FirestoreProviderOptions, resolveFirestore } from './firestore.provider'
 
