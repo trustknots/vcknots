@@ -83,14 +83,14 @@ func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*Credentia
 }
 
 // Present sends the presentation to the verifier
-func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission types.PresentationSubmission, request *types.PresentationRequest) error {
+func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission types.PresentationSubmission, request *types.PresentationRequest) (string, error) {
 	if protocol != types.Oid4vp {
-		return fmt.Errorf("plugin type mismatch")
+		return "", fmt.Errorf("plugin type mismatch")
 	}
 
 	presentationSubmissionJSON, err := json.Marshal(presentationSubmission)
 	if err != nil {
-		return fmt.Errorf("failed to marshal presentation_submission: %w", err)
+		return "", fmt.Errorf("failed to marshal presentation_submission: %w", err)
 	}
 
 	// Check if JARM (JWT-Secured Authorization Response Mode) is required
@@ -116,7 +116,7 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 		// JARM: Create JWT with response parameters, encrypt it, and send as "response" parameter
 		jarmToken, err := p.createJARMResponse(string(serializedPresentation), string(presentationSubmissionJSON), request, encryptionAlg, encryptionEnc, verifierJWKS)
 		if err != nil {
-			return fmt.Errorf("failed to create JARM response: %w", err)
+			return "", fmt.Errorf("failed to create JARM response: %w", err)
 		}
 		formData.Set("response", jarmToken)
 	} else {
@@ -135,16 +135,31 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 	}
 	resp, err := client.Post(endpoint.String(), "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
 	if err != nil {
-		return fmt.Errorf("failed to send presentation to verifier: %w", err)
+		return "", fmt.Errorf("failed to send presentation to verifier: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("verifier returned non-200 status: %d, body: %s", resp.StatusCode, string(respBody))
+		return "", fmt.Errorf("verifier returned non-200 status: %d, body: %s", resp.StatusCode, string(respBody))
 	}
 
-	return nil
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read verifier response: %w", err)
+	}
+	if len(respBody) == 0 {
+		return "", nil
+	}
+	var verifierResponse struct {
+		RedirectURI string `json:"redirect_uri"`
+	}
+	err = json.Unmarshal(respBody, &verifierResponse)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse verifier response: %w", err)
+	}
+
+	return verifierResponse.RedirectURI, nil
 }
 
 // createJARMResponse creates a JWT-Secured Authorization Response (JARM)

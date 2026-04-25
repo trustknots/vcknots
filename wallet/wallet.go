@@ -836,5 +836,6 @@ func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentat
 		presentationRequest.AuthorizationEncryptedRespEnc = req.ClientMetadata.AuthorizationEncryptedResponseEnc
 	}
 
-	return w.presenter.Present(presenterTypes.Oid4vp, *endpoint, bytes, presentationSubmission, presentationRequest)
+	_, err = w.presenter.Present(presenterTypes.Oid4vp, *endpoint, bytes, presentationSubmission, presentationRequest)
+	return err
 }
