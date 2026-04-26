@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -643,7 +644,14 @@ func TestController_generateJWTProof_AnonymousPreAuthorizedFlow_OmitsIss(t *test
 	}
 	nonce := "test-nonce"
 
-	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", nil)
+	proof, err := controller.generateJWTProof(
+		key,
+		did,
+		&nonce,
+		"test-aud",
+		nil,
+		credentialRequestProofBindingMethodKID,
+	)
 	if err != nil {
 		t.Errorf("generateJWTProof returned error: %v", err)
 	}
@@ -694,7 +702,14 @@ func TestController_generateJWTProof_NonAnonymousFlow_EmptyClientIDReturnsError(
 	nonce := "test-nonce"
 	emptyClientID := ""
 
-	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", &emptyClientID)
+	proof, err := controller.generateJWTProof(
+		key,
+		did,
+		&nonce,
+		"test-aud",
+		&emptyClientID,
+		credentialRequestProofBindingMethodKID,
+	)
 	if err == nil {
 		t.Fatalf("expected error when clientID is empty, got nil")
 	}
@@ -717,7 +732,14 @@ func TestController_generateJWTProof_NonAnonymousFlow_BlankClientIDReturnsError(
 	nonce := "test-nonce"
 	blankClientID := "   "
 
-	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", &blankClientID)
+	proof, err := controller.generateJWTProof(
+		key,
+		did,
+		&nonce,
+		"test-aud",
+		&blankClientID,
+		credentialRequestProofBindingMethodKID,
+	)
 	if err == nil {
 		t.Fatalf("expected error when clientID is blank, got nil")
 	}
@@ -738,7 +760,14 @@ func TestController_generateJWTProof_WithoutNonce_Integration(t *testing.T) {
 		TypeID: "did:key",
 	}
 
-	proof, err := controller.generateJWTProof(key, did, nil, "test-aud", nil)
+	proof, err := controller.generateJWTProof(
+		key,
+		did,
+		nil,
+		"test-aud",
+		nil,
+		credentialRequestProofBindingMethodKID,
+	)
 	if err != nil {
 		t.Errorf("generateJWTProof returned error: %v", err)
 	}
@@ -758,7 +787,14 @@ func TestController_generateJWTProof_WithoutIssuer_Integration(t *testing.T) {
 	}
 	nonce := "test-nonce"
 
-	proof, err := controller.generateJWTProof(key, did, &nonce, "test-aud", nil)
+	proof, err := controller.generateJWTProof(
+		key,
+		did,
+		&nonce,
+		"test-aud",
+		nil,
+		credentialRequestProofBindingMethodKID,
+	)
 	if err != nil {
 		t.Fatalf("generateJWTProof returned error: %v", err)
 	}
@@ -1019,6 +1055,391 @@ func TestAccessTokenCredentialIdentifier(t *testing.T) {
 // createMockOID4VCIServer creates a mock HTTP server for OID4VCI testing
 func createMockOID4VCIServer() *mockserver.OID4VCIIssuerServer {
 	return mockserver.NewOID4VCIIssuerServer(nil)
+}
+
+func createWalletTestSDJWT() string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"vc+sd-jwt"}`))
+	payload := map[string]interface{}{
+		"_sd": []string{
+			"TGf4oLbgwd5JQaHyKVQZU9UdGE0w5rtDsrZzfUaomLo",
+			"JzYjH4svliH0R3PyEMfeZu6Jt69u5qehZo7F7EPYlSE",
+		},
+		"iss":     "https://example.com/issuer",
+		"sub":     "did:key:z6Mkwallet-test-subject",
+		"iat":     1683000000,
+		"exp":     1883000000,
+		"vct":     "https://credentials.example.com/identity_credential",
+		"_sd_alg": "sha-256",
+	}
+	payloadBytes, _ := json.Marshal(payload)
+	payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadBytes)
+	signature := base64.RawURLEncoding.EncodeToString(make([]byte, 64))
+
+	jwt := header + "." + payloadEncoded + "." + signature
+	disclosures := []string{
+		"WyIyR0xDNDJzS1F2ZUNmR2ZyeU5STjl3IiwgImdpdmVuX25hbWUiLCAiSm9obiJd",
+		"WyI2SWo3dE0tYTVpVlBHYm9TNXRtdlZBIiwgImVtYWlsIiwgImpvaG5kb2VAZXhhbXBsZS5jb20iXQ",
+	}
+
+	result := jwt
+	for _, disclosure := range disclosures {
+		result += "~" + disclosure
+	}
+	result += "~"
+
+	return result
+}
+
+func createWalletTestJwtVCCredential() string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"JWT"}`))
+	payload := map[string]interface{}{
+		"vc": map[string]interface{}{
+			"id":     "https://issuer.example.com/credentials/test-1",
+			"type":   []string{"VerifiableCredential"},
+			"issuer": "https://issuer.example.com",
+			"credentialSubject": map[string]interface{}{
+				"id": "did:key:test-subject",
+			},
+		},
+	}
+	payloadBytes, _ := json.Marshal(payload)
+	payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadBytes)
+	signature := base64.RawURLEncoding.EncodeToString(make([]byte, 64))
+
+	return header + "." + payloadEncoded + "." + signature
+}
+
+func TestController_ReceiveCredential_SDJwtSpecified_StoresMimeAndCanGetByID(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	sdJwtCredential := createWalletTestSDJWT()
+	var capturedBody map[string]interface{}
+	handlerErrCh := make(chan error, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		baseURL := "http://" + r.Host
+
+		switch r.URL.Path {
+		case "/.well-known/openid-credential-issuer":
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credential_issuer":     baseURL,
+				"credential_endpoint":   baseURL + "/credential",
+				"nonce_endpoint":        baseURL + "/nonce",
+				"authorization_servers": []string{baseURL},
+				"credential_configurations_supported": map[string]interface{}{
+					"jwt-config": map[string]interface{}{
+						"format": "jwt_vc_json",
+					},
+					"sdjwt-config": map[string]interface{}{
+						"format": "dc+sd-jwt",
+						"cryptographic_binding_methods_supported": []string{"jwk"},
+					},
+				},
+			})
+		case "/.well-known/oauth-authorization-server":
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"issuer":         baseURL,
+				"token_endpoint": baseURL + "/token",
+				"pre-authorized_grant_anonymous_access_supported": true,
+				"response_types_supported":                        []string{"code"},
+			})
+		case "/token":
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"access_token": "mock-access-token",
+				"token_type":   "Bearer",
+				"c_nonce":      "mock-c-nonce",
+			})
+		case "/nonce":
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"c_nonce": "nonce-from-endpoint",
+			})
+		case "/credential":
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				handlerErrCh <- fmt.Errorf("failed to read credential request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			if err := json.Unmarshal(bodyBytes, &capturedBody); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to decode credential request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credential": sdJwtCredential,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	issuerURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           issuerURL,
+			CredentialConfigurationIDs: []string{"jwt-config", "sdjwt-config"},
+			Grants: map[string]*CredentialOfferGrant{
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+					PreAuthorizedCode: "test-code",
+				},
+			},
+		},
+		Type:            receiverTypes.Oid4vci,
+		Key:             newMockKeyEntry(),
+		RequestedFormat: credential.SDJwtVC,
+	}
+
+	savedCredential, err := controller.ReceiveCredential(req)
+	require.NoError(t, err)
+	require.NotNil(t, savedCredential)
+
+	select {
+	case handlerErr := <-handlerErrCh:
+		require.NoError(t, handlerErr)
+	default:
+		t.Fatal("credential endpoint was not called")
+	}
+
+	requestedConfigID, ok := capturedBody["credential_configuration_id"].(string)
+	require.True(t, ok, "credential_configuration_id should be a string")
+	assert.Equal(t, "sdjwt-config", requestedConfigID)
+
+	proofs, ok := capturedBody["proofs"].(map[string]interface{})
+	require.True(t, ok, "proofs should be present for cryptographic binding")
+	jwtProofs, ok := proofs["jwt"].([]interface{})
+	require.True(t, ok, "proofs.jwt should be present")
+	require.Len(t, jwtProofs, 1, "proofs.jwt should contain one proof")
+	proofJWT, ok := jwtProofs[0].(string)
+	require.True(t, ok, "proofs.jwt[0] should be a JWT string")
+
+	proofParts := strings.Split(proofJWT, ".")
+	require.Len(t, proofParts, 3, "proof JWT should have 3 parts")
+	proofHeaderBytes, err := base64.RawURLEncoding.DecodeString(proofParts[0])
+	require.NoError(t, err)
+
+	var proofHeader map[string]interface{}
+	require.NoError(t, json.Unmarshal(proofHeaderBytes, &proofHeader))
+	_, hasJWK := proofHeader["jwk"]
+	assert.True(t, hasJWK, "proof JWT header should include jwk when binding method supports jwk")
+	_, hasKID := proofHeader["kid"]
+	assert.False(t, hasKID, "proof JWT header should not include kid when jwk is used")
+
+	assert.Equal(t, string(credential.SDJwtVC), savedCredential.Entry.MimeType)
+	require.NotNil(t, savedCredential.Credential)
+	require.NotNil(t, savedCredential.Credential.SDJwt)
+	assert.Len(t, savedCredential.Credential.SDJwt.SD, 2)
+
+	retrievedCredential, err := controller.GetCredentialEntry(savedCredential.Entry.Id)
+	require.NoError(t, err)
+	require.NotNil(t, retrievedCredential)
+	assert.Equal(t, savedCredential.Entry.Id, retrievedCredential.Entry.Id)
+	assert.Equal(t, string(credential.SDJwtVC), retrievedCredential.Entry.MimeType)
+}
+
+func TestController_ReceiveCredential_AttachesProofWhenCryptographicBindingMethodsSupported(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	var capturedBody map[string]interface{}
+	handlerErrCh := make(chan error, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		baseURL := "http://" + r.Host
+
+		switch r.URL.Path {
+		case "/.well-known/openid-credential-issuer":
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credential_issuer":     baseURL,
+				"credential_endpoint":   baseURL + "/credential",
+				"nonce_endpoint":        baseURL + "/nonce",
+				"authorization_servers": []string{baseURL},
+				"credential_configurations_supported": map[string]interface{}{
+					"jwt-config": map[string]interface{}{
+						"format": "jwt_vc_json",
+						"cryptographic_binding_methods_supported": []string{"jwk"},
+					},
+				},
+			})
+		case "/.well-known/oauth-authorization-server":
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"issuer":         baseURL,
+				"token_endpoint": baseURL + "/token",
+				"pre-authorized_grant_anonymous_access_supported": true,
+				"response_types_supported":                        []string{"code"},
+			})
+		case "/token":
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"access_token": "mock-access-token",
+				"token_type":   "Bearer",
+				"c_nonce":      "mock-c-nonce",
+			})
+		case "/nonce":
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"c_nonce": "nonce-from-endpoint",
+			})
+		case "/credential":
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				handlerErrCh <- fmt.Errorf("failed to read credential request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			if err := json.Unmarshal(bodyBytes, &capturedBody); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to decode credential request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credential": createWalletTestJwtVCCredential(),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	issuerURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           issuerURL,
+			CredentialConfigurationIDs: []string{"jwt-config"},
+			Grants: map[string]*CredentialOfferGrant{
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+					PreAuthorizedCode: "test-code",
+				},
+			},
+		},
+		Type:            receiverTypes.Oid4vci,
+		Key:             newMockKeyEntry(),
+		RequestedFormat: credential.JwtVc,
+	}
+
+	_, err = controller.ReceiveCredential(req)
+	require.NoError(t, err)
+
+	select {
+	case handlerErr := <-handlerErrCh:
+		require.NoError(t, handlerErr)
+	default:
+		t.Fatal("credential endpoint was not called")
+	}
+
+	proofs, ok := capturedBody["proofs"].(map[string]interface{})
+	require.True(t, ok, "proofs should be present when cryptographic_binding_methods_supported exists")
+	jwtProofs, ok := proofs["jwt"].([]interface{})
+	require.True(t, ok, "proofs.jwt should be present")
+	require.Len(t, jwtProofs, 1, "proofs.jwt should contain one proof")
+}
+
+func TestController_ReceiveCredential_OmitsProofWhenBindingNotRequired_AllowsNilKey(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	var capturedBody map[string]interface{}
+	handlerErrCh := make(chan error, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		baseURL := "http://" + r.Host
+
+		switch r.URL.Path {
+		case "/.well-known/openid-credential-issuer":
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credential_issuer":     baseURL,
+				"credential_endpoint":   baseURL + "/credential",
+				"authorization_servers": []string{baseURL},
+				"credential_configurations_supported": map[string]interface{}{
+					"jwt-config": map[string]interface{}{
+						"format": "jwt_vc_json",
+					},
+				},
+			})
+		case "/.well-known/oauth-authorization-server":
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"issuer":         baseURL,
+				"token_endpoint": baseURL + "/token",
+				"pre-authorized_grant_anonymous_access_supported": true,
+				"response_types_supported":                        []string{"code"},
+			})
+		case "/token":
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"access_token": "mock-access-token",
+				"token_type":   "Bearer",
+			})
+		case "/credential":
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				handlerErrCh <- fmt.Errorf("failed to read credential request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			if err := json.Unmarshal(bodyBytes, &capturedBody); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to decode credential request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credential": createWalletTestJwtVCCredential(),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	issuerURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           issuerURL,
+			CredentialConfigurationIDs: []string{"jwt-config"},
+			Grants: map[string]*CredentialOfferGrant{
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+					PreAuthorizedCode: "test-code",
+				},
+			},
+		},
+		Type:            receiverTypes.Oid4vci,
+		RequestedFormat: credential.JwtVc,
+	}
+
+	savedCredential, err := controller.ReceiveCredential(req)
+	require.NoError(t, err)
+	require.NotNil(t, savedCredential)
+
+	select {
+	case handlerErr := <-handlerErrCh:
+		require.NoError(t, handlerErr)
+	default:
+		t.Fatal("credential endpoint was not called")
+	}
+
+	_, hasProof := capturedBody["proof"]
+	assert.False(t, hasProof, "proof should not be present when binding is not required")
+	_, hasProofs := capturedBody["proofs"]
+	assert.False(t, hasProofs, "proofs should not be present when binding is not required")
+	assert.Equal(t, string(credential.JwtVc), savedCredential.Entry.MimeType)
 }
 
 func TestController_ReceiveCredential_WithMockServer_Integration(t *testing.T) {

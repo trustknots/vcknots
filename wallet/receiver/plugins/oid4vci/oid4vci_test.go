@@ -459,6 +459,59 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		assert.Equal(t, proof, jwtProofs[0])
 	})
 
+	t.Run("Request omits proof fields when jwt proof is not provided", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		var capturedBody map[string]interface{}
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/credential", func(w http.ResponseWriter, r *http.Request) {
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				handlerErrCh <- fmt.Errorf("failed to read request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			if err := json.Unmarshal(bodyBytes, &capturedBody); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to parse request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credentials": []map[string]string{{
+					"credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
+				}},
+			})
+		})
+
+		captureURL, _ := url.Parse(captureServer.URL() + "/credential")
+		captureEndpoint := common.URIField(*captureURL)
+
+		credential, err := receiver.ReceiveCredential(types.Oid4vci, captureEndpoint, "test-config", nil, accessToken, nil, nil)
+		require.NoError(t, err)
+		require.NotNil(t, credential)
+		require.NotEmpty(t, *credential)
+		require.NoError(t, <-handlerErrCh)
+
+		credentialConfigurationID, ok := capturedBody["credential_configuration_id"].(string)
+		require.True(t, ok, "credential_configuration_id must be present as string")
+		assert.Equal(t, "test-config", credentialConfigurationID)
+
+		_, exists := capturedBody["proof"]
+		assert.False(t, exists, "proof should not be present in credential request body")
+		_, exists = capturedBody["proofs"]
+		assert.False(t, exists, "proofs should not be present when proof is not provided")
+		_, exists = capturedBody["format"]
+		assert.False(t, exists, "format should not be present in credential request body")
+	})
+
 	t.Run("Request uses credential_identifier when provided", func(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetHTTPAllowed(http_allowed)
