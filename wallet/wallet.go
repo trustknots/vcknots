@@ -480,6 +480,10 @@ func (w *Wallet) validateCredentialOffer(offer *CredentialOffer) (string, error)
 		return "", fmt.Errorf("pre-authorization code is not included in the offer")
 	}
 
+	if offer.CredentialIssuer ==  nil {
+		return "", fmt.Errorf("credential issuer is not included in the offer")
+	}
+
 	if len(offer.CredentialConfigurationIDs) == 0 {
 		return "", fmt.Errorf("credential configuration IDs are empty")
 	}
