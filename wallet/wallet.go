@@ -475,13 +475,13 @@ func (w *Wallet) validateCredentialOffer(offer *CredentialOffer) (string, error)
 		return "", fmt.Errorf("credential offer is required")
 	}
 
+	if err := validateCredentialIssuerIdentifier(offer.CredentialIssuer); err != nil {
+		return "", err
+	}
+
 	preAuthGrant := offer.Grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"]
 	if preAuthGrant == nil {
 		return "", fmt.Errorf("pre-authorization code is not included in the offer")
-	}
-
-	if offer.CredentialIssuer == nil {
-		return "", fmt.Errorf("credential issuer is not included in the offer")
 	}
 
 	if len(offer.CredentialConfigurationIDs) == 0 {
@@ -494,6 +494,32 @@ func (w *Wallet) validateCredentialOffer(offer *CredentialOffer) (string, error)
 	}
 
 	return preAuthCode, nil
+}
+
+func validateCredentialIssuerIdentifier(issuer *url.URL) error {
+	if issuer == nil {
+		return fmt.Errorf("credential issuer is not included in the offer")
+	}
+
+	if issuer.Scheme == "" {
+		return fmt.Errorf("credential issuer must include a scheme")
+	}
+	if !strings.EqualFold(issuer.Scheme, "https") {
+		if !env.IsHTTPAllowed() || !strings.EqualFold(issuer.Scheme, "http") {
+			return fmt.Errorf("credential issuer must use https scheme")
+		}
+	}
+	if issuer.Host == "" {
+		return fmt.Errorf("credential issuer must include a host")
+	}
+	if issuer.User != nil {
+		return fmt.Errorf("credential issuer must not include user info")
+	}
+	if issuer.RawQuery != "" || issuer.ForceQuery || issuer.Fragment != "" || issuer.RawFragment != "" {
+		return fmt.Errorf("credential issuer must not include query or fragment")
+	}
+
+	return nil
 }
 
 // fetchCredentialMetadata fetches issuer and authorization server metadata.
