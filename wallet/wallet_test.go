@@ -1704,22 +1704,16 @@ func TestWallet_validateCredentialOffer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w, err := NewWallet()
-			if err != nil {
-				t.Fatalf("could not construct receiver type: %v", err)
-			}
+			require.NoError(t, err)
+
 			got, gotErr := w.validateCredentialOffer(tt.offer)
-			if gotErr != nil {
-				if !tt.wantErr {																																														
-					t.Errorf("validateCredentialOffer() failed: %v", gotErr)
-				}
+			if tt.wantErr {
+				require.Error(t, gotErr)
 				return
 			}
-			if tt.wantErr {
-				t.Fatal("validateCredentialOffer() succeeded unexpectedly")
-			}
-			if got != tt.want {
-				t.Errorf("validateCredentialOffer() = %v, want %v", got, tt.want)
-			}
+
+			require.NoError(t, gotErr)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
