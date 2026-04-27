@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -1059,11 +1060,19 @@ func createMockOID4VCIServer() *mockserver.OID4VCIIssuerServer {
 
 func createWalletTestSDJWT() string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"vc+sd-jwt"}`))
+	disclosures := []string{
+		"WyIyR0xDNDJzS1F2ZUNmR2ZyeU5STjl3IiwgImdpdmVuX25hbWUiLCAiSm9obiJd",
+		"WyI2SWo3dE0tYTVpVlBHYm9TNXRtdlZBIiwgImVtYWlsIiwgImpvaG5kb2VAZXhhbXBsZS5jb20iXQ",
+	}
+
+	sdDigests := make([]string, 0, len(disclosures))
+	for _, disclosure := range disclosures {
+		h := sha256.Sum256([]byte(disclosure))
+		sdDigests = append(sdDigests, base64.RawURLEncoding.EncodeToString(h[:]))
+	}
+
 	payload := map[string]interface{}{
-		"_sd": []string{
-			"TGf4oLbgwd5JQaHyKVQZU9UdGE0w5rtDsrZzfUaomLo",
-			"JzYjH4svliH0R3PyEMfeZu6Jt69u5qehZo7F7EPYlSE",
-		},
+		"_sd":     sdDigests,
 		"iss":     "https://example.com/issuer",
 		"sub":     "did:key:z6Mkwallet-test-subject",
 		"iat":     1683000000,
@@ -1076,10 +1085,6 @@ func createWalletTestSDJWT() string {
 	signature := base64.RawURLEncoding.EncodeToString(make([]byte, 64))
 
 	jwt := header + "." + payloadEncoded + "." + signature
-	disclosures := []string{
-		"WyIyR0xDNDJzS1F2ZUNmR2ZyeU5STjl3IiwgImdpdmVuX25hbWUiLCAiSm9obiJd",
-		"WyI2SWo3dE0tYTVpVlBHYm9TNXRtdlZBIiwgImVtYWlsIiwgImpvaG5kb2VAZXhhbXBsZS5jb20iXQ",
-	}
 
 	result := jwt
 	for _, disclosure := range disclosures {
@@ -1088,6 +1093,126 @@ func createWalletTestSDJWT() string {
 	result += "~"
 
 	return result
+}
+
+func TestController_generateJWTProof_KIDBinding_NilDIDReturnsError(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	key := newMockKeyEntry()
+	nonce := "test-nonce"
+
+	proof, err := controller.generateJWTProof(
+		key,
+		nil,
+		&nonce,
+		"test-aud",
+		nil,
+		credentialRequestProofBindingMethodKID,
+	)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "did is required for kid proof binding")
+	assert.Empty(t, proof)
+}
+
+func TestController_generateJWTProof_KIDBinding_BlankDIDReturnsError(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	key := newMockKeyEntry()
+	nonce := "test-nonce"
+	did := &idprofTypes.IdentityProfile{ID: "  ", TypeID: "did:key"}
+
+	proof, err := controller.generateJWTProof(
+		key,
+		did,
+		&nonce,
+		"test-aud",
+		nil,
+		credentialRequestProofBindingMethodKID,
+	)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "did.ID is required for kid proof binding")
+	assert.Empty(t, proof)
+}
+
+func TestController_generateJWTProof_JWKBinding_AllowsNilDID(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	key := newMockKeyEntry()
+	nonce := "test-nonce"
+
+	proof, err := controller.generateJWTProof(
+		key,
+		nil,
+		&nonce,
+		"test-aud",
+		nil,
+		credentialRequestProofBindingMethodJWK,
+	)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, proof)
+
+	proofParts := strings.Split(proof, ".")
+	require.Len(t, proofParts, 3)
+
+	headerBytes, decodeErr := base64.RawURLEncoding.DecodeString(proofParts[0])
+	require.NoError(t, decodeErr)
+
+	var header map[string]interface{}
+	require.NoError(t, json.Unmarshal(headerBytes, &header))
+	_, hasJWK := header["jwk"]
+	_, hasKID := header["kid"]
+	assert.True(t, hasJWK)
+	assert.False(t, hasKID)
+}
+
+func TestController_shouldAttachCredentialRequestProof_EmptyBindingMethodsOmitProof(t *testing.T) {
+	req := ReceiveCredentialRequest{RequestedFormat: credential.JwtVc}
+	empty := []string{}
+	configuration := &receiverTypes.CredentialConfiguration{
+		CryptographicBindingMethodsSupported: &empty,
+	}
+
+	attachProof := shouldAttachCredentialRequestProof(req, configuration)
+	assert.False(t, attachProof)
+}
+
+func TestController_shouldAttachCredentialRequestProof_EmptyBindingMethodsWithNoRequestedFormatKeepsBackwardCompatibility(t *testing.T) {
+	req := ReceiveCredentialRequest{}
+	empty := []string{}
+	configuration := &receiverTypes.CredentialConfiguration{
+		CryptographicBindingMethodsSupported: &empty,
+	}
+
+	attachProof := shouldAttachCredentialRequestProof(req, configuration)
+	assert.True(t, attachProof)
+}
+
+func TestController_selectCredentialConfiguration_UnsupportedDefaultFormatReturnsError(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	issuerURL, err := url.Parse("https://issuer.example.com")
+	require.NoError(t, err)
+
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           issuerURL,
+			CredentialConfigurationIDs: []string{"mdoc-config"},
+		},
+	}
+
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{
+		CredentialConfigurationSupported: map[string]receiverTypes.CredentialConfiguration{
+			"mdoc-config": {
+				Format: "mso_mdoc",
+			},
+		},
+	}
+
+	configID, config, flavor, err := controller.selectCredentialConfiguration(req, issuerMetadata)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported credential format for configuration \"mdoc-config\"")
+	assert.Equal(t, "", configID)
+	assert.Nil(t, config)
+	assert.Equal(t, credential.SupportedSerializationFlavor(""), flavor)
 }
 
 func createWalletTestJwtVCCredential() string {

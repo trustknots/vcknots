@@ -352,6 +352,12 @@ func (w *Wallet) generateJWTProof(
 		publicJWK := key.PublicKey()
 		header["jwk"] = publicJWK.Public()
 	} else {
+		if did == nil {
+			return "", fmt.Errorf("did is required for kid proof binding")
+		}
+		if strings.TrimSpace(did.ID) == "" {
+			return "", fmt.Errorf("did.ID is required for kid proof binding")
+		}
 		header["kid"] = did.ID
 	}
 
@@ -592,14 +598,16 @@ func (w *Wallet) selectCredentialConfiguration(
 	configCopy := config
 	flavor, err := oid4vciCredentialFormatToSerializationFlavor(config.Format)
 	if err != nil {
-		return defaultConfigurationID, &configCopy, defaultFlavor, nil
+		return "", nil, "", fmt.Errorf("unsupported credential format for configuration %q: %w", defaultConfigurationID, err)
 	}
 
 	return defaultConfigurationID, &configCopy, flavor, nil
 }
 
 func shouldAttachCredentialRequestProof(req ReceiveCredentialRequest, credentialConfiguration *receiverTypes.CredentialConfiguration) bool {
-	if credentialConfiguration != nil && credentialConfiguration.CryptographicBindingMethodsSupported != nil {
+	if credentialConfiguration != nil &&
+		credentialConfiguration.CryptographicBindingMethodsSupported != nil &&
+		len(*credentialConfiguration.CryptographicBindingMethodsSupported) > 0 {
 		return true
 	}
 
@@ -803,20 +811,24 @@ func (w *Wallet) requestCredential(
 			return nil, fmt.Errorf("key entry is required")
 		}
 
-		did, err := w.GenerateDID(DIDCreateOptions{
-			TypeID:    "did:key",
-			PublicKey: req.Key.PublicKey(),
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate DID: %w", err)
+		proofBindingMethod := resolveCredentialRequestProofBindingMethod(credentialConfiguration)
+
+		var did *idprofTypes.IdentityProfile
+		if proofBindingMethod == credentialRequestProofBindingMethodKID {
+			didGenerated, err := w.GenerateDID(DIDCreateOptions{
+				TypeID:    "did:key",
+				PublicKey: req.Key.PublicKey(),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate DID: %w", err)
+			}
+			did = didGenerated
 		}
 
 		nonce, err := w.fetchCredentialNonce(issuerMetadata, accessToken)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch nonce for credential proof: %w", err)
 		}
-
-		proofBindingMethod := resolveCredentialRequestProofBindingMethod(credentialConfiguration)
 
 		proofValue, err := w.generateJWTProof(
 			req.Key,

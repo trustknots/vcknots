@@ -574,9 +574,9 @@ func (s *SdJwtVcSerializer) SerializePresentation(
 		return nil, nil, types.NewInvalidJWTError("SD-JWT payload is not valid JSON", err)
 	}
 
-	sdAlg := "sha-256"
+	sdAlg := defaultHashAlgorithm
 	if algVal, ok := payloadMap["_sd_alg"].(string); ok {
-		sdAlg = algVal
+		sdAlg = normalizeSDHashAlgorithm(algVal)
 	}
 
 	// Filter disclosures based on selected claims
