@@ -4,7 +4,7 @@ import { AuthorizationServerIssuer } from '../../src/authorization-server.types'
 import { PreAuthorizedCode } from '../../src/pre-authorized-code.types'
 import { accessToken } from '../../src/providers/access-token.provider'
 import { AccessTokenProvider } from '../../src/providers/provider.types'
-import { CredentialConfigurationId } from '../../lib'
+import { CredentialConfigurationId } from '../../src/credential-issuer.types'
 
 describe('AccessTokenProvider', () => {
   const provider: AccessTokenProvider = accessToken()
