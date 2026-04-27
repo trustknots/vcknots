@@ -17,6 +17,7 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
     settings: () => { },
     doc: (path: string) => {
       const docRef = {
+        path,
         get: async () => ({
           exists: store.has(path),
           data: () => store.get(path),
@@ -36,6 +37,24 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
       }
       return docRef
     },
+    runTransaction: async <T>(
+      updateFunction: (transaction: {
+        get: (docRef: { path: string }) => Promise<{
+          exists: boolean
+          data: () => Record<string, unknown> | undefined
+        }>
+        set: (docRef: { path: string }, data: Record<string, unknown>) => void
+      }) => Promise<T>
+    ): Promise<T> =>
+      updateFunction({
+        get: async (docRef) => ({
+          exists: store.has(docRef.path),
+          data: () => store.get(docRef.path),
+        }),
+        set: (docRef, data) => {
+          store.set(docRef.path, { ...data })
+        },
+      }),
   } as unknown as Firestore
 
   // Fake App instance backed by the in-memory Firestore mock, injected via DI.
