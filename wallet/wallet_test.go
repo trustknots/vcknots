@@ -1630,3 +1630,96 @@ func TestBuildDescriptorMap_UsesVPTokenRootPathForALLSdJwtDescriptors(t *testing
 		require.Nilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
 	}
 }
+
+func TestWallet_validateCredentialOffer(t *testing.T) {
+	issuerURL, err := url.Parse("https://issuer.example.com")
+	require.NoError(t, err)
+
+	const preAuthGrantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
+
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		offer   *CredentialOffer
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "nil offer",
+			offer:   nil,
+			wantErr: true,
+		},
+		{
+			name: "missing pre-authorization grant",
+			offer: &CredentialOffer{
+				CredentialIssuer:           issuerURL,
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants:                     map[string]*CredentialOfferGrant{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing credential issuer",
+			offer: &CredentialOffer{
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty credential configuration IDs",
+			offer: &CredentialOffer{
+				CredentialIssuer: issuerURL,
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty pre-authorization code",
+			offer: &CredentialOffer{
+				CredentialIssuer:           issuerURL,
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: ""},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid offer",
+			offer: &CredentialOffer{
+				CredentialIssuer:           issuerURL,
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			want: "pre-auth-code",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w, err := NewWallet()
+			if err != nil {
+				t.Fatalf("could not construct receiver type: %v", err)
+			}
+			got, gotErr := w.validateCredentialOffer(tt.offer)
+			if gotErr != nil {
+				if !tt.wantErr {																																														
+					t.Errorf("validateCredentialOffer() failed: %v", gotErr)
+				}
+				return
+			}
+			if tt.wantErr {
+				t.Fatal("validateCredentialOffer() succeeded unexpectedly")
+			}
+			if got != tt.want {
+				t.Errorf("validateCredentialOffer() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
