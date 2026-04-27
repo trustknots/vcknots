@@ -5,13 +5,27 @@ import {
   AuthzTokenRequest,
   initializeAuthzFlow,
 } from '@trustknots/vcknots/authz'
-import { Hono } from 'hono'
+import { Context, Hono } from 'hono'
 import { handleError } from '../utils/error-handler.js'
+
+const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
 
 export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
   const authzApp = new Hono()
 
   const authzFlow = initializeAuthzFlow(context)
+
+  const dpopNonceResponse = async (c: Context) => {
+    const dpopNonce = await authzFlow.createDpopNonceChallenge(DPOP_NONCE_TTL_MS)
+    c.header('DPoP-Nonce', dpopNonce)
+    return c.json(
+      {
+        error: 'use_dpop_nonce',
+        error_description: 'Authorization server requires nonce in DPoP proof.',
+      },
+      400
+    )
+  }
 
   authzApp.post('/:issuer/token', async (c) => {
     try {
@@ -46,6 +60,7 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
                 proofJwt: dpopProof.proofJwt,
                 htm: c.req.method,
                 htu: `${baseUrl}/authorizations/${encodeURIComponent(issuer)}/token`,
+                nonceRequired: true,
               },
             }
           : {}),
@@ -60,6 +75,9 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
           },
           400
         )
+      }
+      if (err instanceof VcknotsError && err.name === 'USE_DPOP_NONCE') {
+        return dpopNonceResponse(c)
       }
       const errorResponse = handleError(err)
       return c.json(errorResponse, 400)

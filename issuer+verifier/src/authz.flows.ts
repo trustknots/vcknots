@@ -9,6 +9,7 @@ import { err } from './errors/vcknots.error'
 import { GrantType, TokenRequest } from './token-request.types'
 import { VcknotsContext } from './vcknots.context'
 import { JwtPayload } from './jwt.types'
+import { Nonce } from './nonce.types'
 
 type AuthzKeyAlg = string
 const DPOP_PROOF_JTI_TTL_MS = 6 * 60 * 1000
@@ -17,6 +18,7 @@ type DPoPProofContext = {
   proofJwt: string
   htm: string
   htu: string
+  nonceRequired?: boolean
 }
 
 type TokenRequestOptions = {
@@ -44,6 +46,7 @@ export type AuthzFlow = {
     metadata: AuthorizationServerMetadata,
     options?: { alg?: AuthzKeyAlg }
   ): Promise<void>
+  createDpopNonceChallenge(ttlMs?: number): Promise<string>
   createAccessToken(
     authz: AuthorizationServerIssuer,
     tokenRequest: TokenRequest,
@@ -80,6 +83,13 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       await authzKey$.save(metadata.issuer, privateKeyAlg)
       await authz$.save(metadata)
     },
+    async createDpopNonceChallenge(ttlMs) {
+      const nonce$ = context.providers.get('nonce-provider')
+      const nonceStore$ = context.providers.get('nonce-store-provider')
+      const dpopNonce = await nonce$.generate({ nonce_expires_in: ttlMs })
+      await nonceStore$.save(dpopNonce)
+      return dpopNonce.nonce
+    },
     async createAccessToken(authz, tokenRequest, options) {
       switch (tokenRequest.grant_type) {
         case 'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
@@ -91,6 +101,21 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
               } satisfies DPoPProofVerifyContext)
             : undefined
           if (verifiedDpopProof) {
+            if (option?.dpopProof?.nonceRequired) {
+              const nonceStore$ = context.providers.get('nonce-store-provider')
+              if (!verifiedDpopProof.nonce) {
+                throw err('USE_DPOP_NONCE', {
+                  message: 'Authorization server requires nonce in DPoP proof.',
+                })
+              }
+              const nonce = Nonce({ nonce: verifiedDpopProof.nonce })
+              const isValidNonce = await nonceStore$.validate(nonce)
+              if (!isValidNonce) {
+                throw err('USE_DPOP_NONCE', {
+                  message: 'Authorization server requires nonce in DPoP proof.',
+                })
+              }
+            }
             const isNewJti = await dpopProofJtiStore$.saveIfAbsent(
               verifiedDpopProof.jwkThumbprint,
               verifiedDpopProof.jti,
@@ -100,6 +125,15 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
               throw err('INVALID_DPOP_PROOF', {
                 message: 'DPoP proof JWT jti has already been used.',
               })
+            }
+            if (option?.dpopProof?.nonceRequired && verifiedDpopProof.nonce) {
+              const nonceStore$ = context.providers.get('nonce-store-provider')
+              const revoked = await nonceStore$.revoke(Nonce({ nonce: verifiedDpopProof.nonce }))
+              if (!revoked) {
+                throw err('USE_DPOP_NONCE', {
+                  message: 'Authorization server requires nonce in DPoP proof.',
+                })
+              }
             }
           }
           // Check pre-code validity

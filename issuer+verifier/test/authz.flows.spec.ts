@@ -13,6 +13,8 @@ import {
   DPoPProofJtiStoreProvider,
   DPoPProofProvider,
   AuthzSignatureKeyStoreProvider,
+  NonceProvider,
+  NonceStoreProvider,
   PreAuthorizedCodeStoreProvider,
 } from '../src/providers'
 import { GrantType, TokenRequest, TokenResponse } from '../src/token-request.types'
@@ -69,6 +71,22 @@ describe('AuthzFlows', () => {
     saveIfAbsent: mock.fn(),
   } satisfies DPoPProofJtiStoreProvider
 
+  const mockNonceProvider = {
+    kind: 'nonce-provider',
+    name: 'mock-nonce-provider',
+    single: true,
+    generate: mock.fn(),
+  } satisfies NonceProvider
+
+  const mockNonceStoreProvider = {
+    kind: 'nonce-store-provider',
+    name: 'mock-nonce-store-provider',
+    single: true,
+    save: mock.fn(),
+    validate: mock.fn(),
+    revoke: mock.fn(),
+  } satisfies NonceStoreProvider
+
   const sampleIssuer = AuthorizationServerIssuer('https://auth.example.com')
   const sampleMetadata: AuthorizationServerMetadata = {
     issuer: sampleIssuer,
@@ -96,6 +114,10 @@ describe('AuthzFlows', () => {
               return mockDpopProofProvider
             case 'dpop-proof-jti-store-provider':
               return mockDpopProofJtiStoreProvider
+            case 'nonce-provider':
+              return mockNonceProvider
+            case 'nonce-store-provider':
+              return mockNonceStoreProvider
             default:
               throw new Error(`Unexpected provider kind requested: ${kind}`)
           }
@@ -161,6 +183,29 @@ describe('AuthzFlows', () => {
     })
   })
 
+  describe('createDpopNonceChallenge()', () => {
+    it('should generate and save a DPoP nonce challenge', async () => {
+      mock.method(mockNonceProvider, 'generate', async () => ({
+        nonce: 'generated-dpop-nonce',
+        nonce_expires_in: 1234,
+      }))
+      mock.method(mockNonceStoreProvider, 'save', async () => { })
+
+      const nonce = await flow.createDpopNonceChallenge(1234)
+
+      assert.equal(nonce, 'generated-dpop-nonce')
+      assert.deepStrictEqual(mockNonceProvider.generate.mock.calls[0].arguments, [
+        { nonce_expires_in: 1234 },
+      ])
+      assert.deepStrictEqual(mockNonceStoreProvider.save.mock.calls[0].arguments, [
+        {
+          nonce: 'generated-dpop-nonce',
+          nonce_expires_in: 1234,
+        },
+      ])
+    })
+  })
+
   describe('createAccessToken()', () => {
     const preAuthCode = PreAuthorizedCode('test-pre-auth-code')
     const tokenRequest: TokenRequest = {
@@ -182,6 +227,8 @@ describe('AuthzFlows', () => {
           iat: Math.floor(Date.now() / 1000),
         }))
         mock.method(mockDpopProofJtiStoreProvider, 'saveIfAbsent', async () => true)
+        mock.method(mockNonceStoreProvider, 'validate', async () => true)
+        mock.method(mockNonceStoreProvider, 'revoke', async () => true)
       })
 
       it('should successfully create an access token with default expiry', async () => {
@@ -251,6 +298,76 @@ describe('AuthzFlows', () => {
           }
         )
         assert.strictEqual(response.token_type, 'DPoP')
+      })
+
+      it('should require nonce when DPoP proof nonce is required', async () => {
+        await assert.rejects(
+          () =>
+            flow.createAccessToken(sampleIssuer, tokenRequest, {
+              dpopProof: {
+                proofJwt: 'aaa.bbb.ccc',
+                htm: 'POST',
+                htu: 'https://auth.example.com/token',
+                nonceRequired: true,
+              },
+            }),
+          {
+            name: 'USE_DPOP_NONCE',
+            message: 'Authorization server requires nonce in DPoP proof.',
+          }
+        )
+      })
+
+      it('should reject invalid DPoP proof nonce when nonce is required', async () => {
+        mock.method(mockDpopProofProvider, 'verifyProof', async () => ({
+          jwkThumbprint: 'test-jkt',
+          jti: 'test-jti',
+          iat: Math.floor(Date.now() / 1000),
+          nonce: 'invalid-nonce',
+        }))
+        mock.method(mockNonceStoreProvider, 'validate', async () => false)
+
+        await assert.rejects(
+          () =>
+            flow.createAccessToken(sampleIssuer, tokenRequest, {
+              dpopProof: {
+                proofJwt: 'aaa.bbb.ccc',
+                htm: 'POST',
+                htu: 'https://auth.example.com/token',
+                nonceRequired: true,
+              },
+            }),
+          {
+            name: 'USE_DPOP_NONCE',
+            message: 'Authorization server requires nonce in DPoP proof.',
+          }
+        )
+      })
+
+      it('should validate and revoke DPoP proof nonce when nonce is required', async () => {
+        mock.method(mockDpopProofProvider, 'verifyProof', async () => ({
+          jwkThumbprint: 'test-jkt',
+          jti: 'test-jti',
+          iat: Math.floor(Date.now() / 1000),
+          nonce: 'valid-nonce',
+        }))
+
+        const response = (await flow.createAccessToken(sampleIssuer, tokenRequest, {
+          dpopProof: {
+            proofJwt: 'aaa.bbb.ccc',
+            htm: 'POST',
+            htu: 'https://auth.example.com/token',
+            nonceRequired: true,
+          },
+        })) as TokenResponse
+
+        assert.strictEqual(response.token_type, 'DPoP')
+        assert.deepStrictEqual(mockNonceStoreProvider.validate.mock.calls[0].arguments, [
+          { nonce: 'valid-nonce' },
+        ])
+        assert.deepStrictEqual(mockNonceStoreProvider.revoke.mock.calls[0].arguments, [
+          { nonce: 'valid-nonce' },
+        ])
       })
 
       it('should reject reused DPoP proof jti', async () => {
