@@ -1058,6 +1058,10 @@ func createMockOID4VCIServer() *mockserver.OID4VCIIssuerServer {
 	return mockserver.NewOID4VCIIssuerServer(nil)
 }
 
+// This fixture intentionally uses a mocked ES256 signature (64 zero bytes).
+// These tests only validate SD-JWT parsing/metadata round-trip, not signature verification.
+// If SD-JWT deserialization later requires signature verification, replace this with a
+// valid ES256 signature (preferred) or change alg to "none" accordingly.
 func createWalletTestSDJWT() string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"vc+sd-jwt"}`))
 	disclosures := []string{
@@ -1236,7 +1240,7 @@ func createWalletTestJwtVCCredential() string {
 
 func TestController_ReceiveCredential_SDJwtSpecified_StoresMimeAndCanGetByID(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
-	httpAllowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
 	env.SetHTTPAllowed(true)
 
@@ -1327,6 +1331,7 @@ func TestController_ReceiveCredential_SDJwtSpecified_StoresMimeAndCanGetByID(t *
 	require.NoError(t, err)
 	require.NotNil(t, savedCredential)
 
+	// Use non-blocking receive so we can fail fast if /credential was never called.
 	select {
 	case handlerErr := <-handlerErrCh:
 		require.NoError(t, handlerErr)
@@ -1372,7 +1377,7 @@ func TestController_ReceiveCredential_SDJwtSpecified_StoresMimeAndCanGetByID(t *
 
 func TestController_ReceiveCredential_AttachesProofWhenCryptographicBindingMethodsSupported(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
-	httpAllowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
 	env.SetHTTPAllowed(true)
 
@@ -1458,6 +1463,7 @@ func TestController_ReceiveCredential_AttachesProofWhenCryptographicBindingMetho
 	_, err = controller.ReceiveCredential(req)
 	require.NoError(t, err)
 
+	// Use non-blocking receive so we can fail fast if /credential was never called.
 	select {
 	case handlerErr := <-handlerErrCh:
 		require.NoError(t, handlerErr)
@@ -1474,7 +1480,7 @@ func TestController_ReceiveCredential_AttachesProofWhenCryptographicBindingMetho
 
 func TestController_ReceiveCredential_OmitsProofWhenBindingNotRequired_AllowsNilKey(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
-	httpAllowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
 	env.SetHTTPAllowed(true)
 
@@ -1548,11 +1554,14 @@ func TestController_ReceiveCredential_OmitsProofWhenBindingNotRequired_AllowsNil
 		Type:            receiverTypes.Oid4vci,
 		RequestedFormat: credential.JwtVc,
 	}
+	require.Nil(t, req.Key, "nil key should be allowed when cryptographic binding is not required")
 
 	savedCredential, err := controller.ReceiveCredential(req)
 	require.NoError(t, err)
 	require.NotNil(t, savedCredential)
+	require.Nil(t, req.Key, "request key should remain nil")
 
+	// Use non-blocking receive so we can fail fast if /credential was never called.
 	select {
 	case handlerErr := <-handlerErrCh:
 		require.NoError(t, handlerErr)
