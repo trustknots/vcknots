@@ -11,7 +11,7 @@ import { parseAuthorizationHeader } from '@trustknots/server-core/utils/authoriz
 import { buildBearerAuthenticateHeader } from '@trustknots/server-core/utils/www-authenticate.js'
 import { Context, Hono } from 'hono'
 import { handleError } from '../utils/error-handler.js'
-import { JwtPayload } from '../../../../issuer+verifier/lib/jwt.types.js'
+import { JwtPayload } from '@trustknots/vcknots'
 
 export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   const issueApp = new Hono()

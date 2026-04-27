@@ -74,7 +74,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             tokenRequest['pre-authorized_code']
           )
 
-          if (!credentialConfigurationIds) {
+          if (!credentialConfigurationIds || credentialConfigurationIds.length === 0) {
             throw err('PRE_AUTHORIZED_CODE_NOT_FOUND', {
               message: 'The provided pre-authorized code is invalid.',
             })
