@@ -32,6 +32,27 @@ describe('inMemoryPreAuthorizedCode', () => {
       assert.strictEqual(isValid, null)
     })
 
+    it('should keep different credential configuration ids per code', async () => {
+      const configA = [CredentialConfigurationId('UniversityDegreeCredential')]
+      const configB = [CredentialConfigurationId('StudentCardCredential')]
+
+      await provider.save(sampleCode, configA)
+      await provider.save(anotherSampleCode, configB)
+
+      assert.deepStrictEqual(await provider.validate(sampleCode), configA)
+      assert.deepStrictEqual(await provider.validate(anotherSampleCode), configB)
+    })
+
+    it('should overwrite credential configuration ids when saving the same code twice', async () => {
+      const initialConfig = [CredentialConfigurationId('UniversityDegreeCredential')]
+      const updatedConfig = [CredentialConfigurationId('StudentCardCredential')]
+
+      await provider.save(sampleCode, initialConfig)
+      await provider.save(sampleCode, updatedConfig)
+
+      assert.deepStrictEqual(await provider.validate(sampleCode), updatedConfig)
+    })
+
     it('should handle multiple codes correctly', async () => {
       await provider.save(sampleCode, credentialConfigurationIds)
       await provider.save(anotherSampleCode, credentialConfigurationIds)
