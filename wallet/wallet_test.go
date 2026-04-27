@@ -83,6 +83,14 @@ func createTestControllerWithDefaults(t *testing.T) *Wallet {
 	return controller
 }
 
+func mustParseURL(t *testing.T, rawURL string) *url.URL {
+	t.Helper()
+
+	parsed, err := url.Parse(rawURL)
+	require.NoError(t, err)
+	return parsed
+}
+
 func TestNewWallet(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 	if controller == nil {
@@ -2143,5 +2151,166 @@ func TestBuildDescriptorMap_UsesVPTokenRootPathForALLSdJwtDescriptors(t *testing
 		require.Equalf(t, fmt.Sprintf("$[%d]", i), item.Path, "descriptorMap[%d].Path", i)
 		require.Equalf(t, "dc+sd-jwt", item.Format, "descriptorMap[%d].Format", i)
 		require.Nilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
+	}
+}
+
+func TestWallet_validateCredentialOffer(t *testing.T) {
+	issuerURL, err := url.Parse("https://issuer.example.com")
+	require.NoError(t, err)
+	httpIssuerURL, err := url.Parse("http://issuer.example.com")
+	require.NoError(t, err)
+
+	const preAuthGrantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
+
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		offer           *CredentialOffer
+		httpAllowed     bool
+		want            string
+		wantErr         bool
+		wantErrContains string
+	}{
+		{
+			name:    "nil offer",
+			offer:   nil,
+			wantErr: true,
+		},
+		{
+			name: "missing pre-authorization grant",
+			offer: &CredentialOffer{
+				CredentialIssuer:           issuerURL,
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants:                     map[string]*CredentialOfferGrant{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing credential issuer",
+			offer: &CredentialOffer{
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "credential issuer must include host",
+			offer: &CredentialOffer{
+				CredentialIssuer:           mustParseURL(t, "https:///issuer"),
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			wantErr:         true,
+			wantErrContains: "credential issuer must include a host",
+		},
+		{
+			name: "credential issuer must use https by default",
+			offer: &CredentialOffer{
+				CredentialIssuer:           httpIssuerURL,
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			wantErr:         true,
+			wantErrContains: "credential issuer must use https scheme",
+		},
+		{
+			name: "credential issuer allows http when configured",
+			offer: &CredentialOffer{
+				CredentialIssuer:           httpIssuerURL,
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			httpAllowed: true,
+			want:        "pre-auth-code",
+		},
+		{
+			name: "credential issuer must not include query",
+			offer: &CredentialOffer{
+				CredentialIssuer:           mustParseURL(t, "https://issuer.example.com?foo=bar"),
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			wantErr:         true,
+			wantErrContains: "credential issuer must not include query or fragment",
+		},
+		{
+			name: "credential issuer must not include fragment",
+			offer: &CredentialOffer{
+				CredentialIssuer:           mustParseURL(t, "https://issuer.example.com#fragment"),
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			wantErr:         true,
+			wantErrContains: "credential issuer must not include query or fragment",
+		},
+		{
+			name: "empty credential configuration IDs",
+			offer: &CredentialOffer{
+				CredentialIssuer: issuerURL,
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty pre-authorization code",
+			offer: &CredentialOffer{
+				CredentialIssuer:           issuerURL,
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: ""},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid offer",
+			offer: &CredentialOffer{
+				CredentialIssuer:           issuerURL,
+				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			want: "pre-auth-code",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			httpAllowed := env.IsHTTPAllowed()
+			debugMode := env.IsDebugMode()
+			defer env.SetHTTPAllowed(httpAllowed)
+			defer env.SetDebugMode(debugMode)
+			env.SetDebugMode(false)
+			env.SetHTTPAllowed(tt.httpAllowed)
+
+			w, err := NewWallet()
+			require.NoError(t, err)
+
+			got, gotErr := w.validateCredentialOffer(tt.offer)
+			if tt.wantErr {
+				require.Error(t, gotErr)
+				if tt.wantErrContains != "" {
+					require.Contains(t, gotErr.Error(), tt.wantErrContains)
+				}
+				return
+			}
+
+			require.NoError(t, gotErr)
+			require.Equal(t, tt.want, got)
+		})
 	}
 }
