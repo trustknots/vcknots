@@ -252,6 +252,7 @@ export type DPoPProofProvider = {
   kind: 'dpop-proof-provider'
   name: string
   single: true
+  proofJtiTtlMs: number
 
   verifyProof(proofJwt: string, context: DPoPProofVerifyContext): Promise<VerifiedDpopProof>
 }
@@ -378,6 +379,7 @@ export type NonceStoreProvider = {
   save(nonce: Nonce): Promise<void>
   validate(nonce: Nonce): Promise<boolean>
   revoke(nonce: Nonce): Promise<boolean>
+  consume(nonce: Nonce): Promise<boolean>
 }
 
 export type IssueCredentialCreateCredentialOptions = {

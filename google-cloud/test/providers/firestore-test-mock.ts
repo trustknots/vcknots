@@ -44,6 +44,7 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
           data: () => Record<string, unknown> | undefined
         }>
         set: (docRef: { path: string }, data: Record<string, unknown>) => void
+        delete: (docRef: { path: string }) => void
       }) => Promise<T>
     ): Promise<T> =>
       updateFunction({
@@ -53,6 +54,9 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
         }),
         set: (docRef, data) => {
           store.set(docRef.path, { ...data })
+        },
+        delete: (docRef) => {
+          store.delete(docRef.path)
         },
       }),
   } as unknown as Firestore

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import { inMemoryDpopProofJtiStore } from '../../src/providers/in-memory/in-memory-dpop-proof-jti-store.provider'
 
 describe('InMemoryDpopProofJtiStoreProvider', () => {
@@ -25,5 +25,21 @@ describe('InMemoryDpopProofJtiStoreProvider', () => {
 
     assert.equal(await provider.saveIfAbsent('thumbprint', 'jti', { ttlMs: -1 }), true)
     assert.equal(await provider.saveIfAbsent('thumbprint', 'jti'), true)
+  })
+
+  it('should remove expired jtis when saving a new one', async () => {
+    const provider = inMemoryDpopProofJtiStore()
+    const dateNow = mock.method(Date, 'now')
+
+    try {
+      dateNow.mock.mockImplementation(() => 1_000)
+      assert.equal(await provider.saveIfAbsent('thumbprint', 'expired-jti', { ttlMs: 100 }), true)
+
+      dateNow.mock.mockImplementation(() => 1_200)
+      assert.equal(await provider.saveIfAbsent('thumbprint', 'new-jti'), true)
+      assert.equal(await provider.saveIfAbsent('thumbprint', 'expired-jti'), true)
+    } finally {
+      dateNow.mock.restore()
+    }
   })
 })

@@ -61,6 +61,7 @@ describe('AuthzFlows', () => {
     kind: 'dpop-proof-provider',
     name: 'mock-dpop-proof-provider',
     single: true,
+    proofJtiTtlMs: 123_000,
     verifyProof: mock.fn(),
   } satisfies DPoPProofProvider
 
@@ -85,6 +86,7 @@ describe('AuthzFlows', () => {
     save: mock.fn(),
     validate: mock.fn(),
     revoke: mock.fn(),
+    consume: mock.fn(),
   } satisfies NonceStoreProvider
 
   const sampleIssuer = AuthorizationServerIssuer('https://auth.example.com')
@@ -229,6 +231,7 @@ describe('AuthzFlows', () => {
         mock.method(mockDpopProofJtiStoreProvider, 'saveIfAbsent', async () => true)
         mock.method(mockNonceStoreProvider, 'validate', async () => true)
         mock.method(mockNonceStoreProvider, 'revoke', async () => true)
+        mock.method(mockNonceStoreProvider, 'consume', async () => true)
       })
 
       it('should successfully create an access token with default expiry', async () => {
@@ -288,7 +291,7 @@ describe('AuthzFlows', () => {
         assert.deepStrictEqual(mockDpopProofJtiStoreProvider.saveIfAbsent.mock.calls[0].arguments, [
           'test-jkt',
           'test-jti',
-          { ttlMs: 6 * 60 * 1000 },
+          { ttlMs: mockDpopProofProvider.proofJtiTtlMs },
         ])
         assert.deepStrictEqual(
           mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2],
@@ -325,7 +328,7 @@ describe('AuthzFlows', () => {
           iat: Math.floor(Date.now() / 1000),
           nonce: 'invalid-nonce',
         }))
-        mock.method(mockNonceStoreProvider, 'validate', async () => false)
+        mock.method(mockNonceStoreProvider, 'consume', async () => false)
 
         await assert.rejects(
           () =>
@@ -344,7 +347,7 @@ describe('AuthzFlows', () => {
         )
       })
 
-      it('should validate and revoke DPoP proof nonce when nonce is required', async () => {
+      it('should consume DPoP proof nonce when nonce is required', async () => {
         mock.method(mockDpopProofProvider, 'verifyProof', async () => ({
           jwkThumbprint: 'test-jkt',
           jti: 'test-jti',
@@ -362,12 +365,11 @@ describe('AuthzFlows', () => {
         })) as TokenResponse
 
         assert.strictEqual(response.token_type, 'DPoP')
-        assert.deepStrictEqual(mockNonceStoreProvider.validate.mock.calls[0].arguments, [
+        assert.deepStrictEqual(mockNonceStoreProvider.consume.mock.calls[0].arguments, [
           { nonce: 'valid-nonce' },
         ])
-        assert.deepStrictEqual(mockNonceStoreProvider.revoke.mock.calls[0].arguments, [
-          { nonce: 'valid-nonce' },
-        ])
+        assert.strictEqual(mockNonceStoreProvider.validate.mock.callCount(), 0)
+        assert.strictEqual(mockNonceStoreProvider.revoke.mock.callCount(), 0)
       })
 
       it('should reject reused DPoP proof jti', async () => {

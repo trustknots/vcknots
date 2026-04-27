@@ -6,6 +6,13 @@ export const inMemoryDpopProofJtiStore = (): DPoPProofJtiStoreProvider => {
   const usedJtis = new Map<string, number>()
 
   const toKey = (jwkThumbprint: string, jti: string) => `${jwkThumbprint}:${jti}`
+  const cleanupExpired = (now: number) => {
+    for (const [key, expiresAt] of usedJtis) {
+      if (now > expiresAt) {
+        usedJtis.delete(key)
+      }
+    }
+  }
 
   return {
     kind: 'dpop-proof-jti-store-provider',
@@ -15,12 +22,11 @@ export const inMemoryDpopProofJtiStore = (): DPoPProofJtiStoreProvider => {
     async saveIfAbsent(jwkThumbprint, jti, options): Promise<boolean> {
       const key = toKey(jwkThumbprint, jti)
       const now = Date.now()
+      cleanupExpired(now)
+
       const currentExpiresAt = usedJtis.get(key)
       if (currentExpiresAt !== undefined) {
-        if (now <= currentExpiresAt) {
-          return false
-        }
-        usedJtis.delete(key)
+        return false
       }
 
       usedJtis.set(key, now + (options?.ttlMs ?? DEFAULT_DPOP_PROOF_JTI_TTL_MS))

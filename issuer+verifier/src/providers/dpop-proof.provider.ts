@@ -51,11 +51,13 @@ export const dpopProof = (factoryOptions?: DPoPProofFactoryOptions): DPoPProofPr
     factoryOptions?.maxTokenAgeSeconds ?? DEFAULT_DPOP_PROOF_MAX_TOKEN_AGE_SECONDS
   const clockTolerance =
     factoryOptions?.clockToleranceSeconds ?? DEFAULT_DPOP_PROOF_CLOCK_TOLERANCE_SECONDS
+  const proofJtiTtlMs = (maxTokenAge + clockTolerance) * 1000
 
   return {
     kind: 'dpop-proof-provider',
     name: 'default-dpop-proof-provider',
     single: true,
+    proofJtiTtlMs,
 
     async verifyProof(proofJwt, context): Promise<VerifiedDpopProof> {
       const proofHeader = decodeProtectedHeader(proofJwt)

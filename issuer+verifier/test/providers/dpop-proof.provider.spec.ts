@@ -56,6 +56,16 @@ describe('DPoPProofProvider', () => {
     assert.equal(provider.kind, 'dpop-proof-provider')
     assert.equal(provider.name, 'default-dpop-proof-provider')
     assert.equal(provider.single, true)
+    assert.equal(provider.proofJtiTtlMs, 6 * 60 * 1000)
+  })
+
+  it('should derive proof JTI TTL from factory timing options', () => {
+    const provider = dpopProof({
+      maxTokenAgeSeconds: 24 * 60 * 60,
+      clockToleranceSeconds: 120,
+    })
+
+    assert.equal(provider.proofJtiTtlMs, (24 * 60 * 60 + 120) * 1000)
   })
 
   it('should verify a valid DPoP proof JWT', async () => {
