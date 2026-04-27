@@ -27,9 +27,11 @@ import { Certificate, SignatureKeyPair, SignatureKeyEntry } from '../signature-k
 import { DeepPartialUnknown } from '../type.utils'
 import { VerifierMetadata } from '../verifier-metadata.types'
 import type { CredentialProofJwtVerifyContext } from '../credential-proof-jwt.types'
+import type { DPoPProofVerifyContext, VerifiedDpopProof } from '../dpop-proof.types'
 import { DiVpProof } from '../proofs.types'
 
 export type { CredentialProofJwtVerifyContext } from '../credential-proof-jwt.types'
+export type { DPoPProofVerifyContext, VerifiedDpopProof } from '../dpop-proof.types'
 
 export type AuthzRequestProviderOptions = {
   kid?: string
@@ -246,6 +248,26 @@ export type CredentialRevocationProvider = {
   single: true
 }
 
+export type DPoPProofProvider = {
+  kind: 'dpop-proof-provider'
+  name: string
+  single: true
+
+  verifyProof(proofJwt: string, context: DPoPProofVerifyContext): Promise<VerifiedDpopProof>
+}
+
+export type DPoPProofJtiStoreProvider = {
+  kind: 'dpop-proof-jti-store-provider'
+  name: string
+  single: true
+
+  saveIfAbsent(
+    jwkThumbprint: string,
+    jti: string,
+    options?: { ttlMs?: number }
+  ): Promise<boolean>
+}
+
 export type SignatureGenerationProvider = {
   kind: 'signature-generation-provider'
   name: string
@@ -284,7 +306,7 @@ export type AccessTokenProvider = {
   createTokenPayload(
     authz: AuthorizationServerIssuer,
     code: PreAuthorizedCode,
-    options?: { ttlSec: number }
+    options?: { ttlSec?: number; cnf?: { jkt: string } }
   ): Promise<JwtPayload>
 }
 
@@ -437,6 +459,8 @@ export type Provider =
   | PublicKeyResolverProvider
   | CredentialFormatProvider
   | CredentialProofProvider
+  | DPoPProofProvider
+  | DPoPProofJtiStoreProvider
   | CredentialRevocationProvider
   | SignatureGenerationProvider
   | SignatureVerificationProvider

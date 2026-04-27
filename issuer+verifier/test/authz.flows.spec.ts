@@ -10,6 +10,8 @@ import { PreAuthorizedCode } from '../src/pre-authorized-code.types'
 import {
   AccessTokenProvider,
   AuthzServerMetadataStoreProvider,
+  DPoPProofJtiStoreProvider,
+  DPoPProofProvider,
   AuthzSignatureKeyStoreProvider,
   PreAuthorizedCodeStoreProvider,
 } from '../src/providers'
@@ -53,6 +55,20 @@ describe('AuthzFlows', () => {
     sign: mock.fn(),
   } satisfies AuthzSignatureKeyStoreProvider
 
+  const mockDpopProofProvider = {
+    kind: 'dpop-proof-provider',
+    name: 'mock-dpop-proof-provider',
+    single: true,
+    verifyProof: mock.fn(),
+  } satisfies DPoPProofProvider
+
+  const mockDpopProofJtiStoreProvider = {
+    kind: 'dpop-proof-jti-store-provider',
+    name: 'mock-dpop-proof-jti-store-provider',
+    single: true,
+    saveIfAbsent: mock.fn(),
+  } satisfies DPoPProofJtiStoreProvider
+
   const sampleIssuer = AuthorizationServerIssuer('https://auth.example.com')
   const sampleMetadata: AuthorizationServerMetadata = {
     issuer: sampleIssuer,
@@ -76,6 +92,10 @@ describe('AuthzFlows', () => {
               return mockAccessTokenProvider
             case 'authz-signature-key-store-provider':
               return mockAuthzKeyProvider
+            case 'dpop-proof-provider':
+              return mockDpopProofProvider
+            case 'dpop-proof-jti-store-provider':
+              return mockDpopProofJtiStoreProvider
             default:
               throw new Error(`Unexpected provider kind requested: ${kind}`)
           }
@@ -156,6 +176,12 @@ describe('AuthzFlows', () => {
         mock.method(mockCodeStoreProvider, 'delete', async () => { })
         mock.method(mockAuthzKeyProvider, 'sign', async () => sampleSignature)
         mock.method(mockAccessTokenProvider, 'createTokenPayload', async () => samplePayload)
+        mock.method(mockDpopProofProvider, 'verifyProof', async () => ({
+          jwkThumbprint: 'test-jkt',
+          jti: 'test-jti',
+          iat: Math.floor(Date.now() / 1000),
+        }))
+        mock.method(mockDpopProofJtiStoreProvider, 'saveIfAbsent', async () => true)
       })
 
       it('should successfully create an access token with default expiry', async () => {
@@ -200,6 +226,50 @@ describe('AuthzFlows', () => {
         await assert.rejects(() => flow.createAccessToken(sampleIssuer, tokenRequest), {
           name: 'INTERNAL_SERVER_ERROR',
         })
+      })
+
+      it('should bind access token to DPoP proof jwk thumbprint', async () => {
+        const response = (await flow.createAccessToken(sampleIssuer, tokenRequest, {
+          dpopProof: {
+            proofJwt: 'aaa.bbb.ccc',
+            htm: 'POST',
+            htu: 'https://auth.example.com/token',
+          },
+        })) as TokenResponse
+
+        assert.strictEqual(mockDpopProofProvider.verifyProof.mock.callCount(), 1)
+        assert.deepStrictEqual(mockDpopProofJtiStoreProvider.saveIfAbsent.mock.calls[0].arguments, [
+          'test-jkt',
+          'test-jti',
+          { ttlMs: 6 * 60 * 1000 },
+        ])
+        assert.deepStrictEqual(
+          mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2],
+          {
+            ttlSec: undefined,
+            cnf: { jkt: 'test-jkt' },
+          }
+        )
+        assert.strictEqual(response.token_type, 'DPoP')
+      })
+
+      it('should reject reused DPoP proof jti', async () => {
+        mock.method(mockDpopProofJtiStoreProvider, 'saveIfAbsent', async () => false)
+
+        await assert.rejects(
+          () =>
+            flow.createAccessToken(sampleIssuer, tokenRequest, {
+              dpopProof: {
+                proofJwt: 'aaa.bbb.ccc',
+                htm: 'POST',
+                htu: 'https://auth.example.com/token',
+              },
+            }),
+          {
+            name: 'INVALID_DPOP_PROOF',
+            message: 'DPoP proof JWT jti has already been used.',
+          }
+        )
       })
     })
 
