@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash, generateKeyPairSync, sign as cryptoSign } from 'node:crypto'
 import { afterEach, describe, it } from 'node:test'
-import { crc32c } from '@node-rs/crc32'
+import { crc32c } from '../../src/providers/crc32c.util'
 import { derToJose } from 'ecdsa-sig-formatter'
 import { exportJWK } from 'jose'
 import { VerifierClientId } from '@trustknots/vcknots'

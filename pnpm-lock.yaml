@@ -78,9 +78,6 @@ importers:
       '@google-cloud/secret-manager':
         specifier: ^6.1.1
         version: 6.1.1
-      '@node-rs/crc32':
-        specifier: ^1.10.3
-        version: 1.10.6
       '@trustknots/vcknots':
         specifier: workspace:*
         version: link:../issuer+verifier
@@ -1959,10 +1956,6 @@ packages:
   '@noble/hashes@1.8.0':
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
-
-  '@node-rs/crc32@1.10.6':
-    resolution: {integrity: sha512-+llXfqt+UzgoDzT9of5vPQPGqTAVCohU74I9zIBkNo5TH6s2P31DFJOGsJQKN207f0GHnYv5pV3wh3BCY/un/A==}
-    engines: {node: '>= 10'}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -9105,8 +9098,6 @@ snapshots:
   '@noble/hashes@1.4.0': {}
 
   '@noble/hashes@1.8.0': {}
-
-  '@node-rs/crc32@1.10.6': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
