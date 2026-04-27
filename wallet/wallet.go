@@ -512,9 +512,6 @@ func validateCredentialIssuerIdentifier(issuer *url.URL) error {
 	if issuer.Host == "" {
 		return fmt.Errorf("credential issuer must include a host")
 	}
-	if issuer.User != nil {
-		return fmt.Errorf("credential issuer must not include user info")
-	}
 	if issuer.RawQuery != "" || issuer.ForceQuery || issuer.Fragment != "" || issuer.RawFragment != "" {
 		return fmt.Errorf("credential issuer must not include query or fragment")
 	}
