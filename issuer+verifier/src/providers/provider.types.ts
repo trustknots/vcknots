@@ -169,7 +169,7 @@ export type VerifyVerifiablePresentationVerifyOptions =
       expectedNonce?: string
       expectedTransactionDataHashes?: string[]
     }
-  // | {
+// | {
 //     kind: 'dc+sd-jwt'
 //     specifiedDisclosures?: string[]
 //     isKbJwt?: boolean
@@ -270,9 +270,13 @@ export type PreAuthorizedCodeStoreProvider = {
   name: string
   single: true
 
-  save(code: PreAuthorizedCode, options?: { ttlSec: number }): Promise<void>
+  save(
+    code: PreAuthorizedCode,
+    tx_code?: string | number,
+    options?: { ttlMs: number; tx_code_input_mode?: 'numeric' | 'text' }
+  ): Promise<void>
   // FIXME: validation logic is a kind of business logic. so we need to move this function into [PreAuthorizedCodeProvider]
-  validate(code: PreAuthorizedCode): Promise<boolean>
+  validate(code: PreAuthorizedCode, tx_code?: string | number): Promise<boolean>
   delete(code: PreAuthorizedCode): Promise<void>
 }
 
@@ -313,6 +317,14 @@ export type VerifierSignatureKeyProvider = {
 
   generate(): Promise<SignatureKeyPair>
   canHandle(keyAlg: string): boolean
+}
+
+export type TransactionCodeProvider = {
+  kind: 'transaction-code-provider'
+  name: string
+  single: true
+
+  generate(input_mode?: 'numeric' | 'text', length?: number, description?: string): string | number
 }
 
 export type CredentialOfferProvider = {
@@ -466,3 +478,4 @@ export type Provider =
   | VerifierCertificateStoreProvider
   | CertificateProvider
   | TransactionDataProvider
+  | TransactionCodeProvider

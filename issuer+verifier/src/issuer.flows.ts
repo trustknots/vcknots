@@ -26,10 +26,11 @@ type OfferOptions =
   | {
       usePreAuth: true
       txCode?: {
-        inputMode?: 'numeric' | 'text'
+        input_mode?: 'numeric' | 'text'
         length?: number
         description?: string
       }
+      ttlSec?: number
     }
 type IssueOptions = {
   alg: string
@@ -80,6 +81,10 @@ function getProofType(
     message: 'Unsupported proof type',
   })
 }
+type CredentialOfferResponse = {
+  offer: CredentialOffer
+  tx_code?: string | number
+}
 
 export type IssuerFlow = {
   findIssuerMetadata(id: CredentialIssuer): Promise<CredentialIssuerMetadata | null>
@@ -89,7 +94,7 @@ export type IssuerFlow = {
     issuer: CredentialIssuer,
     configurations: CredentialConfigurationId[],
     options?: OfferOptions
-  ): Promise<CredentialOffer>
+  ): Promise<CredentialOfferResponse>
   createNonce(ttlMs?: number): Promise<string>
   validateNonce(nonce: string): Promise<boolean>
   revokeNonce(nonce: string): Promise<boolean>
@@ -110,6 +115,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const cnonceStore$ = context.providers.get('nonce-store-provider')
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
+  const transactionCode$ = context.providers.get('transaction-code-provider')
 
   return {
     async findIssuerMetadata(id) {
@@ -209,14 +215,36 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         }
       }
 
+      let tx_code: string | number | undefined = undefined
+      if (options?.txCode) {
+        tx_code = transactionCode$.generate(
+          options.txCode?.input_mode,
+          options.txCode?.length,
+          options.txCode?.description
+        )
+      }
+      const preAuthorizedCodeStoreOptions = {
+        ttlMs: (options?.ttlSec ?? 300) * 1000,
+        ...(options?.txCode?.input_mode && { tx_code_input_mode: options.txCode.input_mode }),
+      }
+
       const code = await auth$.generate()
-      await codeStore$.save(code)
+      await codeStore$.save(code, tx_code, preAuthorizedCodeStoreOptions)
       const offer = await offer$.create(metadata, configurations, {
         usePreAuth: true,
         code,
-        ...(options?.txCode && { txCode: options.txCode }),
+        ...(options?.txCode && {
+          txCode: {
+            inputMode: options.txCode.input_mode,
+            length: options.txCode.length,
+            description: options.txCode.description,
+          },
+        }),
       })
-      return offer
+      return {
+        offer,
+        ...(tx_code && { tx_code }),
+      }
     },
     async createNonce(ttlMs) {
       const nonce = await cnonce$.generate({ nonce_expires_in: ttlMs })

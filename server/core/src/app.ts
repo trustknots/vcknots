@@ -9,8 +9,16 @@ import { createVerifierRouter } from './routes/verify.js'
 export const createApp = (context: VcknotsContext, baseUrl: string) => {
   const app = new Hono()
 
-  app.route('/', createIssueRouter(context, baseUrl))
-  app.route('/', createAuthzRouter(context, baseUrl))
+  const options = {
+    tx_code: {
+      input_mode: 'numeric' as const,
+      length: 6,
+      description: 'Your transaction code for credential issuance',
+    },
+  }
+
+  app.route('/', createIssueRouter(context, baseUrl, options))
+  app.route('/', createAuthzRouter(context, baseUrl, options))
   app.route('/', createVerifierRouter(context, baseUrl))
 
   app.notFound((c) => c.json({ error: 'Not Found' }, 404))

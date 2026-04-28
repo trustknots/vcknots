@@ -1,6 +1,11 @@
 import { PreAuthorizedCodeStoreProvider } from '@trustknots/vcknots/providers'
-import { Timestamp } from 'firebase-admin/firestore'
+import { PreAuthorizedCodeStoreEntry } from '@trustknots/vcknots'
 import { FirestoreProviderOptions, resolveFirestore } from './firestore.provider'
+import { hashTxCode } from './hash.utils'
+
+type FirestorePreAuthorizedCodeDoc = Omit<PreAuthorizedCodeStoreEntry, 'tx_code'> & {
+  tx_code_hash?: string
+}
 
 export const firestorePreAuthorizedCodeStore = (
   options?: FirestoreProviderOptions & { expiresIn?: number }
@@ -13,21 +18,50 @@ export const firestorePreAuthorizedCodeStore = (
     name: 'firestore-pre-authorized-code-store-provider',
     single: true,
 
-    async save(code) {
-      const expiresAt = Timestamp.fromMillis(new Date().getTime() + (options?.expiresIn ?? 60 * 5 * 1000)) // 5 minutes
+    async save(code, tx_code, options) {
+      const ttlMs = options?.ttlMs ?? 300 * 1000
+      const tx_code_input_mode = options?.tx_code_input_mode ?? 'numeric'
+      const expiresAt = new Date().getTime() + ttlMs
       const docRef = firestore.doc(`${ns}/v1/preCodes/${code}`)
-      await docRef.set({ code, expires_at: expiresAt })
+
+      const data: FirestorePreAuthorizedCodeDoc = {
+        code,
+        tx_code_input_mode,
+        expires_at: expiresAt,
+      }
+
+      if (tx_code !== undefined) {
+        data.tx_code_hash = hashTxCode(tx_code)
+      }
+
+      await docRef.set(data)
     },
-    async validate(code) {
+    async validate(code, tx_code) {
       const doc = await firestore.doc(`${ns}/v1/preCodes/${code}`).get()
       if (!doc.exists) {
         return false
       }
-      const { expires_at } = doc.data() as { expires_at: Timestamp }
-      if (new Date().getTime() > expires_at.toMillis()) {
+      const data = doc.data() as FirestorePreAuthorizedCodeDoc
+
+      if (data.expires_at && data.expires_at < new Date().getTime()) {
         await firestore.doc(`${ns}/v1/preCodes/${code}`).delete()
         return false
       }
+
+      if (data.tx_code_hash) {
+        const inputMode = data.tx_code_input_mode ?? 'numeric'
+        if (inputMode !== 'text') {
+          if (typeof tx_code !== 'number' || data.tx_code_hash !== hashTxCode(tx_code)) {
+            return false
+          }
+        } else {
+          if (typeof tx_code !== 'string' || data.tx_code_hash !== hashTxCode(tx_code)) {
+            return false
+          }
+        }
+        return true
+      }
+
       return true
     },
     async delete(code) {

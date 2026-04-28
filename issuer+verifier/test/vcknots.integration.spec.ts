@@ -158,13 +158,13 @@ describe('Vcknots', () => {
 
     it('should create credential offer with pre authorized code', async () => {
       const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
-      const offer = await vk.issuer.offerCredential(
+      const { offer, tx_code } = await vk.issuer.offerCredential(
         issuerMetadata.credential_issuer,
         configurations,
         {
           usePreAuth: true,
           txCode: {
-            inputMode: 'numeric',
+            input_mode: 'numeric',
             length: 4,
             description: 'PIN',
           },
@@ -185,13 +185,13 @@ describe('Vcknots', () => {
     it('should create access token when grant_type is urn:ietf:params:oauth:grant-type:pre-authorized_code', async () => {
       // Since the authzIssuer has already been created, remove the creation step
       const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
-      const offer = await vk.issuer.offerCredential(
+      const { offer, tx_code } = await vk.issuer.offerCredential(
         issuerMetadata.credential_issuer,
         configurations,
         {
           usePreAuth: true,
           txCode: {
-            inputMode: 'numeric',
+            input_mode: 'numeric',
             length: 4,
             description: 'PIN',
           },
@@ -207,6 +207,7 @@ describe('Vcknots', () => {
       const tokenRequest: TokenRequest = {
         grant_type: GrantType.PreAuthorizedCode,
         'pre-authorized_code': PreAuthorizedCode(code),
+        ...(tx_code !== undefined && { tx_code }),
       }
 
       const accessToken = await vk.authz.createAccessToken(authzIssuer, tokenRequest, {
@@ -219,6 +220,159 @@ describe('Vcknots', () => {
       assert.ok(typeof tokenResponse.access_token === 'string')
       assert.equal(tokenResponse.token_type, 'bearer')
       assert.ok(typeof tokenResponse.expires_in === 'number' && tokenResponse.expires_in > 0)
+    })
+
+    it('should fail to create access token when wrong tx_code is provided', async () => {
+      const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
+      const { offer } = await vk.issuer.offerCredential(
+        issuerMetadata.credential_issuer,
+        configurations,
+        {
+          usePreAuth: true,
+          txCode: {
+            input_mode: 'numeric',
+            length: 4,
+            description: 'PIN',
+          },
+        }
+      )
+
+      assert.ok(offer.grants)
+      const grant = offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']
+      assert.ok(grant)
+
+      const tokenRequest: TokenRequest = {
+        grant_type: GrantType.PreAuthorizedCode,
+        'pre-authorized_code': PreAuthorizedCode(grant['pre-authorized_code']),
+        tx_code: 0, // outside valid 4-digit range (1000–9999)
+      }
+
+      await assert.rejects(
+        vk.authz.createAccessToken(authzIssuer, tokenRequest, { ttlSec: 3600 }),
+        { name: 'PRE_AUTHORIZED_CODE_NOT_FOUND' }
+      )
+    })
+
+    it('should fail to create access token when tx_code is omitted but required', async () => {
+      const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
+      const { offer } = await vk.issuer.offerCredential(
+        issuerMetadata.credential_issuer,
+        configurations,
+        {
+          usePreAuth: true,
+          txCode: {
+            input_mode: 'numeric',
+            length: 4,
+            description: 'PIN',
+          },
+        }
+      )
+
+      assert.ok(offer.grants)
+      const grant = offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']
+      assert.ok(grant)
+
+      const tokenRequest: TokenRequest = {
+        grant_type: GrantType.PreAuthorizedCode,
+        'pre-authorized_code': PreAuthorizedCode(grant['pre-authorized_code']),
+      }
+
+      await assert.rejects(
+        vk.authz.createAccessToken(authzIssuer, tokenRequest, { ttlSec: 3600 }),
+        { name: 'PRE_AUTHORIZED_CODE_NOT_FOUND' }
+      )
+    })
+
+    it('should create access token without tx_code when offer has no txCode', async () => {
+      const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
+      const { offer, tx_code } = await vk.issuer.offerCredential(
+        issuerMetadata.credential_issuer,
+        configurations,
+        { usePreAuth: true }
+      )
+
+      assert.equal(tx_code, undefined)
+      assert.ok(offer.grants)
+      const grant = offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']
+      assert.ok(grant)
+      assert.equal(grant.tx_code, undefined)
+
+      const tokenRequest: TokenRequest = {
+        grant_type: GrantType.PreAuthorizedCode,
+        'pre-authorized_code': PreAuthorizedCode(grant['pre-authorized_code']),
+      }
+
+      const accessToken = await vk.authz.createAccessToken(authzIssuer, tokenRequest, {
+        ttlSec: 3600,
+      })
+      const tokenResponse = accessToken as TokenResponse
+
+      assert.ok(typeof tokenResponse.access_token === 'string')
+      assert.equal(tokenResponse.token_type, 'bearer')
+    })
+
+    it('should fail to reuse pre-authorized code after successful token exchange', async () => {
+      const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
+      const { offer, tx_code } = await vk.issuer.offerCredential(
+        issuerMetadata.credential_issuer,
+        configurations,
+        { usePreAuth: true }
+      )
+
+      assert.ok(offer.grants)
+      const grant = offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']
+      assert.ok(grant)
+      const tokenRequest: TokenRequest = {
+        grant_type: GrantType.PreAuthorizedCode,
+        'pre-authorized_code': PreAuthorizedCode(grant['pre-authorized_code']),
+        ...(tx_code !== undefined && { tx_code }),
+      }
+
+      const accessToken = await vk.authz.createAccessToken(authzIssuer, tokenRequest, {
+        ttlSec: 3600,
+      })
+      assert.ok((accessToken as TokenResponse).access_token)
+
+      await assert.rejects(
+        vk.authz.createAccessToken(authzIssuer, tokenRequest, { ttlSec: 3600 }),
+        { name: 'PRE_AUTHORIZED_CODE_NOT_FOUND' }
+      )
+    })
+
+    it('should create access token with text mode tx_code', async () => {
+      const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
+      const { offer, tx_code } = await vk.issuer.offerCredential(
+        issuerMetadata.credential_issuer,
+        configurations,
+        {
+          usePreAuth: true,
+          txCode: {
+            input_mode: 'text',
+            length: 8,
+            description: 'PIN',
+          },
+        }
+      )
+
+      assert.ok(typeof tx_code === 'string')
+      assert.ok(offer.grants)
+      const grant = offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']
+      assert.ok(grant)
+      assert.equal(grant.tx_code?.input_mode, 'text')
+
+      const tokenRequest: TokenRequest = {
+        grant_type: GrantType.PreAuthorizedCode,
+        'pre-authorized_code': PreAuthorizedCode(grant['pre-authorized_code']),
+        tx_code,
+      }
+
+      const accessToken = await vk.authz.createAccessToken(authzIssuer, tokenRequest, {
+        ttlSec: 3600,
+      })
+      const tokenResponse = accessToken as TokenResponse
+
+      assert.ok(typeof tokenResponse.access_token === 'string')
+      assert.equal(tokenResponse.token_type, 'bearer')
     })
   })
 
@@ -519,7 +673,7 @@ describe('Vcknots', () => {
       })
       await vkWithPreSavedNonce.verifier
         .createVerifierMetadata(verifierId, metadata)
-        .catch(() => { })
+        .catch(() => {})
 
       const response: AuthorizationResponse = AuthorizationResponse({
         presentation_submission: {

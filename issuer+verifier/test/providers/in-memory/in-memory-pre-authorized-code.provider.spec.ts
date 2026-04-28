@@ -25,6 +25,30 @@ describe('inMemoryPreAuthorizedCode', () => {
       assert.strictEqual(isValid, true)
     })
 
+    it('should save a pre-authorized code with tx_code (numeric) and validate it', async () => {
+      await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
+      const isValid = await provider.validate(sampleCode, 123)
+      assert.strictEqual(isValid, true)
+    })
+
+    it('should save a pre-authorized code with tx_code (text) and validate it', async () => {
+      await provider.save(sampleCode, 'abc123', { tx_code_input_mode: 'text' })
+      const isValid = await provider.validate(sampleCode, 'abc123')
+      assert.strictEqual(isValid, true)
+    })
+
+    it('should return false when validating with incorrect tx_code', async () => {
+      await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
+      const isValid = await provider.validate(sampleCode, 456)
+      assert.strictEqual(isValid, false)
+    })
+
+    it('should return false when validating with wrong tx_code type', async () => {
+      await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
+      const isValid = await provider.validate(sampleCode, '123')
+      assert.strictEqual(isValid, false)
+    })
+
     it('should return false when validating a non-existent code', async () => {
       const isValid = await provider.validate(sampleCode) // sampleCode is not saved yet
       assert.strictEqual(isValid, false)
@@ -78,6 +102,13 @@ describe('inMemoryPreAuthorizedCode', () => {
       await provider.save(sampleCode)
       const result = await provider.delete(sampleCode)
       assert.strictEqual(result, undefined)
+    })
+
+    it('should use default ttlMs when not specified', async () => {
+      await provider.save(sampleCode)
+      // This test just ensures no error is thrown with default values
+      const isValid = await provider.validate(sampleCode)
+      assert.strictEqual(isValid, true)
     })
   })
 })

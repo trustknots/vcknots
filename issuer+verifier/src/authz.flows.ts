@@ -68,8 +68,10 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       switch (tokenRequest.grant_type) {
         case 'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
           const option = options as TokenRequestOptions[GrantType.PreAuthorizedCode]
-          // Check pre-code validity
-          const isValid = await codeStore$.validate(tokenRequest['pre-authorized_code'])
+          const isValid = await codeStore$.validate(
+            tokenRequest['pre-authorized_code'],
+            tokenRequest.tx_code
+          )
           if (!isValid) {
             throw err('PRE_AUTHORIZED_CODE_NOT_FOUND', {
               message: 'The provided pre-authorized code is invalid.',

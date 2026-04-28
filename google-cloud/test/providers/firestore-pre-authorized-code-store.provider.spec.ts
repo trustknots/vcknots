@@ -26,6 +26,61 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(valid, true)
   })
 
+  it('should save and validate a code with tx_code (numeric)', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('test-code-numeric'), 123, {
+      tx_code_input_mode: 'numeric',
+    })
+    const valid = await provider.validate(PreAuthorizedCode('test-code-numeric'), 123)
+    assert.equal(valid, true)
+  })
+
+  it('should save and validate a code with tx_code (text)', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('test-code-text'), 'abc123', {
+      tx_code_input_mode: 'text',
+    })
+    const valid = await provider.validate(PreAuthorizedCode('test-code-text'), 'abc123')
+    assert.equal(valid, true)
+  })
+
+  it('should return false for incorrect tx_code', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('test-code-wrong'), 123, {
+      tx_code_input_mode: 'numeric',
+    })
+    const valid = await provider.validate(PreAuthorizedCode('test-code-wrong'), 456)
+    assert.equal(valid, false)
+  })
+
+  it('should return false for wrong tx_code type', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('test-code-type'), 123, { tx_code_input_mode: 'numeric' })
+    const valid = await provider.validate(PreAuthorizedCode('test-code-type'), '123')
+    assert.equal(valid, false)
+  })
+
+  it('should store hashed tx_code in Firestore', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('hashed-code'), 123, { tx_code_input_mode: 'numeric' })
+
+    const doc = store.get('vcknots/v1/preCodes/hashed-code')
+    assert.ok(doc)
+    assert.ok(doc.tx_code_hash)
+    assert.equal(doc.tx_code_input_mode, 'numeric')
+    assert.equal(typeof doc.tx_code_hash, 'string')
+    assert.equal(doc.tx_code_hash.length, 64) // SHA-256 hex length
+  })
+
+  it('should use default numeric mode when not specified', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('default-mode'), 456)
+
+    const doc = store.get('vcknots/v1/preCodes/default-mode')
+    assert.ok(doc)
+    assert.equal(doc.tx_code_input_mode, 'numeric')
+  })
+
   it('should return false for an unknown code', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     const valid = await provider.validate(PreAuthorizedCode('unknown-code'))
@@ -43,8 +98,8 @@ describe('firestorePreAuthorizedCodeStore', () => {
   it('should return false and delete an expired code', async () => {
     mock.timers.enable({ apis: ['Date'] })
 
-    const provider = firestorePreAuthorizedCodeStore({ app: mockApp, expiresIn: 1000 })
-    await provider.save(PreAuthorizedCode('expiring-code'))
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('expiring-code'), undefined, { ttlMs: 1000 })
 
     mock.timers.tick(1001)
 
