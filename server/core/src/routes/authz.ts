@@ -20,13 +20,13 @@ export const createAuthzRouter = (
   authzApp.post('/token', async (c) => {
     try {
       const request = await c.req.formData()
-      let requestData: Record<string, string | File | number> = Object.fromEntries(
+      const requestData: Record<string, string | File | number> = Object.fromEntries(
         request.entries()
       )
 
       if (options?.tx_code?.input_mode !== 'text' && requestData.tx_code) {
-        const numericTxCode = parseInt(requestData.tx_code as string, 10)
-        if (!isNaN(numericTxCode)) {
+        const numericTxCode = Number.parseInt(requestData.tx_code as string, 10)
+        if (!Number.isNaN(numericTxCode)) {
           requestData.tx_code = numericTxCode
         }
       }

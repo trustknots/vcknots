@@ -1,4 +1,4 @@
-import { createHash } from 'crypto'
+import { createHash } from 'node:crypto'
 
 export const hashTxCode = (txCode: string | number): string => {
   const input = typeof txCode === 'number' ? txCode.toString() : txCode
