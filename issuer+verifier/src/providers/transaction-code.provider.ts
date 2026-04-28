@@ -39,8 +39,8 @@ export const transactionCode = (): TransactionCodeProvider => {
         return result
       }
 
-      const min = 100000
-      const max = 999999
+      const min = 10 ** (len - 1)
+      const max = 10 ** len - 1
       return Math.floor(Math.random() * (max - min + 1)) + min
     },
   }
