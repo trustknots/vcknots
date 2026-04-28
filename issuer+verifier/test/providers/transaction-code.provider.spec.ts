@@ -35,6 +35,18 @@ describe('transactionCode', () => {
     const result = provider.generate('text')
 
     assert.strictEqual(typeof result, 'string')
+    assert.strictEqual(result.length, 6)
+    assert.match(
+      result,
+      /^[A-Za-z0-9]{6}$/,
+      'Text transaction code should contain only alphanumeric characters'
+    )
+  })
+
+  it('should generate a text transaction code with custom length', () => {
+    const result = provider.generate('text', 8, 'example')
+
+    assert.strictEqual(typeof result, 'string')
     assert.strictEqual(result.length, 8)
     assert.match(
       result,
@@ -43,15 +55,31 @@ describe('transactionCode', () => {
     )
   })
 
-  it('should generate a text transaction code with custom length', () => {
-    const result = provider.generate('text', 12, 'example')
+  it('should throw when length is 10 or more', () => {
+    assert.throws(
+      () => provider.generate('numeric', 10),
+      (e: unknown) => {
+        assert.strictEqual((e as { name?: string }).name, 'INVALID_TX_CODE_OPTIONS')
+        return true
+      }
+    )
+    assert.throws(
+      () => provider.generate('text', 15),
+      (e: unknown) => {
+        assert.strictEqual((e as { name?: string }).name, 'INVALID_TX_CODE_OPTIONS')
+        return true
+      }
+    )
+  })
 
-    assert.strictEqual(typeof result, 'string')
-    assert.strictEqual(result.length, 12)
-    assert.match(
-      result,
-      /^[A-Za-z0-9]{12}$/,
-      'Text transaction code should contain only alphanumeric characters'
+  it('should throw when description exceeds 300 characters', () => {
+    const longDescription = 'a'.repeat(301)
+    assert.throws(
+      () => provider.generate('numeric', 4, longDescription),
+      (e: unknown) => {
+        assert.strictEqual((e as { name?: string }).name, 'INVALID_TX_CODE_OPTIONS')
+        return true
+      }
     )
   })
 })
