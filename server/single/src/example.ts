@@ -4,8 +4,8 @@ import type { DPoPMode } from '@trustknots/vcknots'
 import { credentialProofJWT, dpopProof } from '@trustknots/vcknots/providers'
 
 const supportedDpopModes = ['off', 'optional', 'required'] as const
-const DEFAULT_DPOP_PROOF_MAX_TOKEN_AGE_SECONDS = 24 * 60 * 60
-const DEFAULT_DPOP_PROOF_CLOCK_TOLERANCE_SECONDS = 120
+const DPOP_PROOF_MAX_TOKEN_AGE_SECONDS = 10 * 60
+const DPOP_PROOF_CLOCK_TOLERANCE_SECONDS = 60
 
 const isDpopMode = (value: string): value is DPoPMode =>
   supportedDpopModes.some((mode) => mode === value)
@@ -34,8 +34,8 @@ createServer({
       clockToleranceSeconds: 60,
     }),
     dpopProof({
-      maxTokenAgeSeconds: DEFAULT_DPOP_PROOF_MAX_TOKEN_AGE_SECONDS,
-      clockToleranceSeconds: DEFAULT_DPOP_PROOF_CLOCK_TOLERANCE_SECONDS,
+      maxTokenAgeSeconds: DPOP_PROOF_MAX_TOKEN_AGE_SECONDS,
+      clockToleranceSeconds: DPOP_PROOF_CLOCK_TOLERANCE_SECONDS,
     }),
   ],
 })
