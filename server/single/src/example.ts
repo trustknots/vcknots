@@ -21,7 +21,7 @@ if (!isDpopMode(rawDpopMode)) {
 createServer({
   oauth: {
     // DPoP を使わない場合は次のように設定します:
-    // senderConstrainedAccessToken: { method: 'none' },
+    // senderConstrainedAccessToken: { dpop: { mode: 'off' } },
     senderConstrainedAccessToken: {
       dpop: {
         mode: rawDpopMode,
