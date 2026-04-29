@@ -14,7 +14,7 @@ function isProhibitedDpopProofAlg(alg: string): boolean {
   return /^hs/i.test(trimmed)
 }
 /**
- * RFC 9449 §4.3 の `htu` 比較用: fragment 除去、クエリ除去、末尾 `/` の揃え。
+ * RFC 9449 §4.3 の `htu` 比較用: fragment 除去、クエリ除去、デフォルトポートの正規化。
  * （§4.3 検証項目 9: リクエスト URI と一致、query と fragment は無視）
  */
 function normalizeHtu(value: string): string {
