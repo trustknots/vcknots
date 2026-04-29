@@ -60,7 +60,17 @@ createServer({
 })
 ```
 
-With this setting, the shared `POST /nonce` route can add a `DPoP-Nonce` response header when `mode !== 'off'`.
+With this setting, the shared `POST /nonce` route can add a `DPoP-Nonce` response header when `mode !== 'off'`. `c_nonce` and `DPoP-Nonce` are issued as different values, and `DPoP-Nonce` is used as the DPoP Proof nonce for the token endpoint.
+
+The shared `POST /token` route also uses the same setting.
+
+| mode | `POST /token` behavior |
+|------|-------------------------|
+| `off` | DPoP is not used. The server issues a Bearer access token. |
+| `optional` | If the DPoP header is absent, the server issues a Bearer access token. If the DPoP header is present, the server verifies the proof and issues a DPoP-bound access token. |
+| `required` | The DPoP header is required. A missing or malformed DPoP header results in `invalid_request`. |
+
+If the DPoP Proof has no nonce, or the nonce is invalid, the route returns `use_dpop_nonce` with a `DPoP-Nonce` response header. When DPoP Proof verification succeeds, the response contains `token_type: "DPoP"` and the access token contains `cnf.jkt`.
 
 You can also import route/util modules via subpath exports:
 

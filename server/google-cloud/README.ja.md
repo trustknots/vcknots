@@ -73,6 +73,8 @@ google-cloud/
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
 
+   `DPOP_MODE` は token endpoint の DPoP Proof 検証も制御します。`optional` の場合は DPoP ヘッダーがあるときだけ proof を検証して DPoP-bound access token を発行し、`required` の場合は token request に DPoP ヘッダーを必須にします。
+
 2. **依存関係をインストール（ルートで実行）**
 
    ```bash
@@ -164,6 +166,10 @@ Authz metadata initialized
 
 - [`POST /token`](../single/README.md#post-token) - トークンエンドポイント
 - [`GET /.well-known/oauth-authorization-server`](../single/README.md#get-well-knownoauth-authorization-server) - Authorization Server メタデータを取得
+
+`POST /token` は `DPOP_MODE` に従って DPoP Proof を検証します。DPoP Proof に `nonce` がない、または nonce が無効な場合は `DPoP-Nonce` レスポンスヘッダー付きで `use_dpop_nonce` を返します。検証に成功した場合は `token_type: "DPoP"` の DPoP-bound access token を発行し、access token には公開鍵の JWK Thumbprint が `cnf.jkt` として含まれます。
+
+Google Cloud 版では、DPoP Proof の `jti` リプレイ防止に Firestore Provider を利用します。保存キーは DPoP Proof の公開鍵 thumbprint と `jti` の組み合わせです。
 
 #### Verifier
 

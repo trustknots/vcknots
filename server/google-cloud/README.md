@@ -73,6 +73,8 @@ To start this server, follow the steps below.
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
 
+   `DPOP_MODE` also controls DPoP Proof verification at the token endpoint. In `optional` mode, the server verifies the proof and issues a DPoP-bound access token only when a DPoP header is present. In `required` mode, token requests must include a DPoP header.
+
 2. **Install Dependencies** (Run from root directory)
 
    ```bash
@@ -164,6 +166,10 @@ The server starts on `http://localhost:8080` by default.
 
 - [`POST /token`](../single/README.md#post-token) - Token endpoint
 - [`GET /.well-known/oauth-authorization-server`](../single/README.md#get-well-knownoauth-authorization-server) - Get Authorization Server metadata
+
+`POST /token` verifies DPoP Proof according to `DPOP_MODE`. If the DPoP Proof has no `nonce`, or the nonce is invalid, the server returns `use_dpop_nonce` with a `DPoP-Nonce` response header. When verification succeeds, the server issues a DPoP-bound access token with `token_type: "DPoP"`, and the access token contains `cnf.jkt`, the JWK Thumbprint of the public key.
+
+The Google Cloud server uses a Firestore Provider to prevent `jti` replay for DPoP Proofs. The storage key is the combination of the DPoP Proof public key thumbprint and `jti`.
 
 #### Verifier
 

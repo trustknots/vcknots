@@ -11,6 +11,7 @@ OpenID for Verifiable Credential Issuance (OID4VCI) 1.0 および OpenID for Ver
     *   クレデンシャルオファーの作成（事前認可コードフロー）
     *   検証可能クレデンシャルの発行（JWT-VC 形式）
     *   c_nonce 管理のための nonce エンドポイントのサポート
+    *   DPoP Proof 検証、DPoP nonce、DPoP-bound access token のサポート
     *   リゾルバーによる `did:key` およびその他の DID メソッドのサポート
 *   **OID4VP (Verifier):**
     *   Verifier メタデータの管理
@@ -173,6 +174,42 @@ const valid = await issuer.validateNonce(nonce)
 ```typescript
 const deleted = await issuer.revokeNonce(nonce)
 // 戻り値: boolean（取り消し成功時 true、nonce が見つからない場合 false）
+```
+
+**DPoP nonce の消費**（例: token endpoint の DPoP Proof 検証時）:
+
+```typescript
+const consumed = await nonceStore.consume(nonce)
+// 戻り値: boolean（存在し、有効期限内で、消費に成功した場合 true）
+```
+
+DPoP Proof の `nonce` は replay を避けるため、検証時に一度だけ消費します。Credential proof 用の `c_nonce` は複数 credential 取得で再利用できる一方、DPoP Proof 用 nonce は token request の Proof に紐づく値として扱います。
+
+#### 5. DPoP Proof と DPoP-bound access token
+
+token endpoint 実装では、HTTP リクエストの `DPoP` ヘッダーから取得した Proof JWT を `createAccessToken` に渡すことで、DPoP Proof の検証と DPoP-bound access token の発行を行えます。
+
+```typescript
+const accessToken = await authz.createAccessToken(issuer, tokenRequest, {
+  dpopProof: {
+    proofJwt,
+    htm: 'POST',
+    htu: `${base}/token`,
+    nonceRequired: true,
+  },
+})
+```
+
+DPoP Proof の検証では、`typ: dpop+jwt`、非対称署名アルゴリズム、JOSE ヘッダーの公開鍵 `jwk`、署名、`jti` / `iat` / `htm` / `htu`、nonce を確認します。`jti` は `dpop-proof-jti-store-provider` に保存し、同じ公開鍵 thumbprint と `jti` の組み合わせが再利用された場合は拒否します。
+
+検証に成功した場合、レスポンスの `token_type` は `DPoP` になり、access token の payload には DPoP Proof の公開鍵に対応する JWK Thumbprint が `cnf.jkt` として含まれます。
+
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "DPoP",
+  "expires_in": 86400
+}
 ```
 
 ### Verifier フロー

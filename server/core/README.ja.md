@@ -60,7 +60,17 @@ createServer({
 })
 ```
 
-この設定を使うと、共有の `POST /nonce` ルートは `mode !== 'off'` の場合に `DPoP-Nonce` レスポンスヘッダーを追加できます。
+この設定を使うと、共有の `POST /nonce` ルートは `mode !== 'off'` の場合に `DPoP-Nonce` レスポンスヘッダーを追加できます。`c_nonce` と `DPoP-Nonce` は別の値として発行され、`DPoP-Nonce` は token endpoint の DPoP Proof 用 nonce として使います。
+
+共有の `POST /token` ルートも同じ設定を参照します。
+
+| mode | `POST /token` の挙動 |
+|------|----------------------|
+| `off` | DPoP を利用せず、Bearer access token を発行します。 |
+| `optional` | DPoP ヘッダーがない場合は Bearer access token を発行します。DPoP ヘッダーがある場合は proof を検証し、DPoP-bound access token を発行します。 |
+| `required` | DPoP ヘッダーを必須にします。未指定または不正な DPoP ヘッダーは `invalid_request` になります。 |
+
+DPoP Proof に nonce がない、または nonce が無効な場合は、`DPoP-Nonce` レスポンスヘッダー付きで `use_dpop_nonce` を返します。DPoP Proof の検証に成功した場合は `token_type: "DPoP"` のレスポンスになり、access token には `cnf.jkt` が含まれます。
 
 サブパス export で個別モジュールを import することもできます。
 

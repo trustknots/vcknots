@@ -56,6 +56,9 @@ To start this server, follow the steps below.
    # PRIVATE_KEY_PATH: Path to private key file (default: ../samples/certificate-openid-test/private_key_openid.pem)
    # CERTIFICATE_PATH: Path to certificate file (default: ../samples/certificate-openid-test/certificate_openid.pem)
    # DPOP_MODE: DPoP configuration (off, optional, required)
+   # off: Do not use DPoP
+   # optional: Verify the proof and issue a DPoP-bound access token only when a DPoP header is present
+   # required: Require a DPoP header at the token endpoint
    ```
 
 2. **Install Dependencies** (Run from root directory)
@@ -248,7 +251,7 @@ Create a nonce (c_nonce). Corresponds to the OID4VCI [nonce endpoint](https://op
 - `200 OK` - `{ "c_nonce": string }` (nonce validity is 2 minutes)
 - `400 Bad Request` / `500 Internal Server Error` - On error
 
-The JSON body `c_nonce` and the `DPoP-Nonce` response header are different values.
+The JSON body `c_nonce` and the `DPoP-Nonce` response header are different values. `c_nonce` is used for credential proofs, while `DPoP-Nonce` is used for DPoP Proofs presented to the token endpoint. Since they have different purposes, their TTLs are managed separately.
 
 <a id="get-noncenonce"></a>
 #### `GET /nonce/:nonce`
@@ -300,6 +303,39 @@ pre-authorized_code={pre_authorized_code}
   "scope"?: string,
   "c_nonce"?: string,
   "c_nonce_expires_in"?: number
+}
+```
+
+`DPOP_MODE` controls DPoP Proof verification at the token endpoint.
+
+| `DPOP_MODE` | Behavior |
+|-------------|----------|
+| `off` | DPoP is not used. The server issues a Bearer access token. |
+| `optional` | If the DPoP header is absent, the server issues a Bearer access token. If the DPoP header is present, the server verifies the proof and issues a DPoP-bound access token. |
+| `required` | The DPoP header is required. A missing or malformed DPoP header results in `invalid_request`. |
+
+If the DPoP Proof has no `nonce`, or the nonce is invalid, the server returns `use_dpop_nonce` with a `DPoP-Nonce` response header.
+
+```http
+HTTP/1.1 400 Bad Request
+DPoP-Nonce: <nonce>
+Content-Type: application/json
+```
+
+```json
+{
+  "error": "use_dpop_nonce",
+  "error_description": "Authorization server requires nonce in DPoP proof."
+}
+```
+
+When DPoP Proof verification succeeds, `token_type` is `DPoP`. The issued access token contains `cnf.jkt`, the JWK Thumbprint of the public key from the DPoP Proof JOSE header.
+
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "DPoP",
+  "expires_in": 86400
 }
 ```
 
