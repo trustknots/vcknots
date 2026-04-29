@@ -1,6 +1,28 @@
 import { App } from 'firebase-admin/app'
 import { Firestore } from 'firebase-admin/firestore'
 
+/** Minimal doc ref shape passed into Firestore `Transaction.get` / `set` / `delete`. */
+type MockTxnDocRef = {
+  path: string
+}
+
+/** Transaction mock aligned with firebase-admin: chained `set`/`delete`, snapshots include `ref`. */
+export type MockFirestoreTransaction = {
+  get: <R extends MockTxnDocRef>(
+    docRef: R
+  ) => Promise<{
+    exists: boolean
+    data: () => Record<string, unknown> | undefined
+    ref: R
+  }>
+  set: <R extends MockTxnDocRef>(
+    docRef: R,
+    data: Record<string, unknown>,
+    options?: { merge?: boolean }
+  ) => MockFirestoreTransaction
+  delete: <R extends MockTxnDocRef>(docRef: R) => MockFirestoreTransaction
+}
+
 // In-memory Firestore mock for unit testing firestore providers.
 export type FirestoreTestMock = {
   store: Map<string, Record<string, unknown>>
@@ -14,7 +36,7 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
 
   // Fake Firestore instance backed by the in-memory store, injected via DI.
   const mockFirestore = {
-    settings: () => { },
+    settings: () => {},
     doc: (path: string) => {
       const docRef = {
         path,
@@ -38,27 +60,30 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
       return docRef
     },
     runTransaction: async <T>(
-      updateFunction: (transaction: {
-        get: (docRef: { path: string }) => Promise<{
-          exists: boolean
-          data: () => Record<string, unknown> | undefined
-        }>
-        set: (docRef: { path: string }, data: Record<string, unknown>) => void
-        delete: (docRef: { path: string }) => void
-      }) => Promise<T>
-    ): Promise<T> =>
-      updateFunction({
+      updateFunction: (transaction: MockFirestoreTransaction) => Promise<T>
+    ): Promise<T> => {
+      const transaction: MockFirestoreTransaction = {
         get: async (docRef) => ({
           exists: store.has(docRef.path),
           data: () => store.get(docRef.path),
+          ref: docRef,
         }),
-        set: (docRef, data) => {
-          store.set(docRef.path, { ...data })
+        set: (docRef, data, options) => {
+          if (options?.merge) {
+            const current = store.get(docRef.path) ?? {}
+            store.set(docRef.path, { ...current, ...data })
+          } else {
+            store.set(docRef.path, { ...data })
+          }
+          return transaction
         },
         delete: (docRef) => {
           store.delete(docRef.path)
+          return transaction
         },
-      }),
+      }
+      return updateFunction(transaction)
+    },
   } as unknown as Firestore
 
   // Fake App instance backed by the in-memory Firestore mock, injected via DI.
