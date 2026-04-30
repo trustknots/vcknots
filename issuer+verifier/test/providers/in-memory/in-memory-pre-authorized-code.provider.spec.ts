@@ -104,7 +104,7 @@ describe('inMemoryPreAuthorizedCode', () => {
       assert.strictEqual(result, undefined)
     })
 
-    it('should use default ttlMs when not specified', async () => {
+    it('should use default ttlSec when not specified', async () => {
       await provider.save(sampleCode)
       // This test just ensures no error is thrown with default values
       const isValid = await provider.validate(sampleCode)

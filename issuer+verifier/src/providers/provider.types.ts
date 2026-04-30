@@ -273,7 +273,7 @@ export type PreAuthorizedCodeStoreProvider = {
   save(
     code: PreAuthorizedCode,
     tx_code?: string | number,
-    options?: { ttlMs?: number; tx_code_input_mode?: 'numeric' | 'text' }
+    options?: { ttlSec?: number; tx_code_input_mode?: 'numeric' | 'text' }
   ): Promise<void>
   // FIXME: validation logic is a kind of business logic. so we need to move this function into [PreAuthorizedCodeProvider]
   validate(code: PreAuthorizedCode, tx_code?: string | number): Promise<boolean>

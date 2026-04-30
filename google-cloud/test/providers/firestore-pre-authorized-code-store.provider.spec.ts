@@ -99,7 +99,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
     mock.timers.enable({ apis: ['Date'] })
 
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-    await provider.save(PreAuthorizedCode('expiring-code'), undefined, { ttlMs: 1000 })
+    await provider.save(PreAuthorizedCode('expiring-code'), undefined, { ttlSec: 1 })
 
     mock.timers.tick(1001)
 

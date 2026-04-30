@@ -432,10 +432,12 @@ app.post('/configurations/:configuration/offer', async (c) => {
       const issuer = CredentialIssuer(baseUrl)
       const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
 
-      const offer = await issuerFlow.offerCredential(issuer, configurations, {
+      const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
+        txCode: options?.tx_code ? options.tx_code : undefined,
       })
       console.log('offer:', offer)
+      console.log('tx_code:', tx_code)
 
       return c.text(
         `openid-credential-offer://?credential_offer=${encodeURIComponent(JSON.stringify(offer))}`
@@ -915,7 +917,7 @@ type OfferOptions =
         length?: number
         description?: string
       }
-      ttlMs?: number
+      ttlSec?: number
     }
 ```
 

@@ -10,9 +10,9 @@ export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider
     single: true,
 
     async save(code, tx_code, options) {
-      const ttlMs = options?.ttlMs ?? 300 * 1000
+      const ttlSec = options?.ttlSec ?? 300
       const tx_code_input_mode = options?.tx_code_input_mode ?? 'numeric'
-      const expiresAt = new Date().getTime() + ttlMs
+      const expiresAt = new Date().getTime() + ttlSec * 1000
       codes.set(code, { code, tx_code, tx_code_input_mode, expires_at: expiresAt })
       return
     },

@@ -20,18 +20,18 @@ import { jwkSchema } from './jwk.type'
 
 type OfferOptions =
   | {
-      usePreAuth: false
-      state?: unknown
-    }
+    usePreAuth: false
+    state?: unknown
+  }
   | {
-      usePreAuth: true
-      txCode?: {
-        input_mode?: 'numeric' | 'text'
-        length?: number
-        description?: string
-      }
-      ttlMs?: number
+    usePreAuth: true
+    txCode?: {
+      input_mode?: 'numeric' | 'text'
+      length?: number
+      description?: string
     }
+    ttlSec?: number
+  }
 type IssueOptions = {
   alg: string
   cnonce?: {
@@ -224,7 +224,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         )
       }
       const preAuthorizedCodeStoreOptions = {
-        ...(options?.ttlMs != null && { ttlMs: options.ttlMs * 1000 }),
+        ...(options?.ttlSec != null && { ttlSec: options.ttlSec }),
         ...(options?.txCode?.input_mode && { tx_code_input_mode: options.txCode.input_mode }),
       }
 
@@ -243,7 +243,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       })
       return {
         offer,
-        ...(tx_code && { tx_code }),
+        ...(tx_code !== undefined && { tx_code }),
       }
     },
     async createNonce(ttlMs) {
@@ -309,10 +309,10 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
               ? options?.proofJwt?.usePreAuth === true
                 ? { usePreAuth: true, credentialIssuer: metadata.credential_issuer }
                 : {
-                    usePreAuth: false,
-                    credentialIssuer: metadata.credential_issuer,
-                    clientId: options?.proofJwt?.clientId,
-                  }
+                  usePreAuth: false,
+                  credentialIssuer: metadata.credential_issuer,
+                  clientId: options?.proofJwt?.clientId,
+                }
               : undefined
           verifyProof = await credentialProofProvider.verifyProof(proof, proofJwtCtx)
           if (!verifyProof) {

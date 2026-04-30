@@ -48,7 +48,7 @@ export const createIssueRouter = (
       // It only accepts a domain as an argument
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
-        txCode: options?.tx_code?.length ? options.tx_code : undefined,
+        txCode: options?.tx_code ? options.tx_code : undefined,
       })
       // TODO: Share tx_code with user (e.g., display on issuance screen or send via email)
       console.log('tx_code:', tx_code)
