@@ -11,7 +11,6 @@ This guide explains how to set up and use the Issuer feature of VCKnots.
 - Supports OpenID for Verifiable Credential Issuance 1.0 ([OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html))  
 The following items are not implemented yet and are planned for future support:
   - Only the Pre-Authorized Code Flow is supported at this time.
-  - `tx_code` in the Credential Offer is not supported yet.
   - `credential_response_encryption` in the Credential Request is not supported yet.
   - The Credential Request supports the `jwt` proof type (`di_vp` and `attestation` is not supported yet.).
 - Node.js v14 or later is installed
@@ -911,10 +910,11 @@ type OfferOptions =
   | {
       usePreAuth: true
       txCode?: {
-        inputMode?: 'numeric' | 'text'
+        input_mode?: 'numeric' | 'text'
         length?: number
         description?: string
       }
+      ttlMs?: number
     }
 ```
 

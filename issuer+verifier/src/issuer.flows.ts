@@ -30,7 +30,7 @@ type OfferOptions =
         length?: number
         description?: string
       }
-      ttlSec?: number
+      ttlMs?: number
     }
 type IssueOptions = {
   alg: string
@@ -224,7 +224,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         )
       }
       const preAuthorizedCodeStoreOptions = {
-        ttlMs: (options?.ttlSec ?? 300) * 1000,
+        ...(options?.ttlMs != null && { ttlMs: options.ttlMs * 1000 }),
         ...(options?.txCode?.input_mode && { tx_code_input_mode: options.txCode.input_mode }),
       }
 

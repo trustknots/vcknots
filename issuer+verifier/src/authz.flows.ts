@@ -80,8 +80,6 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           // delete code from store
           await codeStore$.delete(tokenRequest['pre-authorized_code'])
 
-          // TODO: if ix_code is provided, it should be validated
-
           const keyAlg = options?.alg ?? 'ES256'
           // Authz access token (data)
           // for JWK privateKey

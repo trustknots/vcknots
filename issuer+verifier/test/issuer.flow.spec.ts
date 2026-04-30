@@ -368,7 +368,7 @@ describe('IssuerFlow', () => {
         length: 4,
         description: 'transaction code',
       },
-      ttlSec: 600,
+      ttlMs: 600,
     }
     const code = 'PREAUTHCODE'
     const txCode = 1234

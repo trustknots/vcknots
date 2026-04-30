@@ -63,6 +63,7 @@ To start this server, follow the steps below.
    - `FIREBASE_CLIENT_EMAIL`
    - `SECRET_MANAGER_PRIVATE_KEY`
    - `SECRET_MANAGER_CLIENT_EMAIL`
+   - `TX_CODE_PEPPER`
 
    Optional variables:
 

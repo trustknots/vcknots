@@ -63,6 +63,7 @@ google-cloud/
    - `FIREBASE_CLIENT_EMAIL`
    - `SECRET_MANAGER_PRIVATE_KEY`
    - `SECRET_MANAGER_CLIENT_EMAIL`
+   - `TX_CODE_PEPPER`
 
    任意の環境変数:
 

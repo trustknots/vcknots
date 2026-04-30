@@ -11,7 +11,6 @@ sidebar_position: 2
 - OpenID for Verifiable Credential Issuance 1.0 に対応([OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html))  
 なお、以下は現時点では未実装ですが、今後対応予定です。
   - 現在対応しているフローは 事前認可コードフロー（Pre-Authorized Code Flow）のみです
-  - Credential Offerの`tx_code`は未対応（今後対応予定）
   - Credential Requestの`credential_response_encryption`は未対応（今後対応予定）
   - Credential Requestのproof typeは`jwt`のみ対応 （`di_vp`,`attestation`今後対応予定）
 - Node.js v14以降がインストールされていること
@@ -912,10 +911,11 @@ type OfferOptions =
   | {
       usePreAuth: true
       txCode?: {
-        inputMode?: 'numeric' | 'text'
+        input_mode?: 'numeric' | 'text'
         length?: number
         description?: string
       }
+      ttlMs?: number
     }
 ```
 
