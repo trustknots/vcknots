@@ -331,6 +331,20 @@ const validateUniqueLocaleArray = <T extends { locale?: string }>(
 }
 
 /**
+ * OID4VCI metadata endpoints must use https scheme.
+ */
+const httpsUrlSchema = z.string().refine(
+  (v) => {
+    try {
+      return new URL(v).protocol === 'https:'
+    } catch {
+      return false
+    }
+  },
+  { message: 'Must be a valid https URL' }
+)
+
+/**
  * Zod schema for CredentialIssuerMetadata.
  * Represents the metadata of a Credential Issuer.
  * This is typically published at a well-known URI (`/.well-known/openid-credential-issuer`).
@@ -352,17 +366,17 @@ const credentialIssuerMetadataSchema = z
     /**
      * URL of the Credential Endpoint.
      */
-    credential_endpoint: z.string().url(),
+    credential_endpoint: httpsUrlSchema,
 
     /**
-     * URL of the Credential Issuer's Nonce Endpoint.
+     * (Optional) URL of the Batch Credential Endpoint.
      */
-    nonce_endpoint: z.string().url().optional(),
+    batch_credential_endpoint: httpsUrlSchema.optional(),
 
     /**
      * (Optional) URL of the Deferred Credential Endpoint.
      */
-    deferred_credential_endpoint: z.string().url().optional(),
+    deferred_credential_endpoint: httpsUrlSchema.optional(),
 
     /**
      * URL of the Credential Issuer's Notification Endpoint
