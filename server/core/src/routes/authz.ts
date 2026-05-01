@@ -6,13 +6,8 @@ import {
 } from '@trustknots/vcknots/authz'
 import { Hono } from 'hono'
 import { handleError } from '../utils/error-handler.js'
-import { RouteTypesOptions } from './routes.options.types.js'
 
-export const createAuthzRouter = (
-  context: VcknotsContext,
-  baseUrl: string,
-  options?: RouteTypesOptions
-) => {
+export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
   const authzApp = new Hono()
 
   const authzFlow = initializeAuthzFlow(context)
@@ -23,13 +18,6 @@ export const createAuthzRouter = (
       const requestData: Record<string, string | File | number> = Object.fromEntries(
         request.entries()
       )
-
-      if (options?.tx_code?.input_mode !== 'text' && requestData.tx_code) {
-        const numericTxCode = Number.parseInt(requestData.tx_code as string, 10)
-        if (!Number.isNaN(numericTxCode)) {
-          requestData.tx_code = numericTxCode
-        }
-      }
 
       const tokenRequest = AuthzTokenRequest(requestData)
       const issuer = AuthorizationServerIssuer(baseUrl)

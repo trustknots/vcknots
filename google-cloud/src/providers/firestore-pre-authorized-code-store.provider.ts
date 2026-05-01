@@ -12,6 +12,16 @@ export const firestorePreAuthorizedCodeStore = (
 ): PreAuthorizedCodeStoreProvider => {
   const firestore = resolveFirestore(options)
   const ns = options?.namespace?.replace(/\//g, '') || 'vcknots'
+  const toNumericCode = (value: string | number): number | null => {
+    if (typeof value === 'number') {
+      return Number.isInteger(value) && value >= 0 ? value : null
+    }
+    if (!/^\d+$/.test(value)) {
+      return null
+    }
+    const parsed = Number(value)
+    return Number.isSafeInteger(parsed) ? parsed : null
+  }
 
   return {
     kind: 'pre-authorized-code-store-provider',
@@ -51,7 +61,11 @@ export const firestorePreAuthorizedCodeStore = (
       if (data.tx_code_hash) {
         const inputMode = data.tx_code_input_mode ?? 'numeric'
         if (inputMode !== 'text') {
-          if (typeof tx_code !== 'number' || data.tx_code_hash !== hashTxCode(tx_code)) {
+          if (tx_code === undefined) {
+            return false
+          }
+          const actual = toNumericCode(tx_code)
+          if (actual === null || data.tx_code_hash !== hashTxCode(actual)) {
             return false
           }
         } else {

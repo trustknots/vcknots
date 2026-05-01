@@ -3,6 +3,16 @@ import { PreAuthorizedCodeStoreProvider } from '../provider.types'
 
 export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider => {
   const codes = new Map<PreAuthorizedCode, PreAuthorizedCodeStoreEntry>()
+  const toNumericCode = (value: string | number): number | null => {
+    if (typeof value === 'number') {
+      return Number.isInteger(value) && value >= 0 ? value : null
+    }
+    if (!/^\d+$/.test(value)) {
+      return null
+    }
+    const parsed = Number(value)
+    return Number.isSafeInteger(parsed) ? parsed : null
+  }
 
   return {
     kind: 'pre-authorized-code-store-provider',
@@ -26,9 +36,14 @@ export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider
         codes.delete(code)
         return false
       }
-      if (entry.tx_code) {
+      if (entry.tx_code !== undefined) {
         if (entry.tx_code_input_mode !== 'text') {
-          if (typeof tx_code !== 'number' || entry.tx_code !== tx_code) {
+          if (tx_code === undefined) {
+            return false
+          }
+          const expected = toNumericCode(entry.tx_code)
+          const actual = toNumericCode(tx_code)
+          if (expected === null || actual === null || expected !== actual) {
             return false
           }
         } else {

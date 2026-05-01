@@ -10,14 +10,9 @@ import { VcknotsError } from '@trustknots/vcknots/errors'
 import { Context, Hono } from 'hono'
 import { parseAuthorizationHeader } from '../utils/authorization-header.js'
 import { handleError } from '../utils/error-handler.js'
-import { RouteTypesOptions } from './routes.options.types.js'
 import { buildBearerAuthenticateHeader } from '../utils/www-authenticate.js'
 
-export const createIssueRouter = (
-  context: VcknotsContext,
-  baseUrl: string,
-  options?: RouteTypesOptions
-) => {
+export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   const issueApp = new Hono()
 
   const issuerFlow = initializeIssuerFlow(context)
@@ -40,15 +35,26 @@ export const createIssueRouter = (
     return c.json(body, 401)
   }
 
+  type OfferOptions = {
+    tx_code?: {
+      input_mode?: 'numeric' | 'text'
+      length?: number
+      description?: string
+    }
+  }
+
   issueApp.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
       const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
+      const contentLength = c.req.header('content-length')
+      const options: OfferOptions | undefined =
+        contentLength && contentLength !== '0' ? await c.req.json<OfferOptions>() : undefined
 
       // It only accepts a domain as an argument
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
-        txCode: options?.tx_code ? options.tx_code : undefined,
+        txCode: options?.tx_code,
       })
       // TODO: Share tx_code with user (e.g., display on issuance screen or send via email)
       console.log('tx_code:', tx_code)

@@ -43,9 +43,15 @@ describe('inMemoryPreAuthorizedCode', () => {
       assert.strictEqual(isValid, false)
     })
 
-    it('should return false when validating with wrong tx_code type', async () => {
+    it('should allow string numeric tx_code in numeric mode', async () => {
       await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
       const isValid = await provider.validate(sampleCode, '123')
+      assert.strictEqual(isValid, true)
+    })
+
+    it('should return false when tx_code is not numeric in numeric mode', async () => {
+      await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
+      const isValid = await provider.validate(sampleCode, '12a3')
       assert.strictEqual(isValid, false)
     })
 

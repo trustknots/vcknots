@@ -12,13 +12,8 @@ import {
 import { randomUUID } from 'node:crypto'
 import { handleError } from '../utils/error-handler.js'
 import { createDirectPostVpAudTransactionStore } from '../utils/direct-post-vp-aud-transaction-store.js'
-import { RouteTypesOptions } from './routes.options.types.js'
 
-export const createVerifierRouter = (
-  context: VcknotsContext,
-  baseUrl: string,
-  options?: RouteTypesOptions
-) => {
+export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
   const verifyApp = new Hono()
 
   const verifierFlow = initializeVerifierFlow(context)

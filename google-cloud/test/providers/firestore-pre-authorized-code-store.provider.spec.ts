@@ -53,10 +53,22 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(valid, false)
   })
 
-  it('should return false for wrong tx_code type', async () => {
+  it('should allow string numeric tx_code in numeric mode', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await provider.save(PreAuthorizedCode('test-code-type'), 123, { tx_code_input_mode: 'numeric' })
     const valid = await provider.validate(PreAuthorizedCode('test-code-type'), '123')
+    assert.equal(valid, true)
+  })
+
+  it('should return false for non-numeric string tx_code in numeric mode', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('test-code-invalid-numeric-string'), 123, {
+      tx_code_input_mode: 'numeric',
+    })
+    const valid = await provider.validate(
+      PreAuthorizedCode('test-code-invalid-numeric-string'),
+      '12a3'
+    )
     assert.equal(valid, false)
   })
 
