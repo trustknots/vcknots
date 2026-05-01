@@ -807,6 +807,56 @@ describe('IssuerFlow', () => {
       )
     })
 
+    it('should throw "INVALID_TOKEN" if access token is not bound to requested credential configuration id', async () => {
+      const issuer = CredentialIssuer('did:example:issuer')
+      const metadata: CredentialIssuerMetadata = {
+        credential_issuer: issuer,
+        credential_endpoint: 'https://example.com/credentials',
+        credential_configurations_supported: {
+          University_Degree: {
+            format: CredentialFormats.JWT_VC_JSON,
+            credential_definition: {
+              type: ['VerifiableCredential', 'UniversityDegreeCredential'],
+            },
+            credential_signing_alg_values_supported: ['ES256'],
+            proof_types_supported: {
+              jwt: {
+                proof_signing_alg_values_supported: ['ES256K'],
+              },
+            },
+          },
+          VerifiableId: {
+            format: CredentialFormats.JWT_VC_JSON,
+            credential_definition: {
+              type: ['VerifiableCredential', 'VerifiableId'],
+            },
+            credential_signing_alg_values_supported: ['ES256'],
+            proof_types_supported: {
+              jwt: {
+                proof_signing_alg_values_supported: ['ES256K'],
+              },
+            },
+          },
+        },
+      }
+      const credentialRequest = createCredentialRequest({
+        proofs: { jwt: ['dummy-jwt'] },
+      })
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+
+      await assert.rejects(
+        issuerFlow.issueCredential(issuer, credentialRequest, {
+          alg: 'ES256',
+          credentialConfigurationId: [CredentialConfigurationId('VerifiableId')],
+        }),
+        {
+          name: 'INVALID_TOKEN',
+          message: 'Access token is not bound to the requested credential_configuration_id.',
+        }
+      )
+    })
+
     it('should throw "INVALID_CREDENTIAL_REQUEST" if proofs are missing', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
