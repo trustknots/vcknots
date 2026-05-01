@@ -55,6 +55,18 @@ describe('inMemoryPreAuthorizedCode', () => {
       assert.strictEqual(isValid, false)
     })
 
+    it('should preserve leading zeros in numeric mode', async () => {
+      await provider.save(sampleCode, '0123', { tx_code_input_mode: 'numeric' })
+      const isValid = await provider.validate(sampleCode, '0123')
+      assert.strictEqual(isValid, true)
+    })
+
+    it('should treat digit-string and number forms as different when leading zeros exist', async () => {
+      await provider.save(sampleCode, '0123', { tx_code_input_mode: 'numeric' })
+      const isValid = await provider.validate(sampleCode, 123)
+      assert.strictEqual(isValid, false)
+    })
+
     it('should return false when validating a non-existent code', async () => {
       const isValid = await provider.validate(sampleCode) // sampleCode is not saved yet
       assert.strictEqual(isValid, false)

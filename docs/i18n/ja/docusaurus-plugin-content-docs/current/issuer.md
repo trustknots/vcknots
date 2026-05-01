@@ -431,10 +431,13 @@ app.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
       const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
+      const contentLength = c.req.header('content-length')
+      const options: OfferOptions | undefined =
+        contentLength && contentLength !== '0' ? await c.req.json<OfferOptions>() : undefined
 
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
-        txCode: options?.tx_code ? options.tx_code : undefined,
+        txCode: options?.tx_code,
       })
       console.log('offer:', offer)
       console.log('tx_code:', tx_code)

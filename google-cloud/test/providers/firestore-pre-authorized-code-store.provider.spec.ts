@@ -72,6 +72,24 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(valid, false)
   })
 
+  it('should preserve leading zeros in numeric mode', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('test-code-leading-zero'), '0123', {
+      tx_code_input_mode: 'numeric',
+    })
+    const valid = await provider.validate(PreAuthorizedCode('test-code-leading-zero'), '0123')
+    assert.equal(valid, true)
+  })
+
+  it('should treat digit-string and number forms as different when leading zeros exist', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('test-code-leading-zero-mismatch'), '0123', {
+      tx_code_input_mode: 'numeric',
+    })
+    const valid = await provider.validate(PreAuthorizedCode('test-code-leading-zero-mismatch'), 123)
+    assert.equal(valid, false)
+  })
+
   it('should store hashed tx_code in Firestore', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await provider.save(PreAuthorizedCode('hashed-code'), 123, { tx_code_input_mode: 'numeric' })

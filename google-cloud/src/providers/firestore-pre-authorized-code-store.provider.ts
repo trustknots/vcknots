@@ -2,6 +2,7 @@ import { PreAuthorizedCodeStoreProvider } from '@trustknots/vcknots/providers'
 import { PreAuthorizedCodeStoreEntry } from '@trustknots/vcknots'
 import { FirestoreProviderOptions, resolveFirestore } from './firestore.provider'
 import { hashTxCode } from './hash.utils'
+import { raise } from '@trustknots/vcknots/errors'
 
 type FirestorePreAuthorizedCodeDoc = Omit<PreAuthorizedCodeStoreEntry, 'tx_code'> & {
   tx_code_hash?: string
@@ -12,15 +13,11 @@ export const firestorePreAuthorizedCodeStore = (
 ): PreAuthorizedCodeStoreProvider => {
   const firestore = resolveFirestore(options)
   const ns = options?.namespace?.replace(/\//g, '') || 'vcknots'
-  const toNumericCode = (value: string | number): number | null => {
+  const toDigitString = (value: string | number): string | null => {
     if (typeof value === 'number') {
-      return Number.isInteger(value) && value >= 0 ? value : null
+      return Number.isSafeInteger(value) && value >= 0 ? value.toString() : null
     }
-    if (!/^\d+$/.test(value)) {
-      return null
-    }
-    const parsed = Number(value)
-    return Number.isSafeInteger(parsed) ? parsed : null
+    return /^\d+$/.test(value) ? value : null
   }
 
   return {
@@ -41,7 +38,17 @@ export const firestorePreAuthorizedCodeStore = (
       }
 
       if (tx_code !== undefined) {
-        data.tx_code_hash = hashTxCode(tx_code)
+        if (tx_code_input_mode !== 'text') {
+          const canonical = toDigitString(tx_code)
+          if (canonical === null) {
+            raise('INVALID_TX_CODE', {
+              message: 'tx_code must be a non-negative integer for numeric input mode',
+            })
+          }
+          data.tx_code_hash = hashTxCode(canonical)
+        } else {
+          data.tx_code_hash = hashTxCode(tx_code)
+        }
       }
 
       await docRef.set(data)
@@ -64,7 +71,7 @@ export const firestorePreAuthorizedCodeStore = (
           if (tx_code === undefined) {
             return false
           }
-          const actual = toNumericCode(tx_code)
+          const actual = toDigitString(tx_code)
           if (actual === null || data.tx_code_hash !== hashTxCode(actual)) {
             return false
           }

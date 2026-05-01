@@ -3,15 +3,11 @@ import { PreAuthorizedCodeStoreProvider } from '../provider.types'
 
 export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider => {
   const codes = new Map<PreAuthorizedCode, PreAuthorizedCodeStoreEntry>()
-  const toNumericCode = (value: string | number): number | null => {
+  const toDigitString = (value: string | number): string | null => {
     if (typeof value === 'number') {
-      return Number.isInteger(value) && value >= 0 ? value : null
+      return Number.isSafeInteger(value) && value >= 0 ? value.toString() : null
     }
-    if (!/^\d+$/.test(value)) {
-      return null
-    }
-    const parsed = Number(value)
-    return Number.isSafeInteger(parsed) ? parsed : null
+    return /^\d+$/.test(value) ? value : null
   }
 
   return {
@@ -41,8 +37,8 @@ export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider
           if (tx_code === undefined) {
             return false
           }
-          const expected = toNumericCode(entry.tx_code)
-          const actual = toNumericCode(tx_code)
+          const expected = toDigitString(entry.tx_code)
+          const actual = toDigitString(tx_code)
           if (expected === null || actual === null || expected !== actual) {
             return false
           }
