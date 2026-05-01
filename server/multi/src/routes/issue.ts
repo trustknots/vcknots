@@ -109,22 +109,6 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         ? accessTokenPayload.credential_configuration_ids
         : []
 
-      if (
-        !parse.credential_configuration_id ||
-        !allowedConfigurationIds.includes(parse.credential_configuration_id)
-      ) {
-        return unauthorized(
-          c,
-          realm,
-          {
-            error: 'invalid_token',
-            error_description:
-              'Access token is not bound to the requested credential_configuration_id.',
-          },
-          { error: 'invalid_token' }
-        )
-      }
-
       // Issue Credential
       const credential = await issuerFlow.issueCredential(issuer, parse, {
         alg: 'ES256',
@@ -133,6 +117,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         },
         claims: issueClaimsSample,
         proofJwt: { usePreAuth: true },
+        credentialConfigurationId: allowedConfigurationIds,
       })
       return c.json(credential)
     } catch (err) {

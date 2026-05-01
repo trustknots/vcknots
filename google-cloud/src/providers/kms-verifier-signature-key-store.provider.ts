@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { KeyManagementServiceClient } from '@google-cloud/kms'
-import { crc32c } from './crc32c.util'
+import { crc32c } from '@node-rs/crc32'
 import { derToJose } from 'ecdsa-sig-formatter'
 import { importSPKI } from 'jose'
 import { VerifierSignatureKeyStoreProvider } from '@trustknots/vcknots/providers'

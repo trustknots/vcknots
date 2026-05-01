@@ -23,6 +23,7 @@
 	"packageManager": "pnpm@10.30.3",
 	"dependencies": {
 		"@google-cloud/kms": "5.4.0",
+		"@node-rs/crc32": "^1.10.3",
 		"@google-cloud/secret-manager": "^6.1.1",
 		"@trustknots/vcknots": "workspace:*",
 		"ecdsa-sig-formatter": "^1.0.11",

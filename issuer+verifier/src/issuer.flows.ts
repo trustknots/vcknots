@@ -43,6 +43,7 @@ type IssueOptions = {
     usePreAuth: boolean
     clientId?: string
   }
+  credentialConfigurationId?: CredentialConfigurationId[]
 }
 
 export const isUri = (value: string): boolean => {
@@ -258,6 +259,18 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: `Credential configuration ${credentialRequest.credential_configuration_id} is not supported by issuer ${issuer}.`,
         })
       }
+
+      if (
+        !credentialRequest.credential_configuration_id ||
+        !options?.credentialConfigurationId?.includes(
+          credentialRequest.credential_configuration_id as CredentialConfigurationId
+        )
+      ) {
+        throw err('INVALID_TOKEN', {
+          message: 'Access token is not bound to the requested credential_configuration_id.',
+        })
+      }
+
       const issueCredentialProvider = selectProvider(issueCredential$, configuration.format)
 
       const supports = Object.keys(configuration.proof_types_supported ?? {})
