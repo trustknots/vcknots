@@ -1,3 +1,4 @@
+import { raise } from '../../errors'
 import { PreAuthorizedCode, PreAuthorizedCodeStoreEntry } from '../../pre-authorized-code.types'
 import { PreAuthorizedCodeStoreProvider } from '../provider.types'
 
@@ -26,28 +27,44 @@ export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider
     async validate(code, tx_code) {
       const entry = codes.get(code)
       if (!entry) {
-        return false
+        throw raise('INVALID_GRANT', {
+          message: 'Pre-authorized code not found',
+        })
       }
       if (entry.expires_at && entry.expires_at < new Date().getTime()) {
         codes.delete(code)
-        return false
+        throw raise('INVALID_GRANT', {
+          message: 'Pre-authorized code has expired',
+        })
       }
       if (entry.tx_code !== undefined) {
+        if (tx_code === undefined) {
+          throw raise('INVALID_REQUEST', {
+            message: 'tx_code is required for this pre-authorized code',
+          })
+        }
         if (entry.tx_code_input_mode !== 'text') {
-          if (tx_code === undefined) {
-            return false
-          }
           const expected = toDigitString(entry.tx_code)
           const actual = toDigitString(tx_code)
           if (expected === null || actual === null || expected !== actual) {
-            return false
+            throw raise('INVALID_GRANT', {
+              message: 'Invalid tx_code provided',
+            })
           }
         } else {
           if (entry.tx_code !== tx_code) {
-            return false
+            throw raise('INVALID_GRANT', {
+              message: 'Invalid tx_code provided',
+            })
           }
         }
         return true
+      } else {
+        if (tx_code !== undefined) {
+          throw raise('INVALID_REQUEST', {
+            message: 'tx_code should not be provided for this pre-authorized code',
+          })
+        }
       }
       return codes.has(code)
     },

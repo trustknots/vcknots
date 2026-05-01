@@ -249,7 +249,7 @@ describe('Vcknots', () => {
 
       await assert.rejects(
         vk.authz.createAccessToken(authzIssuer, tokenRequest, { ttlSec: 3600 }),
-        { name: 'PRE_AUTHORIZED_CODE_NOT_FOUND' }
+        { name: 'INVALID_GRANT' }
       )
     })
 
@@ -279,7 +279,7 @@ describe('Vcknots', () => {
 
       await assert.rejects(
         vk.authz.createAccessToken(authzIssuer, tokenRequest, { ttlSec: 3600 }),
-        { name: 'PRE_AUTHORIZED_CODE_NOT_FOUND' }
+        { name: 'INVALID_REQUEST' }
       )
     })
 
@@ -335,7 +335,7 @@ describe('Vcknots', () => {
 
       await assert.rejects(
         vk.authz.createAccessToken(authzIssuer, tokenRequest, { ttlSec: 3600 }),
-        { name: 'PRE_AUTHORIZED_CODE_NOT_FOUND' }
+        { name: 'INVALID_GRANT' }
       )
     })
 

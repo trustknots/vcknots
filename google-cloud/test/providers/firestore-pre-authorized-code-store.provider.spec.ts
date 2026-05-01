@@ -44,13 +44,14 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(valid, true)
   })
 
-  it('should return false for incorrect tx_code', async () => {
+  it('should throw INVALID_GRANT for incorrect tx_code', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await provider.save(PreAuthorizedCode('test-code-wrong'), 123, {
       tx_code_input_mode: 'numeric',
     })
-    const valid = await provider.validate(PreAuthorizedCode('test-code-wrong'), 456)
-    assert.equal(valid, false)
+    await assert.rejects(provider.validate(PreAuthorizedCode('test-code-wrong'), 456), {
+      name: 'INVALID_GRANT',
+    })
   })
 
   it('should allow string numeric tx_code in numeric mode', async () => {
@@ -60,16 +61,15 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(valid, true)
   })
 
-  it('should return false for non-numeric string tx_code in numeric mode', async () => {
+  it('should throw INVALID_GRANT for non-numeric string tx_code in numeric mode', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await provider.save(PreAuthorizedCode('test-code-invalid-numeric-string'), 123, {
       tx_code_input_mode: 'numeric',
     })
-    const valid = await provider.validate(
-      PreAuthorizedCode('test-code-invalid-numeric-string'),
-      '12a3'
+    await assert.rejects(
+      provider.validate(PreAuthorizedCode('test-code-invalid-numeric-string'), '12a3'),
+      { name: 'INVALID_GRANT' }
     )
-    assert.equal(valid, false)
   })
 
   it('should preserve leading zeros in numeric mode', async () => {
@@ -81,13 +81,15 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(valid, true)
   })
 
-  it('should treat digit-string and number forms as different when leading zeros exist', async () => {
+  it('should throw INVALID_GRANT when leading-zero digit-string is validated as number', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await provider.save(PreAuthorizedCode('test-code-leading-zero-mismatch'), '0123', {
       tx_code_input_mode: 'numeric',
     })
-    const valid = await provider.validate(PreAuthorizedCode('test-code-leading-zero-mismatch'), 123)
-    assert.equal(valid, false)
+    await assert.rejects(
+      provider.validate(PreAuthorizedCode('test-code-leading-zero-mismatch'), 123),
+      { name: 'INVALID_GRANT' }
+    )
   })
 
   it('should store hashed tx_code in Firestore', async () => {
@@ -111,21 +113,23 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(doc.tx_code_input_mode, 'numeric')
   })
 
-  it('should return false for an unknown code', async () => {
+  it('should throw INVALID_GRANT for an unknown code', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-    const valid = await provider.validate(PreAuthorizedCode('unknown-code'))
-    assert.equal(valid, false)
+    await assert.rejects(provider.validate(PreAuthorizedCode('unknown-code')), {
+      name: 'INVALID_GRANT',
+    })
   })
 
-  it('should delete a code', async () => {
+  it('should delete a code and throw INVALID_GRANT when validating it afterwards', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await provider.save(PreAuthorizedCode('delete-me'))
     await provider.delete(PreAuthorizedCode('delete-me'))
-    const valid = await provider.validate(PreAuthorizedCode('delete-me'))
-    assert.equal(valid, false)
+    await assert.rejects(provider.validate(PreAuthorizedCode('delete-me')), {
+      name: 'INVALID_GRANT',
+    })
   })
 
-  it('should return false and delete an expired code', async () => {
+  it('should throw INVALID_GRANT and delete an expired code', async () => {
     mock.timers.enable({ apis: ['Date'] })
 
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
@@ -133,8 +137,9 @@ describe('firestorePreAuthorizedCodeStore', () => {
 
     mock.timers.tick(1001)
 
-    const valid = await provider.validate(PreAuthorizedCode('expiring-code'))
-    assert.equal(valid, false)
+    await assert.rejects(provider.validate(PreAuthorizedCode('expiring-code')), {
+      name: 'INVALID_GRANT',
+    })
     assert.ok(!store.has('vcknots/v1/preCodes/expiring-code'))
   })
 
@@ -151,8 +156,9 @@ describe('firestorePreAuthorizedCodeStore', () => {
 
     // Expired after 5 minutes
     mock.timers.tick(2 * 60 * 1000)
-    const validAfter = await provider.validate(PreAuthorizedCode('default-expiry'))
-    assert.equal(validAfter, false)
+    await assert.rejects(provider.validate(PreAuthorizedCode('default-expiry')), {
+      name: 'INVALID_GRANT',
+    })
   })
 
   it('should use the correct Firestore document path', async () => {

@@ -65,6 +65,12 @@ To start this server, follow the steps below.
    - `SECRET_MANAGER_CLIENT_EMAIL`
    - `TX_CODE_PEPPER`
 
+   `TX_CODE_PEPPER` is a secret pepper value used to HMAC-hash `tx_code` values before storing them in Firestore.
+   This value is required in the Google Cloud provider path; if it is missing, the server fails at startup with
+   `TX_CODE_PEPPER environment variable is required`.
+   Use a sufficiently long random secret and keep it stable per environment (do not rotate casually, because
+   previously stored `tx_code` hashes will no longer validate after changing it).
+
    Optional variables:
 
    - `FIRESTORE_DATABASE_ID`

@@ -56,31 +56,47 @@ export const firestorePreAuthorizedCodeStore = (
     async validate(code, tx_code) {
       const doc = await firestore.doc(`${ns}/v1/preCodes/${code}`).get()
       if (!doc.exists) {
-        return false
+        throw raise('INVALID_GRANT', {
+          message: 'Pre-authorized code not found',
+        })
       }
       const data = doc.data() as FirestorePreAuthorizedCodeDoc
 
       if (data.expires_at && data.expires_at < new Date().getTime()) {
         await firestore.doc(`${ns}/v1/preCodes/${code}`).delete()
-        return false
+        throw raise('INVALID_GRANT', {
+          message: 'Pre-authorized code has expired',
+        })
       }
 
       if (data.tx_code_hash) {
+        if (tx_code === undefined) {
+          throw raise('INVALID_REQUEST', {
+            message: 'tx_code is required for this pre-authorized code',
+          })
+        }
         const inputMode = data.tx_code_input_mode ?? 'numeric'
         if (inputMode !== 'text') {
-          if (tx_code === undefined) {
-            return false
-          }
           const actual = toDigitString(tx_code)
           if (actual === null || data.tx_code_hash !== hashTxCode(actual)) {
-            return false
+            throw raise('INVALID_GRANT', {
+              message: 'Invalid tx_code provided',
+            })
           }
         } else {
           if (typeof tx_code !== 'string' || data.tx_code_hash !== hashTxCode(tx_code)) {
-            return false
+            throw raise('INVALID_GRANT', {
+              message: 'Invalid tx_code provided',
+            })
           }
         }
         return true
+      } else {
+        if (tx_code !== undefined) {
+          throw raise('INVALID_REQUEST', {
+            message: 'tx_code should not be provided for this pre-authorized code',
+          })
+        }
       }
 
       return true

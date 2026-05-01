@@ -37,10 +37,9 @@ describe('inMemoryPreAuthorizedCode', () => {
       assert.strictEqual(isValid, true)
     })
 
-    it('should return false when validating with incorrect tx_code', async () => {
+    it('should throw INVALID_GRANT when validating with incorrect tx_code', async () => {
       await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
-      const isValid = await provider.validate(sampleCode, 456)
-      assert.strictEqual(isValid, false)
+      await assert.rejects(provider.validate(sampleCode, 456), { name: 'INVALID_GRANT' })
     })
 
     it('should allow string numeric tx_code in numeric mode', async () => {
@@ -49,10 +48,9 @@ describe('inMemoryPreAuthorizedCode', () => {
       assert.strictEqual(isValid, true)
     })
 
-    it('should return false when tx_code is not numeric in numeric mode', async () => {
+    it('should throw INVALID_GRANT when tx_code is not numeric in numeric mode', async () => {
       await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
-      const isValid = await provider.validate(sampleCode, '12a3')
-      assert.strictEqual(isValid, false)
+      await assert.rejects(provider.validate(sampleCode, '12a3'), { name: 'INVALID_GRANT' })
     })
 
     it('should preserve leading zeros in numeric mode', async () => {
@@ -61,15 +59,13 @@ describe('inMemoryPreAuthorizedCode', () => {
       assert.strictEqual(isValid, true)
     })
 
-    it('should treat digit-string and number forms as different when leading zeros exist', async () => {
+    it('should throw INVALID_GRANT when leading-zero digit-string is validated as number', async () => {
       await provider.save(sampleCode, '0123', { tx_code_input_mode: 'numeric' })
-      const isValid = await provider.validate(sampleCode, 123)
-      assert.strictEqual(isValid, false)
+      await assert.rejects(provider.validate(sampleCode, 123), { name: 'INVALID_GRANT' })
     })
 
-    it('should return false when validating a non-existent code', async () => {
-      const isValid = await provider.validate(sampleCode) // sampleCode is not saved yet
-      assert.strictEqual(isValid, false)
+    it('should throw INVALID_GRANT when validating a non-existent code', async () => {
+      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' }) // sampleCode is not saved yet
     })
 
     it('should handle multiple codes correctly', async () => {
@@ -82,12 +78,12 @@ describe('inMemoryPreAuthorizedCode', () => {
   })
 
   describe('delete', () => {
-    it('should delete a pre-authorized code, and it should no longer validate', async () => {
+    it('should delete a pre-authorized code, and validation should throw INVALID_GRANT', async () => {
       await provider.save(sampleCode)
       assert.strictEqual(await provider.validate(sampleCode), true)
 
       await provider.delete(sampleCode)
-      assert.strictEqual(await provider.validate(sampleCode), false)
+      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
     })
 
     it('should not throw an error when trying to delete a non-existent code', async () => {
@@ -100,15 +96,14 @@ describe('inMemoryPreAuthorizedCode', () => {
 
       await provider.delete(sampleCode)
 
-      assert.strictEqual(await provider.validate(sampleCode), false)
+      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
       assert.strictEqual(await provider.validate(anotherSampleCode), true)
     })
   })
 
   describe('edge cases', () => {
-    it('validate should return false when the store is empty', async () => {
-      const isValid = await provider.validate(sampleCode)
-      assert.strictEqual(isValid, false)
+    it('validate should throw INVALID_GRANT when the store is empty', async () => {
+      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
     })
 
     it('save should not return a value (void promise)', async () => {
