@@ -59,12 +59,11 @@ export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider
           }
         }
         return true
-      } else {
-        if (tx_code !== undefined) {
-          throw raise('INVALID_REQUEST', {
-            message: 'tx_code should not be provided for this pre-authorized code',
-          })
-        }
+      }
+      if (tx_code !== undefined) {
+        throw raise('INVALID_REQUEST', {
+          message: 'tx_code should not be provided for this pre-authorized code',
+        })
       }
       return codes.has(code)
     },
