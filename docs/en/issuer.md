@@ -826,7 +826,7 @@ createIssuerMetadata(issuer: CredentialIssuerMetadata): Promise<void>
 **Return value**: None
 
 **Error cases**:
-- `PROVIDER_NOT_FOUND`: An unsupported `alg` is configured
+- `provider_not_found`: An unsupported `alg` is configured
 
 
 ### createNonce
@@ -890,8 +890,8 @@ For the type definition of the credential offer, see [issuer+verifier/src/creden
 
 
 **Error cases**:
-- `FEATURE_NOT_IMPLEMENTED_YET`: An unsupported flow is configured (the authorization code flow is not supported)
-- `ISSUER_NOT_FOUND`: An unregistered Issuer is configured
+- `feature_not_implemented_yet`: An unsupported flow is configured (the authorization code flow is not supported)
+- `issuer_not_found`: An unregistered Issuer is configured
 
 #### CredentialConfigurationId{#CredentialConfigurationId}
 Defines the type for credential configuration IDs.
@@ -949,7 +949,7 @@ For protected-header validation behavior, see [credential-proof-jwt.provider.ts]
 
 - **`typ`**: Must be `openid4vci-proof+jwt` (explicit typing per RFC 8725).
 - **`alg`**: `none` and symmetric signatures (MAC, IANA JWA identifiers starting with `HS*`) are rejected.
-- **`kid` / `jwk` / `x5c`**: **Must not appear more than one at a time.** **At least one** of them is required (if none are present, the result is `INVALID_PROOF`).
+- **`kid` / `jwk` / `x5c`**: **Must not appear more than one at a time.** **At least one** of them is required (if none are present, the result is `invalid_proof`).
 - **`trust_chain`**: Not currently supported.
 
 Per-header behavior:
@@ -961,15 +961,15 @@ Per-header behavior:
 | **`x5c`** | The certificate chain is validated with **`certificate-provider`**, then the signature is verified with the public key of the leaf certificate. When using `x5c`, register **`certificate-provider`** in the provider list when initializing Vcknots. |
 
 **Error cases**:
-- `ISSUER_NOT_FOUND`: An unregistered Issuer is configured
-- `PROVIDER_NOT_FOUND`: An unsupported `format` is configured
-- `INVALID_REQUEST`: `format` is not set
-- `UNSUPPORTED_CREDENTIAL_TYPE`: The specified `credential_definition` or `proof_type` is not supported
-- `INVALID_CREDENTIAL_REQUEST`: The `proof` is missing or not supported, or the configuration id is invalid, etc.
-- `INVALID_PROOF`: The `proof` cannot be verified, the header does not conform to OID4VCI JWT proof rules (e.g. `typ` / `alg` / combinations of `kid`, `jwk`, and `x5c`), an unsupported header is set, or a `nonce` is missing
-- `UNSUPPORTED_ISSUER_KEY_ALG`: The Issuer’s signing algorithm is not supported
-- `AUTHZ_ISSUER_KEY_NOT_FOUND`: The Issuer’s key cannot be found
-- `INTERNAL_SERVER_ERROR`: Signing failed
+- `issuer_not_found`: An unregistered Issuer is configured
+- `provider_not_found`: An unsupported `format` is configured
+- `invalid_request`: `format` is not set
+- `unsupported_credential_type`: The specified `credential_definition` or `proof_type` is not supported
+- `invalid_credential_request`: The `proof` is missing or not supported, or the configuration id is invalid, etc.
+- `invalid_proof`: The `proof` cannot be verified, the header does not conform to OID4VCI JWT proof rules (e.g. `typ` / `alg` / combinations of `kid`, `jwk`, and `x5c`), an unsupported header is set, or a `nonce` is missing
+- `unsupported_issuer_key_alg`: The Issuer’s signing algorithm is not supported
+- `authz_issuer_key_not_found`: The Issuer’s key cannot be found
+- `internal_server_error`: Signing failed
 
 #### CredentialRequest{#CredentialRequest}
 Defines the type for a credential issuance request. You can configure items such as the credential identifier.
@@ -1072,11 +1072,11 @@ createAccessToken<T extends GrantType>(
 ```
 
 **Error cases**:
-- `PROVIDER_NOT_FOUND`: An unsupported algorithm is configured for the private key
-- `PRE_AUTHORIZED_CODE_NOT_FOUND`: An invalid pre-authorized code is provided
-- `INVALID_REQUEST`: The authorization server key is not registered, the algorithm is not set, or the grant type is not supported
-- `INTERNAL_SERVER_ERROR`: Signing failed
-- `FEATURE_NOT_IMPLEMENTED_YET`: The authorization code flow is configured (currently not supported)
+- `provider_not_found`: An unsupported algorithm is configured for the private key
+- `pre_authorized_code_not_found`: An invalid pre-authorized code is provided
+- `invalid_request`: The authorization server key is not registered, the algorithm is not set, or the grant type is not supported
+- `internal_server_error`: Signing failed
+- `feature_not_implemented_yet`: The authorization code flow is configured (currently not supported)
 
 #### TokenRequest{#TokenRequest}
 Defines the type for a credential issuance request. You can configure items such as the credential identifier.
@@ -1112,9 +1112,9 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 **Return value**: Returns a boolean indicating whether the access token is valid.
 
 **Error cases**:
-- `INVALID_ACCESS_TOKEN`: The access token is not a valid JWT, or the `authz` claim is not as expected
-- `AUTHZ_ISSUER_KEY_NOT_FOUND`: The authorization server’s key cannot be found
-- `PROVIDER_NOT_FOUND`: The signing algorithm is not supported
+- `invalid_access_token`: The access token is not a valid JWT, or the `authz` claim is not as expected
+- `authz_issuer_key_not_found`: The authorization server’s key cannot be found
+- `provider_not_found`: The signing algorithm is not supported
 
 
 ## 7. Notes
@@ -1135,11 +1135,9 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 - **Q: Metadata validation error**  
   - **A:** Check that the provided metadata conforms to the CredentialIssuerMetadata schema and the AuthorizationServerMetadata schema.
 
-- **Q: Error when creating credential offer**: `FEATURE_NOT_IMPLEMENTED_YET`  
+- **Q: Error when creating credential offer**: `feature_not_implemented_yet`  
   - **A:** Make sure you are not calling an unimplemented flow. Currently, only the pre-authorized code flow is supported.
 
-- **Q: Error when issuing credential**: `INVALID_PROOF`  
+- **Q: Error when issuing credential**: `invalid_proof`  
   - **A:** Check that the header of proof.jwt in the credential request includes a kid. Also verify that the `nonce` in the proof is valid.
-
-
 
