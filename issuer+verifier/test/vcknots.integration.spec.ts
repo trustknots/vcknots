@@ -148,10 +148,10 @@ describe('Vcknots', () => {
       assert.deepEqual(found, issuerMetadata)
     })
 
-    it('should throw DUPLICATE_ISSUER when creating duplicate issuer metadata', async () => {
+    it('should throw duplicate_issuer when creating duplicate issuer metadata', async () => {
       // Since it has already been created in the before hook, a duplicate error should occur
       await assert.rejects(vk.issuer.createIssuerMetadata(issuerMetadata), {
-        name: 'DUPLICATE_ISSUER',
+        name: 'duplicate_issuer',
         message: `issuer ${issuerMetadata.credential_issuer} is already registered.`,
       })
     })
@@ -232,10 +232,10 @@ describe('Vcknots', () => {
       assert.deepEqual(found, authzMetadata)
     })
 
-    it('should throw DUPLICATE_AUTHZ_SERVER when creating duplicate authz server metadata', async () => {
+    it('should throw duplicate_authz_server when creating duplicate authz server metadata', async () => {
       // Since it has already been created in the before hook, a duplicate error should occur
       await assert.rejects(vk.authz.createAuthzServerMetadata(authzMetadata), {
-        name: 'DUPLICATE_AUTHZ_SERVER',
+        name: 'duplicate_authz_server',
         message: `issuer ${authzIssuer} is already registered.`,
       })
     })
@@ -301,10 +301,10 @@ describe('Vcknots', () => {
       await vk.verifier.createVerifierMetadata(verifierId, metadata)
     })
 
-    it('should throw DUPLICATE_VERIFIER when creating duplicate verifier metadata', async () => {
+    it('should throw duplicate_verifier when creating duplicate verifier metadata', async () => {
       // Since it has already been created in the before hook, a duplicate error should occur
       await assert.rejects(vk.verifier.createVerifierMetadata(verifierId, metadata), {
-        name: 'DUPLICATE_VERIFIER',
+        name: 'duplicate_verifier',
         message: `verifier ${verifierId} is already registered.`,
       })
     })
@@ -546,3 +546,4 @@ describe('Vcknots', () => {
     })
   })
 })
+

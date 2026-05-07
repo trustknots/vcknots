@@ -194,7 +194,7 @@ describe('issueCredential', () => {
         claims: { family_name: 'Doe' },
       }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_CLAIMS')
+        assert.equal(err.name, 'invalid_claims')
         return true
       }
     )
@@ -217,7 +217,7 @@ describe('issueCredential', () => {
         subject: 'did:example:123#key-1',
       }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_CLAIMS')
+        assert.equal(err.name, 'invalid_claims')
         return true
       }
     )
@@ -247,7 +247,7 @@ describe('issueCredential', () => {
         claims: { given_name: 'John' },
       }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_CLAIMS')
+        assert.equal(err.name, 'invalid_claims')
         return true
       }
     )
@@ -315,7 +315,7 @@ describe('issueCredential', () => {
         },
       }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_CLAIMS')
+        assert.equal(err.name, 'invalid_claims')
         assert.match(err.message, /Unsupported claim path segment/)
         return true
       }
@@ -380,7 +380,7 @@ describe('issueCredential', () => {
     mock.method(mockIssuerKeyStoreProvider, 'sign', async () => 'signedjwt')
 
     await assert.rejects(provider.createCredential(credentialIssuer, config, { keyAlg: 'RS256' }), {
-      name: 'UNSUPPORTED_ISSUER_KEY_ALG',
+      name: 'unsupported_issuer_key_alg',
     })
   })
 
@@ -393,7 +393,7 @@ describe('issueCredential', () => {
     await assert.rejects(
       provider.createCredential(credentialIssuer, configuration, { keyAlg: 'ES256' }),
       {
-        name: 'AUTHZ_ISSUER_KEY_NOT_FOUND',
+        name: 'authz_issuer_key_not_found',
       }
     )
   })
@@ -408,7 +408,7 @@ describe('issueCredential', () => {
     await assert.rejects(
       provider.createCredential(credentialIssuer, configuration, { keyAlg: 'ES256' }),
       {
-        name: 'INTERNAL_SERVER_ERROR',
+        name: 'internal_server_error',
       }
     )
   })
@@ -420,9 +420,10 @@ describe('issueCredential', () => {
           identifier: () => 'not-a-url',
         }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_OPTIONS')
+        assert.equal(err.name, 'invalid_options')
         return true
       }
     )
   })
 })
+

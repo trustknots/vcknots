@@ -29,7 +29,7 @@ describe('issueCredential utils', () => {
       assert.throws(
         () => assertSafePath([]),
         (err: unknown) => {
-          assert.equal((err as { name?: string }).name, 'INVALID_CLAIMS')
+          assert.equal((err as { name?: string }).name, 'invalid_claims')
           assert.match(String((err as { message?: string }).message), /must not be empty/i)
           return true
         }
@@ -40,7 +40,7 @@ describe('issueCredential utils', () => {
       assert.throws(
         () => assertSafePath(['credentialSubject', '__proto__']),
         (err: unknown) => {
-          assert.equal((err as { name?: string }).name, 'INVALID_CLAIMS')
+          assert.equal((err as { name?: string }).name, 'invalid_claims')
           assert.match(
             String((err as { message?: string }).message),
             /Unsupported claim path segment/
@@ -80,7 +80,7 @@ describe('issueCredential utils', () => {
       assert.throws(
         () => setClaimValue({}, [], 'Alice'),
         (err: unknown) => {
-          assert.equal((err as { name?: string }).name, 'INVALID_CLAIMS')
+          assert.equal((err as { name?: string }).name, 'invalid_claims')
           assert.match(String((err as { message?: string }).message), /must not be empty/i)
           return true
         }
@@ -88,3 +88,4 @@ describe('issueCredential utils', () => {
     })
   })
 })
+

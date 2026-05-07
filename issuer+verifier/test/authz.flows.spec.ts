@@ -136,7 +136,7 @@ describe('AuthzFlows', () => {
       mock.method(mockAuthzMetadataProvider, 'fetch', async () => sampleMetadata)
 
       await assert.rejects(() => flow.createAuthzServerMetadata(sampleMetadata), {
-        name: 'DUPLICATE_AUTHZ_SERVER',
+        name: 'duplicate_authz_server',
       })
     })
   })
@@ -191,14 +191,14 @@ describe('AuthzFlows', () => {
       it('should throw if pre-authorized code is invalid', async () => {
         mock.method(mockCodeStoreProvider, 'validate', async () => false)
         await assert.rejects(() => flow.createAccessToken(sampleIssuer, tokenRequest), {
-          name: 'PRE_AUTHORIZED_CODE_NOT_FOUND',
+          name: 'pre_authorized_code_not_found',
         })
       })
 
       it('should throw if signing returns null', async () => {
         mock.method(mockAuthzKeyProvider, 'sign', async () => null)
         await assert.rejects(() => flow.createAccessToken(sampleIssuer, tokenRequest), {
-          name: 'INTERNAL_SERVER_ERROR',
+          name: 'internal_server_error',
         })
       })
     })
@@ -209,7 +209,7 @@ describe('AuthzFlows', () => {
         code: 'some-auth-code',
       }
       await assert.rejects(() => flow.createAccessToken(sampleIssuer, authCodeTokenRequest), {
-        name: 'FEATURE_NOT_IMPLEMENTED_YET',
+        name: 'feature_not_implemented_yet',
       })
     })
 
@@ -219,8 +219,9 @@ describe('AuthzFlows', () => {
         code: 'some-auth-code',
       } as unknown as TokenRequest
       await assert.rejects(() => flow.createAccessToken(sampleIssuer, authCodeTokenRequest), {
-        name: 'INVALID_REQUEST',
+        name: 'invalid_request',
       })
     })
   })
 })
+

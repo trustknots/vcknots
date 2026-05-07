@@ -264,12 +264,12 @@ describe('IssuerFlow', () => {
     }
     mock.method(mockIssuerKeyStoreProvider, 'save', async () => {
       throw Object.assign(new Error('No provider found which can handle: RS256'), {
-        name: 'PROVIDER_NOT_FOUND',
+        name: 'provider_not_found',
       })
     })
 
     await assert.rejects(issuerFlow.createIssuerMetadata(metadata), {
-      name: 'PROVIDER_NOT_FOUND',
+      name: 'provider_not_found',
       message: 'No provider found which can handle: RS256',
     })
   })
@@ -277,24 +277,24 @@ describe('IssuerFlow', () => {
   const issuer = CredentialIssuer('did:example:issuer')
   const configurations = [CredentialConfigurationId('VerifiableId')]
 
-  it('should throw "FEATURE_NOT_IMPLEMENTED_YET" if usePreAuth is false', async () => {
+  it('should throw "feature_not_implemented_yet" if usePreAuth is false', async () => {
     const suspects = async () => {
       return await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: false,
       })
     }
 
-    assert.rejects(suspects, 'FEATURE_NOT_IMPLEMENTED_YET')
+    assert.rejects(suspects, 'feature_not_implemented_yet')
   })
 
-  it('should throw "ISSUER_NOT_FOUND" if issuer metadata is not found when usePreAuth is true', async () => {
+  it('should throw "issuer_not_found" if issuer metadata is not found when usePreAuth is true', async () => {
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => null)
 
     const suspects = async () => {
       return await issuerFlow.offerCredential(issuer, configurations, { usePreAuth: true })
     }
 
-    assert.rejects(suspects, 'ISSUER_NOT_FOUND')
+    assert.rejects(suspects, 'issuer_not_found')
   })
 
   it('should create a credential offer with pre-authorized code', async () => {
@@ -689,7 +689,7 @@ describe('IssuerFlow', () => {
       })
     })
 
-    it('should throw "ISSUER_NOT_FOUND" if issuer metadata is not found', async () => {
+    it('should throw "issuer_not_found" if issuer metadata is not found', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const credentialRequest = createCredentialRequest()
@@ -700,13 +700,13 @@ describe('IssuerFlow', () => {
       await assert.rejects(
         issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
         {
-          name: 'ISSUER_NOT_FOUND',
+          name: 'issuer_not_found',
         }
       )
       assert.equal(mockIssuerMetadataProvider.fetch.mock.callCount(), 1)
     })
 
-    it('should throw "INVALID_CREDENTIAL_REQUEST" if credential configuration id is not specified', async () => {
+    it('should throw "invalid_credential_request" if credential configuration id is not specified', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
@@ -733,13 +733,13 @@ describe('IssuerFlow', () => {
       await assert.rejects(
         issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
         {
-          name: 'INVALID_CREDENTIAL_REQUEST',
+          name: 'invalid_credential_request',
           message: 'Credential configuration id is not specified.',
         }
       )
     })
 
-    it('should throw "UNKNOWN_CREDENTIAL_CONFIGURATION" if requested configuration is not supported', async () => {
+    it('should throw "unknown_credential_configuration" if requested configuration is not supported', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
@@ -764,12 +764,12 @@ describe('IssuerFlow', () => {
       await assert.rejects(
         issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
         {
-          name: 'UNKNOWN_CREDENTIAL_CONFIGURATION',
+          name: 'unknown_credential_configuration',
         }
       )
     })
 
-    it('should throw "UNKNOWN_CREDENTIAL_CONFIGURATION" if requested configuration id is not supported', async () => {
+    it('should throw "unknown_credential_configuration" if requested configuration id is not supported', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
@@ -793,12 +793,12 @@ describe('IssuerFlow', () => {
       await assert.rejects(
         issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
         {
-          name: 'UNKNOWN_CREDENTIAL_CONFIGURATION',
+          name: 'unknown_credential_configuration',
         }
       )
     })
 
-    it('should throw "INVALID_CREDENTIAL_REQUEST" if proofs are missing', async () => {
+    it('should throw "invalid_credential_request" if proofs are missing', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -819,7 +819,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
-        name: 'INVALID_CREDENTIAL_REQUEST',
+        name: 'invalid_credential_request',
         message: 'Proof is required to issue credential.',
       })
     })
@@ -849,7 +849,7 @@ describe('IssuerFlow', () => {
       })
     })
 
-    it('should throw "INVALID_CREDENTIAL_REQUEST" if proof type is not supported in metadata', async () => {
+    it('should throw "invalid_credential_request" if proof type is not supported in metadata', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -869,12 +869,12 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
-        name: 'INVALID_CREDENTIAL_REQUEST',
+        name: 'invalid_credential_request',
         message: 'Request contain no proofs supported by credential configuration.',
       })
     })
 
-    it('should throw "INVALID_PROOF" if proof verification fails', async () => {
+    it('should throw "invalid_proof" if proof verification fails', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -899,7 +899,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
-        name: 'INVALID_PROOF',
+        name: 'invalid_proof',
         message: 'Failed to verify Proof.',
       })
     })
@@ -1059,7 +1059,7 @@ describe('IssuerFlow', () => {
       assert.equal(mockNonceStoreProvider.save.mock.callCount(), nonceSaveCallCountBefore)
     })
 
-    it('should throw "INVALID_NONCE" if cnonce is invalid', async () => {
+    it('should throw "invalid_nonce" if cnonce is invalid', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -1091,11 +1091,11 @@ describe('IssuerFlow', () => {
           alg: 'ES256',
           cnonce: { c_nonce_expires_in: 300 },
         }),
-        { name: 'INVALID_NONCE', message: 'Nonce not found.' }
+        { name: 'invalid_nonce', message: 'Nonce not found.' }
       )
     })
 
-    it('should throw "UNSUPPORTED_ISSUER_KEY_ALG" if signing alg is not supported', async () => {
+    it('should throw "unsupported_issuer_key_alg" if signing alg is not supported', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -1118,7 +1118,7 @@ describe('IssuerFlow', () => {
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(mockIssueCredentialProvider, 'createCredential', async () => {
         throw Object.assign(new Error('Unsupported key algorithm.'), {
-          name: 'UNSUPPORTED_ISSUER_KEY_ALG',
+          name: 'unsupported_issuer_key_alg',
         })
       })
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
@@ -1131,7 +1131,7 @@ describe('IssuerFlow', () => {
       // 2. Act & 3. Assert
       await assert.rejects(
         issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'RS256' }), // Requesting unsupported alg
-        { name: 'UNSUPPORTED_ISSUER_KEY_ALG' }
+        { name: 'unsupported_issuer_key_alg' }
       )
     })
 
@@ -1157,7 +1157,7 @@ describe('IssuerFlow', () => {
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(mockIssueCredentialProvider, 'createCredential', async () => {
         throw Object.assign(new Error('Issuer key not found.'), {
-          name: 'AUTHZ_ISSUER_KEY_NOT_FOUND',
+          name: 'authz_issuer_key_not_found',
         })
       })
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
@@ -1170,7 +1170,7 @@ describe('IssuerFlow', () => {
       // 2. Act & 3. Assert
       await assert.rejects(
         issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
-        { name: 'AUTHZ_ISSUER_KEY_NOT_FOUND' }
+        { name: 'authz_issuer_key_not_found' }
       )
     })
 
@@ -1253,3 +1253,5 @@ describe('IssuerFlow', () => {
     })
   })
 })
+
+

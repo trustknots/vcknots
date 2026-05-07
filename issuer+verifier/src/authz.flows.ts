@@ -57,7 +57,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       const privateKeyAlg = options?.alg ?? 'ES256'
       const current = await authz$.fetch(metadata.issuer)
       if (current) {
-        throw err('DUPLICATE_AUTHZ_SERVER', {
+        throw err('duplicate_authz_server', {
           message: `issuer ${metadata.issuer} is already registered.`,
         })
       }
@@ -71,7 +71,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           // Check pre-code validity
           const isValid = await codeStore$.validate(tokenRequest['pre-authorized_code'])
           if (!isValid) {
-            throw err('PRE_AUTHORIZED_CODE_NOT_FOUND', {
+            throw err('pre_authorized_code_not_found', {
               message: 'The provided pre-authorized code is invalid.',
             })
           }
@@ -95,7 +95,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           // sign with issuer private key
           const signature = await authzKey$.sign(authz, keyAlg, jwtPayload, jwtHeader)
           if (!signature) {
-            throw err('INTERNAL_SERVER_ERROR', {
+            throw err('internal_server_error', {
               message: 'Cannot sign access token.',
             })
           }
@@ -111,23 +111,23 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         }
         case 'authorization_code': {
           // TODO: Implement authorization code flow
-          throw err('FEATURE_NOT_IMPLEMENTED_YET', {
+          throw err('feature_not_implemented_yet', {
             message: 'Authorization code flow is not supported.',
           })
         }
         default: {
-          throw err('INVALID_REQUEST', {
+          throw err('invalid_request', {
             message: `Unsupported grant type: ${tokenRequest.grant_type}`,
           })
         }
       }
     },
     async verifyAccessToken(authz, accessToken: string, options): Promise<boolean> {
-      // TODO:  AccessToken Support (self-contained, Token Introspection) — prioritize self-contained.
+      // TODO:  AccessToken Support (self-contained, Token Introspection)  Eprioritize self-contained.
       // self-contained check
       const [jwtHeader, jwtPayload, jwtSignature] = accessToken.split('.')
       if (!jwtHeader || !jwtPayload || !jwtSignature) {
-        throw err('INVALID_ACCESS_TOKEN', {
+        throw err('invalid_access_token', {
           message: 'Access token is not a valid JWT.',
         })
       }
@@ -137,7 +137,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         decodedHeader = JSON.parse(base64url.decode(jwtHeader))
         decodedPayload = JSON.parse(base64url.decode(jwtPayload))
       } catch (error) {
-        throw err('INVALID_ACCESS_TOKEN', {
+        throw err('invalid_access_token', {
           message:
             error instanceof Error
               ? `Access token is not a valid JWT. ${error.message}`
@@ -148,14 +148,14 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       // TODO: Need to consider whether to use Provider
       const authzIssuer = AuthorizationServerIssuer(decodedPayload.iss)
       if (authzIssuer !== authz) {
-        throw err('INVALID_ACCESS_TOKEN', {
+        throw err('invalid_access_token', {
           message: `Access token issuer ${authzIssuer} does not match the expected issuer ${authz}.`,
         })
       }
       const keyAlg = decodedHeader.alg ?? options?.alg ?? 'ES256'
       const publicKey = await authzKey$.fetch(authzIssuer, keyAlg)
       if (!publicKey) {
-        throw err('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+        throw err('authz_issuer_key_not_found', {
           message: `Authorization server key for ${authzIssuer} not found.`,
         })
       }
@@ -169,7 +169,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           issuer: decodedPayload.iss,
         })
       } catch (error) {
-        throw err('INVALID_ACCESS_TOKEN', {
+        throw err('invalid_access_token', {
           message: 'Access token verification failed.',
         })
       }
@@ -183,3 +183,4 @@ export {
   AuthorizationServerMetadata,
 } from './authorization-server.types'
 export { TokenRequest as AuthzTokenRequest } from './token-request.types'
+
