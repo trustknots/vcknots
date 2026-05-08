@@ -77,6 +77,28 @@ describe('inMemoryNonceStore', () => {
         mocks.reset()
       }
     })
+
+    it('consume should validate and remove the cnonce', async () => {
+      await nonceStoreProvider.save(testNonce)
+      const consumed = await nonceStoreProvider.consume(testNonce)
+      const isValid = await nonceStoreProvider.validate(testNonce)
+
+      assert.strictEqual(consumed, true)
+      assert.strictEqual(isValid, false, 'Cnonce should be invalid after consuming')
+    })
+
+    it('consume should return false for an expired cnonce', async () => {
+      const mocks = test.mock.timers
+      mocks.enable()
+      await nonceStoreProvider.save(testNonce)
+      try {
+        mocks.tick(5 * 60 * 1000 + 1000)
+        const consumed = await nonceStoreProvider.consume(testNonce)
+        assert.strictEqual(consumed, false)
+      } finally {
+        mocks.reset()
+      }
+    })
   })
 
 
@@ -104,6 +126,13 @@ describe('inMemoryNonceStore', () => {
 
     it('revoke method should return false when nonce did not exist', async () => {
       const result = await nonceStoreProvider.revoke(
+        Nonce({ nonce: 'non-existent-cnonce-for-return-test' })
+      )
+      assert.strictEqual(result, false)
+    })
+
+    it('consume method should return false when nonce did not exist', async () => {
+      const result = await nonceStoreProvider.consume(
         Nonce({ nonce: 'non-existent-cnonce-for-return-test' })
       )
       assert.strictEqual(result, false)

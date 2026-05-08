@@ -4,23 +4,38 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
 } from './authorization-server.types'
+import type { DPoPProofVerifyContext } from './dpop-proof.types'
 import { err } from './errors/vcknots.error'
 import { GrantType, TokenRequest } from './token-request.types'
 import { VcknotsContext } from './vcknots.context'
 import { JwtPayload } from './jwt.types'
+import { Nonce } from './nonce.types'
 
 type AuthzKeyAlg = string
+
+type DPoPProofContext = {
+  proofJwt: string
+  htm: string
+  htu: string
+  nonceRequired?: boolean
+}
 
 type TokenRequestOptions = {
   [GrantType.AuthorizationCode]: {
     //TODO: Implement options for authorization code flow
     alg?: AuthzKeyAlg
+    dpopProof?: DPoPProofContext
   }
   [GrantType.PreAuthorizedCode]: {
     ttlSec?: number
     alg?: AuthzKeyAlg
+    dpopProof?: DPoPProofContext
   }
 }
+
+type AnyTokenRequestOptions =
+  | TokenRequestOptions[GrantType.AuthorizationCode]
+  | TokenRequestOptions[GrantType.PreAuthorizedCode]
 
 export type AuthzFlow = {
   findAuthzServerMetadata(
@@ -30,10 +45,11 @@ export type AuthzFlow = {
     metadata: AuthorizationServerMetadata,
     options?: { alg?: AuthzKeyAlg }
   ): Promise<void>
-  createAccessToken<T extends GrantType>(
+  createDpopNonceChallenge(ttlMs?: number): Promise<string>
+  createAccessToken(
     authz: AuthorizationServerIssuer,
     tokenRequest: TokenRequest,
-    options?: TokenRequestOptions[T]
+    options?: AnyTokenRequestOptions
     // biome-ignore lint/complexity/noBannedTypes: <explanation>
   ): Promise<Object>
   verifyAccessToken(
@@ -48,6 +64,8 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   const codeStore$ = context.providers.get('pre-authorized-code-store-provider')
   const accessToken$ = context.providers.get('access-token-provider')
   const authzKey$ = context.providers.get('authz-signature-key-store-provider')
+  const dpopProof$ = context.providers.get('dpop-proof-provider')
+  const dpopProofJtiStore$ = context.providers.get('dpop-proof-jti-store-provider')
 
   return {
     async findAuthzServerMetadata(issuer) {
@@ -64,10 +82,50 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       await authzKey$.save(metadata.issuer, privateKeyAlg)
       await authz$.save(metadata)
     },
+    async createDpopNonceChallenge(ttlMs) {
+      const nonce$ = context.providers.get('nonce-provider')
+      const nonceStore$ = context.providers.get('nonce-store-provider')
+      const dpopNonce = await nonce$.generate({ nonce_expires_in: ttlMs })
+      await nonceStore$.save(dpopNonce)
+      return dpopNonce.nonce
+    },
     async createAccessToken(authz, tokenRequest, options) {
       switch (tokenRequest.grant_type) {
         case 'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
           const option = options as TokenRequestOptions[GrantType.PreAuthorizedCode]
+          const verifiedDpopProof = option?.dpopProof
+            ? await dpopProof$.verifyProof(option.dpopProof.proofJwt, {
+                htm: option.dpopProof.htm,
+                htu: option.dpopProof.htu,
+              } satisfies DPoPProofVerifyContext)
+            : undefined
+          if (verifiedDpopProof) {
+            if (option?.dpopProof?.nonceRequired) {
+              const nonceStore$ = context.providers.get('nonce-store-provider')
+              if (!verifiedDpopProof.nonce) {
+                throw err('USE_DPOP_NONCE', {
+                  message: 'Authorization server requires nonce in DPoP proof.',
+                })
+              }
+              const nonce = Nonce({ nonce: verifiedDpopProof.nonce })
+              const consumed = await nonceStore$.consume(nonce)
+              if (!consumed) {
+                throw err('USE_DPOP_NONCE', {
+                  message: 'Authorization server requires nonce in DPoP proof.',
+                })
+              }
+            }
+            const isNewJti = await dpopProofJtiStore$.saveIfAbsent(
+              verifiedDpopProof.jwkThumbprint,
+              verifiedDpopProof.jti,
+              { ttlMs: dpopProof$.proofJtiTtlMs }
+            )
+            if (!isNewJti) {
+              throw err('INVALID_DPOP_PROOF', {
+                message: 'DPoP proof JWT jti has already been used.',
+              })
+            }
+          }
           // Check pre-code validity
           const isValid = await codeStore$.validate(tokenRequest['pre-authorized_code'])
           if (!isValid) {
@@ -89,8 +147,13 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           }
           const jwtPayload = await accessToken$.createTokenPayload(
             authz,
-
-            tokenRequest['pre-authorized_code']
+            tokenRequest['pre-authorized_code'],
+            {
+              ttlSec: option?.ttlSec,
+              ...(verifiedDpopProof
+                ? { cnf: { jkt: verifiedDpopProof.jwkThumbprint } }
+                : {}),
+            }
           )
           // sign with issuer private key
           const signature = await authzKey$.sign(authz, keyAlg, jwtPayload, jwtHeader)
@@ -105,7 +168,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           // Create Token Response
           return {
             access_token: `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`, // TODO: Implement access token generation
-            token_type: 'bearer',
+            token_type: verifiedDpopProof ? 'DPoP' : 'bearer',
             expires_in: option?.ttlSec ?? 86400,
           }
         }
