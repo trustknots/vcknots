@@ -54,9 +54,9 @@ single/
    # PRIVATE_KEY_PATH: 秘密鍵ファイルのパス（デフォルト: ../samples/certificate-openid-test/private_key_openid.pem）
    # CERTIFICATE_PATH: 証明書ファイルのパス（デフォルト: ../samples/certificate-openid-test/certificate_openid.pem）
    # DPOP_MODE: DPoP 設定（off, optional, required）
-   # off: DPoP を利用しない
-   # optional: DPoP ヘッダーがある場合だけ proof を検証して DPoP-bound access token を発行
-   # required: token endpoint で DPoP ヘッダーを必須化
+   # off: DPoP を利用しない（token / credential とも DPoP を要求しない）
+   # optional: token で DPoP ヘッダーがあるときは proof を検証し DPoP-bound access token を発行。credential は送信者拘束のないトークンは Bearer のみ可。cnf.jkt 付きトークンは Authorization: DPoP + DPoP ヘッダー必須
+   # required: token で DPoP ヘッダー必須。credential は常に Authorization: DPoP + DPoP ヘッダー必須（Bearer のみは不可）
    ```
 
 2. **依存関係のインストール**（ルートディレクトリで実行）
@@ -183,8 +183,10 @@ Authz metadata initialized
 
 クレデンシャルの発行
 
-**リクエストヘッダー:**
-- `Authorization: Bearer {access_token}` (必須) - アクセストークン
+**リクエストヘッダー（`DPOP_MODE` とトークンの種類に依存）:**
+- **Bearer:** `Authorization: Bearer {access_token}` — sender binding のないアクセストークン、`DPOP_MODE` が `required` でないときに利用。
+- **DPoP:** `Authorization: DPoP {access_token}` に加え、`DPoP: {compact_jwt}`（RFC 9449 の DPoP Proof）が必要 — `DPOP_MODE` が `required` のとき、またはトークンに `cnf.jkt` が含まれるとき（`optional` であっても Bearer のみでは不可）。
+- エラー応答では `WWW-Authenticate: Bearer` または `WWW-Authenticate: DPoP` が返ることがあります（詳細は [Issuer ドキュメント](https://trustknots.github.io/vcknots/ja/docs/issuer) の credential endpoint / DPoP の節）。
 
 **リクエストボディ (JSON):**
 ```json
@@ -193,7 +195,7 @@ Authz metadata initialized
   "credential_configuration_id"?: string,
   "proofs"?: {
     "jwt"?: string[],
-    "di_vp?": {
+    "di_vp"?: {
       "holder"?: string,
       "proof": {
         "domain": string,
@@ -212,7 +214,7 @@ Authz metadata initialized
 
 **レスポンス:**
 - `200 OK` - 発行されたクレデンシャル（JSON形式）
-- `401 Unauthorized` - アクセストークンが無効または欠如
+- `401 Unauthorized` - アクセストークン／DPoP の検証失敗、`invalid_token` / `invalid_dpop_proof` / `use_dpop_nonce`（本文および `WWW-Authenticate` で区別される場合があります）
 
 <a id="get-well-knownopenid-credential-issuer"></a>
 #### `GET /.well-known/openid-credential-issuer`
@@ -304,10 +306,10 @@ pre-authorized_code={pre_authorized_code}
 | `DPOP_MODE` | 挙動 |
 |-------------|------|
 | `off` | DPoP を利用せず、Bearer access token を発行します。 |
-| `optional` | DPoP ヘッダーがない場合は Bearer access token を発行します。DPoP ヘッダーがある場合は proof を検証し、DPoP-bound access token を発行します。 |
+| `optional` | DPoP ヘッダーがない場合は Bearer access token を発行します。DPoP ヘッダーがある場合は proof を検証し、DPoP-bound access token を発行します。不正な DPoP（欠落でもない）は `invalid_request` になります。 |
 | `required` | DPoP ヘッダーを必須にします。未指定または不正な DPoP ヘッダーは `invalid_request` になります。 |
 
-DPoP Proof に `nonce` がない、または nonce が無効な場合は、`DPoP-Nonce` レスポンスヘッダー付きで `use_dpop_nonce` を返します。
+DPoP Proof に `nonce` がない、または nonce が無効な場合は、**HTTP 400** と **`DPoP-Nonce` ヘッダー**、JSON `use_dpop_nonce` を返します（token endpoint は現行実装では `WWW-Authenticate` は付けません。credential は 401 と `WWW-Authenticate: DPoP` の組み合わせになる場合があります。詳細は Issuer ドキュメント）。
 
 ```http
 HTTP/1.1 400 Bad Request
@@ -340,11 +342,13 @@ Authorization Server メタデータの取得
 **レスポンス:**
 - `200 OK` - Authorization Server メタデータ（JSON形式）
 - `404 Not Found` - メタデータが見つからない場合
+
+以下は項目の一例です。シングルサーバーでは初期化時に **`BASE_URL`（例: `http://localhost:8080`）** に合わせて `issuer` / `authorization_endpoint` / `token_endpoint` が設定されます（必ずしも下記ホストとは一致しません）。
 ```json
 {
-  "issuer": "https://authz.example.com",
-  "authorization_endpoint": "https://authz.example.com/authorize",
-  "token_endpoint": "https://authz.example.com/token",
+  "issuer": "http://localhost:8080",
+  "authorization_endpoint": "http://localhost:8080/authorize",
+  "token_endpoint": "http://localhost:8080/token",
   "scopes_supported": ["openid"],
   "response_types_supported": ["code"],
   "pre-authorized_grant_anonymous_access_supported": true

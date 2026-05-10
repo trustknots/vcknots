@@ -69,11 +69,11 @@ To start this server, follow the steps below.
    - `FIRESTORE_DATABASE_ID`
    - `BASE_URL` (e.g., `http://localhost:8080`)
    - `PORT` (default: `8080`)
-   - `DPOP_MODE` (`off` / `optional` / `required`, default: `optional`)
+   - `DPOP_MODE` (`off` / `optional` / `required`)
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
 
-   `DPOP_MODE` also controls DPoP Proof verification at the token endpoint. In `optional` mode, the server verifies the proof and issues a DPoP-bound access token only when a DPoP header is present. In `required` mode, token requests must include a DPoP header.
+   `DPOP_MODE` controls DPoP behavior for both the token endpoint and the credential endpoint via `@trustknots/server-core`. **`off`**: no DPoP is required. **`optional`**: on the token endpoint, the server verifies DPoP and issues a bound access token only when a `DPoP` header is present (invalid proofs other than omission yield `invalid_request`); on the credential endpoint, non–sender-bound tokens may use Bearer-only `Authorization`, while tokens carrying **`cnf.jkt`** require `Authorization: DPoP` and a `DPoP` header. **`required`**: both token and credential requests require `Authorization: DPoP` and a `DPoP` header (Bearer-only is rejected). For details see the [Issuer documentation](https://trustknots.github.io/vcknots/docs/issuer) and the [single-server README](../single/README.md#post-credentials); this Google Cloud deployment also uses `@trustknots/server-core`.
 
 2. **Install Dependencies** (Run from root directory)
 

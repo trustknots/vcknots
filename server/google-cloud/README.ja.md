@@ -69,11 +69,11 @@ google-cloud/
    - `FIRESTORE_DATABASE_ID`
    - `BASE_URL`（例: `http://localhost:8080`）
    - `PORT`（既定値: `8080`）
-   - `DPOP_MODE`（`off` / `optional` / `required`。既定値: `optional`）
+   - `DPOP_MODE`（`off` / `optional` / `required`）
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
 
-   `DPOP_MODE` は token endpoint の DPoP Proof 検証も制御します。`optional` の場合は DPoP ヘッダーがあるときだけ proof を検証して DPoP-bound access token を発行し、`required` の場合は token request に DPoP ヘッダーを必須にします。
+   `DPOP_MODE` は **`@trustknots/server-core`** 経由で、**token endpoint** と **credential endpoint** の両方の DPoP 挙動を制御します。**`off`** では DPoP を要求しません。**`optional`** では、token 側は DPoP ヘッダーがあるときだけ proof を検証して DPoP-bound access token を発行し（欠落以外の不正な DPoP は `invalid_request`）、credential 側は送信者拘束のないトークンなら `Authorization: Bearer` のみでよく、**`cnf.jkt` 付きトークンは `Authorization: DPoP` と `DPoP` ヘッダーが必須**です。**`required`** では token も credential も **`Authorization: DPoP` と `DPoP` ヘッダーが常に必要**です（Bearer のみは拒否されます）。詳細は [Issuer ドキュメント](https://trustknots.github.io/vcknots/ja/docs/issuer) と [シングルサーバー README](../single/README.ja.md#post-credentials) を参照してください（この Google Cloud 版も `@trustknots/server-core` を経由します）。
 
 2. **依存関係をインストール（ルートで実行）**
 
