@@ -185,7 +185,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
               proofJwt: dpopProof.proofJwt,
               htm: c.req.method,
               htu: `${baseUrl}/credentials`,
-              nonceRequired: false,
+              nonceRequired: true,
             },
           })
           await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
@@ -193,7 +193,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
               proofJwt: dpopProof.proofJwt,
               htm: c.req.method,
               htu: `${baseUrl}/credentials`,
-              nonceRequired: false, // conformance test case: nonce not required
+              nonceRequired: true,
             },
           })
         } else {
