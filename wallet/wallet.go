@@ -266,7 +266,14 @@ type CredentialOffer struct {
 
 // CredentialOfferGrant represents a grant in a credential offer.
 type CredentialOfferGrant struct {
-	PreAuthorizedCode string `json:"pre-authorized_code"`
+	PreAuthorizedCode string  `json:"pre-authorized_code"`
+	TxCode            *TxCode `json:"tx_code,omitempty"`
+}
+
+type TxCode struct {
+	InputMode   string `json:"input_mode,omitempty"`
+	Length      int    `json:"length,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // GetCredentialEntriesRequest holds parameters for querying credential entries.
@@ -562,7 +569,7 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 
 // obtainAccessToken obtains an access token using pre-authorization code.
 func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivingTypes, authMetadata *receiverTypes.AuthorizationServerMetadata, preAuthCode string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
-	accessToken, err := w.receiver.FetchAccessToken(receivingType, *authMetadata.TokenEndpoint, preAuthCode)
+	accessToken, err := w.receiver.FetchAccessToken(receivingType, *authMetadata.TokenEndpoint, preAuthCode, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch access token: %w", err)
 	}

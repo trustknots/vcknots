@@ -292,7 +292,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		env.SetDebugMode(false)
 		env.SetHTTPAllowed(false)
 
-		_, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code", "")
 		if err == nil {
 			t.Fatal("FetchAccessToken should be error when issuer's schema is http")
 		}
@@ -303,7 +303,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		defer env.SetHTTPAllowed(http_allowed)
 		env.SetHTTPAllowed(true)
 
-		token, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code")
+		token, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code", "")
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -319,6 +319,50 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 			t.Errorf("Expected TokenType 'Bearer', got %s", token.TokenType)
 		}
 	})
+	t.Run("Request includes tx_code when provided", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to parse request form: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("grant_type"); got != "urn:ietf:params:oauth:grant-type:pre-authorized_code" {
+				handlerErrCh <- fmt.Errorf("expected pre-authorized_code to be test-code,got %s", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("pre-authorized_code"); got != "test-code" {
+
+				handlerErrCh <- fmt.Errorf("expected pre-authorized_code to be test-code, got %s", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("tx_code"); got != "123456" {
+				handlerErrCh <- fmt.Errorf("expected tx_code to be 123456, got %s", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]string{
+				"access_token": "mock-access-token",
+				"token_type":   "Bearer",
+			})
+		})
+		captureURL, _ := url.Parse(captureServer.URL())
+		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "test-code", "123456")
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		require.NoError(t, <-handlerErrCh)
+	})
 
 	t.Run("Server error", func(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
@@ -332,7 +376,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		errorServer.SetErrorResponse("/token", http.StatusInternalServerError)
 
 		errorURL, _ := url.Parse(errorServer.URL())
-		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*errorURL), "test-code")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*errorURL), "test-code", "")
 		if err == nil {
 			t.Fatal("Expected error for server error")
 		}
@@ -349,7 +393,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		invalidJSONServer.SetTextResponse("/token", http.StatusOK, "{invalid-json")
 
 		invalidJSONURL, _ := url.Parse(invalidJSONServer.URL())
-		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*invalidJSONURL), "test-code")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*invalidJSONURL), "test-code", "")
 		if err == nil {
 			t.Fatal("Expected error for invalid JSON response")
 		}
