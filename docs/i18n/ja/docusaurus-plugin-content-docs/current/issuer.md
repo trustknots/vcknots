@@ -517,13 +517,33 @@ curl  http://localhost:8080/.well-known/oauth-authorization-server
 
 ```typescript
 app.post("/token", async (c) => {
-  const request = await c.req.formData();
-  const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()));
-  console.log("tokenRequest:", tokenRequest);
-  const issuer = AuthorizationServerIssuer(issuerId);
+  const dpopMode = resolveDpopMode(context.options)
+  const dpopProof = parseDpopHeader(c.req.header('DPoP'))
 
-  const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest);
-  return c.json(accessToken);
+  if (
+    (dpopMode === 'required' && !dpopProof.ok) ||
+    (dpopMode !== 'off' && !dpopProof.ok && dpopProof.reason !== 'missing')
+  ) {
+    return c.json({ error: 'invalid_request' }, 400)
+  }
+
+  const request = await c.req.formData()
+  const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()))
+  const issuer = AuthorizationServerIssuer(issuerId)
+
+  const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
+    ...(dpopMode !== 'off' && dpopProof.ok
+      ? {
+          dpopProof: {
+            proofJwt: dpopProof.proofJwt,
+            htm: c.req.method,
+            htu: `${baseUrl}/token`,
+            nonceRequired: true,
+          },
+        }
+      : {}),
+  })
+  return c.json(accessToken)
 });
 
 
@@ -552,20 +572,79 @@ curl -X POST http://localhost:8080/token \
 }
 ```
 
+#### DPoP Proof を利用する token request
+
+`oauth.senderConstrainedAccessToken.dpop.mode` により、token endpoint の DPoP Proof 検証を制御できます。
+
+| mode | token endpoint の挙動 |
+|------|------------------------|
+| `off` | DPoP を利用しません。Bearer access token を発行します。 |
+| `optional` | DPoP ヘッダーがない場合は Bearer access token を発行します。DPoP ヘッダーがある場合は proof を検証し、DPoP-bound access token を発行します。 |
+| `required` | DPoP ヘッダーを必須にします。未指定または不正な DPoP ヘッダーは `invalid_request` になります。 |
+
+DPoP Proof に `nonce` がない、または nonce が無効な場合、Authorization Server は `DPoP-Nonce` レスポンスヘッダー付きで `use_dpop_nonce` を返します。Wallet はこの nonce を DPoP Proof JWT の `nonce` クレームに入れて token request を再送します。
+
+```http
+HTTP/1.1 400 Bad Request
+DPoP-Nonce: 9288f7b2dffb42c2b08f2f4d4d8635d8
+Content-Type: application/json
+
+{
+  "error": "use_dpop_nonce",
+  "error_description": "Authorization server requires nonce in DPoP proof."
+}
+```
+
+DPoP Proof の検証に成功した場合、レスポンスの `token_type` は `DPoP` になります。また、発行される access token には DPoP Proof の JOSE ヘッダーに含まれる公開鍵の JWK Thumbprint が `cnf.jkt` として含まれます。
+
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "DPoP",
+  "expires_in": 86400
+}
+```
+
+DPoP-bound access token を使う後続リクエストでは、同じ公開鍵に対応する秘密鍵で署名した DPoP Proof を提示する必要があります。
+
 ### 6. Nonceエンドポイント
 
 OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) に相当するエンドポイントです。Wallet が credential リクエストを送る前に c_nonce を取得する際に使用します。
 
 Issuer メタデータに `nonce_endpoint` を設定すると、Wallet は `/.well-known/openid-credential-issuer` から取得したメタデータ経由で nonce エンドポイントの URL を参照します。
 
+DPoP 用 nonce も返したい場合は、サーバー設定で `oauth.senderConstrainedAccessToken.dpop.mode` を指定します。
+
+```typescript
+const context = initializeContext({
+  oauth: {
+    senderConstrainedAccessToken: {
+      dpop: {
+        mode: 'optional', // 'off' | 'optional' | 'required'
+      },
+    },
+  },
+})
+```
+
+`mode !== 'off'` の場合、`POST /nonce` は JSON ボディの `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返します。`c_nonce` と `DPoP-Nonce` は別の値です。
+
+`c_nonce` は credential proof 用の nonce です。一方、`DPoP-Nonce` は token endpoint で提示する DPoP Proof 用の nonce です。用途が異なるため、TTL も別々に設定できます。
+
 #### POST /nonce - nonce（c_nonce）の作成
 
 ```typescript
 app.post('/nonce', async (c) => {
   try {
-    const NONCE_TTL_MS = 2 * 60 * 1000  // 2分
-    const cnonce = await issuerFlow.createNonce(NONCE_TTL_MS)
+    const C_NONCE_TTL_MS = 2 * 60 * 1000  // 2分
+    const DPOP_NONCE_TTL_MS = 5 * 60 * 1000  // 5分
+    const cnonce = await issuerFlow.createNonce(C_NONCE_TTL_MS)
+    const dpopMode = resolveDpopMode(context.options)
     c.header('Cache-Control', 'no-store')
+    if (dpopMode !== 'off') {
+      const dpopNonce = await issuerFlow.createNonce(DPOP_NONCE_TTL_MS)
+      c.header('DPoP-Nonce', dpopNonce)
+    }
     return c.json({ c_nonce: cnonce }, 200)
   } catch (err) {
     const errorResponse = handleError(err)
@@ -580,16 +659,27 @@ app.post('/nonce', async (c) => {
 **リクエスト**
 
 ```bash
-curl -X POST http://localhost:8080/nonce
+curl -i -X POST http://localhost:8080/nonce
 ```
 
 **レスポンス**
 
-```json
+```http
+HTTP/1.1 200 OK
+Cache-Control: no-store
+DPoP-Nonce: 9288f7b2dffb42c2b08f2f4d4d8635d8
+Content-Type: application/json
+
 {
   "c_nonce": "3ccc7973abef4102ad70a871e200304b"
 }
 ```
+
+`oauth.senderConstrainedAccessToken.dpop.mode` が `off` の場合、`DPoP-Nonce` ヘッダは付きません。
+
+**実装例**:
+
+- [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts)
 
 #### GET /nonce/:nonce - nonceの有効性検証
 
@@ -1141,4 +1231,3 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 
 - **Q:クレデンシャル発行エラー**:`invalid_proof`
     - **A：**  クレデンシャルリクエストのproof.jwtのheaderがkidを含んでいるかを確認してください。また、proof に含まれる `nonce` が有効かを確認してください。
-

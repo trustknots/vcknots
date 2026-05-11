@@ -9,6 +9,8 @@ export type ErrorCodes =
   | 'unauthorized_client'
   | 'unsupported_grant_type'
   | 'invalid_scope'
+  | 'invalid_dpop_proof'
+  | 'use_dpop_nonce'
 
   // OID4VCI :: Credential Error Response
   //

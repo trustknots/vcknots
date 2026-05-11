@@ -64,6 +64,7 @@ describe('sd-jwt provider', () => {
       single: true,
       validate: mock.fn(async (nonce: Nonce) => nonce.nonce === 'bcb201b7e186ed380127b9158a9d57a6'),
       revoke: mock.fn(async () => true),
+      consume: mock.fn(async () => true),
       save: mock.fn(async () => {}),
     }
 

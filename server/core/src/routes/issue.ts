@@ -1,4 +1,8 @@
-import { VcknotsContext, parseCredentialConfigurationId } from '@trustknots/vcknots'
+import {
+  resolveDpopMode,
+  VcknotsContext,
+  parseCredentialConfigurationId,
+} from '@trustknots/vcknots'
 import {
   CredentialRequest,
   CredentialIssuer,
@@ -10,6 +14,9 @@ import { Context, Hono } from 'hono'
 import { parseAuthorizationHeader } from '../utils/authorization-header.js'
 import { handleError } from '../utils/error-handler.js'
 import { buildBearerAuthenticateHeader } from '../utils/www-authenticate.js'
+
+const C_NONCE_TTL_MS = 2 * 60 * 1000
+const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
 
 export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   const issueApp = new Hono()
@@ -175,9 +182,13 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   })
   issueApp.post('/nonce', async (c) => {
     try {
-      const NONCE_TTL_MS = 2 * 60 * 1000 // 2 minutes
-      const cnonce = await issuerFlow.createNonce(NONCE_TTL_MS)
+      const cnonce = await issuerFlow.createNonce(C_NONCE_TTL_MS)
+      const dpopMode = resolveDpopMode(context.options)
       c.header('Cache-Control', 'no-store')
+      if (dpopMode !== 'off') {
+        const dpopNonce = await issuerFlow.createNonce(DPOP_NONCE_TTL_MS)
+        c.header('DPoP-Nonce', dpopNonce)
+      }
       return c.json(
         {
           c_nonce: cnonce,

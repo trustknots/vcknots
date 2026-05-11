@@ -7,6 +7,19 @@ export const inMemoryNonceStore = (): NonceStoreProvider => {
     expires_at: number
   }
   const nonceStates = new Map<string, NonceState>()
+  const now = () => new Date().getTime()
+
+  const getValidNonceState = (nonce: Nonce): NonceState | null => {
+    const nonceState = nonceStates.get(nonce.nonce)
+    if (!nonceState) {
+      return null
+    }
+    if (now() > nonceState.expires_at) {
+      nonceStates.delete(nonce.nonce)
+      return null
+    }
+    return nonceState
+  }
 
   return {
     kind: 'nonce-store-provider',
@@ -18,24 +31,24 @@ export const inMemoryNonceStore = (): NonceStoreProvider => {
       if (ttlMs == null) {
         throw new Error('nonce_expires_in is required when saving nonce')
       }
-      const expiresAt = new Date().getTime() + ttlMs
+      const expiresAt = now() + ttlMs
       nonceStates.set(nonce.nonce, { nonce, expires_at: expiresAt })
       return
     },
 
     async validate(nonce): Promise<boolean> {
-      const nonceState = nonceStates.get(nonce.nonce)
-      if (!nonceState) {
-        return false
-      }
-      if (new Date().getTime() > nonceState.expires_at) {
-        nonceStates.delete(nonce.nonce)
-        return false
-      }
-      return true
+      return getValidNonceState(nonce) !== null
     },
 
     async revoke(nonce): Promise<boolean> {
+      return nonceStates.delete(nonce.nonce)
+    },
+
+    async consume(nonce): Promise<boolean> {
+      const nonceState = getValidNonceState(nonce)
+      if (!nonceState) {
+        return false
+      }
       return nonceStates.delete(nonce.nonce)
     },
   }
