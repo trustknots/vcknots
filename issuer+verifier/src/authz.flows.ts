@@ -71,7 +71,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           // Check pre-code validity
           const isValid = await codeStore$.validate(tokenRequest['pre-authorized_code'])
           if (!isValid) {
-            throw err('pre_authorized_code_not_found', {
+            throw err('invalid_grant', {
               message: 'The provided pre-authorized code is invalid.',
             })
           }
@@ -111,7 +111,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         }
         case 'authorization_code': {
           // TODO: Implement authorization code flow
-          throw err('feature_not_implemented_yet', {
+          throw err('unsupported_grant_type', {
             message: 'Authorization code flow is not supported.',
           })
         }
@@ -183,4 +183,3 @@ export {
   AuthorizationServerMetadata,
 } from './authorization-server.types'
 export { TokenRequest as AuthzTokenRequest } from './token-request.types'
-

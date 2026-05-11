@@ -41,7 +41,7 @@ export type ErrorCodes =
   | 'credential_configuration_not_found'
   | 'authorization_metadata_not_found'
   | 'offer_not_found'
-  | 'pre_authorized_code_not_found'
+  | 'invalid_grant'
   | 'duplicate_credential_configuration_name'
   | 'unauthorized'
   | 'forbidden'
@@ -58,7 +58,7 @@ export type ErrorCodes =
   | 'internal_server_error'
   | 'illegal_argument'
   | 'illegal_state'
-  | 'feature_not_implemented_yet'
+  | 'unsupported_grant_type'
   | 'provider_not_found'
   | 'issuer_public_key_corrupted'
   | 'issuer_asymmetric_sign_failed'
@@ -83,5 +83,3 @@ export type ErrorCodes =
   | 'request_object_not_found'
   | 'verifier_vp_formats_not_supported'
   | 'unsupported_cryptographic_binding_method'
-
-

@@ -890,7 +890,7 @@ For the type definition of the credential offer, see [issuer+verifier/src/creden
 
 
 **Error cases**:
-- `feature_not_implemented_yet`: An unsupported flow is configured (the authorization code flow is not supported)
+- `unsupported_grant_type`: An unsupported flow is configured (the authorization code flow is not supported)
 - `issuer_not_found`: An unregistered Issuer is configured
 
 #### CredentialConfigurationId{#CredentialConfigurationId}
@@ -962,8 +962,7 @@ Per-header behavior:
 
 **Error cases**:
 - `issuer_not_found`: An unregistered Issuer is configured
-- `provider_not_found`: An unsupported `format` is configured
-- `invalid_request`: `format` is not set
+- `unknown_credential_configuration`: `credential_configuration_id` is not supported
 - `unsupported_credential_type`: The specified `credential_definition` or `proof_type` is not supported
 - `invalid_credential_request`: The `proof` is missing or not supported, or the configuration id is invalid, etc.
 - `invalid_proof`: The `proof` cannot be verified, the header does not conform to OID4VCI JWT proof rules (e.g. `typ` / `alg` / combinations of `kid`, `jwk`, and `x5c`), an unsupported header is set, or a `nonce` is missing
@@ -1073,10 +1072,10 @@ createAccessToken<T extends GrantType>(
 
 **Error cases**:
 - `provider_not_found`: An unsupported algorithm is configured for the private key
-- `pre_authorized_code_not_found`: An invalid pre-authorized code is provided
+- `invalid_grant`: An invalid pre-authorized code is provided
 - `invalid_request`: The authorization server key is not registered, the algorithm is not set, or the grant type is not supported
 - `internal_server_error`: Signing failed
-- `feature_not_implemented_yet`: The authorization code flow is configured (currently not supported)
+- `unsupported_grant_type`: The authorization code flow is configured (currently not supported)
 
 #### TokenRequest{#TokenRequest}
 Defines the type for a credential issuance request. You can configure items such as the credential identifier.
@@ -1135,7 +1134,7 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 - **Q: Metadata validation error**  
   - **A:** Check that the provided metadata conforms to the CredentialIssuerMetadata schema and the AuthorizationServerMetadata schema.
 
-- **Q: Error when creating credential offer**: `feature_not_implemented_yet`  
+- **Q: Error when creating credential offer**: `unsupported_grant_type`  
   - **A:** Make sure you are not calling an unimplemented flow. Currently, only the pre-authorized code flow is supported.
 
 - **Q: Error when issuing credential**: `invalid_proof`  

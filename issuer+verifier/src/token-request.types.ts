@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { err } from './errors/vcknots.error'
 import { PreAuthorizedCode } from './pre-authorized-code.types'
 import { DeepPartialUnknown } from './type.utils'
 export enum GrantType {
@@ -41,14 +42,37 @@ TokenRequestAuthorizationCode.schema = authorizationCodeTokenRequestSchema
 export type TokenRequestPreAuthorizedCode = z.infer<typeof preAuthorizedCodeTokenRequestSchema>
 export const TokenRequestPreAuthorizedCode = (
   value?: DeepPartialUnknown<TokenRequestPreAuthorizedCode>
-) => preAuthorizedCodeTokenRequestSchema.parse(value)
+) => {
+  try {
+    return preAuthorizedCodeTokenRequestSchema.parse(value)
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      throw err('invalid_request', {
+        message: 'Invalid token request parameters.',
+        cause: e,
+      })
+    }
+    throw e
+  }
+}
 
 const tokenRequestSchema = authorizationCodeTokenRequestSchema.or(
   preAuthorizedCodeTokenRequestSchema
 )
 
-export const TokenRequest = (value?: DeepPartialUnknown<TokenRequest>) =>
-  tokenRequestSchema.parse(value)
+export const TokenRequest = (value?: DeepPartialUnknown<TokenRequest>) => {
+  try {
+    return tokenRequestSchema.parse(value)
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      throw err('invalid_request', {
+        message: 'Invalid token request parameters.',
+        cause: e,
+      })
+    }
+    throw e
+  }
+}
 
 TokenRequest.schema = tokenRequestSchema
 

@@ -277,14 +277,14 @@ describe('IssuerFlow', () => {
   const issuer = CredentialIssuer('did:example:issuer')
   const configurations = [CredentialConfigurationId('VerifiableId')]
 
-  it('should throw "feature_not_implemented_yet" if usePreAuth is false', async () => {
+  it('should throw "unsupported_grant_type" if usePreAuth is false', async () => {
     const suspects = async () => {
       return await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: false,
       })
     }
 
-    assert.rejects(suspects, 'feature_not_implemented_yet')
+    assert.rejects(suspects, 'unsupported_grant_type')
   })
 
   it('should throw "issuer_not_found" if issuer metadata is not found when usePreAuth is true', async () => {
@@ -1253,5 +1253,3 @@ describe('IssuerFlow', () => {
     })
   })
 })
-
-

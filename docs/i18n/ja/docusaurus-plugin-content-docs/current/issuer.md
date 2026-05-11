@@ -891,7 +891,7 @@ offerCredential(
 
 
 **エラーケース**:
-- `feature_not_implemented_yet`: 未対応のフローが設定された（認可コードフローには未対応です）
+- `unsupported_grant_type`: 未対応のフローが設定された（認可コードフローには未対応です）
 - `issuer_not_found`: 未登録のIssuerが設定された
 
 #### CredentialConfigurationId{#CredentialConfigurationId}
@@ -964,8 +964,7 @@ keyごとの動き:
 
 **エラーケース**:
 - `issuer_not_found`: 未登録のIssuerが設定された
-- `provider_not_found`:  未対応の`format`が設定された
-- `invalid_request`: `format`が未設定
+- `unknown_credential_configuration`: `credential_configuration_id`がサポートされていない
 - `unsupported_credential_type`: 指定された`credential_definition`もしくは`proof_type`がサポートされていない
 - `invalid_credential_request`: `proof`が見つからないかサポートされていない、設定 ID 不備など
 - `invalid_proof`: `proof`が検証できない、OID4VCI の JWT proof に合わないヘッダ（`typ` / `alg` / `kid`・`jwk`・`x5c` の組み合わせなど）、未サポートの header、`nonce`が見つからない
@@ -1075,10 +1074,10 @@ createAccessToken<T extends GrantType>(
 
 **エラーケース**:
 - `provider_not_found`:  秘密鍵で未対応のアルゴリズムが設定された
-- `pre_authorized_code_not_found`: 有効でない事前認可コードが設定された
+- `invalid_grant`: 有効でない事前認可コードが設定された
 - `invalid_request`: 認可サーバーの鍵が未登録、アルゴリズムが未設定、グラントタイプがサポートされていない
 - `internal_server_error`: 署名に失敗した
-- `feature_not_implemented_yet`: 認可コードフローを設定（現在未対応）
+- `unsupported_grant_type`: 認可コードフローを設定（現在未対応）
 
 #### TokenRequest{#TokenRequest}
 クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。
@@ -1137,7 +1136,7 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 - **Q:メタデータのバリデーションエラー**:
     - **A：** 提供されたメタデータがCredentialIssuerMetadataスキーマ、AuthorizationServerMetadataスキーマに適合しているかを確認してください。
 
-- **Q:クレデンシャルオファーの作成エラー**:`feature_not_implemented_yet`
+- **Q:クレデンシャルオファーの作成エラー**:`unsupported_grant_type`
     - **A：**  未実装のフローを呼び出していないか確認してください。現在対応しているのは事前認可コードフローです。
 
 - **Q:クレデンシャル発行エラー**:`invalid_proof`

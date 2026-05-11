@@ -1,16 +1,15 @@
 import { Hono } from 'hono'
-import { VcknotsContext } from '@trustknots/vcknots'
+import { VcknotsContext, parseRequestObjectId, parseVerifierClientId } from '@trustknots/vcknots'
 import {
-  VerifierRequestObjectId,
   initializeVerifierFlow,
   VerifierAuthorizationResponse,
-  VerifierClientId,
   PresentationExchange,
   VerifierClientIdScheme,
   ClientIdentifier,
 } from '@trustknots/vcknots/verifier'
 import { randomUUID } from 'node:crypto'
 import { handleError } from '../utils/error-handler.js'
+import { err } from '@trustknots/vcknots/errors'
 
 export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
   const verifyApp = new Hono()
@@ -19,20 +18,27 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   const canHandleClientIdScheme: VerifierClientIdScheme[] = ['redirect_uri', 'x509_san_dns']
   function validateClientIdScheme(client_id: string): ClientIdentifier {
-    if (client_id == null || client_id === '') {
-      return 'x509_san_dns:localhost'
+    try {
+      if (client_id == null || client_id === '') {
+        return 'x509_san_dns:localhost'
+      }
+      const m = client_id.match(/^([^:]+):(.+)$/)
+      const prefix = m?.[1]
+      if (!prefix || !canHandleClientIdScheme.includes(prefix as VerifierClientIdScheme)) {
+        throw new Error('Invalid client_id format')
+      }
+      return ClientIdentifier(client_id)
+    } catch (e) {
+      throw err('invalid_request', {
+        message: 'Invalid client_id parameter.',
+        cause: e,
+      })
     }
-    const m = client_id.match(/^([^:]+):(.+)$/)
-    const prefix = m?.[1]
-    if (!prefix || !canHandleClientIdScheme.includes(prefix as VerifierClientIdScheme)) {
-      throw new Error('Invalid client_id format')
-    }
-    return ClientIdentifier(client_id)
   }
 
   verifyApp.post('/:verifier/request', async (c) => {
     try {
-      const verifierId = VerifierClientId(c.req.param('verifier'))
+      const verifierId = parseVerifierClientId(c.req.param('verifier'))
       type Payload = Record<string, unknown>
       const body: Payload = await c.req.json<Payload>().catch(() => ({}))
       const credentialId = ('credentialId' in body ? body.credentialId : undefined) as
@@ -108,7 +114,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   verifyApp.post('/:verifier/callback', async (c) => {
     try {
-      const verifierId = VerifierClientId(c.req.param('verifier'))
+      const verifierId = parseVerifierClientId(c.req.param('verifier'))
       const json = await c.req.json()
 
       // Validate it using the AuthorizationResponse
@@ -201,7 +207,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     }
 
     try {
-      const verifierId = VerifierClientId(c.req.param('verifier'))
+      const verifierId = parseVerifierClientId(c.req.param('verifier'))
       const request = await verifierFlow.createAuthzRequest(
         verifierId,
         'vp_token',
@@ -231,8 +237,8 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   verifyApp.get('/:verifier/request.jwt/:request-object-Id', async (c) => {
     try {
-      const verifierId = VerifierClientId(c.req.param('verifier'))
-      const requestObjectId = VerifierRequestObjectId(c.req.param('request-object-Id'))
+      const verifierId = parseVerifierClientId(c.req.param('verifier'))
+      const requestObjectId = parseRequestObjectId(c.req.param('request-object-Id'))
       const jar = await verifierFlow.findRequestObject(verifierId, requestObjectId)
       return c.body(jar, 200, {
         'Content-Type': 'application/oauth-authz-req+jwt',

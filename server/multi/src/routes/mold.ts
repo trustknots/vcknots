@@ -1,11 +1,7 @@
-import { VcknotsContext } from '@trustknots/vcknots'
+import { VcknotsContext, parseVerifierClientId } from '@trustknots/vcknots'
 import { CredentialIssuerMetadata, initializeIssuerFlow } from '@trustknots/vcknots/issuer'
 import { AuthorizationServerMetadata, initializeAuthzFlow } from '@trustknots/vcknots/authz'
-import {
-  initializeVerifierFlow,
-  VerifierClientId,
-  VerifierMetadata,
-} from '@trustknots/vcknots/verifier'
+import { initializeVerifierFlow, VerifierMetadata } from '@trustknots/vcknots/verifier'
 import { Hono } from 'hono'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -43,7 +39,7 @@ export const createMoldRouter = (context: VcknotsContext, baseUrl: string) => {
 
   moldApp.post('/verifiers/:verifier/metadata', async (c) => {
     try {
-      const verfierId = VerifierClientId(c.req.param('verifier'))
+      const verfierId = parseVerifierClientId(c.req.param('verifier'))
       const json = await c.req.json()
       const metadata = VerifierMetadata(json)
 

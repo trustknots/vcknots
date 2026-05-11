@@ -1,8 +1,7 @@
 import { Hono } from 'hono'
-import { VcknotsContext } from '@trustknots/vcknots'
+import { parseRequestObjectId, VcknotsContext } from '@trustknots/vcknots'
 import {
   VerifierClientIdScheme,
-  VerifierRequestObjectId,
   initializeVerifierFlow,
   VerifierAuthorizationResponse,
   VerifierClientId,
@@ -12,6 +11,7 @@ import {
 import { randomUUID } from 'node:crypto'
 import { handleError } from '../utils/error-handler.js'
 import { createDirectPostVpAudTransactionStore } from '../utils/direct-post-vp-aud-transaction-store.js'
+import { err } from '@trustknots/vcknots/errors'
 
 export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
   const verifyApp = new Hono()
@@ -51,15 +51,22 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   const canHandleClientIdScheme: VerifierClientIdScheme[] = ['redirect_uri', 'x509_san_dns']
   function validateClientIdScheme(client_id: string): ClientIdentifier {
-    if (client_id == null || client_id === '') {
-      return 'x509_san_dns:localhost'
+    try {
+      if (client_id == null || client_id === '') {
+        return 'x509_san_dns:localhost'
+      }
+      const m = client_id.match(/^([^:]+):(.+)$/)
+      const prefix = m?.[1]
+      if (!prefix || !canHandleClientIdScheme.includes(prefix as VerifierClientIdScheme)) {
+        throw new Error('Invalid client_id format')
+      }
+      return ClientIdentifier(client_id)
+    } catch (e) {
+      throw err('invalid_request', {
+        message: 'Invalid client_id parameter.',
+        cause: e,
+      })
     }
-    const m = client_id.match(/^([^:]+):(.+)$/)
-    const prefix = m?.[1]
-    if (!prefix || !canHandleClientIdScheme.includes(prefix as VerifierClientIdScheme)) {
-      throw new Error('Invalid client_id format')
-    }
-    return ClientIdentifier(client_id)
   }
 
   verifyApp.post('/request', async (c) => {
@@ -375,7 +382,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     try {
       console.log('request-object-Id:', c.req.param('request-object-Id'))
       const verifierId = VerifierClientId(baseUrl)
-      const requestObjectId = VerifierRequestObjectId(c.req.param('request-object-Id'))
+      const requestObjectId = parseRequestObjectId(c.req.param('request-object-Id'))
       const jar = await verifierFlow.findRequestObject(verifierId, requestObjectId)
       return c.body(jar, 200, {
         'Content-Type': 'application/oauth-authz-req+jwt',

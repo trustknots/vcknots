@@ -1,11 +1,11 @@
-import { VcknotsContext } from '@trustknots/vcknots'
 import {
-  CredentialConfigurationId,
-  CredentialIssuer,
-  CredentialRequest,
-  initializeIssuerFlow,
-} from '@trustknots/vcknots/issuer'
-import { AuthorizationServerIssuer, initializeAuthzFlow } from '@trustknots/vcknots/authz'
+  VcknotsContext,
+  parseAuthorizationServerIssuer,
+  parseCredentialIssuer,
+  parseCredentialConfigurationId,
+} from '@trustknots/vcknots'
+import { CredentialRequest, initializeIssuerFlow } from '@trustknots/vcknots/issuer'
+import { initializeAuthzFlow } from '@trustknots/vcknots/authz'
 import { VcknotsError } from '@trustknots/vcknots/errors'
 import { parseAuthorizationHeader } from '@trustknots/server-core/utils/authorization-header.js'
 import { buildBearerAuthenticateHeader } from '@trustknots/server-core/utils/www-authenticate.js'
@@ -37,8 +37,8 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
 
   issueApp.post('/:issuer/configurations/:configuration/offer', async (c) => {
     try {
-      const issuer = CredentialIssuer(c.req.param('issuer'))
-      const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
+      const issuer = parseCredentialIssuer(c.req.param('issuer'))
+      const configurations = [parseCredentialConfigurationId(c.req.param('configuration'))]
 
       // It only accepts a domain as an argument
       const offer = await issuerFlow.offerCredential(issuer, configurations, {
@@ -62,8 +62,8 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
     }
 
     try {
-      const issuer = CredentialIssuer(c.req.param('issuer'))
-      const authz = AuthorizationServerIssuer(c.req.param('issuer'))
+      const issuer = parseCredentialIssuer(c.req.param('issuer'))
+      const authz = parseAuthorizationServerIssuer(c.req.param('issuer'))
       const realm = c.req.param('issuer')
 
       // Verify AccessToken
@@ -132,7 +132,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
 
   issueApp.get('/:issuer/.well-known/openid-credential-issuer', async (c) => {
     try {
-      const issuer = CredentialIssuer(c.req.param('issuer'))
+      const issuer = parseCredentialIssuer(c.req.param('issuer'))
       const metadata = await issuerFlow.findIssuerMetadata(issuer)
       if (!metadata) {
         return c.json(
@@ -151,7 +151,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
 
   issueApp.get('/:issuer/.well-known/jwt-vc-issuer', async (c) => {
     try {
-      const issuer = CredentialIssuer(c.req.param('issuer'))
+      const issuer = parseCredentialIssuer(c.req.param('issuer'))
       const metadata = await issuerFlow.findJwtVcIssuerMetadata(issuer)
       if (!metadata) {
         return c.json(

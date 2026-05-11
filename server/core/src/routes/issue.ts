@@ -1,6 +1,5 @@
-import { VcknotsContext } from '@trustknots/vcknots'
+import { VcknotsContext, parseCredentialConfigurationId } from '@trustknots/vcknots'
 import {
-  CredentialConfigurationId,
   CredentialRequest,
   CredentialIssuer,
   initializeIssuerFlow,
@@ -38,7 +37,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   issueApp.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
-      const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
+      const configurations = [parseCredentialConfigurationId(c.req.param('configuration'))]
 
       // It only accepts a domain as an argument
       const offer = await issuerFlow.offerCredential(issuer, configurations, {

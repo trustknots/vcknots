@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { proofsSchema } from './proofs.types'
+import { err } from './errors/vcknots.error'
 
 // https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#appendix-A.1
 export enum CredentialFormats {
@@ -44,4 +45,16 @@ export const CredentialRequest = (value?: {
     alg: string
     zip?: string
   }
-}) => credentialRequestSchema.parse(value)
+}) => {
+  try {
+    return credentialRequestSchema.parse(value)
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      throw err('invalid_request', {
+        message: 'Invalid credential request parameters.',
+        cause: e,
+      })
+    }
+    throw e
+  }
+}

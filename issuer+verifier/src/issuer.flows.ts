@@ -190,7 +190,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
     },
     async offerCredential(issuer, configurations, options) {
       if (options && !options.usePreAuth) {
-        throw err('feature_not_implemented_yet', {
+        throw err('unsupported_grant_type', {
           message: 'Authorization code flow is not supported.',
         })
       }
