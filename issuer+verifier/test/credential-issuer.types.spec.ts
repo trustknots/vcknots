@@ -5,7 +5,7 @@ import {
   CredentialConfigurationId,
   CredentialIssuer,
   CredentialIssuerMetadata,
-} from '../../src/credential-issuer.types'
+} from '../src/credential-issuer.types'
 
 describe('credential-issuer.type', () => {
   describe('CredentialIssuer', () => {
