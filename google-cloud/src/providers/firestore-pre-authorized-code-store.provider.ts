@@ -1,5 +1,4 @@
 import { PreAuthorizedCodeStoreProvider } from '@trustknots/vcknots/providers'
-import { CredentialConfigurationId } from '@trustknots/vcknots'
 import { Timestamp } from 'firebase-admin/firestore'
 import { FirestoreProviderOptions, resolveFirestore } from './firestore.provider'
 
@@ -14,32 +13,22 @@ export const firestorePreAuthorizedCodeStore = (
     name: 'firestore-pre-authorized-code-store-provider',
     single: true,
 
-    async save(code, credentialConfigurationIds) {
-      const expiresAt = Timestamp.fromMillis(
-        new Date().getTime() + (options?.expiresIn ?? 60 * 5 * 1000)
-      ) // 5 minutes
+    async save(code) {
+      const expiresAt = Timestamp.fromMillis(new Date().getTime() + (options?.expiresIn ?? 60 * 5 * 1000)) // 5 minutes
       const docRef = firestore.doc(`${ns}/v1/preCodes/${code}`)
-      await docRef.set({
-        code,
-        credential_configuration_ids: credentialConfigurationIds,
-        expires_at: expiresAt,
-      })
+      await docRef.set({ code, expires_at: expiresAt })
     },
     async validate(code) {
       const doc = await firestore.doc(`${ns}/v1/preCodes/${code}`).get()
       if (!doc.exists) {
-        return null
+        return false
       }
-      // const { expires_at } = doc.data() as { expires_at: Timestamp }
-      const data = doc.data() as {
-        expires_at: Timestamp
-        credential_configuration_ids?: CredentialConfigurationId[]
-      }
-      if (new Date().getTime() > data.expires_at.toMillis()) {
+      const { expires_at } = doc.data() as { expires_at: Timestamp }
+      if (new Date().getTime() > expires_at.toMillis()) {
         await firestore.doc(`${ns}/v1/preCodes/${code}`).delete()
-        return null
+        return false
       }
-      return data.credential_configuration_ids || null
+      return true
     },
     async delete(code) {
       await firestore.doc(`${ns}/v1/preCodes/${code}`).delete()

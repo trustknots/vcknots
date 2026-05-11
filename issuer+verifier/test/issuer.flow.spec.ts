@@ -456,10 +456,7 @@ describe('IssuerFlow', () => {
       )
 
       // 2. Act
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
-        alg: 'ES256',
-        credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
-      })
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' })
 
       // 3. Assert
       assert.ok(response)
@@ -516,10 +513,7 @@ describe('IssuerFlow', () => {
         (type) => type === ProofTypes.JWT
       )
 
-      await issuerFlow.issueCredential(issuer, credentialRequest, {
-        alg: 'ES256',
-        credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
-      })
+      await issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' })
 
       assert.equal(mockCredentialProofProvider.verifyProof.mock.callCount(), 1)
       const verifyArgs = mockCredentialProofProvider.verifyProof.mock.calls[0].arguments
@@ -568,7 +562,6 @@ describe('IssuerFlow', () => {
 
       await issuerFlow.issueCredential(issuer, credentialRequest, {
         alg: 'ES256',
-        credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
         proofJwt: { usePreAuth: true },
       })
 
@@ -616,7 +609,6 @@ describe('IssuerFlow', () => {
       await issuerFlow.issueCredential(issuer, credentialRequest, {
         alg: 'ES256',
         proofJwt: { usePreAuth: false, clientId: 'oauth-client-1' },
-        credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
       })
 
       assert.deepStrictEqual(mockCredentialProofProvider.verifyProof.mock.calls[0].arguments[1], {
@@ -682,7 +674,6 @@ describe('IssuerFlow', () => {
       const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
         alg: 'ES256',
         claims,
-        credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
       })
 
       // 3. Assert
@@ -807,56 +798,6 @@ describe('IssuerFlow', () => {
       )
     })
 
-    it('should throw "INVALID_TOKEN" if access token is not bound to requested credential configuration id', async () => {
-      const issuer = CredentialIssuer('did:example:issuer')
-      const metadata: CredentialIssuerMetadata = {
-        credential_issuer: issuer,
-        credential_endpoint: 'https://example.com/credentials',
-        credential_configurations_supported: {
-          University_Degree: {
-            format: CredentialFormats.JWT_VC_JSON,
-            credential_definition: {
-              type: ['VerifiableCredential', 'UniversityDegreeCredential'],
-            },
-            credential_signing_alg_values_supported: ['ES256'],
-            proof_types_supported: {
-              jwt: {
-                proof_signing_alg_values_supported: ['ES256K'],
-              },
-            },
-          },
-          VerifiableId: {
-            format: CredentialFormats.JWT_VC_JSON,
-            credential_definition: {
-              type: ['VerifiableCredential', 'VerifiableId'],
-            },
-            credential_signing_alg_values_supported: ['ES256'],
-            proof_types_supported: {
-              jwt: {
-                proof_signing_alg_values_supported: ['ES256K'],
-              },
-            },
-          },
-        },
-      }
-      const credentialRequest = createCredentialRequest({
-        proofs: { jwt: ['dummy-jwt'] },
-      })
-
-      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
-
-      await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, {
-          alg: 'ES256',
-          credentialConfigurationId: [CredentialConfigurationId('VerifiableId')],
-        }),
-        {
-          name: 'INVALID_TOKEN',
-          message: 'Access token is not bound to the requested credential_configuration_id.',
-        }
-      )
-    })
-
     it('should throw "INVALID_CREDENTIAL_REQUEST" if proofs are missing', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
@@ -877,16 +818,10 @@ describe('IssuerFlow', () => {
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
 
       // 2. Act & 3. Assert
-      await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, {
-          alg: 'ES256',
-          credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
-        }),
-        {
-          name: 'INVALID_CREDENTIAL_REQUEST',
-          message: 'Proof is required to issue credential.',
-        }
-      )
+      await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
+        name: 'INVALID_CREDENTIAL_REQUEST',
+        message: 'Proof is required to issue credential.',
+      })
     })
 
     it('should throw if proofs object has no supported proof entries', async () => {
@@ -909,15 +844,9 @@ describe('IssuerFlow', () => {
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
 
       // 2. Act & 3. Assert
-      await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, {
-          alg: 'ES256',
-          credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
-        }),
-        {
-          message: 'Unsupported proof type',
-        }
-      )
+      await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
+        message: 'Unsupported proof type',
+      })
     })
 
     it('should throw "INVALID_CREDENTIAL_REQUEST" if proof type is not supported in metadata', async () => {
@@ -939,16 +868,10 @@ describe('IssuerFlow', () => {
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
 
       // 2. Act & 3. Assert
-      await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, {
-          alg: 'ES256',
-          credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
-        }),
-        {
-          name: 'INVALID_CREDENTIAL_REQUEST',
-          message: 'Request contain no proofs supported by credential configuration.',
-        }
-      )
+      await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
+        name: 'INVALID_CREDENTIAL_REQUEST',
+        message: 'Request contain no proofs supported by credential configuration.',
+      })
     })
 
     it('should throw "INVALID_PROOF" if proof verification fails', async () => {
@@ -975,16 +898,10 @@ describe('IssuerFlow', () => {
       )
 
       // 2. Act & 3. Assert
-      await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, {
-          alg: 'ES256',
-          credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
-        }),
-        {
-          name: 'INVALID_PROOF',
-          message: 'Failed to verify Proof.',
-        }
-      )
+      await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
+        name: 'INVALID_PROOF',
+        message: 'Failed to verify Proof.',
+      })
     })
 
     it('should issue a credential when verified proof header has no kid (e.g. jwk/x5c binding)', async () => {
@@ -1018,10 +935,7 @@ describe('IssuerFlow', () => {
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
 
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
-        alg: 'ES256',
-        credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
-      })
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' })
 
       assert.ok(response)
       assert.equal(response.credentials?.[0]?.credential, signedCredential)
@@ -1071,7 +985,6 @@ describe('IssuerFlow', () => {
       // 2. Act
       const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
         alg: 'ES256',
-        credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
         cnonce: { c_nonce_expires_in: 300 },
       })
 
@@ -1129,7 +1042,6 @@ describe('IssuerFlow', () => {
       // 2. Act
       const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
         alg: 'ES256',
-        credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
         cnonce: { c_nonce_expires_in: 300 },
       })
 
@@ -1178,7 +1090,6 @@ describe('IssuerFlow', () => {
         issuerFlow.issueCredential(issuer, credentialRequest, {
           alg: 'ES256',
           cnonce: { c_nonce_expires_in: 300 },
-          credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
         }),
         { name: 'INVALID_NONCE', message: 'Nonce not found.' }
       )
@@ -1219,10 +1130,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, {
-          alg: 'RS256',
-          credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
-        }), // Requesting unsupported alg
+        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'RS256' }), // Requesting unsupported alg
         { name: 'UNSUPPORTED_ISSUER_KEY_ALG' }
       )
     })
@@ -1261,10 +1169,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, {
-          alg: 'ES256',
-          credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
-        }),
+        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
         { name: 'AUTHZ_ISSUER_KEY_NOT_FOUND' }
       )
     })
@@ -1300,10 +1205,7 @@ describe('IssuerFlow', () => {
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
 
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
-        alg: 'ES256',
-        credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
-      })
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' })
 
       assert.deepStrictEqual(response, {
         credentials: [{ credential: issuedCredential }],
@@ -1343,10 +1245,7 @@ describe('IssuerFlow', () => {
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
 
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
-        alg: 'ES256',
-        credentialConfigurationId: [CredentialConfigurationId('University_Degree')],
-      })
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' })
 
       assert.deepStrictEqual(response, {
         credentials: [{ credential: issuedCredential }],

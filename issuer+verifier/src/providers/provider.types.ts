@@ -169,7 +169,7 @@ export type VerifyVerifiablePresentationVerifyOptions =
       expectedNonce?: string
       expectedTransactionDataHashes?: string[]
     }
-// | {
+  // | {
 //     kind: 'dc+sd-jwt'
 //     specifiedDisclosures?: string[]
 //     isKbJwt?: boolean
@@ -270,13 +270,9 @@ export type PreAuthorizedCodeStoreProvider = {
   name: string
   single: true
 
-  save(
-    code: PreAuthorizedCode,
-    credentialConfigurationIds: CredentialConfigurationId[],
-    options?: { ttlSec: number }
-  ): Promise<void>
+  save(code: PreAuthorizedCode, options?: { ttlSec: number }): Promise<void>
   // FIXME: validation logic is a kind of business logic. so we need to move this function into [PreAuthorizedCodeProvider]
-  validate(code: PreAuthorizedCode): Promise<CredentialConfigurationId[] | null>
+  validate(code: PreAuthorizedCode): Promise<boolean>
   delete(code: PreAuthorizedCode): Promise<void>
 }
 
@@ -288,7 +284,6 @@ export type AccessTokenProvider = {
   createTokenPayload(
     authz: AuthorizationServerIssuer,
     code: PreAuthorizedCode,
-    credentialConfigurationIds?: CredentialConfigurationId[],
     options?: { ttlSec: number }
   ): Promise<JwtPayload>
 }

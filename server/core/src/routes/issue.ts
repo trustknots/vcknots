@@ -11,7 +11,6 @@ import { Context, Hono } from 'hono'
 import { parseAuthorizationHeader } from '../utils/authorization-header.js'
 import { handleError } from '../utils/error-handler.js'
 import { buildBearerAuthenticateHeader } from '../utils/www-authenticate.js'
-import { JwtPayload } from '@trustknots/vcknots'
 
 export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   const issueApp = new Hono()
@@ -89,9 +88,9 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         })
       }
 
-      let accessTokenPayload: JwtPayload
+      let isValid: boolean
       try {
-        accessTokenPayload = await authzFlow.verifyAccessToken(authz, authorization.value.token)
+        isValid = await authzFlow.verifyAccessToken(authz, authorization.value.token)
       } catch (err) {
         if (err instanceof VcknotsError && err.name === 'INVALID_ACCESS_TOKEN') {
           return unauthorized(
@@ -105,14 +104,18 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         }
         throw err
       }
-
+      if (!isValid) {
+        return unauthorized(
+          c,
+          {
+            error: 'invalid_token',
+            error_description: 'Access token is invalid.',
+          },
+          { error: 'invalid_token' }
+        )
+      }
       const request = await c.req.json()
       const parse = CredentialRequest(request)
-
-      const allowedConfigurationIds = Array.isArray(accessTokenPayload.credential_configuration_ids)
-        ? accessTokenPayload.credential_configuration_ids
-        : []
-
       // Issue Credential
       const credential = await issuerFlow.issueCredential(issuer, parse, {
         alg: 'ES256',
@@ -121,7 +124,6 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         },
         claims: issueClaimsSample,
         proofJwt: { usePreAuth: true },
-        credentialConfigurationId: allowedConfigurationIds,
       })
       return c.json(credential)
     } catch (err) {
