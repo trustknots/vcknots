@@ -73,7 +73,7 @@ To start this server, follow the steps below.
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
 
-   `DPOP_MODE` controls DPoP behavior for both the token endpoint and the credential endpoint via `@trustknots/server-core`. **`off`**: no DPoP is required. **`optional`**: on the token endpoint, the server verifies DPoP and issues a bound access token only when a `DPoP` header is present (invalid proofs other than omission yield `invalid_request`); on the credential endpoint, non–sender-bound tokens may use Bearer-only `Authorization`, while tokens carrying **`cnf.jkt`** require `Authorization: DPoP` and a `DPoP` header. **`required`**: both token and credential requests require `Authorization: DPoP` and a `DPoP` header (Bearer-only is rejected). For details see the [Issuer documentation](https://trustknots.github.io/vcknots/docs/issuer) and the [single-server README](../single/README.md#post-credentials); this Google Cloud deployment also uses `@trustknots/server-core`.
+   `DPOP_MODE` controls DPoP behavior for both the token endpoint and the credential endpoint via **`@trustknots/server-core`**. The Google Cloud server uses the same `server-core` implementation as the single server, so see the [`DPOP_MODE` description in the single-server README](../single/README.md#post-token) for mode-specific behavior, nonce challenges, and error responses.
 
 2. **Install Dependencies** (Run from root directory)
 
@@ -167,9 +167,7 @@ The server starts on `http://localhost:8080` by default.
 - [`POST /token`](../single/README.md#post-token) - Token endpoint
 - [`GET /.well-known/oauth-authorization-server`](../single/README.md#get-well-knownoauth-authorization-server) - Get Authorization Server metadata
 
-`POST /token` verifies DPoP Proof according to `DPOP_MODE`. If the DPoP Proof has no `nonce`, or the nonce is invalid, the server returns `use_dpop_nonce` with a `DPoP-Nonce` response header. When verification succeeds, the server issues a DPoP-bound access token with `token_type: "DPoP"`, and the access token contains `cnf.jkt`, the JWK Thumbprint of the public key.
-
-The Google Cloud server uses a Firestore Provider to prevent `jti` replay for DPoP Proofs. The storage key is the combination of the DPoP Proof public key thumbprint and `jti`.
+`POST /token` and `POST /credentials` follow `DPOP_MODE` for DPoP behavior. See the [single-server README](../single/README.md#post-token) for mode-specific behavior, nonce challenges, and error responses.
 
 #### Verifier
 

@@ -73,7 +73,7 @@ google-cloud/
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
 
-   `DPOP_MODE` は **`@trustknots/server-core`** 経由で、**token endpoint** と **credential endpoint** の両方の DPoP 挙動を制御します。**`off`** では DPoP を要求しません。**`optional`** では、token 側は DPoP ヘッダーがあるときだけ proof を検証して DPoP-bound access token を発行し（欠落以外の不正な DPoP は `invalid_request`）、credential 側は送信者拘束のないトークンなら `Authorization: Bearer` のみでよく、**`cnf.jkt` 付きトークンは `Authorization: DPoP` と `DPoP` ヘッダーが必須**です。**`required`** では token も credential も **`Authorization: DPoP` と `DPoP` ヘッダーが常に必要**です（Bearer のみは拒否されます）。詳細は [Issuer ドキュメント](https://trustknots.github.io/vcknots/ja/docs/issuer) と [シングルサーバー README](../single/README.ja.md#post-credentials) を参照してください（この Google Cloud 版も `@trustknots/server-core` を経由します）。
+   `DPOP_MODE` は **`@trustknots/server-core`** 経由で、**token endpoint** と **credential endpoint** の両方の DPoP 挙動を制御します。Google Cloud 版も single server と同じ `server-core` 実装を利用するため、mode 別の挙動、nonce challenge、エラー応答の詳細は [シングルサーバー README](../single/README.ja.md#post-token) の `DPOP_MODE` 説明を参照してください。
 
 2. **依存関係をインストール（ルートで実行）**
 
@@ -167,9 +167,7 @@ Authz metadata initialized
 - [`POST /token`](../single/README.md#post-token) - トークンエンドポイント
 - [`GET /.well-known/oauth-authorization-server`](../single/README.md#get-well-knownoauth-authorization-server) - Authorization Server メタデータを取得
 
-`POST /token` は `DPOP_MODE` に従って DPoP Proof を検証します。DPoP Proof に `nonce` がない、または nonce が無効な場合は `DPoP-Nonce` レスポンスヘッダー付きで `use_dpop_nonce` を返します。検証に成功した場合は `token_type: "DPoP"` の DPoP-bound access token を発行し、access token には公開鍵の JWK Thumbprint が `cnf.jkt` として含まれます。
-
-Google Cloud 版では、DPoP Proof の `jti` リプレイ防止に Firestore Provider を利用します。保存キーは DPoP Proof の公開鍵 thumbprint と `jti` の組み合わせです。
+`POST /token` と `POST /credentials` の DPoP 挙動は `DPOP_MODE` に従います。mode 別の挙動、nonce challenge、エラー応答の詳細は [シングルサーバー README](../single/README.ja.md#post-token) を参照してください。
 
 #### Verifier
 

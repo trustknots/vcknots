@@ -302,15 +302,17 @@ pre-authorized_code={pre_authorized_code}
 }
 ```
 
-`DPOP_MODE` controls DPoP Proof verification at the token endpoint.
+`DPOP_MODE` controls DPoP behavior for both the token endpoint and the credential endpoint via `@trustknots/server-core`.
 
-| `DPOP_MODE` | Behavior |
-|-------------|----------|
-| `off` | DPoP is not used. The server issues a Bearer access token. |
-| `optional` | If the DPoP header is absent, the server issues a Bearer access token. If the DPoP header is present, the server verifies the proof and issues a DPoP-bound access token. Malformed DPoP (present but invalid) yields `invalid_request`. |
-| `required` | The DPoP header is required. A missing or malformed DPoP header results in `invalid_request`. |
+| `DPOP_MODE` | token endpoint | credential endpoint |
+|-------------|----------------|---------------------|
+| `off` | DPoP is not used. The server issues a Bearer access token. | DPoP is not used. `Authorization: DPoP` or a `DPoP` header is rejected. |
+| `optional` | If the `DPoP` header is absent, the server issues a Bearer access token. If the `DPoP` header is present, the server verifies the proof and issues a DPoP-bound access token. | Tokens without sender binding may use `Authorization: Bearer`. Tokens carrying `cnf.jkt` require `Authorization: DPoP` and a `DPoP` header. |
+| `required` | The `DPoP` header is required. | `Authorization: DPoP` and a `DPoP` header are required. Bearer-only requests are rejected. |
 
-If the DPoP Proof has no `nonce`, or the nonce is invalid, the server returns **HTTP 400** with **`DPoP-Nonce`** and JSON `use_dpop_nonce`. The token endpoint response does **not** include `WWW-Authenticate`; the credential endpoint may return **401** with **`WWW-Authenticate: DPoP`**. Details are covered in the [Issuer documentation](https://trustknots.github.io/vcknots/docs/issuer).
+DPoP nonce errors are handled with `use_dpop_nonce` and a `DPoP-Nonce` response header, not as `invalid_request` or `invalid_dpop_proof`. Nonce-unrelated malformed proofs or signature verification failures are returned as `invalid_request` or `invalid_dpop_proof`, depending on the endpoint.
+
+At the token endpoint, if the DPoP Proof has no `nonce`, or the nonce is invalid, the server returns **HTTP 400** with a **`DPoP-Nonce` header** and JSON `use_dpop_nonce`. The token endpoint response does **not** include `WWW-Authenticate` in the current implementation.
 
 ```http
 HTTP/1.1 400 Bad Request
@@ -322,6 +324,22 @@ Content-Type: application/json
 {
   "error": "use_dpop_nonce",
   "error_description": "Authorization server requires nonce in DPoP proof."
+}
+```
+
+At the credential endpoint, if the DPoP Proof has no `nonce`, or the nonce is invalid, the server returns **HTTP 401** with a **`DPoP-Nonce` header**, `WWW-Authenticate: DPoP`, and JSON `use_dpop_nonce`.
+
+```http
+HTTP/1.1 401 Unauthorized
+DPoP-Nonce: <nonce>
+WWW-Authenticate: DPoP realm="http://localhost:8080", error="use_dpop_nonce", error_description="Credential issuer requires nonce in DPoP proof."
+Content-Type: application/json
+```
+
+```json
+{
+  "error": "use_dpop_nonce",
+  "error_description": "Credential issuer requires nonce in DPoP proof."
 }
 ```
 

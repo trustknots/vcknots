@@ -301,15 +301,17 @@ pre-authorized_code={pre_authorized_code}
 }
 ```
 
-`DPOP_MODE` により、token endpoint の DPoP Proof 検証を制御できます。
+`DPOP_MODE` は `@trustknots/server-core` 経由で、token endpoint と credential endpoint の両方の DPoP 挙動を制御します。
 
-| `DPOP_MODE` | 挙動 |
-|-------------|------|
-| `off` | DPoP を利用せず、Bearer access token を発行します。 |
-| `optional` | DPoP ヘッダーがない場合は Bearer access token を発行します。DPoP ヘッダーがある場合は proof を検証し、DPoP-bound access token を発行します。不正な DPoP（欠落でもない）は `invalid_request` になります。 |
-| `required` | DPoP ヘッダーを必須にします。未指定または不正な DPoP ヘッダーは `invalid_request` になります。 |
+| `DPOP_MODE` | token endpoint | credential endpoint |
+|-------------|----------------|---------------------|
+| `off` | DPoP を利用せず、Bearer access token を発行します。 | DPoP を利用しません。`Authorization: DPoP` または `DPoP` ヘッダーは拒否します。 |
+| `optional` | `DPoP` ヘッダーがない場合は Bearer access token を発行します。`DPoP` ヘッダーがある場合は proof を検証し、DPoP-bound access token を発行します。 | sender binding のない token は `Authorization: Bearer` で利用できます。`cnf.jkt` 付き token は `Authorization: DPoP` と `DPoP` ヘッダーが必要です。 |
+| `required` | `DPoP` ヘッダーが必須です。 | `Authorization: DPoP` と `DPoP` ヘッダーが必須です。Bearer のみは拒否されます。 |
 
-DPoP Proof に `nonce` がない、または nonce が無効な場合は、**HTTP 400** と **`DPoP-Nonce` ヘッダー**、JSON `use_dpop_nonce` を返します（token endpoint は現行実装では `WWW-Authenticate` は付けません。credential は 401 と `WWW-Authenticate: DPoP` の組み合わせになる場合があります。詳細は Issuer ドキュメント）。
+nonce に関する DPoP エラーは `invalid_request` / `invalid_dpop_proof` ではなく、`use_dpop_nonce` と `DPoP-Nonce` ヘッダーで処理されます。nonce 以外の malformed proof や署名検証失敗などは、endpoint に応じて `invalid_request` または `invalid_dpop_proof` として返されます。
+
+token endpoint で DPoP Proof に `nonce` がない、または nonce が無効な場合は、**HTTP 400** と **`DPoP-Nonce` ヘッダー**、JSON `use_dpop_nonce` を返します（token endpoint は現行実装では `WWW-Authenticate` は付けません）。
 
 ```http
 HTTP/1.1 400 Bad Request
@@ -321,6 +323,22 @@ Content-Type: application/json
 {
   "error": "use_dpop_nonce",
   "error_description": "Authorization server requires nonce in DPoP proof."
+}
+```
+
+credential endpoint で DPoP Proof に `nonce` がない、または nonce が無効な場合は、**HTTP 401** と **`DPoP-Nonce` ヘッダー**、`WWW-Authenticate: DPoP`、JSON `use_dpop_nonce` を返します。
+
+```http
+HTTP/1.1 401 Unauthorized
+DPoP-Nonce: <nonce>
+WWW-Authenticate: DPoP realm="http://localhost:8080", error="use_dpop_nonce", error_description="Credential issuer requires nonce in DPoP proof."
+Content-Type: application/json
+```
+
+```json
+{
+  "error": "use_dpop_nonce",
+  "error_description": "Credential issuer requires nonce in DPoP proof."
 }
 ```
 
