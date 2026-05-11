@@ -22,7 +22,7 @@ function normalizeHtu(value: string): string {
   try {
     normalized = new URL(value)
   } catch (error) {
-    throw raise('INVALID_DPOP_PROOF', {
+    throw raise('invalid_dpop_proof', {
       message: 'DPoP proof JWT htu claim must be a valid absolute URI.',
       cause: error,
     })
@@ -47,8 +47,7 @@ export type DPoPProofFactoryOptions = {
 }
 
 export const dpopProof = (factoryOptions?: DPoPProofFactoryOptions): DPoPProofProvider => {
-  const maxTokenAge =
-    factoryOptions?.maxTokenAgeSeconds ?? DEFAULT_DPOP_PROOF_MAX_TOKEN_AGE_SECONDS
+  const maxTokenAge = factoryOptions?.maxTokenAgeSeconds ?? DEFAULT_DPOP_PROOF_MAX_TOKEN_AGE_SECONDS
   const clockTolerance =
     factoryOptions?.clockToleranceSeconds ?? DEFAULT_DPOP_PROOF_CLOCK_TOLERANCE_SECONDS
   const proofJtiTtlMs = (maxTokenAge + clockTolerance) * 1000
@@ -63,24 +62,24 @@ export const dpopProof = (factoryOptions?: DPoPProofFactoryOptions): DPoPProofPr
       const proofHeader = decodeProtectedHeader(proofJwt)
       const proofAlg = proofHeader.alg
       if (typeof proofAlg !== 'string' || isProhibitedDpopProofAlg(proofAlg)) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT alg must be an asymmetric signature algorithm.',
         })
       }
       if (proofHeader.typ !== DPOP_PROOF_TYP) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: `DPoP proof JWT typ must be "${DPOP_PROOF_TYP}".`,
         })
       }
 
       const jwk = proofHeader.jwk
       if (jwk === null || typeof jwk !== 'object' || Array.isArray(jwk)) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT header must contain a public JWK.',
         })
       }
       if ('d' in jwk && jwk.d !== undefined) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT header jwk must not contain a private key.',
         })
       }
@@ -89,7 +88,7 @@ export const dpopProof = (factoryOptions?: DPoPProofFactoryOptions): DPoPProofPr
       try {
         verificationKey = await importJWK(jwk as JsonWebKey, proofAlg)
       } catch (error) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message:
             error instanceof Error
               ? `Failed to import DPoP proof JWK: ${error.message}`
@@ -104,7 +103,7 @@ export const dpopProof = (factoryOptions?: DPoPProofFactoryOptions): DPoPProofPr
         maxTokenAge,
         clockTolerance,
       }).catch((error: unknown) => {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message:
             error instanceof Error
               ? `DPoP proof JWT verification failed: ${error.message}`
@@ -115,32 +114,32 @@ export const dpopProof = (factoryOptions?: DPoPProofFactoryOptions): DPoPProofPr
 
       const payload = verifiedProof.payload
       if (typeof payload.jti !== 'string' || payload.jti.trim().length === 0) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT jti claim is required.',
         })
       }
       if (typeof payload.iat !== 'number') {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT iat claim is required.',
         })
       }
       if (typeof payload.htm !== 'string' || payload.htm !== context.htm.toUpperCase()) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT htm claim does not match the HTTP method.',
         })
       }
       if (typeof payload.htu !== 'string') {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT htu claim is required.',
         })
       }
       if (normalizeHtu(payload.htu) !== normalizeHtu(context.htu)) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT htu claim does not match the target URI.',
         })
       }
       if (context.nonce !== undefined && payload.nonce !== context.nonce) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT nonce claim does not match the expected nonce.',
         })
       }

@@ -103,14 +103,14 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             if (option?.dpopProof?.nonceRequired) {
               const nonceStore$ = context.providers.get('nonce-store-provider')
               if (!verifiedDpopProof.nonce) {
-                throw err('USE_DPOP_NONCE', {
+                throw err('use_dpop_nonce', {
                   message: 'Authorization server requires nonce in DPoP proof.',
                 })
               }
               const nonce = Nonce({ nonce: verifiedDpopProof.nonce })
               const consumed = await nonceStore$.consume(nonce)
               if (!consumed) {
-                throw err('USE_DPOP_NONCE', {
+                throw err('use_dpop_nonce', {
                   message: 'Authorization server requires nonce in DPoP proof.',
                 })
               }
@@ -121,7 +121,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
               { ttlMs: dpopProof$.proofJtiTtlMs }
             )
             if (!isNewJti) {
-              throw err('INVALID_DPOP_PROOF', {
+              throw err('invalid_dpop_proof', {
                 message: 'DPoP proof JWT jti has already been used.',
               })
             }
@@ -150,9 +150,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             tokenRequest['pre-authorized_code'],
             {
               ttlSec: option?.ttlSec,
-              ...(verifiedDpopProof
-                ? { cnf: { jkt: verifiedDpopProof.jwkThumbprint } }
-                : {}),
+              ...(verifiedDpopProof ? { cnf: { jkt: verifiedDpopProof.jwkThumbprint } } : {}),
             }
           )
           // sign with issuer private key

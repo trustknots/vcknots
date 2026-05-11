@@ -191,7 +191,7 @@ describe('AuthzFlows', () => {
         nonce: 'generated-dpop-nonce',
         nonce_expires_in: 1234,
       }))
-      mock.method(mockNonceStoreProvider, 'save', async () => { })
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
 
       const nonce = await flow.createDpopNonceChallenge(1234)
 
@@ -315,7 +315,7 @@ describe('AuthzFlows', () => {
               },
             }),
           {
-            name: 'USE_DPOP_NONCE',
+            name: 'use_dpop_nonce',
             message: 'Authorization server requires nonce in DPoP proof.',
           }
         )
@@ -341,7 +341,7 @@ describe('AuthzFlows', () => {
               },
             }),
           {
-            name: 'USE_DPOP_NONCE',
+            name: 'use_dpop_nonce',
             message: 'Authorization server requires nonce in DPoP proof.',
           }
         )
@@ -385,7 +385,7 @@ describe('AuthzFlows', () => {
               },
             }),
           {
-            name: 'INVALID_DPOP_PROOF',
+            name: 'invalid_dpop_proof',
             message: 'DPoP proof JWT jti has already been used.',
           }
         )

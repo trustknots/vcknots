@@ -117,7 +117,7 @@ describe('DPoPProofProvider', () => {
     const proof = await createProof({ htu: 'https://issuer.example.com/other' })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: 'DPoP proof JWT htu claim does not match the target URI.',
     })
   })
@@ -127,7 +127,7 @@ describe('DPoPProofProvider', () => {
     const proof = await createProof({ htu: 'not-an-absolute-uri' })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: 'DPoP proof JWT htu claim must be a valid absolute URI.',
     })
   })
@@ -137,7 +137,7 @@ describe('DPoPProofProvider', () => {
     const proof = await createProof({}, { typ: 'JWT' })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: `DPoP proof JWT typ must be "${DPOP_PROOF_TYP}".`,
     })
   })
@@ -151,7 +151,7 @@ describe('DPoPProofProvider', () => {
     })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: 'DPoP proof JWT alg must be an asymmetric signature algorithm.',
     })
   })
@@ -168,7 +168,7 @@ describe('DPoPProofProvider', () => {
     })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: 'DPoP proof JWT header jwk must not contain a private key.',
     })
   })
@@ -179,7 +179,7 @@ describe('DPoPProofProvider', () => {
     const proof = await createProof({}, undefined, otherKeys.privateKey)
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
     })
   })
 
@@ -192,7 +192,7 @@ describe('DPoPProofProvider', () => {
     })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: 'DPoP proof JWT alg must be an asymmetric signature algorithm.',
     })
   })
@@ -206,7 +206,7 @@ describe('DPoPProofProvider', () => {
     })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: 'DPoP proof JWT alg must be an asymmetric signature algorithm.',
     })
   })
@@ -219,7 +219,7 @@ describe('DPoPProofProvider', () => {
     })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: 'DPoP proof JWT header must contain a public JWK.',
     })
   })
@@ -238,7 +238,7 @@ describe('DPoPProofProvider', () => {
     })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
     })
   })
 
@@ -247,7 +247,7 @@ describe('DPoPProofProvider', () => {
     const proof = await createProof({ jti: undefined })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: 'DPoP proof JWT jti claim is required.',
     })
   })
@@ -267,7 +267,7 @@ describe('DPoPProofProvider', () => {
       .sign(keys.privateKey)
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: 'DPoP proof JWT verification failed: missing required "iat" claim',
     })
   })
@@ -277,7 +277,7 @@ describe('DPoPProofProvider', () => {
     const proof = await createProof({ htm: 'GET' })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: 'DPoP proof JWT htm claim does not match the HTTP method.',
     })
   })
@@ -287,7 +287,7 @@ describe('DPoPProofProvider', () => {
     const proof = await createProof({ htu: undefined })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: 'DPoP proof JWT htu claim is required.',
     })
   })
@@ -297,7 +297,7 @@ describe('DPoPProofProvider', () => {
     const proof = await createProof({ nonce: 'actual-nonce' })
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu, nonce: 'expected-nonce' }), {
-      name: 'INVALID_DPOP_PROOF',
+      name: 'invalid_dpop_proof',
       message: 'DPoP proof JWT nonce claim does not match the expected nonce.',
     })
   })
