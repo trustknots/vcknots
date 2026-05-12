@@ -885,7 +885,7 @@ describe('kmsIssuerSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(issuer, 'ES256', { iss: issuer }, { alg: 'ES256', typ: 'JWT' }),
       (error: Error) => {
-        assert.equal(error.name, 'AUTHZ_ISSUER_KEY_NOT_FOUND')
+        assert.equal(error.name, 'authz_issuer_key_not_found')
         assert.match(error.message, /Issuer private key not found/)
         return true
       }
@@ -912,7 +912,7 @@ describe('kmsIssuerSignatureKeyStore', () => {
     )
   })
 
-  it('should map NOT_FOUND from asymmetricSign to AUTHZ_ISSUER_KEY_NOT_FOUND', async () => {
+  it('should map NOT_FOUND from asymmetricSign to authz_issuer_key_not_found', async () => {
     const kms = new FakeKmsClient()
     const provider = kmsIssuerSignatureKeyStore({
       client: kms as never,
@@ -931,7 +931,7 @@ describe('kmsIssuerSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(issuer, 'ES256', { iss: issuer }, { alg: 'ES256', typ: 'JWT' }),
       (error: Error) => {
-        assert.equal(error.name, 'AUTHZ_ISSUER_KEY_NOT_FOUND')
+        assert.equal(error.name, 'authz_issuer_key_not_found')
         assert.match(error.message, /Issuer private key not found/)
         return true
       }

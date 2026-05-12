@@ -558,7 +558,7 @@ app.post('/token', async (c) => {
 })
 ```
 
-**リクエストボディは `application/x-www-form-urlencoded` です**（`AuthzTokenRequest` はフォームフィールドから組み立てます）。`INVALID_DPOP_PROOF`（`invalid_dpop_proof`）や `USE_DPOP_NONCE`（`DPoP-Nonce` ヘッダー付き）などの分岐を含む実装は [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts) を参照してください。
+**リクエストボディは `application/x-www-form-urlencoded` です**（`AuthzTokenRequest` はフォームフィールドから組み立てます）。`invalid_dpop_proof`（`invalid_dpop_proof`）や `use_dpop_nonce`（`DPoP-Nonce` ヘッダー付き）などの分岐を含む実装は [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts) を参照してください。
 
 **例**:
 
@@ -974,17 +974,17 @@ app.post('/credentials', async (c) => {
         }
       }
     } catch (err) {
-      if (err instanceof VcknotsError && err.name === 'INVALID_ACCESS_TOKEN') {
+      if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
         return unauthorized(
           c,
           { error: 'invalid_token', error_description: err.message },
           { error: 'invalid_token' }
         )
       }
-      if (err instanceof VcknotsError && err.name === 'INVALID_DPOP_PROOF') {
+      if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
         return invalidDpopProof(c, err.message)
       }
-      if (err instanceof VcknotsError && err.name === 'USE_DPOP_NONCE') {
+      if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
         return dpopNonceResponse(c)
       }
       throw err

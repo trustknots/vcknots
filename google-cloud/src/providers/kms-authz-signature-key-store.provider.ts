@@ -198,13 +198,13 @@ export const kmsAuthzSignatureKeyStore = (
 
         const latestVersion = latestEnabledVersion(versions)
         if (!latestVersion?.name) {
-          raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+          raise('authz_issuer_key_not_found', {
             message: 'Authorization server private key not found.',
           })
         }
 
         if (jwtHeader.alg !== keyAlg) {
-          raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+          raise('authz_issuer_key_not_found', {
             message: `Authorization server private key algorithm mismatch: header alg ${jwtHeader.alg}, key alg ${keyAlg}.`,
           })
         }
@@ -236,7 +236,7 @@ export const kmsAuthzSignatureKeyStore = (
             return signResponse
           } catch (error) {
             if (grpcCode(error) === KMS_NOT_FOUND) {
-              raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+              raise('authz_issuer_key_not_found', {
                 message: 'Authorization server private key not found.',
               })
             }

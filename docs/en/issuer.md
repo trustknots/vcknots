@@ -558,7 +558,7 @@ app.post('/token', async (c) => {
 })
 ```
 
-The **request body is `application/x-www-form-urlencoded`** (`AuthzTokenRequest` is built from form fields). For the full handler—including branches such as **`INVALID_DPOP_PROOF`** (`invalid_dpop_proof`) and **`USE_DPOP_NONCE`** (with a **`DPoP-Nonce`** header)—see [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts).
+The **request body is `application/x-www-form-urlencoded`** (`AuthzTokenRequest` is built from form fields). For the full handler—including branches such as **`invalid_dpop_proof`** (`invalid_dpop_proof`) and **`use_dpop_nonce`** (with a **`DPoP-Nonce`** header)—see [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts).
 
 **Example**:
 
@@ -974,17 +974,17 @@ app.post('/credentials', async (c) => {
         }
       }
     } catch (err) {
-      if (err instanceof VcknotsError && err.name === 'INVALID_ACCESS_TOKEN') {
+      if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
         return unauthorized(
           c,
           { error: 'invalid_token', error_description: err.message },
           { error: 'invalid_token' }
         )
       }
-      if (err instanceof VcknotsError && err.name === 'INVALID_DPOP_PROOF') {
+      if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
         return invalidDpopProof(c, err.message)
       }
-      if (err instanceof VcknotsError && err.name === 'USE_DPOP_NONCE') {
+      if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
         return dpopNonceResponse(c)
       }
       throw err

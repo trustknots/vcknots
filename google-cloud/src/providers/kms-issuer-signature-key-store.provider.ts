@@ -195,7 +195,7 @@ export const kmsIssuerSignatureKeyStore = (
           versions = listedVersions
         } catch (error) {
           if (grpcCode(error) === KMS_NOT_FOUND) {
-            raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+            raise('authz_issuer_key_not_found', {
               message: 'Issuer private key not found.',
             })
           }
@@ -204,7 +204,7 @@ export const kmsIssuerSignatureKeyStore = (
 
         const latestVersion = latestEnabledVersion(versions)
         if (!latestVersion?.name) {
-          raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+          raise('authz_issuer_key_not_found', {
             message: 'Issuer private key not found.',
           })
         }
@@ -242,7 +242,7 @@ export const kmsIssuerSignatureKeyStore = (
             return signResponse
           } catch (error) {
             if (grpcCode(error) === KMS_NOT_FOUND) {
-              raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+              raise('authz_issuer_key_not_found', {
                 message: 'Issuer private key not found.',
               })
             }

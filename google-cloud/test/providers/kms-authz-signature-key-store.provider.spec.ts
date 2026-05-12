@@ -832,7 +832,7 @@ describe('kmsAuthzSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(authz, 'ES256', { iss: authz }, { alg: 'RS256', typ: 'JWT' }),
       (error: Error) => {
-        assert.equal(error.name, 'AUTHZ_ISSUER_KEY_NOT_FOUND')
+        assert.equal(error.name, 'authz_issuer_key_not_found')
         assert.match(error.message, /algorithm mismatch/)
         return true
       }
@@ -857,7 +857,7 @@ describe('kmsAuthzSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(authz, 'ES256', { iss: authz }, { typ: 'JWT' } as never),
       (error: Error) => {
-        assert.equal(error.name, 'AUTHZ_ISSUER_KEY_NOT_FOUND')
+        assert.equal(error.name, 'authz_issuer_key_not_found')
         assert.match(error.message, /algorithm mismatch/)
         return true
       }
@@ -877,7 +877,7 @@ describe('kmsAuthzSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(authz, 'ES256', { iss: authz }, { alg: 'ES256', typ: 'JWT' }),
       (error: Error) => {
-        assert.equal(error.name, 'AUTHZ_ISSUER_KEY_NOT_FOUND')
+        assert.equal(error.name, 'authz_issuer_key_not_found')
         assert.match(error.message, /Authorization server private key not found/)
         return true
       }
@@ -904,7 +904,7 @@ describe('kmsAuthzSignatureKeyStore', () => {
     )
   })
 
-  it('should map NOT_FOUND from asymmetricSign to AUTHZ_ISSUER_KEY_NOT_FOUND', async () => {
+  it('should map NOT_FOUND from asymmetricSign to authz_issuer_key_not_found', async () => {
     const kms = new FakeKmsClient()
     const provider = kmsAuthzSignatureKeyStore({
       client: kms as never,
@@ -923,7 +923,7 @@ describe('kmsAuthzSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(authz, 'ES256', { iss: authz }, { alg: 'ES256', typ: 'JWT' }),
       (error: Error) => {
-        assert.equal(error.name, 'AUTHZ_ISSUER_KEY_NOT_FOUND')
+        assert.equal(error.name, 'authz_issuer_key_not_found')
         assert.match(error.message, /Authorization server private key not found/)
         return true
       }
