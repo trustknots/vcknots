@@ -96,9 +96,9 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
 
           const verifiedDpopProof = option?.dpopProof
             ? await dpopProof$.verifyProof(option.dpopProof.proofJwt, {
-              htm: option.dpopProof.htm,
-              htu: option.dpopProof.htu,
-            } satisfies DPoPProofVerifyContext)
+                htm: option.dpopProof.htm,
+                htu: option.dpopProof.htu,
+              } satisfies DPoPProofVerifyContext)
             : undefined
           if (verifiedDpopProof) {
             if (option?.dpopProof?.nonceRequired) {
@@ -152,9 +152,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             tokenRequest['pre-authorized_code'],
             {
               ttlSec: option?.ttlSec,
-              ...(verifiedDpopProof
-                ? { cnf: { jkt: verifiedDpopProof.jwkThumbprint } }
-                : {}),
+              ...(verifiedDpopProof ? { cnf: { jkt: verifiedDpopProof.jwkThumbprint } } : {}),
             }
           )
           // sign with issuer private key
