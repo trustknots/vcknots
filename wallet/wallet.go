@@ -255,6 +255,7 @@ type ReceiveCredentialRequest struct {
 	Type                 receiverTypes.SupportedReceivingTypes
 	Key                  IKeyEntry
 	CachedIssuerMetadata *receiverTypes.CredentialIssuerMetadata
+	TxCode               string
 }
 
 // CredentialOffer represents a credential offer from an issuer.
@@ -458,12 +459,18 @@ func (w *Wallet) ReceiveCredential(req ReceiveCredentialRequest) (*SavedCredenti
 		return nil, err
 	}
 
+	preAuthGrant := req.CredentialOffer.Grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"]
+
+	if preAuthGrant.TxCode != nil && req.TxCode == "" {
+		return nil, fmt.Errorf("tx_code is required by credential offer")
+	}
+	
 	issuerMetadata, authMetadata, err := w.fetchCredentialMetadata(req)
 	if err != nil {
 		return nil, err
 	}
 
-	accessToken, err := w.obtainAccessToken(req.Type, authMetadata, preAuthCode)
+	accessToken, err := w.obtainAccessToken(req.Type, authMetadata, preAuthCode, req.TxCode)
 	if err != nil {
 		return nil, err
 	}
@@ -568,8 +575,8 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 }
 
 // obtainAccessToken obtains an access token using pre-authorization code.
-func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivingTypes, authMetadata *receiverTypes.AuthorizationServerMetadata, preAuthCode string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
-	accessToken, err := w.receiver.FetchAccessToken(receivingType, *authMetadata.TokenEndpoint, preAuthCode, "")
+func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivingTypes, authMetadata *receiverTypes.AuthorizationServerMetadata, preAuthCode string, txCode string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
+	accessToken, err := w.receiver.FetchAccessToken(receivingType, *authMetadata.TokenEndpoint, preAuthCode, txCode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch access token: %w", err)
 	}

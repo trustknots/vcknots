@@ -335,7 +335,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 				return
 			}
 			if got := r.Form.Get("grant_type"); got != "urn:ietf:params:oauth:grant-type:pre-authorized_code" {
-				handlerErrCh <- fmt.Errorf("expected pre-authorized_code to be test-code,got %s", got)
+				handlerErrCh <- fmt.Errorf("expected grant_type to be urn:ietf:params:oauth:grant-type:pre-authorized_code, got %s", got)
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
