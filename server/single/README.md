@@ -177,6 +177,19 @@ Create credential offer
 **Path Parameters:**
 - `configuration` (string) - Credential configuration ID
 
+**Request Body (JSON):**
+- Optional. Include a body only when using `tx_code`.
+- If the body is empty or omitted, no `tx_code` is created.
+```json
+{
+  "tx_code"?: {
+    "input_mode"?: 'numeric' | 'text',
+    "length"?: number,
+    "description"?: string
+  }
+}
+```
+
 **Response:**
 - `200 OK` - Text in the format `openid-credential-offer://?credential_offer={encoded_offer}`
 

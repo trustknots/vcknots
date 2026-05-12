@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it, mock } from 'node:test'
 import base64url from 'base64url'
+import { generateKeyPair, SignJWT } from 'jose'
 import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
@@ -146,8 +147,8 @@ describe('AuthzFlows', () => {
   describe('createAuthzServerMetadata()', () => {
     it('should create metadata and initialize the authz signing key with the default algorithm', async () => {
       mock.method(mockAuthzMetadataProvider, 'fetch', async () => null)
-      mock.method(mockAuthzKeyProvider, 'save', async () => { })
-      mock.method(mockAuthzMetadataProvider, 'save', async () => { })
+      mock.method(mockAuthzKeyProvider, 'save', async () => {})
+      mock.method(mockAuthzMetadataProvider, 'save', async () => {})
 
       await flow.createAuthzServerMetadata(sampleMetadata)
 
@@ -165,8 +166,8 @@ describe('AuthzFlows', () => {
 
     it('should pass the requested algorithm to the key store', async () => {
       mock.method(mockAuthzMetadataProvider, 'fetch', async () => null)
-      mock.method(mockAuthzKeyProvider, 'save', async () => { })
-      mock.method(mockAuthzMetadataProvider, 'save', async () => { })
+      mock.method(mockAuthzKeyProvider, 'save', async () => {})
+      mock.method(mockAuthzMetadataProvider, 'save', async () => {})
 
       await flow.createAuthzServerMetadata(sampleMetadata, { alg: 'ES256' })
 
@@ -220,7 +221,7 @@ describe('AuthzFlows', () => {
     describe('Pre-Authorized Code Flow', () => {
       beforeEach(() => {
         mock.method(mockCodeStoreProvider, 'validate', async () => true)
-        mock.method(mockCodeStoreProvider, 'delete', async () => { })
+        mock.method(mockCodeStoreProvider, 'delete', async () => {})
         mock.method(mockAuthzKeyProvider, 'sign', async () => sampleSignature)
         mock.method(mockAccessTokenProvider, 'createTokenPayload', async () => samplePayload)
         mock.method(mockDpopProofProvider, 'verifyProof', async () => ({
@@ -409,6 +410,45 @@ describe('AuthzFlows', () => {
       } as unknown as TokenRequest
       await assert.rejects(() => flow.createAccessToken(sampleIssuer, authCodeTokenRequest), {
         name: 'INVALID_REQUEST',
+      })
+    })
+  })
+
+  describe('verifyAccessToken()', () => {
+    it('should verify a valid access token', async () => {
+      const keys = await generateKeyPair('ES256', { extractable: true })
+      const accessToken = await new SignJWT({ iss: sampleIssuer })
+        .setProtectedHeader({ alg: 'ES256', typ: 'JWT' })
+        .sign(keys.privateKey)
+
+      mock.method(mockAuthzKeyProvider, 'fetch', async () => keys.publicKey)
+
+      const result = await flow.verifyAccessToken(sampleIssuer, accessToken)
+
+      assert.strictEqual(result, true)
+      assert.strictEqual(mockAuthzKeyProvider.fetch.mock.callCount(), 1)
+      assert.deepStrictEqual(mockAuthzKeyProvider.fetch.mock.calls[0].arguments, [
+        sampleIssuer,
+        'ES256',
+      ])
+    })
+
+    it('should throw if authz issuer key is not found', async () => {
+      const keys = await generateKeyPair('ES256', { extractable: true })
+      const accessToken = await new SignJWT({ iss: sampleIssuer })
+        .setProtectedHeader({ alg: 'ES256', typ: 'JWT' })
+        .sign(keys.privateKey)
+
+      mock.method(mockAuthzKeyProvider, 'fetch', async () => null)
+
+      await assert.rejects(() => flow.verifyAccessToken(sampleIssuer, accessToken), {
+        name: 'AUTHZ_ISSUER_KEY_NOT_FOUND',
+      })
+    })
+
+    it('should throw when access token is malformed', async () => {
+      await assert.rejects(() => flow.verifyAccessToken(sampleIssuer, 'invalid-token'), {
+        name: 'INVALID_ACCESS_TOKEN',
       })
     })
   })

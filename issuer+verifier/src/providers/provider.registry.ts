@@ -24,6 +24,7 @@ import { Provider } from './provider.types'
 import { requestObjectId } from './request-object-id.provider'
 import { verifierSignatureKey } from './verifier-signature-key.provider'
 import { certificate } from './certificate.provider'
+import { transactionCode } from './transaction-code.provider'
 import { transactionData } from './transaction-data.provider'
 import { verifyVerifiablePresentation } from './verify-presentation-jwt-vp-json.provider'
 import { verifyVerifiablePresentationDcSdJwt } from './verify-presentation-dc-sd-jwt.provider'
@@ -62,6 +63,7 @@ const initializeDefaultProviders = (
   nonce(),
   accessToken(),
   preAuthorizedCode(),
+  transactionCode(),
   issuerSignatureKey(),
   authzSignatureKey(),
   issueCredentialJwt(),
