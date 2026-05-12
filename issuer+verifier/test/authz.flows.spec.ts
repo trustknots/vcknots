@@ -442,13 +442,13 @@ describe('AuthzFlows', () => {
       mock.method(mockAuthzKeyProvider, 'fetch', async () => null)
 
       await assert.rejects(() => flow.verifyAccessToken(sampleIssuer, accessToken), {
-        name: 'AUTHZ_ISSUER_KEY_NOT_FOUND',
+        name: 'authz_issuer_key_not_found',
       })
     })
 
     it('should throw when access token is malformed', async () => {
       await assert.rejects(() => flow.verifyAccessToken(sampleIssuer, 'invalid-token'), {
-        name: 'INVALID_ACCESS_TOKEN',
+        name: 'invalid_access_token',
       })
     })
   })

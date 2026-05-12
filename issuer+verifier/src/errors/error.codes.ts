@@ -75,6 +75,7 @@ export type ErrorCodes =
   | 'invalid_vp_token'
   | 'invalid_jwt'
   | 'invalid_claims'
+  | 'invalid_tx_code'
   | 'holder_binding_failed'
   | 'unsupported_client_id_scheme'
   | 'unsupported_proofs_type'

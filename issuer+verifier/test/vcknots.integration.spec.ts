@@ -249,7 +249,7 @@ describe('Vcknots', () => {
 
       await assert.rejects(
         vk.authz.createAccessToken(authzIssuer, tokenRequest, { ttlSec: 3600 }),
-        { name: 'INVALID_GRANT' }
+        { name: 'invalid_grant' }
       )
     })
 
@@ -279,7 +279,7 @@ describe('Vcknots', () => {
 
       await assert.rejects(
         vk.authz.createAccessToken(authzIssuer, tokenRequest, { ttlSec: 3600 }),
-        { name: 'INVALID_REQUEST' }
+        { name: 'invalid_request' }
       )
     })
 
@@ -335,7 +335,7 @@ describe('Vcknots', () => {
 
       await assert.rejects(
         vk.authz.createAccessToken(authzIssuer, tokenRequest, { ttlSec: 3600 }),
-        { name: 'INVALID_GRANT' }
+        { name: 'invalid_grant' }
       )
     })
 
@@ -700,4 +700,3 @@ describe('Vcknots', () => {
     })
   })
 })
-

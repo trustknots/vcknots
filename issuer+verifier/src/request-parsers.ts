@@ -14,102 +14,55 @@ const invalidRequest = (message: string, cause?: unknown): never => {
   throw err('invalid_request', { message, cause })
 }
 
-export const parseAuthorizationServerIssuer = (value: unknown) => {
-  try {
-    return AuthorizationServerIssuer(value as string)
-  } catch (e) {
-    if (e instanceof z.ZodError) {
-      invalidRequest('Invalid issuer parameter.', e)
+function wrapInvalidRequest<T>(parser: (value: unknown) => T, message: string) {
+  return (value: unknown): T => {
+    try {
+      return parser(value)
+    } catch (e) {
+      if (e instanceof z.ZodError) {
+        invalidRequest(message, e)
+      }
+      throw e
     }
-    throw e
   }
 }
 
-export const parseCredentialIssuer = (value: unknown) => {
-  try {
-    return CredentialIssuer(value as string)
-  } catch (e) {
-    if (e instanceof z.ZodError) {
-      invalidRequest('Invalid issuer parameter.', e)
-    }
-    throw e
-  }
-}
+export const parseAuthorizationServerIssuer = wrapInvalidRequest(
+  (value) => AuthorizationServerIssuer(value as string),
+  'Invalid issuer parameter.'
+)
 
-export const parseVerifierClientId = (value: unknown) => {
-  try {
-    return ClientId(value)
-  } catch (e) {
-    if (e instanceof z.ZodError) {
-      invalidRequest('Invalid verifier parameter.', e)
-    }
-    throw e
-  }
-}
+export const parseCredentialIssuer = wrapInvalidRequest(
+  (value) => CredentialIssuer(value as string),
+  'Invalid issuer parameter.'
+)
 
-export const parseRequestObjectId = (value: unknown) => {
-  try {
-    return RequestObjectId(value as string)
-  } catch (e) {
-    if (e instanceof z.ZodError) {
-      invalidRequest('Invalid request object id parameter.', e)
-    }
-    throw e
-  }
-}
+export const parseVerifierClientId = wrapInvalidRequest(
+  (value) => ClientId(value),
+  'Invalid verifier parameter.'
+)
 
-export const parseCredentialConfigurationId = (value: unknown) => {
-  try {
-    return CredentialConfigurationId(value as string)
-  } catch (e) {
-    if (e instanceof z.ZodError) {
-      throw err('invalid_request', {
-        message: 'Invalid credential configuration id parameter.',
-        cause: e,
-      })
-    }
-    throw e
-  }
-}
+export const parseRequestObjectId = wrapInvalidRequest(
+  (value) => RequestObjectId(value as string),
+  'Invalid request object id parameter.'
+)
 
-export const parseCredentialIssuerMetadata = (value: unknown) => {
-  try {
-    return CredentialIssuerMetadata(value as Record<string, unknown>)
-  } catch (e) {
-    if (e instanceof z.ZodError) {
-      throw err('invalid_request', {
-        message: 'Invalid credential issuer metadata.',
-        cause: e,
-      })
-    }
-    throw e
-  }
-}
+export const parseCredentialConfigurationId = wrapInvalidRequest(
+  (value) => CredentialConfigurationId(value as string),
+  'Invalid credential configuration id parameter.'
+)
 
-export const parseAuthorizationServerMetadata = (value: unknown) => {
-  try {
-    return AuthorizationServerMetadata(value as Record<string, unknown>)
-  } catch (e) {
-    if (e instanceof z.ZodError) {
-      throw err('invalid_request', {
-        message: 'Invalid authorization server metadata.',
-        cause: e,
-      })
-    }
-    throw e
-  }
-}
+export const parseCredentialIssuerMetadata = wrapInvalidRequest(
+  (value) => CredentialIssuerMetadata(value as Record<string, unknown>),
+  'Invalid credential issuer metadata.'
+)
 
-export const parseVerifierMetadata = (value: unknown) => {
-  try {
-    return VerifierMetadata(value as Record<string, unknown>)
-  } catch (e) {
-    if (e instanceof z.ZodError) {
-      throw err('invalid_request', {
-        message: 'Invalid verifier metadata.',
-        cause: e,
-      })
-    }
-    throw e
-  }
-}
+export const parseAuthorizationServerMetadata = wrapInvalidRequest(
+  (value) => AuthorizationServerMetadata(value as Record<string, unknown>),
+  'Invalid authorization server metadata.'
+)
+
+export const parseVerifierMetadata = wrapInvalidRequest(
+  (value) => VerifierMetadata(value as Record<string, unknown>),
+  'Invalid verifier metadata.'
+)
