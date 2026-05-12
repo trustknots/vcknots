@@ -69,8 +69,11 @@ To start this server, follow the steps below.
    - `FIRESTORE_DATABASE_ID`
    - `BASE_URL` (e.g., `http://localhost:8080`)
    - `PORT` (default: `8080`)
+   - `DPOP_MODE` (`off` / `optional` / `required`)
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
+
+   `DPOP_MODE` controls DPoP behavior for both the token endpoint and the credential endpoint via **`@trustknots/server-core`**. The Google Cloud server uses the same `server-core` implementation as the single server, so see the [`DPOP_MODE` description in the single-server README](../single/README.md#post-token) for mode-specific behavior, nonce challenges, and error responses.
 
 2. **Install Dependencies** (Run from root directory)
 
@@ -163,6 +166,8 @@ The server starts on `http://localhost:8080` by default.
 
 - [`POST /token`](../single/README.md#post-token) - Token endpoint
 - [`GET /.well-known/oauth-authorization-server`](../single/README.md#get-well-knownoauth-authorization-server) - Get Authorization Server metadata
+
+`POST /token` and `POST /credentials` follow `DPOP_MODE` for DPoP behavior. See the [single-server README](../single/README.md#post-token) for mode-specific behavior, nonce challenges, and error responses.
 
 #### Verifier
 

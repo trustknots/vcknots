@@ -500,8 +500,8 @@ curl  http://localhost:8080/.well-known/oauth-authorization-server
 {
   "pre-authorized_grant_anonymous_access_supported": true,
   "issuer": "http://localhost:8080",
-  "authorization_endpoint": "http://localhost:8080/authz/authorize",
-  "token_endpoint": "http://localhost:8080/authz/token",
+  "authorization_endpoint": "http://localhost:8080/authorize",
+  "token_endpoint": "http://localhost:8080/token",
   "scopes_supported": [
       "openid"
   ],
@@ -516,18 +516,49 @@ curl  http://localhost:8080/.well-known/oauth-authorization-server
 Endpoint to issue an access token:
 
 ```typescript
-app.post("/token", async (c) => {
-  const request = await c.req.formData();
-  const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()));
-  console.log("tokenRequest:", tokenRequest);
-  const issuer = AuthorizationServerIssuer(issuerId);
+app.post('/token', async (c) => {
+  const dpopMode = resolveDpopMode(context.options)
+  const dpopProof = parseDpopHeader(c.req.header('DPoP'))
 
-  const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest);
-  return c.json(accessToken);
-});
+  if (
+    (dpopMode === 'required' && !dpopProof.ok) ||
+    (dpopMode !== 'off' && !dpopProof.ok && dpopProof.reason !== 'missing')
+  ) {
+    return c.json(
+      {
+        error: 'invalid_request',
+        error_description:
+          dpopProof.reason === 'missing'
+            ? 'DPoP proof JWT is required.'
+            : dpopProof.reason === 'duplicate'
+              ? 'DPoP header must appear exactly once.'
+              : 'DPoP header must contain a compact JWT.',
+      },
+      400
+    )
+  }
 
+  const request = await c.req.formData()
+  const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()))
+  const issuer = AuthorizationServerIssuer(baseUrl)
 
+  const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
+    ...(dpopMode !== 'off' && dpopProof.ok
+      ? {
+          dpopProof: {
+            proofJwt: dpopProof.proofJwt,
+            htm: c.req.method,
+            htu: `${baseUrl}/token`,
+            nonceRequired: true,
+          },
+        }
+      : {}),
+  })
+  return c.json(accessToken)
+})
 ```
+
+The **request body is `application/x-www-form-urlencoded`** (`AuthzTokenRequest` is built from form fields). For the full handler—including branches such as **`INVALID_DPOP_PROOF`** (`invalid_dpop_proof`) and **`USE_DPOP_NONCE`** (with a **`DPoP-Nonce`** header)—see [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts).
 
 **Example**:
 
@@ -535,11 +566,9 @@ app.post("/token", async (c) => {
 
 ```bash
 curl -X POST http://localhost:8080/token \
-  -H "Content-Type: application/json" \
-  -d ' {
-    "grant_type": "urn:ietf:params:oauth:grant-type:pre-authorized_code",
-    "pre-authorized_code": "343ce17f1d274aa8bb3d19c140484889"
-  }'
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:pre-authorized_code" \
+  --data-urlencode "pre-authorized_code=343ce17f1d274aa8bb3d19c140484889"
 ```
 
 **Response**
@@ -552,20 +581,86 @@ curl -X POST http://localhost:8080/token \
 }
 ```
 
+#### Token requests with DPoP Proof
+
+`oauth.senderConstrainedAccessToken.dpop.mode` controls DPoP Proof verification at the token endpoint.
+
+| mode | Token endpoint behavior |
+|------|--------------------------|
+| `off` | DPoP is not used. The server issues a Bearer access token. |
+| `optional` | If the DPoP header is absent, the server issues a Bearer access token. If the DPoP header is present, the server verifies the proof and issues a DPoP-bound access token. |
+| `required` | The DPoP header is required. A missing or malformed DPoP header results in `invalid_request`. |
+
+If the DPoP Proof has no `nonce`, or the nonce is invalid, the Authorization Server returns `use_dpop_nonce` with a `DPoP-Nonce` response header. The Wallet retries the token request with this nonce in the DPoP Proof JWT `nonce` claim.
+
+```http
+HTTP/1.1 400 Bad Request
+DPoP-Nonce: 9288f7b2dffb42c2b08f2f4d4d8635d8
+Content-Type: application/json
+
+{
+  "error": "use_dpop_nonce",
+  "error_description": "Authorization server requires nonce in DPoP proof."
+}
+```
+
+When DPoP Proof verification succeeds, the response `token_type` is `DPoP`. The issued access token also contains `cnf.jkt`, the JWK Thumbprint of the public key from the DPoP Proof JOSE header.
+
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "DPoP",
+  "expires_in": 86400
+}
+```
+
+Subsequent requests using a DPoP-bound access token must present a DPoP Proof signed with the private key corresponding to the same public key.
+
+#### Differences in error responses between the token endpoint (AS) and credential endpoint (RS)
+
+In [server/core](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts), the HTTP status and challenge behavior differ by role:
+
+- **`POST /token` (Authorization Server):** Most DPoP / request errors are returned as **HTTP 400** with a JSON body (`invalid_request` / `invalid_dpop_proof` / `use_dpop_nonce`). For `use_dpop_nonce`, the response includes a **`DPoP-Nonce`** header; **`WWW-Authenticate` is not sent** in the current implementation.
+- **`POST /credentials` (Resource Server):** Failures in access token or DPoP verification are mostly **HTTP 401**. For **`invalid_token`**, the response includes **`WWW-Authenticate: Bearer`** (`realm`, `error`, `error_description`). For **`invalid_dpop_proof`** and **`use_dpop_nonce`** (credential-side message), the response includes **`WWW-Authenticate: DPoP`**, and in the latter case often a **`DPoP-Nonce`** header as well.
+
 ### 6. Nonce Endpoint
 
 This endpoint corresponds to the OID4VCI [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint). It is used when a Wallet obtains a c_nonce before sending a credential request. 
 
 When `nonce_endpoint` is set in the Issuer metadata, the Wallet references the nonce endpoint URL via the metadata obtained from `/.well-known/openid-credential-issuer`.
 
+If you also want to return a DPoP nonce, configure `oauth.senderConstrainedAccessToken.dpop.mode` in the server settings.
+
+```typescript
+const context = initializeContext({
+  oauth: {
+    senderConstrainedAccessToken: {
+      dpop: {
+        mode: 'optional', // 'off' | 'optional' | 'required'
+      },
+    },
+  },
+})
+```
+
+When `mode !== 'off'`, `POST /nonce` returns a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values.
+
+`c_nonce` is used for credential proofs. `DPoP-Nonce` is used for DPoP Proofs presented to the token endpoint. Since they have different purposes, their TTLs can be configured separately.
+
 #### POST /nonce - Create nonce (c_nonce)
 
 ```typescript
 app.post('/nonce', async (c) => {
   try {
-    const NONCE_TTL_MS = 2 * 60 * 1000  // 2 minutes
-    const cnonce = await issuerFlow.createNonce(NONCE_TTL_MS)
+    const C_NONCE_TTL_MS = 2 * 60 * 1000  // 2 minutes
+    const DPOP_NONCE_TTL_MS = 5 * 60 * 1000  // 5 minutes
+    const cnonce = await issuerFlow.createNonce(C_NONCE_TTL_MS)
+    const dpopMode = resolveDpopMode(context.options)
     c.header('Cache-Control', 'no-store')
+    if (dpopMode !== 'off') {
+      const dpopNonce = await issuerFlow.createNonce(DPOP_NONCE_TTL_MS)
+      c.header('DPoP-Nonce', dpopNonce)
+    }
     return c.json({ c_nonce: cnonce }, 200)
   } catch (err) {
     const errorResponse = handleError(err)
@@ -580,16 +675,27 @@ app.post('/nonce', async (c) => {
 **Request**
 
 ```bash
-curl -X POST http://localhost:8080/nonce
+curl -i -X POST http://localhost:8080/nonce
 ```
 
 **Response**
 
-```json
+```http
+HTTP/1.1 200 OK
+Cache-Control: no-store
+DPoP-Nonce: 9288f7b2dffb42c2b08f2f4d4d8635d8
+Content-Type: application/json
+
 {
   "c_nonce": "3ccc7973abef4102ad70a871e200304b"
 }
 ```
+
+If `oauth.senderConstrainedAccessToken.dpop.mode` is `off`, the `DPoP-Nonce` header is not returned.
+
+**Implementation example**:
+
+- [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts)
 
 #### GET /nonce/:nonce - Validate nonce
 
@@ -676,38 +782,217 @@ curl -X DELETE http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
 
 Endpoint to issue a credential:
 
+#### DPoP-bound access token verification at the credential endpoint
+
+`oauth.senderConstrainedAccessToken.dpop.mode` controls how the access token and DPoP Proof are handled at the credential endpoint.
+
+| mode | Credential endpoint behavior |
+|------|------------------------------|
+| `off` | DPoP is not used. Requests that send `Authorization: DPoP <access_token>` or a `DPoP` header are rejected. |
+| `optional` | DPoP is not required at the credential endpoint. Access tokens without sender binding may be presented with **`Authorization: Bearer` only**. If the token includes **`cnf.jkt`** (sender-constrained / DPoP-bound), **`Authorization: Bearer` alone is rejected**; you must use **`Authorization: DPoP <access_token>`** together with the **`DPoP`** header (DPoP Proof JWT). |
+| `required` | Every request must include **`Authorization: DPoP <access_token>`** and the **`DPoP`** header (DPoP Proof JWT). **`Authorization: Bearer` only** is rejected. |
+
+Because the credential endpoint acts as a resource server, when a DPoP-bound access token is used, the DPoP Proof is validated per RFC 9449.
+
+- The **`DPoP`** header must be a single compact JWT (the implementation rejects values that contain a **comma**, treating them as merged duplicate headers).
+- The DPoP Proof JOSE header **`typ`** must be **`dpop+jwt`**.
+- **`alg`** must not be **`none`** or an HMAC family algorithm; an asymmetric signing algorithm must be used.
+- The **`jwk`** header must contain a public key and must **not** include private-key material.
+- The DPoP Proof JWT signature must verify with the **`jwk`** public key.
+- The payload must include **`jti`**, **`iat`**, **`htm`**, and **`htu`**.
+- **`htm`** must match the actual HTTP method.
+- **`htu`** must match the credential endpoint URI excluding query string and fragment.
+- At the credential endpoint, **`ath`** is required and must equal the SHA-256 hash of the presented access token, base64url-encoded.
+- **`cnf.jkt`** on the access token must match the JWK thumbprint from the DPoP Proof **`jwk`**.
+- **`jti`** values are tracked to reject replay of the same DPoP Proof.
+- By default **`iat`** is considered valid within **`maxTokenAge` 300 seconds** and **`clockTolerance` 60 seconds** (issuer+verifier DPoP proof provider; factory options can change this).
+
+If the DPoP Proof is invalid, the credential endpoint responds with **`401 Unauthorized`** and **`WWW-Authenticate: DPoP`**. For **`invalid_token`** issues (JWT shape/signature/`issuer` mismatch, etc.), the response is also **401**, with **`WWW-Authenticate: Bearer`** (`realm`, `error="invalid_token"`, etc.).
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: DPoP realm="http://localhost:8080", error="invalid_dpop_proof", error_description="DPoP proof JWT ath claim does not match the access token."
+Content-Type: application/json
+
+{
+  "error": "invalid_dpop_proof",
+  "error_description": "DPoP proof JWT ath claim does not match the access token."
+}
+```
+
+If **`use_dpop_nonce`** is returned, the credential endpoint responds with **`401 Unauthorized`** and includes **`DPoP-Nonce`** in the response headers. The Wallet retries the credential request putting the **`DPoP-Nonce`** header value into the **`nonce`** claim of the DPoP Proof JWT.
+
+```http
+HTTP/1.1 401 Unauthorized
+DPoP-Nonce: 9288f7b2dffb42c2b08f2f4d4d8635d8
+WWW-Authenticate: DPoP realm="http://localhost:8080", error="use_dpop_nonce", error_description="Credential issuer requires nonce in DPoP proof."
+Content-Type: application/json
+
+{
+  "error": "use_dpop_nonce",
+  "error_description": "Credential issuer requires nonce in DPoP proof."
+}
+```
+
+The following code excerpt matches [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts) in ordering (**verify access token and DPoP first, then read the JSON body**), **`nonceRequired: true`**, rejecting Bearer-presented tokens that contain **`cnf.jkt`**, and **401 with `WWW-Authenticate`**. Imports, **`Context` (Hono)**, **`VcknotsError`**, **`buildBearerAuthenticateHeader` / `buildDpopAuthenticateHeader`**, and production logging are omitted.
+
 ```typescript
+const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
+
 app.post('/credentials', async (c) => {
   try {
-    const issuer = AuthorizationServerIssuer(baseUrl)
+    const issuer = CredentialIssuer(baseUrl)
+    const authz = AuthorizationServerIssuer(baseUrl)
+    const dpopMode = resolveDpopMode(context.options)
+    const realm = baseUrl
+
+    const hasCnfJkt = (payload: unknown): boolean => {
+      if (payload === null || typeof payload !== 'object' || Array.isArray(payload))
+        return false
+      const cnf = (payload as { cnf?: unknown }).cnf
+      if (cnf === null || typeof cnf !== 'object' || Array.isArray(cnf)) return false
+      return typeof (cnf as { jkt?: unknown }).jkt === 'string'
+    }
+
+    const unauthorized = (
+      c: Context,
+      body: { error: string; error_description: string },
+      challenge: { error?: 'invalid_request' | 'invalid_token' | 'insufficient_scope' } = {}
+    ) => {
+      c.header(
+        'WWW-Authenticate',
+        buildBearerAuthenticateHeader({
+          realm,
+          error: challenge.error,
+          errorDescription: challenge.error ? body.error_description : undefined,
+        })
+      )
+      return c.json(body, 401)
+    }
+
+    const invalidDpopProof = (c: Context, errorDescription: string) => {
+      c.header(
+        'WWW-Authenticate',
+        buildDpopAuthenticateHeader({
+          realm,
+          error: 'invalid_dpop_proof',
+          errorDescription,
+        })
+      )
+      return c.json(
+        { error: 'invalid_dpop_proof', error_description: errorDescription },
+        401
+      )
+    }
+
+    const dpopNonceResponse = async (c: Context) => {
+      const dpopNonce = await authzFlow.createDpopNonceChallenge(DPOP_NONCE_TTL_MS)
+      const errorDescription = 'Credential issuer requires nonce in DPoP proof.'
+      c.header('DPoP-Nonce', dpopNonce)
+      c.header(
+        'WWW-Authenticate',
+        buildDpopAuthenticateHeader({
+          realm,
+          error: 'use_dpop_nonce',
+          errorDescription,
+        })
+      )
+      return c.json(
+        {
+          error: 'use_dpop_nonce',
+          error_description: errorDescription,
+        },
+        401
+      )
+    }
+
+    const authorization = parseAuthorizationHeader(c.req.header('Authorization'))
+    if (!authorization.ok) {
+      return unauthorized(c, {
+        error: 'invalid_token',
+        error_description:
+          authorization.reason === 'missing'
+            ? 'Access token is required.'
+            : 'Authorization header must use Bearer or DPoP scheme.',
+      })
+    }
+
+    if (dpopMode === 'off' && (authorization.value.scheme === 'dpop' || c.req.header('DPoP'))) {
+      return unauthorized(c, {
+        error: 'invalid_token',
+        error_description:
+          'DPoP access tokens are not supported by this credential endpoint.',
+      })
+    }
+
+    try {
+      if (authorization.value.scheme === 'dpop') {
+        const dpopProof = parseDpopHeader(c.req.header('DPoP'))
+        if (!dpopProof.ok) {
+          return invalidDpopProof(
+            c,
+            dpopProof.reason === 'missing'
+              ? 'DPoP proof JWT is required.'
+              : dpopProof.reason === 'duplicate'
+                ? 'DPoP header must appear exactly once.'
+                : 'DPoP header must contain a compact JWT.'
+          )
+        }
+        await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
+          dpopProof: {
+            proofJwt: dpopProof.proofJwt,
+            htm: c.req.method,
+            htu: `${baseUrl}/credentials`,
+            nonceRequired: true,
+          },
+        })
+      } else {
+        if (dpopMode === 'required') {
+          return unauthorized(
+            c,
+            {
+              error: 'invalid_token',
+              error_description: 'DPoP access token is required.',
+            },
+            { error: 'invalid_token' }
+          )
+        }
+        const accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
+          authz,
+          authorization.value.token
+        )
+        if (hasCnfJkt(accessTokenPayload)) {
+          return unauthorized(
+            c,
+            {
+              error: 'invalid_token',
+              error_description:
+                'DPoP-bound access token must be presented with DPoP scheme.',
+            },
+            { error: 'invalid_token' }
+          )
+        }
+      }
+    } catch (err) {
+      if (err instanceof VcknotsError && err.name === 'INVALID_ACCESS_TOKEN') {
+        return unauthorized(
+          c,
+          { error: 'invalid_token', error_description: err.message },
+          { error: 'invalid_token' }
+        )
+      }
+      if (err instanceof VcknotsError && err.name === 'INVALID_DPOP_PROOF') {
+        return invalidDpopProof(c, err.message)
+      }
+      if (err instanceof VcknotsError && err.name === 'USE_DPOP_NONCE') {
+        return dpopNonceResponse(c)
+      }
+      throw err
+    }
 
     const request = await c.req.json()
-    const parsedReq = CredentialRequest(request)
-
-    // Access token validation
-    const accessToken = c.req.header('Authorization')?.replace('Bearer ', '')
-    if (!accessToken) {
-      return c.json(
-        {
-          error: 'invalid_token',
-          error_description: 'Access token is required.',
-        },
-        401
-      )
-    }
-    const isValid = await authzFlow.verifyAccessToken(issuer, accessToken)
-    console.log('isValid:', isValid)
-    if (!isValid) {
-      return c.json(
-        {
-          error: 'invalid_token',
-          error_description: 'Access token is invalid.',
-        },
-        401
-      )
-    }
-    // Credential issuance (pass proofJwt so JWT proof verification uses the correct OID4VCI context)
-    const credential = await issuerFlow.issueCredential(CredentialIssuer(baseUrl), parse, {
+    const parse = CredentialRequest(request)
+    const credential = await issuerFlow.issueCredential(issuer, parse, {
       alg: 'ES256',
       cnonce: {
         c_nonce_expires_in: 60 * 5 * 1000,
@@ -720,11 +1005,11 @@ app.post('/credentials', async (c) => {
       },
       proofJwt: { usePreAuth: true },
     })
-
     return c.json(credential)
   } catch (err) {
     const errorResponse = handleError(err)
-    return c.json(errorResponse, 400)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
   }
 })
 ```
@@ -735,7 +1020,7 @@ app.post('/credentials', async (c) => {
 
 ```bash
 curl -X POST http://localhost:8080/credentials \
-  -H "Authorization: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjgwODAiLCJzdWIiOiJmZGMzMzIzYmM3MTg0ZmJkYWE0NTc2YTgwODU2OGE0MSIsImV4cCI6MTc2MTk3ODAwNSwiaWF0IjoxNzYxODkxNjA1fQ.PBKg31GJbIIKqtQL6gpZYoIM_PGlY681u4Rjjhxek38Kzl3prEBggXcqjUq3l-cBRYC1KS1fcJY6jUiUllwyJw" \
+  -H "Authorization: Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..." \
   -H "Content-Type: application/json" \
   --data '{
   "credential_configuration_id": "UniversityDegreeCredential",
@@ -1140,6 +1425,3 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 
 - **Q: Error when issuing credential**: `INVALID_PROOF`  
   - **A:** Check that the header of proof.jwt in the credential request includes a kid. Also verify that the `nonce` in the proof is valid.
-
-
-
