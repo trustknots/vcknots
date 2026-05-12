@@ -63,6 +63,13 @@ google-cloud/
    - `FIREBASE_CLIENT_EMAIL`
    - `SECRET_MANAGER_PRIVATE_KEY`
    - `SECRET_MANAGER_CLIENT_EMAIL`
+   - `TX_CODE_PEPPER`
+
+   `TX_CODE_PEPPER` は、`tx_code` を Firestore に保存する前に HMAC-SHA256 でハッシュ化するための
+   秘密値（pepper）です。Google Cloud 用 Provider では必須で、未設定の場合は起動時に
+   `TX_CODE_PEPPER environment variable is required` でエラーになります。
+   十分に長いランダム文字列を設定し、環境ごとに固定して運用してください（安易に変更すると、
+   既存データの `tx_code` 検証に失敗するようになります）。
 
    任意の環境変数:
 

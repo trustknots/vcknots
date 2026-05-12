@@ -55,6 +55,7 @@ export type ErrorCodes =
   | 'invalid_options'
   | 'invalid_sd_jwt'
   | 'invalid_configuration'
+  | 'invalid_tx_code_options'
 
   // VCKNOTS :: SERVER ERROR
   | 'internal_server_error'

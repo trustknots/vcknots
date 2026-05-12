@@ -50,7 +50,11 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
       }
 
       const request = await c.req.formData()
-      const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()))
+      const requestData: Record<string, string | File | number> = Object.fromEntries(
+        request.entries()
+      )
+
+      const tokenRequest = AuthzTokenRequest(requestData)
       const issuer = AuthorizationServerIssuer(baseUrl)
       const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
         ...(dpopMode !== 'off' && dpopProof.ok

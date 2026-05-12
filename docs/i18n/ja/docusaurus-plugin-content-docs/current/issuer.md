@@ -11,7 +11,6 @@ sidebar_position: 2
 - OpenID for Verifiable Credential Issuance 1.0 に対応([OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html))  
 なお、以下は現時点では未実装ですが、今後対応予定です。
   - 現在対応しているフローは 事前認可コードフロー（Pre-Authorized Code Flow）のみです
-  - Credential Offerの`tx_code`は未対応（今後対応予定）
   - Credential Requestの`credential_response_encryption`は未対応（今後対応予定）
   - Credential Requestのproof typeは`jwt`のみ対応 （`di_vp`,`attestation`今後対応予定）
 - Node.js v14以降がインストールされていること
@@ -432,11 +431,16 @@ app.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
       const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
+      const contentLength = c.req.header('content-length')
+      const options: OfferOptions | undefined =
+        contentLength && contentLength !== '0' ? await c.req.json<OfferOptions>() : undefined
 
-      const offer = await issuerFlow.offerCredential(issuer, configurations, {
+      const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
+        txCode: options?.tx_code,
       })
       console.log('offer:', offer)
+      console.log('tx_code:', tx_code)
 
       return c.text(
         `openid-credential-offer://?credential_offer=${encodeURIComponent(JSON.stringify(offer))}`
@@ -453,14 +457,24 @@ app.post('/configurations/:configuration/offer', async (c) => {
 
 **リクエスト**
 
+`tx_code` を指定する場合のみ、リクエストボディ（JSON）を付けて送信します。
+
 ```bash
-curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer
+curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tx_code": {
+      "input_mode": "numeric",
+      "length": 6,
+      "description": "Please enter the one-time code."
+    }
+  }'
 ```
 
 **レスポンス**
 
 ```raw
-openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%3A8080%22%2C%22credential_configuration_ids%22%3A%5B%22UniversityDegreeCredential%22%5D%2C%22grants%22%3A%7B%22urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code%22%3A%7B%22pre-authorized_code%22%3A%22343ce17f1d274aa8bb3d19c140484889%22%7D%7D%7D
+openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%3A8080%22%2C%22credential_configuration_ids%22%3A%5B%22UniversityDegreeCredentialSdJwt%22%5D%2C%22grants%22%3A%7B%22urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code%22%3A%7B%22pre-authorized_code%22%3A%2268baf35e74ae430684662d85ea87160e%22%2C%22tx_code%22%3A%7B%22input_mode%22%3A%22numeric%22%2C%22length%22%3A6%2C%22description%22%3A%22Please%20enter%20the%20one-time%20code.%22%7D%7D%7D%7D
 ```
 
 
@@ -1197,10 +1211,11 @@ type OfferOptions =
   | {
       usePreAuth: true
       txCode?: {
-        inputMode?: 'numeric' | 'text'
+        input_mode?: 'numeric' | 'text'
         length?: number
         description?: string
       }
+      ttlSec?: number
     }
 ```
 
