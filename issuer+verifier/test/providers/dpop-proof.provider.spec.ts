@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { describe, it, before } from 'node:test'
 import { exportJWK, generateKeyPair, SignJWT, type JWTPayload } from 'jose'
 import { dpopProof } from '../../src/providers/dpop-proof.provider'
@@ -6,6 +7,9 @@ import { dpopProof } from '../../src/providers/dpop-proof.provider'
 const htm = 'POST'
 const htu = 'https://issuer.example.com/token'
 const DPOP_PROOF_TYP = 'dpop+jwt'
+const accessToken = 'header.payload.signature'
+const accessTokenHash = () =>
+  Buffer.from(createHash('sha256').update(accessToken).digest()).toString('base64url')
 
 describe('DPoPProofProvider', () => {
   let keys: { publicKey: CryptoKey; privateKey: CryptoKey }
@@ -100,6 +104,33 @@ describe('DPoPProofProvider', () => {
     const result = await provider.verifyProof(proof, { htm, htu, nonce: 'expected-nonce' })
 
     assert.equal(result.nonce, 'expected-nonce')
+  })
+
+  it('should require ath when access token binding is expected', async () => {
+    const provider = dpopProof()
+    const proof = await createProof({ jti: 'missing-ath' })
+
+    await assert.rejects(provider.verifyProof(proof, { htm, htu, accessToken }), {
+      name: 'INVALID_DPOP_PROOF',
+      message: 'DPoP proof JWT ath claim is required.',
+    })
+  })
+
+  it('should verify ath against the access token hash', async () => {
+    const provider = dpopProof()
+    const proof = await createProof({ jti: 'valid-ath', ath: accessTokenHash() })
+
+    await assert.doesNotReject(provider.verifyProof(proof, { htm, htu, accessToken }))
+  })
+
+  it('should reject ath mismatches', async () => {
+    const provider = dpopProof()
+    const proof = await createProof({ jti: 'invalid-ath', ath: 'invalid-ath' })
+
+    await assert.rejects(provider.verifyProof(proof, { htm, htu, accessToken }), {
+      name: 'INVALID_DPOP_PROOF',
+      message: 'DPoP proof JWT ath claim does not match the access token.',
+    })
   })
 
   it('should ignore query and fragment when comparing htu', async () => {
@@ -248,7 +279,7 @@ describe('DPoPProofProvider', () => {
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
       name: 'INVALID_DPOP_PROOF',
-      message: 'DPoP proof JWT jti claim is required.',
+      message: 'DPoP proof JWT payload claims are invalid.',
     })
   })
 
@@ -288,7 +319,7 @@ describe('DPoPProofProvider', () => {
 
     await assert.rejects(provider.verifyProof(proof, { htm, htu }), {
       name: 'INVALID_DPOP_PROOF',
-      message: 'DPoP proof JWT htu claim is required.',
+      message: 'DPoP proof JWT payload claims are invalid.',
     })
   })
 
