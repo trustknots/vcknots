@@ -69,11 +69,11 @@ To start this server, follow the steps below.
    - `FIRESTORE_DATABASE_ID`
    - `BASE_URL` (e.g., `http://localhost:8080`)
    - `PORT` (default: `8080`)
-   - `DPOP_MODE` (`off` / `optional` / `required`, default: `optional`)
+   - `DPOP_MODE` (`off` / `optional` / `required`)
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
 
-   `DPOP_MODE` also controls DPoP Proof verification at the token endpoint. In `optional` mode, the server verifies the proof and issues a DPoP-bound access token only when a DPoP header is present. In `required` mode, token requests must include a DPoP header.
+   `DPOP_MODE` controls DPoP behavior for both the token endpoint and the credential endpoint via **`@trustknots/server-core`**. The Google Cloud server uses the same `server-core` implementation as the single server, so see the [`DPOP_MODE` description in the single-server README](../single/README.md#post-token) for mode-specific behavior, nonce challenges, and error responses.
 
 2. **Install Dependencies** (Run from root directory)
 
@@ -167,9 +167,7 @@ The server starts on `http://localhost:8080` by default.
 - [`POST /token`](../single/README.md#post-token) - Token endpoint
 - [`GET /.well-known/oauth-authorization-server`](../single/README.md#get-well-knownoauth-authorization-server) - Get Authorization Server metadata
 
-`POST /token` verifies DPoP Proof according to `DPOP_MODE`. If the DPoP Proof has no `nonce`, or the nonce is invalid, the server returns `use_dpop_nonce` with a `DPoP-Nonce` response header. When verification succeeds, the server issues a DPoP-bound access token with `token_type: "DPoP"`, and the access token contains `cnf.jkt`, the JWK Thumbprint of the public key.
-
-The Google Cloud server uses a Firestore Provider to prevent `jti` replay for DPoP Proofs. The storage key is the combination of the DPoP Proof public key thumbprint and `jti`.
+`POST /token` and `POST /credentials` follow `DPOP_MODE` for DPoP behavior. See the [single-server README](../single/README.md#post-token) for mode-specific behavior, nonce challenges, and error responses.
 
 #### Verifier
 

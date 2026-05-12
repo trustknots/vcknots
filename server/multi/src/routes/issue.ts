@@ -1,4 +1,7 @@
 import {
+  parseAuthorizationHeader,
+  parseDpopHeader,
+  resolveDpopMode,
   VcknotsContext,
   parseAuthorizationServerIssuer,
   parseCredentialIssuer,
@@ -7,16 +10,31 @@ import {
 import { CredentialRequest, initializeIssuerFlow } from '@trustknots/vcknots/issuer'
 import { initializeAuthzFlow } from '@trustknots/vcknots/authz'
 import { VcknotsError } from '@trustknots/vcknots/errors'
-import { parseAuthorizationHeader } from '@trustknots/server-core/utils/authorization-header.js'
-import { buildBearerAuthenticateHeader } from '@trustknots/server-core/utils/www-authenticate.js'
+import {
+  buildBearerAuthenticateHeader,
+  buildDpopAuthenticateHeader,
+} from '@trustknots/server-core/utils/www-authenticate.js'
 import { Context, Hono } from 'hono'
 import { handleError } from '../utils/error-handler.js'
+
+const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
 
 export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   const issueApp = new Hono()
 
   const issuerFlow = initializeIssuerFlow(context)
   const authzFlow = initializeAuthzFlow(context)
+
+  const hasCnfJkt = (payload: unknown) => {
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      return false
+    }
+    const cnf = (payload as { cnf?: unknown }).cnf
+    if (cnf === null || typeof cnf !== 'object' || Array.isArray(cnf)) {
+      return false
+    }
+    return typeof (cnf as { jkt?: unknown }).jkt === 'string'
+  }
 
   const unauthorized = (
     c: Context,
@@ -33,6 +51,45 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       })
     )
     return c.json(body, 401)
+  }
+
+  const dpopNonceResponse = async (c: Context, realm: string) => {
+    const dpopNonce = await authzFlow.createDpopNonceChallenge(DPOP_NONCE_TTL_MS)
+    const errorDescription = 'Credential issuer requires nonce in DPoP proof.'
+    c.header('DPoP-Nonce', dpopNonce)
+    c.header(
+      'WWW-Authenticate',
+      buildDpopAuthenticateHeader({
+        realm,
+        error: 'use_dpop_nonce',
+        errorDescription,
+      })
+    )
+    return c.json(
+      {
+        error: 'use_dpop_nonce',
+        error_description: errorDescription,
+      },
+      401
+    )
+  }
+
+  const invalidDpopProof = (c: Context, realm: string, errorDescription: string) => {
+    c.header(
+      'WWW-Authenticate',
+      buildDpopAuthenticateHeader({
+        realm,
+        error: 'invalid_dpop_proof',
+        errorDescription,
+      })
+    )
+    return c.json(
+      {
+        error: 'invalid_dpop_proof',
+        error_description: errorDescription,
+      },
+      401
+    )
   }
 
   issueApp.post('/:issuer/configurations/:configuration/offer', async (c) => {
@@ -65,6 +122,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       const issuer = parseCredentialIssuer(c.req.param('issuer'))
       const authz = parseAuthorizationServerIssuer(c.req.param('issuer'))
       const realm = c.req.param('issuer')
+      const dpopMode = resolveDpopMode(context.options)
 
       // Verify AccessToken
       const authorization = parseAuthorizationHeader(c.req.header('Authorization'))
@@ -77,18 +135,65 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
               : 'Authorization header must use Bearer or DPoP scheme.',
         })
       }
-      if (authorization.value.scheme === 'dpop') {
+      if (dpopMode === 'off' && (authorization.value.scheme === 'dpop' || c.req.header('DPoP'))) {
         return unauthorized(c, realm, {
           error: 'invalid_token',
           error_description: 'DPoP access tokens are not supported by this credential endpoint.',
         })
       }
 
-      let isValid: boolean
       try {
-        isValid = await authzFlow.verifyAccessToken(authz, authorization.value.token)
+        if (authorization.value.scheme === 'dpop') {
+          const dpopProof = parseDpopHeader(c.req.header('DPoP'))
+          if (!dpopProof.ok) {
+            return invalidDpopProof(
+              c,
+              realm,
+              dpopProof.reason === 'missing'
+                ? 'DPoP proof JWT is required.'
+                : dpopProof.reason === 'duplicate'
+                  ? 'DPoP header must appear exactly once.'
+                  : 'DPoP header must contain a compact JWT.'
+            )
+          }
+          await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
+            dpopProof: {
+              proofJwt: dpopProof.proofJwt,
+              htm: c.req.method,
+              htu: `${issuer}/credentials`,
+              nonceRequired: true,
+            },
+          })
+        } else {
+          if (dpopMode === 'required') {
+            return unauthorized(
+              c,
+              realm,
+              {
+                error: 'invalid_token',
+                error_description: 'DPoP access token is required.',
+              },
+              { error: 'invalid_token' }
+            )
+          }
+          const accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
+            authz,
+            authorization.value.token
+          )
+          if (hasCnfJkt(accessTokenPayload)) {
+            return unauthorized(
+              c,
+              realm,
+              {
+                error: 'invalid_token',
+                error_description: 'DPoP-bound access token must be presented with DPoP scheme.',
+              },
+              { error: 'invalid_token' }
+            )
+          }
+        }
       } catch (err) {
-        if (err instanceof VcknotsError && err.name === 'INVALID_ACCESS_TOKEN') {
+        if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
           return unauthorized(
             c,
             realm,
@@ -99,18 +204,13 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
             { error: 'invalid_token' }
           )
         }
+        if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
+          return invalidDpopProof(c, realm, err.message)
+        }
+        if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
+          return dpopNonceResponse(c, realm)
+        }
         throw err
-      }
-      if (!isValid) {
-        return unauthorized(
-          c,
-          realm,
-          {
-            error: 'invalid_token',
-            error_description: 'Access token is invalid.',
-          },
-          { error: 'invalid_token' }
-        )
       }
       const request = await c.req.json()
       const parse = CredentialRequest(request)

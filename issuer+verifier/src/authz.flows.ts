@@ -17,6 +17,7 @@ type DPoPProofContext = {
   proofJwt: string
   htm: string
   htu: string
+  // Defaults to false. Set true when the endpoint requires a DPoP nonce challenge.
   nonceRequired?: boolean
 }
 
@@ -37,6 +38,12 @@ type AnyTokenRequestOptions =
   | TokenRequestOptions[GrantType.AuthorizationCode]
   | TokenRequestOptions[GrantType.PreAuthorizedCode]
 
+type AccessTokenVerifyOptions = { alg?: AuthzKeyAlg }
+
+type DPoPBoundAccessTokenVerifyOptions = AccessTokenVerifyOptions & {
+  dpopProof: DPoPProofContext
+}
+
 export type AuthzFlow = {
   findAuthzServerMetadata(
     issuer: AuthorizationServerIssuer
@@ -55,8 +62,20 @@ export type AuthzFlow = {
   verifyAccessToken(
     authz: AuthorizationServerIssuer,
     accessToken: string,
-    options?: { alg?: AuthzKeyAlg }
+    options?: AccessTokenVerifyOptions
   ): Promise<boolean>
+  // Bearer access token verification. Returns the verified JWT payload for callers that need claims.
+  verifyAccessTokenPayload(
+    authz: AuthorizationServerIssuer,
+    accessToken: string,
+    options?: AccessTokenVerifyOptions
+  ): Promise<JwtPayload>
+  // DPoP-bound access token verification. Also verifies the DPoP proof and cnf.jkt binding.
+  verifyDpopBoundAccessToken(
+    authz: AuthorizationServerIssuer,
+    accessToken: string,
+    options: DPoPBoundAccessTokenVerifyOptions
+  ): Promise<JwtPayload>
 }
 
 export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
@@ -66,6 +85,131 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   const authzKey$ = context.providers.get('authz-signature-key-store-provider')
   const dpopProof$ = context.providers.get('dpop-proof-provider')
   const dpopProofJtiStore$ = context.providers.get('dpop-proof-jti-store-provider')
+
+  const verifyAccessTokenPayload = async (
+    authz: AuthorizationServerIssuer,
+    accessToken: string,
+    options?: AccessTokenVerifyOptions
+  ): Promise<JwtPayload> => {
+    const [jwtHeader, jwtPayload, jwtSignature] = accessToken.split('.')
+    if (!jwtHeader || !jwtPayload || !jwtSignature) {
+      throw err('invalid_access_token', {
+        message: 'Access token is not a valid JWT.',
+      })
+    }
+
+    let decodedHeader: { alg?: AuthzKeyAlg }
+    let decodedPayload: JwtPayload
+    try {
+      decodedHeader = JSON.parse(base64url.decode(jwtHeader))
+      decodedPayload = JSON.parse(base64url.decode(jwtPayload))
+    } catch (error) {
+      throw err('invalid_access_token', {
+        message:
+          error instanceof Error
+            ? `Access token is not a valid JWT. ${error.message}`
+            : 'Access token is not a valid JWT.',
+      })
+    }
+
+    const authzIssuer = AuthorizationServerIssuer(decodedPayload.iss)
+    if (authzIssuer !== authz) {
+      throw err('invalid_access_token', {
+        message: `Access token issuer ${authzIssuer} does not match the expected issuer ${authz}.`,
+      })
+    }
+    const keyAlg = decodedHeader.alg ?? options?.alg ?? 'ES256'
+    const publicKey = await authzKey$.fetch(authzIssuer, keyAlg)
+    if (!publicKey) {
+      throw err('authz_issuer_key_not_found', {
+        message: `Authorization server key for ${authzIssuer} not found.`,
+      })
+    }
+
+    try {
+      await jwtVerify(accessToken, publicKey, {
+        issuer: decodedPayload.iss,
+      })
+    } catch {
+      throw err('invalid_access_token', {
+        message: 'Access token verification failed.',
+      })
+    }
+    return decodedPayload
+  }
+
+  const getCnfJkt = (payload: JwtPayload): string | undefined => {
+    const cnf = payload.cnf
+    if (cnf === null || typeof cnf !== 'object' || Array.isArray(cnf)) {
+      return undefined
+    }
+    const jkt = (cnf as { jkt?: unknown }).jkt
+    return typeof jkt === 'string' && jkt.trim().length > 0 ? jkt : undefined
+  }
+
+  const verifyDpopBoundAccessToken = async (
+    authz: AuthorizationServerIssuer,
+    accessToken: string,
+    options: DPoPBoundAccessTokenVerifyOptions
+  ): Promise<JwtPayload> => {
+    const nonceRequired = options.dpopProof.nonceRequired ?? false
+
+    // Validate in dependency order: access token, DPoP proof, optional nonce,
+    // cnf.jkt binding, then jti replay. This avoids consuming nonce/jti before
+    // the presented token and proof are structurally valid.
+    const payload = await verifyAccessTokenPayload(authz, accessToken, options)
+    const accessTokenJkt = getCnfJkt(payload)
+    if (!accessTokenJkt) {
+      throw err('invalid_access_token', {
+        message: 'DPoP-bound access token must contain cnf.jkt.',
+      })
+    }
+
+    const verifiedDpopProof = await dpopProof$.verifyProof(options.dpopProof.proofJwt, {
+      htm: options.dpopProof.htm,
+      htu: options.dpopProof.htu,
+      // Credential endpoint DPoP proofs must bind to the presented access token via `ath`.
+      accessToken,
+    } satisfies DPoPProofVerifyContext)
+
+    if (nonceRequired) {
+      const nonceStore$ = context.providers.get('nonce-store-provider')
+      if (!verifiedDpopProof.nonce) {
+        throw err('use_dpop_nonce', {
+          message: 'Credential issuer requires nonce in DPoP proof.',
+        })
+      }
+      const consumed = await nonceStore$.consume(Nonce({ nonce: verifiedDpopProof.nonce }))
+      if (!consumed) {
+        throw err('use_dpop_nonce', {
+          message: 'Credential issuer requires nonce in DPoP proof.',
+        })
+      }
+    }
+
+    // Bind the access token to the DPoP proof key via cnf.jkt.
+    if (verifiedDpopProof.jwkThumbprint !== accessTokenJkt) {
+      throw err('invalid_dpop_proof', {
+        message: 'DPoP proof public key does not match access token cnf.jkt.',
+      })
+    }
+
+    // Reject replayed DPoP proofs by storing jti per proof public key thumbprint.
+    // The cache TTL follows the proof validity window, so a jti is retained
+    // while the corresponding proof could still pass iat/maxTokenAge validation.
+    const isNewJti = await dpopProofJtiStore$.saveIfAbsent(
+      verifiedDpopProof.jwkThumbprint,
+      verifiedDpopProof.jti,
+      { ttlMs: dpopProof$.proofJtiTtlMs }
+    )
+    if (!isNewJti) {
+      throw err('invalid_dpop_proof', {
+        message: 'DPoP proof JWT jti has already been used.',
+      })
+    }
+
+    return payload
+  }
 
   return {
     async findAuthzServerMetadata(issuer) {
@@ -183,59 +327,15 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         }
       }
     },
+    // Backward-compatible boolean API. Use verifyAccessTokenPayload when callers need claims.
     async verifyAccessToken(authz, accessToken: string, options): Promise<boolean> {
-      // TODO:  AccessToken Support (self-contained, Token Introspection)  Eprioritize self-contained.
-      // self-contained check
-      const [jwtHeader, jwtPayload, jwtSignature] = accessToken.split('.')
-      if (!jwtHeader || !jwtPayload || !jwtSignature) {
-        throw err('invalid_access_token', {
-          message: 'Access token is not a valid JWT.',
-        })
-      }
-      let decodedHeader: { alg?: AuthzKeyAlg }
-      let decodedPayload: JwtPayload
-      try {
-        decodedHeader = JSON.parse(base64url.decode(jwtHeader))
-        decodedPayload = JSON.parse(base64url.decode(jwtPayload))
-      } catch (error) {
-        throw err('invalid_access_token', {
-          message:
-            error instanceof Error
-              ? `Access token is not a valid JWT. ${error.message}`
-              : 'Access token is not a valid JWT.',
-        })
-      }
-
-      // TODO: Need to consider whether to use Provider
-      const authzIssuer = AuthorizationServerIssuer(decodedPayload.iss)
-      if (authzIssuer !== authz) {
-        throw err('invalid_access_token', {
-          message: `Access token issuer ${authzIssuer} does not match the expected issuer ${authz}.`,
-        })
-      }
-      const keyAlg = decodedHeader.alg ?? options?.alg ?? 'ES256'
-      const publicKey = await authzKey$.fetch(authzIssuer, keyAlg)
-      if (!publicKey) {
-        throw err('authz_issuer_key_not_found', {
-          message: `Authorization server key for ${authzIssuer} not found.`,
-        })
-      }
-
-      // Reference: library-dependent implementation
-      // const authzJWKS = createRemoteJWKSet(
-      //   new URL(`${authz}/.well-known/jwks.json`)
-      // )
-      try {
-        await jwtVerify(accessToken, publicKey, {
-          issuer: decodedPayload.iss,
-        })
-      } catch (error) {
-        throw err('invalid_access_token', {
-          message: 'Access token verification failed.',
-        })
-      }
+      await verifyAccessTokenPayload(authz, accessToken, options)
       return true
     },
+    // Bearer access token verification. Use this when the caller needs JWT claims.
+    verifyAccessTokenPayload: verifyAccessTokenPayload,
+    // DPoP access token verification. Use this when Authorization scheme is DPoP.
+    verifyDpopBoundAccessToken: verifyDpopBoundAccessToken,
   }
 }
 
