@@ -56,9 +56,9 @@ To start this server, follow the steps below.
    # PRIVATE_KEY_PATH: Path to private key file (default: ../samples/certificate-openid-test/private_key_openid.pem)
    # CERTIFICATE_PATH: Path to certificate file (default: ../samples/certificate-openid-test/certificate_openid.pem)
    # DPOP_MODE: DPoP configuration (off, optional, required)
-   # off: Do not use DPoP
-   # optional: Verify the proof and issue a DPoP-bound access token only when a DPoP header is present
-   # required: Require a DPoP header at the token endpoint
+   # off: Do not use DPoP at the token or credential endpoint
+   # optional: At the token endpoint, verify proof and issue a DPoP-bound access token when a DPoP header is present. At the credential endpoint, tokens without sender binding may use Bearer only; tokens with cnf.jkt require Authorization: DPoP and a DPoP header
+   # required: DPoP header is required at the token endpoint. At the credential endpoint, Authorization: DPoP and the DPoP header are always required (Bearer-only is rejected)
    ```
 
 2. **Install Dependencies** (Run from root directory)
@@ -185,40 +185,38 @@ Create credential offer
 
 Issue credential
 
-**Request Headers:**
-- `Authorization: Bearer {access_token}` (required) - Access token
+**Request headers (depends on `DPOP_MODE` and token type):**
+- **Bearer:** `Authorization: Bearer {access_token}` — for access tokens without sender binding when `DPOP_MODE` is not `required`.
+- **DPoP:** `Authorization: DPoP {access_token}` and `DPoP: {compact_jwt}` (RFC 9449 DPoP Proof) — required when `DPOP_MODE` is `required`, or when the token contains `cnf.jkt` (even in `optional` mode, Bearer-only is rejected).
+- Error responses may include `WWW-Authenticate: Bearer` or `WWW-Authenticate: DPoP` (see the Issuer docs on the credential endpoint and DPoP: [Issuer Setup and Usage](https://trustknots.github.io/vcknots/docs/issuer)).
 
 **Request Body (JSON):**
 ```json
 {
   "credential_identifier"?: string,
-  "format"?: "jwt_vc_json" | "jwt_vc_json-ld" | "ldp_vc",
-  "credential_definition": {
-    "type": string[],
-    "credentialSubject"?: Record<string, string>
-  },
-  "proof"?: {
-    "proof_type": "jwt" | "ldp_vp",
-    "jwt"?: string,
-    "ldp_vp"?: {
+  "credential_configuration_id"?: string,
+  "proofs"?: {
+    "jwt"?: string[],
+    "di_vp"?: {
       "holder"?: string,
       "proof": {
         "domain": string,
         "challenge": string
       }
-    }
+    }[],
+    "attestation"?: string[]
   },
   "credential_response_encryption"?: {
     "jwk": string,
     "alg": string,
-    "enc": string
+    "zip"?: string
   }
 }
 ```
 
 **Response:**
-- `200 OK` - Issued credential (JSON format)
-- `401 Unauthorized` - Access token is invalid or missing
+- `200 OK` - Issued credential (JSON)
+- `401 Unauthorized` - Access token or DPoP verification failed (`invalid_token` / `invalid_dpop_proof` / `use_dpop_nonce`; distinguish via response body and `WWW-Authenticate` when present)
 
 <a id="get-well-knownopenid-credential-issuer"></a>
 #### `GET /.well-known/openid-credential-issuer`
@@ -300,21 +298,21 @@ pre-authorized_code={pre_authorized_code}
   "token_type": string,
   "expires_in": number,
   "refresh_token"?: string,
-  "scope"?: string,
-  "c_nonce"?: string,
-  "c_nonce_expires_in"?: number
+  "scope"?: string
 }
 ```
 
-`DPOP_MODE` controls DPoP Proof verification at the token endpoint.
+`DPOP_MODE` controls DPoP behavior for both the token endpoint and the credential endpoint via `@trustknots/server-core`.
 
-| `DPOP_MODE` | Behavior |
-|-------------|----------|
-| `off` | DPoP is not used. The server issues a Bearer access token. |
-| `optional` | If the DPoP header is absent, the server issues a Bearer access token. If the DPoP header is present, the server verifies the proof and issues a DPoP-bound access token. |
-| `required` | The DPoP header is required. A missing or malformed DPoP header results in `invalid_request`. |
+| `DPOP_MODE` | token endpoint | credential endpoint |
+|-------------|----------------|---------------------|
+| `off` | DPoP is not used. The server issues a Bearer access token. | DPoP is not used. `Authorization: DPoP` or a `DPoP` header is rejected. |
+| `optional` | If the `DPoP` header is absent, the server issues a Bearer access token. If the `DPoP` header is present, the server verifies the proof and issues a DPoP-bound access token. | Tokens without sender binding may use `Authorization: Bearer`. Tokens carrying `cnf.jkt` require `Authorization: DPoP` and a `DPoP` header. |
+| `required` | The `DPoP` header is required. | `Authorization: DPoP` and a `DPoP` header are required. Bearer-only requests are rejected. |
 
-If the DPoP Proof has no `nonce`, or the nonce is invalid, the server returns `use_dpop_nonce` with a `DPoP-Nonce` response header.
+DPoP nonce errors are handled with `use_dpop_nonce` and a `DPoP-Nonce` response header, not as `invalid_request` or `invalid_dpop_proof`. Nonce-unrelated malformed proofs or signature verification failures are returned as `invalid_request` or `invalid_dpop_proof`, depending on the endpoint.
+
+At the token endpoint, if the DPoP Proof has no `nonce`, or the nonce is invalid, the server returns **HTTP 400** with a **`DPoP-Nonce` header** and JSON `use_dpop_nonce`. The token endpoint response does **not** include `WWW-Authenticate` in the current implementation.
 
 ```http
 HTTP/1.1 400 Bad Request
@@ -326,6 +324,22 @@ Content-Type: application/json
 {
   "error": "use_dpop_nonce",
   "error_description": "Authorization server requires nonce in DPoP proof."
+}
+```
+
+At the credential endpoint, if the DPoP Proof has no `nonce`, or the nonce is invalid, the server returns **HTTP 401** with a **`DPoP-Nonce` header**, `WWW-Authenticate: DPoP`, and JSON `use_dpop_nonce`.
+
+```http
+HTTP/1.1 401 Unauthorized
+DPoP-Nonce: <nonce>
+WWW-Authenticate: DPoP realm="http://localhost:8080", error="use_dpop_nonce", error_description="Credential issuer requires nonce in DPoP proof."
+Content-Type: application/json
+```
+
+```json
+{
+  "error": "use_dpop_nonce",
+  "error_description": "Credential issuer requires nonce in DPoP proof."
 }
 ```
 
@@ -348,11 +362,12 @@ Get Authorization Server metadata
 - `200 OK` - Authorization Server metadata (JSON format)
 - `404 Not Found` - Metadata not found
 
+The following illustrates typical fields on the single server. During initialization, **`issuer`**, **`authorization_endpoint`**, and **`token_endpoint`** are set according to **`BASE_URL`** (e.g. `http://localhost:8080`); your deployment may differ.
 ```json
 {
-  "issuer": "https://authz.example.com",
-  "authorization_endpoint": "https://authz.example.com/authorize",
-  "token_endpoint": "https://authz.example.com/token",
+  "issuer": "http://localhost:8080",
+  "authorization_endpoint": "http://localhost:8080/authorize",
+  "token_endpoint": "http://localhost:8080/token",
   "scopes_supported": ["openid"],
   "response_types_supported": ["code"],
   "pre-authorized_grant_anonymous_access_supported": true
