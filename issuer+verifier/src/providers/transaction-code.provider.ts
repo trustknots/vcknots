@@ -1,5 +1,11 @@
-﻿import { err } from '../errors'
+﻿import { randomInt } from 'node:crypto'
+import { err } from '../errors'
 import { TransactionCodeProvider } from './provider.types'
+
+const MIN_TX_CODE_LENGTH = 4
+const MAX_TX_CODE_LENGTH = 9
+// Exclude easily confusable characters: 0, O, I, l, etc.
+const TEXT_TX_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
 
 export const transactionCode = (): TransactionCodeProvider => {
   return {
@@ -13,9 +19,9 @@ export const transactionCode = (): TransactionCodeProvider => {
       description?: string
     ): string | number {
       const len = length ?? 6
-      if (len >= 10) {
+      if (len < MIN_TX_CODE_LENGTH || len > MAX_TX_CODE_LENGTH) {
         throw err('INVALID_TX_CODE_OPTIONS', {
-          message: 'Length must be less than 10',
+          message: `Length must be between ${MIN_TX_CODE_LENGTH} and ${MAX_TX_CODE_LENGTH}`,
         })
       }
       if (description?.length && description.length > 300) {
@@ -26,22 +32,21 @@ export const transactionCode = (): TransactionCodeProvider => {
 
       if (input_mode === 'numeric') {
         const min = 10 ** (len - 1)
-        const max = 10 ** len - 1
-        return Math.floor(Math.random() * (max - min + 1)) + min
+        const maxExclusive = 10 ** len
+        return randomInt(min, maxExclusive)
       }
 
       if (input_mode === 'text') {
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
         let result = ''
         for (let i = 0; i < len; i++) {
-          result += chars.charAt(Math.floor(Math.random() * chars.length))
+          result += TEXT_TX_CODE_CHARS.charAt(randomInt(0, TEXT_TX_CODE_CHARS.length))
         }
         return result
       }
 
       const min = 10 ** (len - 1)
-      const max = 10 ** len - 1
-      return Math.floor(Math.random() * (max - min + 1)) + min
+      const maxExclusive = 10 ** len
+      return randomInt(min, maxExclusive)
     },
   }
 }

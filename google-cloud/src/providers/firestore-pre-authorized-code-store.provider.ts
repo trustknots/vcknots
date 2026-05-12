@@ -1,10 +1,12 @@
 import { PreAuthorizedCodeStoreProvider } from '@trustknots/vcknots/providers'
 import { PreAuthorizedCodeStoreEntry } from '@trustknots/vcknots'
+import { Timestamp } from 'firebase-admin/firestore'
 import { FirestoreProviderOptions, resolveFirestore } from './firestore.provider'
 import { hashTxCode } from './hash.utils'
 import { raise } from '@trustknots/vcknots/errors'
 
-type FirestorePreAuthorizedCodeDoc = Omit<PreAuthorizedCodeStoreEntry, 'tx_code'> & {
+type FirestorePreAuthorizedCodeDoc = Omit<PreAuthorizedCodeStoreEntry, 'tx_code' | 'expires_at'> & {
+  expires_at: Timestamp
   tx_code_hash?: string
 }
 
@@ -28,7 +30,7 @@ export const firestorePreAuthorizedCodeStore = (
     async save(code, tx_code, options) {
       const ttlSec = options?.ttlSec ?? 300
       const tx_code_input_mode = options?.tx_code_input_mode ?? 'numeric'
-      const expiresAt = new Date().getTime() + ttlSec * 1000
+      const expiresAt = Timestamp.fromMillis(new Date().getTime() + ttlSec * 1000)
       const docRef = firestore.doc(`${ns}/v1/preCodes/${code}`)
 
       const data: FirestorePreAuthorizedCodeDoc = {
@@ -62,7 +64,7 @@ export const firestorePreAuthorizedCodeStore = (
       }
       const data = doc.data() as FirestorePreAuthorizedCodeDoc
 
-      if (data.expires_at && data.expires_at < new Date().getTime()) {
+      if (data.expires_at.toMillis() < new Date().getTime()) {
         await firestore.doc(`${ns}/v1/preCodes/${code}`).delete()
         throw raise('INVALID_GRANT', {
           message: 'Pre-authorized code has expired',

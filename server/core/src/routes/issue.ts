@@ -47,9 +47,9 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
       const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
-      const contentLength = c.req.header('content-length')
+      const rawBody = await c.req.text()
       const options: OfferOptions | undefined =
-        contentLength && contentLength !== '0' ? await c.req.json<OfferOptions>() : undefined
+        rawBody.trim().length > 0 ? (JSON.parse(rawBody) as OfferOptions) : undefined
 
       // It only accepts a domain as an argument
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {

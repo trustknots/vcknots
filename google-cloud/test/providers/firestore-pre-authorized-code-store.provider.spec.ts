@@ -113,6 +113,21 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(doc.tx_code_input_mode, 'numeric')
   })
 
+  it('should store expires_at as Firestore Timestamp', async () => {
+    mock.timers.enable({ apis: ['Date'] })
+
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('timestamp-check'), undefined, { ttlSec: 1 })
+
+    const doc = store.get('vcknots/v1/preCodes/timestamp-check') as {
+      expires_at?: { toMillis: () => number }
+    }
+    assert.ok(doc)
+    assert.ok(doc.expires_at)
+    assert.equal(typeof doc.expires_at?.toMillis, 'function')
+    assert.equal(doc.expires_at?.toMillis(), 1000)
+  })
+
   it('should throw INVALID_GRANT for an unknown code', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await assert.rejects(provider.validate(PreAuthorizedCode('unknown-code')), {

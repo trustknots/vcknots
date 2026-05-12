@@ -172,6 +172,8 @@ Authz metadata initialized
 - `configuration` (string) - クレデンシャル設定ID
 
 **リクエストボディ (JSON):**
+- オプション（任意）です。`tx_code` を利用する場合のみボディに指定してください。
+- 空または未送信の場合、`tx_code` は作成されません。
 ```json
 {
   "tx_code"?: {

@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+﻿import assert from 'node:assert'
 import { describe, it } from 'node:test'
 import { transactionCode } from '../../src/providers/transaction-code.provider'
 import { TransactionCodeProvider } from '../../src/providers/provider.types'
@@ -38,8 +38,8 @@ describe('transactionCode', () => {
     assert.strictEqual(result.length, 6)
     assert.match(
       result,
-      /^[A-Za-z0-9]{6}$/,
-      'Text transaction code should contain only alphanumeric characters'
+      /^[A-HJ-NP-Za-km-z2-9]{6}$/,
+      'Text transaction code should exclude ambiguous characters'
     )
   })
 
@@ -50,8 +50,25 @@ describe('transactionCode', () => {
     assert.strictEqual(result.length, 8)
     assert.match(
       result,
-      /^[A-Za-z0-9]{8}$/,
-      'Text transaction code should contain only alphanumeric characters'
+      /^[A-HJ-NP-Za-km-z2-9]{8}$/,
+      'Text transaction code should exclude ambiguous characters'
+    )
+  })
+
+  it('should throw when length is less than 4', () => {
+    assert.throws(
+      () => provider.generate('numeric', 3),
+      (e: unknown) => {
+        assert.strictEqual((e as { name?: string }).name, 'INVALID_TX_CODE_OPTIONS')
+        return true
+      }
+    )
+    assert.throws(
+      () => provider.generate('text', 1),
+      (e: unknown) => {
+        assert.strictEqual((e as { name?: string }).name, 'INVALID_TX_CODE_OPTIONS')
+        return true
+      }
     )
   })
 
