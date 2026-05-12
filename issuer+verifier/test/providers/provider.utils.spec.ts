@@ -31,11 +31,22 @@ describe('selectProvider', () => {
   })
 
   it('should throw a VcknotsError when no provider can handle the input', () => {
-    assert.throws(() => selectProvider(candidates, 'three'), 'provider_not_found')
+    assert.throws(
+      () => selectProvider(candidates, 'three'),
+      (err: unknown) => {
+        assert.equal((err as Error).name, 'provider_not_found')
+        return true
+      }
+    )
   })
 
   it('should throw an error when the list of candidates is empty', () => {
-    assert.throws(() => selectProvider([], 'any'), 'provider_not_found')
+    assert.throws(
+      () => selectProvider([], 'any'),
+      (err: unknown) => {
+        assert.equal((err as Error).name, 'provider_not_found')
+        return true
+      }
+    )
   })
 })
-

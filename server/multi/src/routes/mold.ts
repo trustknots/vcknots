@@ -45,7 +45,7 @@ export const createMoldRouter = (context: VcknotsContext, baseUrl: string) => {
 
   moldApp.post('/verifiers/:verifier/metadata', async (c) => {
     try {
-      const verfierId = parseVerifierClientId(c.req.param('verifier'))
+      const verifierId = parseVerifierClientId(c.req.param('verifier'))
       const json = await c.req.json()
       const metadata = parseVerifierMetadata(json)
 
@@ -68,7 +68,7 @@ export const createMoldRouter = (context: VcknotsContext, baseUrl: string) => {
         alg: 'ES256',
       } as const
 
-      await verifierFlow.createVerifierMetadata(verfierId, metadata, option)
+      await verifierFlow.createVerifierMetadata(verifierId, metadata, option)
       return c.json({ message: 'OK' })
     } catch (err) {
       return c.json(handleError(err), 400)

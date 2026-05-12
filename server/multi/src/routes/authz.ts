@@ -5,11 +5,7 @@ import {
   VcknotsContext,
 } from '@trustknots/vcknots'
 import { VcknotsError } from '@trustknots/vcknots/errors'
-import {
-  AuthorizationServerIssuer,
-  AuthzTokenRequest,
-  initializeAuthzFlow,
-} from '@trustknots/vcknots/authz'
+import { AuthzTokenRequest, initializeAuthzFlow } from '@trustknots/vcknots/authz'
 import { Context, Hono } from 'hono'
 import { handleError } from '../utils/error-handler.js'
 
