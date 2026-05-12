@@ -1,10 +1,14 @@
 import { z } from 'zod'
 import { err } from './errors/vcknots.error'
-import { AuthorizationServerIssuer } from './authorization-server.types'
-import { CredentialIssuer } from './credential-issuer.types'
+import {
+  AuthorizationServerIssuer,
+  AuthorizationServerMetadata,
+} from './authorization-server.types'
+import { CredentialIssuer, CredentialIssuerMetadata } from './credential-issuer.types'
 import { ClientId } from './client-id.types'
 import { RequestObjectId } from './request-object-id.types'
 import { CredentialConfigurationId } from './credential-issuer.types'
+import { VerifierMetadata } from './verifier.flows'
 
 const invalidRequest = (message: string, cause?: unknown): never => {
   throw err('invalid_request', { message, cause })
@@ -61,6 +65,48 @@ export const parseCredentialConfigurationId = (value: unknown) => {
     if (e instanceof z.ZodError) {
       throw err('invalid_request', {
         message: 'Invalid credential configuration id parameter.',
+        cause: e,
+      })
+    }
+    throw e
+  }
+}
+
+export const parseCredentialIssuerMetadata = (value: unknown) => {
+  try {
+    return CredentialIssuerMetadata(value as Record<string, unknown>)
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      throw err('invalid_request', {
+        message: 'Invalid credential issuer metadata.',
+        cause: e,
+      })
+    }
+    throw e
+  }
+}
+
+export const parseAuthorizationServerMetadata = (value: unknown) => {
+  try {
+    return AuthorizationServerMetadata(value as Record<string, unknown>)
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      throw err('invalid_request', {
+        message: 'Invalid authorization server metadata.',
+        cause: e,
+      })
+    }
+    throw e
+  }
+}
+
+export const parseVerifierMetadata = (value: unknown) => {
+  try {
+    return VerifierMetadata(value as Record<string, unknown>)
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      throw err('invalid_request', {
+        message: 'Invalid verifier metadata.',
         cause: e,
       })
     }

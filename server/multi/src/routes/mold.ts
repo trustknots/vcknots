@@ -1,7 +1,13 @@
-import { VcknotsContext, parseVerifierClientId } from '@trustknots/vcknots'
-import { CredentialIssuerMetadata, initializeIssuerFlow } from '@trustknots/vcknots/issuer'
-import { AuthorizationServerMetadata, initializeAuthzFlow } from '@trustknots/vcknots/authz'
-import { initializeVerifierFlow, VerifierMetadata } from '@trustknots/vcknots/verifier'
+import {
+  VcknotsContext,
+  parseVerifierClientId,
+  parseCredentialIssuerMetadata,
+  parseAuthorizationServerMetadata,
+  parseVerifierMetadata,
+} from '@trustknots/vcknots'
+import { initializeIssuerFlow } from '@trustknots/vcknots/issuer'
+import { initializeAuthzFlow } from '@trustknots/vcknots/authz'
+import { initializeVerifierFlow } from '@trustknots/vcknots/verifier'
 import { Hono } from 'hono'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,7 +24,7 @@ export const createMoldRouter = (context: VcknotsContext, baseUrl: string) => {
   moldApp.post('/issuers', async (c) => {
     try {
       const json = await c.req.json()
-      const issuer = CredentialIssuerMetadata(json)
+      const issuer = parseCredentialIssuerMetadata(json)
       await issuerFlow.createIssuerMetadata(issuer) // Receive the entire domain
       return c.json({ message: 'OK' })
     } catch (err) {
@@ -29,7 +35,7 @@ export const createMoldRouter = (context: VcknotsContext, baseUrl: string) => {
   moldApp.post('/authorization', async (c) => {
     try {
       const json = await c.req.json()
-      const authz = AuthorizationServerMetadata(json)
+      const authz = parseAuthorizationServerMetadata(json)
       await authzFlow.createAuthzServerMetadata(authz) // Receive the entire domain
       return c.json({ message: 'OK' })
     } catch (err) {
@@ -41,7 +47,7 @@ export const createMoldRouter = (context: VcknotsContext, baseUrl: string) => {
     try {
       const verfierId = parseVerifierClientId(c.req.param('verifier'))
       const json = await c.req.json()
-      const metadata = VerifierMetadata(json)
+      const metadata = parseVerifierMetadata(json)
 
       // Provisionally create it using the default (certificate_openid.pem)
       const __dirname = dirname(fileURLToPath(import.meta.url))
