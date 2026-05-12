@@ -56,6 +56,35 @@ describe('firestoreNonceStore', () => {
     assert.ok(!store.has(`vcknots/v1/nonces/${nonce.nonce}`))
   })
 
+  it('should return false when revoking an unknown nonce', async () => {
+    const provider = firestoreNonceStore({ app: mockApp })
+    const revoked = await provider.revoke({ nonce: 'unknown-nonce' })
+    assert.equal(revoked, false)
+  })
+
+  it('should consume a nonce', async () => {
+    const provider = firestoreNonceStore({ app: mockApp })
+    await provider.save(nonce)
+    const consumed = await provider.consume(nonce)
+    assert.equal(consumed, true)
+    assert.ok(!store.has(`vcknots/v1/nonces/${nonce.nonce}`))
+  })
+
+  it('should return false when consuming an unknown nonce', async () => {
+    const provider = firestoreNonceStore({ app: mockApp })
+    const consumed = await provider.consume({ nonce: 'unknown-nonce' })
+    assert.equal(consumed, false)
+  })
+
+  it('should return false and delete when consuming an expired nonce', async () => {
+    const provider = firestoreNonceStore({ app: mockApp })
+    const expired = { nonce: 'expired-consume-nonce', nonce_expires_in: -1 }
+    await provider.save(expired)
+    const consumed = await provider.consume(expired)
+    assert.equal(consumed, false)
+    assert.ok(!store.has('vcknots/v1/nonces/expired-consume-nonce'))
+  })
+
   it('should use the correct Firestore document path', async () => {
     const provider = firestoreNonceStore({ app: mockApp })
     await provider.save(nonce)

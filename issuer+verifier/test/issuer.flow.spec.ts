@@ -98,6 +98,7 @@ describe('IssuerFlow', () => {
     save: mock.fn(),
     validate: mock.fn(),
     revoke: mock.fn(async () => true),
+    consume: mock.fn(async () => true),
   } satisfies NonceStoreProvider
 
   const mockTransactionCodeProvider = {

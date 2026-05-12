@@ -5,6 +5,7 @@ export { FirestoreProviderOptions, firestore } from './providers/firestore.provi
 export * from './providers/firestore-authz-metadata-store.provider'
 export * from './providers/firestore-pre-authorized-code-store.provider'
 export * from './providers/firestore-request-object-store.provider'
+export * from './providers/firestore-dpop-proof-jti-store.provider'
 export * from './providers/kms-issuer-signature-key-store.provider'
 export * from './providers/kms-authz-signature-key-store.provider'
 export * from './providers/kms-verifier-signature-key-store.provider'

@@ -53,6 +53,10 @@ single/
    # PORT: サーバーのポート番号（デフォルト: 8080）
    # PRIVATE_KEY_PATH: 秘密鍵ファイルのパス（デフォルト: ../samples/certificate-openid-test/private_key_openid.pem）
    # CERTIFICATE_PATH: 証明書ファイルのパス（デフォルト: ../samples/certificate-openid-test/certificate_openid.pem）
+   # DPOP_MODE: DPoP 設定（off, optional, required）
+   # off: DPoP を利用しない
+   # optional: DPoP ヘッダーがある場合だけ proof を検証して DPoP-bound access token を発行
+   # required: token endpoint で DPoP ヘッダーを必須化
    ```
 
 2. **依存関係のインストール**（ルートディレクトリで実行）
@@ -248,10 +252,13 @@ nonce（c_nonce）の作成。OID4VCI の [nonce endpoint](https://openid.net/sp
 
 **レスポンスヘッダー:**
 - `Cache-Control: no-store` - キャッシュを無効化
+- `DPoP-Nonce: <nonce>` - `DPOP_MODE` が `off` 以外の場合に付与される DPoP 用 nonce
 
 **レスポンス:**
 - `200 OK` - `{ "c_nonce": string }`（nonce の有効期限は 2 分）
 - `400 Bad Request` / `500 Internal Server Error` - エラー時
+
+`c_nonce`（JSON ボディ）と `DPoP-Nonce`（レスポンスヘッダー）は別の値です。`c_nonce` は credential proof 用、`DPoP-Nonce` は token endpoint で提示する DPoP Proof 用です。用途が異なるため、TTL も別々に管理されます。
 
 <a id="get-noncenonce"></a>
 #### `GET /nonce/:nonce`
@@ -302,6 +309,39 @@ pre-authorized_code={pre_authorized_code}
   "expires_in": number,
   "refresh_token"?: string,
   "scope"?: string
+}
+```
+
+`DPOP_MODE` により、token endpoint の DPoP Proof 検証を制御できます。
+
+| `DPOP_MODE` | 挙動 |
+|-------------|------|
+| `off` | DPoP を利用せず、Bearer access token を発行します。 |
+| `optional` | DPoP ヘッダーがない場合は Bearer access token を発行します。DPoP ヘッダーがある場合は proof を検証し、DPoP-bound access token を発行します。 |
+| `required` | DPoP ヘッダーを必須にします。未指定または不正な DPoP ヘッダーは `invalid_request` になります。 |
+
+DPoP Proof に `nonce` がない、または nonce が無効な場合は、`DPoP-Nonce` レスポンスヘッダー付きで `use_dpop_nonce` を返します。
+
+```http
+HTTP/1.1 400 Bad Request
+DPoP-Nonce: <nonce>
+Content-Type: application/json
+```
+
+```json
+{
+  "error": "use_dpop_nonce",
+  "error_description": "Authorization server requires nonce in DPoP proof."
+}
+```
+
+DPoP Proof の検証に成功した場合、`token_type` は `DPoP` になります。発行される access token には、DPoP Proof の JOSE ヘッダーに含まれる公開鍵の JWK Thumbprint が `cnf.jkt` として含まれます。
+
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "DPoP",
+  "expires_in": 86400
 }
 ```
 
@@ -411,4 +451,3 @@ Request Object JWT の取得。
 **レスポンス:**
 - `200 OK` - Request Object JWT（Content-Type: application/oauth-authz-req+jwt）
 - `400 Bad Request` - Request Object が見つからない場合
-

@@ -11,6 +11,7 @@ This package provides the core logic for both Issuers and Verifiers, allowing yo
     *   Create Credential Offers (Pre-Authorized Code Flow).
     *   Issue Verifiable Credentials (JWT-VC format).
     *   Nonce endpoint support for c_nonce management.
+    *   DPoP Proof verification, DPoP nonce, and DPoP-bound access token support.
     *   Support for `did:key` and other DID methods via resolvers.
 *   **OID4VP (Verifier):**
     *   Manage Verifier Metadata.
@@ -127,6 +128,22 @@ If `proofJwt` does not match the real flow, `aud` / `iss` checks may fail with `
 
 When using the [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) (OID4VCI), Wallets can obtain a `c_nonce` before sending credential requests. This is useful when requesting multiple credentials—a single nonce can be reused within its validity period.
 
+If your HTTP server implementation needs to expose a DPoP nonce, you can keep the DPoP policy in `VcknotsOptions`:
+
+```typescript
+const vk = vcknots({
+  oauth: {
+    senderConstrainedAccessToken: {
+      dpop: {
+        mode: 'optional',
+      },
+    },
+  },
+})
+```
+
+Server implementations can consult this setting to decide whether `POST /nonce` should return a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values. See [server/core/src/routes/issue.ts](../server/core/src/routes/issue.ts) for an implementation example.
+
 Set `nonce_endpoint` in your issuer metadata:
 
 ```typescript
@@ -158,6 +175,42 @@ const valid = await issuer.validateNonce(nonce)
 ```typescript
 const deleted = await issuer.revokeNonce(nonce)
 // Returns: boolean (true if revoked successfully, false if nonce not found)
+```
+
+**Consume a DPoP nonce** (e.g., when verifying DPoP Proof at the token endpoint):
+
+```typescript
+const consumed = await nonceStore.consume(nonce)
+// Returns: boolean (true when the nonce exists, is not expired, and was consumed)
+```
+
+The `nonce` in a DPoP Proof is consumed only once to prevent replay. The credential proof `c_nonce` can be reused when requesting multiple credentials, while the DPoP Proof nonce is treated as a value bound to the token request proof.
+
+#### 5. DPoP Proof and DPoP-bound access tokens
+
+Token endpoint implementations can pass the Proof JWT from the HTTP `DPoP` header to `createAccessToken` to verify DPoP Proof and issue a DPoP-bound access token.
+
+```typescript
+const accessToken = await authz.createAccessToken(issuer, tokenRequest, {
+  dpopProof: {
+    proofJwt,
+    htm: 'POST',
+    htu: `${base}/token`,
+    nonceRequired: true,
+  },
+})
+```
+
+DPoP Proof verification checks `typ: dpop+jwt`, an asymmetric signing algorithm, the public `jwk` in the JOSE header, the signature, `jti` / `iat` / `htm` / `htu`, and nonce. The `jti` is stored in `dpop-proof-jti-store-provider`; reusing the same public key thumbprint and `jti` combination is rejected.
+
+When verification succeeds, the response `token_type` is `DPoP`, and the access token payload contains `cnf.jkt`, the JWK Thumbprint of the public key from the DPoP Proof.
+
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "DPoP",
+  "expires_in": 86400
+}
 ```
 
 ### Verifier Flow
