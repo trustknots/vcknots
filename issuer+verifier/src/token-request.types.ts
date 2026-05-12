@@ -9,7 +9,7 @@ export enum GrantType {
 const preAuthorizedCodeTokenRequestSchema = z.object({
   grant_type: z.literal(GrantType.PreAuthorizedCode),
   'pre-authorized_code': PreAuthorizedCode.schema,
-  tx_code: z.string().optional(),
+  tx_code: z.union([z.string(), z.number()]).optional(),
 })
 
 const authorizationCodeTokenRequestSchema = z.object({

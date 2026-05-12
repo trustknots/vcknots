@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { before, describe, it, mock } from 'node:test'
+import { before, beforeEach, describe, it, mock } from 'node:test'
 import { calculateJwkThumbprint, exportJWK, generateKeyPair } from 'jose'
 import {
   CredentialConfigurationId,
@@ -19,6 +19,7 @@ import {
   IssuerSignatureKeyStoreProvider,
   PreAuthorizedCodeProvider,
   PreAuthorizedCodeStoreProvider,
+  TransactionCodeProvider,
 } from '../src/providers'
 import { VcknotsContext, initializeContext } from '../src/vcknots.context'
 import { ProofTypes } from '../src/proofs.types'
@@ -100,6 +101,13 @@ describe('IssuerFlow', () => {
     consume: mock.fn(async () => true),
   } satisfies NonceStoreProvider
 
+  const mockTransactionCodeProvider = {
+    kind: 'transaction-code-provider',
+    name: 'mock-transaction-code-provider',
+    single: true,
+    generate: mock.fn(),
+  } satisfies TransactionCodeProvider
+
   const createCredentialRequest = (
     overrides: Partial<CredentialRequest> = {}
   ): CredentialRequest => ({
@@ -108,6 +116,10 @@ describe('IssuerFlow', () => {
       jwt: ['dummy-proof-jwt'],
     },
     ...overrides,
+  })
+
+  beforeEach(() => {
+    mock.reset()
   })
 
   before(() => {
@@ -122,6 +134,7 @@ describe('IssuerFlow', () => {
         mockCredentialProofProvider,
         mockNonceProvider,
         mockNonceStoreProvider,
+        mockTransactionCodeProvider,
       ],
     })
     issuerFlow = initializeIssuerFlow(context)
@@ -334,6 +347,70 @@ describe('IssuerFlow', () => {
     assert.equal(mockCredentialOfferProvider.create.mock.callCount(), 1)
   })
 
+  it('should create a credential offer with txCode when txCode options are provided', async () => {
+    const metadata: CredentialIssuerMetadata = {
+      credential_issuer: issuer,
+      credential_endpoint: 'https://example.com/credentials',
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+            credentialSubject: {},
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    }
+    const options = {
+      usePreAuth: true,
+      txCode: {
+        input_mode: 'numeric' as const,
+        length: 4,
+        description: 'transaction code',
+      },
+      ttlSec: 600,
+    }
+    const code = 'PREAUTHCODE'
+    const txCode = 1234
+    const offer = CredentialOffer({
+      credential_issuer: issuer,
+    })
+
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+    mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
+    mock.method(mockTransactionCodeProvider, 'generate', () => txCode)
+    mock.method(mockPreAuthCodeStoreProvider, 'save', async () => {})
+    mock.method(mockCredentialOfferProvider, 'create', async () => offer)
+
+    const result = await issuerFlow.offerCredential(issuer, configurations, options)
+
+    assert.strictEqual(result.tx_code, txCode)
+    assert.equal(mockTransactionCodeProvider.generate.mock.callCount(), 1)
+    assert.deepStrictEqual(mockTransactionCodeProvider.generate.mock.calls[0].arguments, [
+      'numeric',
+      4,
+      'transaction code',
+    ])
+    assert.deepStrictEqual(mockPreAuthCodeStoreProvider.save.mock.calls[0].arguments, [
+      code,
+      txCode,
+      {
+        ttlSec: 600,
+        tx_code_input_mode: 'numeric',
+      },
+    ])
+    assert.deepStrictEqual(mockCredentialOfferProvider.create.mock.calls[0].arguments[2], {
+      usePreAuth: true,
+      code,
+      txCode: {
+        inputMode: options.txCode.input_mode,
+        length: options.txCode.length,
+        description: options.txCode.description,
+      },
+    })
+  })
+
   describe('createNonce', () => {
     it('should create nonce, save to store, and return nonce string', async () => {
       const generatedNonce = { nonce: 'abc123def456', nonce_expires_in: 300000 }
@@ -382,6 +459,18 @@ describe('IssuerFlow', () => {
 
       assert.strictEqual(result, false)
       assert.equal(mockNonceStoreProvider.validate.mock.callCount(), 1)
+    })
+
+    it('should revoke nonce and return result', async () => {
+      mock.method(mockNonceStoreProvider, 'revoke', async () => true)
+
+      const result = await issuerFlow.revokeNonce('revocable-nonce')
+
+      assert.strictEqual(result, true)
+      assert.equal(mockNonceStoreProvider.revoke.mock.callCount(), 1)
+      assert.deepStrictEqual(mockNonceStoreProvider.revoke.mock.calls[0].arguments[0], {
+        nonce: 'revocable-nonce',
+      })
     })
   })
 

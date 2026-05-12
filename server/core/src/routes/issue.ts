@@ -55,7 +55,13 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
     )
     return c.json(body, 401)
   }
-
+  type OfferOptions = {
+    tx_code?: {
+      input_mode?: 'numeric' | 'text'
+      length?: number
+      description?: string
+    }
+  }
   const dpopNonceResponse = async (c: Context) => {
     const dpopNonce = await authzFlow.createDpopNonceChallenge(DPOP_NONCE_TTL_MS)
     const errorDescription = 'Credential issuer requires nonce in DPoP proof.'
@@ -113,11 +119,17 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
       const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
+      const rawBody = await c.req.text()
+      const options: OfferOptions | undefined =
+        rawBody.trim().length > 0 ? (JSON.parse(rawBody) as OfferOptions) : undefined
 
       // It only accepts a domain as an argument
-      const offer = await issuerFlow.offerCredential(issuer, configurations, {
+      const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
+        txCode: options?.tx_code,
       })
+      // TODO: Share tx_code with user (e.g., display on issuance screen or send via email)
+      console.log('tx_code:', tx_code)
       return c.text(
         `openid-credential-offer://?credential_offer=${encodeURIComponent(JSON.stringify(offer))}`
       )

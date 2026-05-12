@@ -175,6 +175,19 @@ Authz metadata initialized
 **パスパラメータ:**
 - `configuration` (string) - クレデンシャル設定ID
 
+**リクエストボディ (JSON):**
+- オプション（任意）です。`tx_code` を利用する場合のみボディに指定してください。
+- 空または未送信の場合、`tx_code` は作成されません。
+```json
+{
+  "tx_code"?: {
+    "input_mode"?: 'numeric' | 'text',
+    "length"?: number,
+    "description"?: string
+  }
+}
+```
+
 **レスポンス:**
 - `200 OK` - `openid-credential-offer://?credential_offer={encoded_offer}` 形式のテキスト
 

@@ -237,6 +237,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       switch (tokenRequest.grant_type) {
         case 'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
           const option = options as TokenRequestOptions[GrantType.PreAuthorizedCode]
+
           const verifiedDpopProof = option?.dpopProof
             ? await dpopProof$.verifyProof(option.dpopProof.proofJwt, {
                 htm: option.dpopProof.htm,
@@ -271,7 +272,10 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             }
           }
           // Check pre-code validity
-          const isValid = await codeStore$.validate(tokenRequest['pre-authorized_code'])
+          const isValid = await codeStore$.validate(
+            tokenRequest['pre-authorized_code'],
+            tokenRequest.tx_code
+          )
           if (!isValid) {
             throw err('PRE_AUTHORIZED_CODE_NOT_FOUND', {
               message: 'The provided pre-authorized code is invalid.',
@@ -279,8 +283,6 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           }
           // delete code from store
           await codeStore$.delete(tokenRequest['pre-authorized_code'])
-
-          // TODO: if ix_code is provided, it should be validated
 
           const keyAlg = options?.alg ?? 'ES256'
           // Authz access token (data)
