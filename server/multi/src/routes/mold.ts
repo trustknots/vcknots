@@ -1,13 +1,11 @@
+import { VcknotsContext } from '@trustknots/vcknots'
+import { CredentialIssuerMetadata, initializeIssuerFlow } from '@trustknots/vcknots/issuer'
+import { AuthorizationServerMetadata, initializeAuthzFlow } from '@trustknots/vcknots/authz'
 import {
-  VcknotsContext,
-  parseVerifierClientId,
-  parseCredentialIssuerMetadata,
-  parseAuthorizationServerMetadata,
-  parseVerifierMetadata,
-} from '@trustknots/vcknots'
-import { initializeIssuerFlow } from '@trustknots/vcknots/issuer'
-import { initializeAuthzFlow } from '@trustknots/vcknots/authz'
-import { initializeVerifierFlow } from '@trustknots/vcknots/verifier'
+  initializeVerifierFlow,
+  VerifierClientId,
+  VerifierMetadata,
+} from '@trustknots/vcknots/verifier'
 import { Hono } from 'hono'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,7 +22,7 @@ export const createMoldRouter = (context: VcknotsContext, baseUrl: string) => {
   moldApp.post('/issuers', async (c) => {
     try {
       const json = await c.req.json()
-      const issuer = parseCredentialIssuerMetadata(json)
+      const issuer = CredentialIssuerMetadata(json)
       await issuerFlow.createIssuerMetadata(issuer) // Receive the entire domain
       return c.json({ message: 'OK' })
     } catch (err) {
@@ -35,7 +33,7 @@ export const createMoldRouter = (context: VcknotsContext, baseUrl: string) => {
   moldApp.post('/authorization', async (c) => {
     try {
       const json = await c.req.json()
-      const authz = parseAuthorizationServerMetadata(json)
+      const authz = AuthorizationServerMetadata(json)
       await authzFlow.createAuthzServerMetadata(authz) // Receive the entire domain
       return c.json({ message: 'OK' })
     } catch (err) {
@@ -45,9 +43,9 @@ export const createMoldRouter = (context: VcknotsContext, baseUrl: string) => {
 
   moldApp.post('/verifiers/:verifier/metadata', async (c) => {
     try {
-      const verifierId = parseVerifierClientId(c.req.param('verifier'))
+      const verifierId = VerifierClientId(c.req.param('verifier'))
       const json = await c.req.json()
-      const metadata = parseVerifierMetadata(json)
+      const metadata = VerifierMetadata(json)
 
       // Provisionally create it using the default (certificate_openid.pem)
       const __dirname = dirname(fileURLToPath(import.meta.url))

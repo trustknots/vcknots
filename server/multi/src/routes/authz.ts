@@ -1,11 +1,10 @@
-import {
-  parseAuthorizationServerIssuer,
-  parseDpopHeader,
-  resolveDpopMode,
-  VcknotsContext,
-} from '@trustknots/vcknots'
+import { parseDpopHeader, resolveDpopMode, VcknotsContext } from '@trustknots/vcknots'
 import { VcknotsError } from '@trustknots/vcknots/errors'
-import { AuthzTokenRequest, initializeAuthzFlow } from '@trustknots/vcknots/authz'
+import {
+  AuthorizationServerIssuer,
+  AuthzTokenRequest,
+  initializeAuthzFlow,
+} from '@trustknots/vcknots/authz'
 import { Context, Hono } from 'hono'
 import { handleError } from '../utils/error-handler.js'
 
@@ -51,7 +50,7 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
       }
 
       const issuer = c.req.param('issuer')
-      const authz = parseAuthorizationServerIssuer(c.req.param('issuer'))
+      const authz = AuthorizationServerIssuer(issuer)
       const request = await c.req.formData()
       const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()))
       const accessToken = await authzFlow.createAccessToken(authz, tokenRequest, {
@@ -87,7 +86,7 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
 
   authzApp.get('/:issuer/.well-known/oauth-authorization-server', async (c) => {
     try {
-      const authz = parseAuthorizationServerIssuer(c.req.param('issuer'))
+      const authz = AuthorizationServerIssuer(c.req.param('issuer'))
       const metadata = await authzFlow.findAuthzServerMetadata(authz)
       if (!metadata) {
         return c.json(

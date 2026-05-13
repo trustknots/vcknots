@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
-import { parseRequestObjectId, VcknotsContext } from '@trustknots/vcknots'
+import { VcknotsContext } from '@trustknots/vcknots'
 import {
   VerifierClientIdScheme,
+  VerifierRequestObjectId,
   initializeVerifierFlow,
   VerifierAuthorizationResponse,
   VerifierClientId,
@@ -382,7 +383,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     try {
       console.log('request-object-Id:', c.req.param('request-object-Id'))
       const verifierId = VerifierClientId(baseUrl)
-      const requestObjectId = parseRequestObjectId(c.req.param('request-object-Id'))
+      const requestObjectId = VerifierRequestObjectId(c.req.param('request-object-Id'))
       const jar = await verifierFlow.findRequestObject(verifierId, requestObjectId)
       return c.body(jar, 200, {
         'Content-Type': 'application/oauth-authz-req+jwt',
