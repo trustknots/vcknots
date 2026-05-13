@@ -10,17 +10,13 @@ import { RequestObjectId } from './request-object-id.types'
 import { CredentialConfigurationId } from './credential-issuer.types'
 import { VerifierMetadata } from './verifier.flows'
 
-const invalidRequest = (message: string, cause?: unknown): never => {
-  throw err('invalid_request', { message, cause })
-}
-
 function wrapInvalidRequest<T>(parser: (value: unknown) => T, message: string) {
   return (value: unknown): T => {
     try {
       return parser(value)
     } catch (e) {
       if (e instanceof z.ZodError) {
-        invalidRequest(message, e)
+        throw err('invalid_request', { message, cause: e })
       }
       throw e
     }
