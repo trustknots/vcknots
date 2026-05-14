@@ -14,6 +14,22 @@ export type IssueCredentialProviderOptions = {
   identifier?: () => string
 }
 
+// const credentialSubjectPath = (path: string[]) =>
+//   path[0] === 'credentialSubject' ? path.slice(1) : path
+
+const credentialSubjectPath = (path: string[]) => {
+  if (path[0] !== 'credentialSubject') {
+    return path
+  }
+  const subjectPath = path.slice(1)
+  if (subjectPath.length === 0) {
+    throw raise('INVALID_CONFIGURATION', {
+      message: 'credential_metadata.claims[].path must point to a claim under credentialSubject.',
+    })
+  }
+  return subjectPath
+}
+
 export const issueCredentialJwt = (
   providerOptions?: IssueCredentialProviderOptions
 ): IssueCredentialProvider & WithProviderRegistry => {
@@ -48,14 +64,19 @@ export const issueCredentialJwt = (
       const defCredentialMetadataClaims = configuration.credential_metadata?.claims
       if (defCredentialMetadataClaims && defCredentialMetadataClaims.length > 0) {
         for (const claim of defCredentialMetadataClaims) {
-          const value = getClaimValue(claimsSource, claim.path)
+          const subjectPath = credentialSubjectPath(claim.path)
+          let value = getClaimValue(claimsSource, claim.path)
+          if (value === undefined && subjectPath.length !== claim.path.length) {
+            value = getClaimValue(claimsSource, subjectPath)
+          }
+          // const value = getClaimValue(claimsSource, subjectPath)
           if (claim.mandatory === true && value === undefined) {
             throw raise('INVALID_CLAIMS', {
               message: `Claim ${claim.path.join('.')} is not defined as mandatory in the credential definition.`,
             })
           }
           if (value !== undefined) {
-            setClaimValue(credentialSubject, claim.path, value)
+            setClaimValue(credentialSubject, subjectPath, value)
           }
         }
       }
