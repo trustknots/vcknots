@@ -12,13 +12,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Debug checked out commit and file
-        run: |
-          git rev-parse HEAD
-          git status --short
-          grep -RIn "INVALID_CONFIGURATION" issuer+verifier/src || true
-          nl -ba issuer+verifier/src/providers/issue-credential-jwt-vc-json.provider.ts | sed -n '20,50p'
-          nl -ba issuer+verifier/src/errors/error.codes.ts | sed -n '50,65p'
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - uses: pnpm/action-setup@v4
         with:
