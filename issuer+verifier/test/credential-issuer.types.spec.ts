@@ -63,28 +63,11 @@ describe('credential-issuer.type', () => {
     })
 
     it('should reject http credential_endpoint', () => {
+      // Detailed URL scheme validation cases are covered in endpoint-url.validator tests.
       assert.throws(() =>
         CredentialIssuerMetadata({
           ...baseInput,
           credential_endpoint: 'http://issuer.example.com/credential',
-        })
-      )
-    })
-
-    it('should reject http batch_credential_endpoint', () => {
-      assert.throws(() =>
-        CredentialIssuerMetadata({
-          ...baseInput,
-          batch_credential_endpoint: 'http://issuer.example.com/batch_credential',
-        })
-      )
-    })
-
-    it('should reject http deferred_credential_endpoint', () => {
-      assert.throws(() =>
-        CredentialIssuerMetadata({
-          ...baseInput,
-          deferred_credential_endpoint: 'http://issuer.example.com/deferred_credential',
         })
       )
     })
