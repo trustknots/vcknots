@@ -75,15 +75,20 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       const verifierId = VerifierClientId(baseUrl)
       type Payload = Record<string, unknown>
       const body: Payload = await c.req.json<Payload>().catch(() => ({}))
-      const credentialId = ('credentialId' in body ? body.credentialId : undefined) as
-        | string
-        | undefined
+      // const credentialId = ('credentialId' in body ? body.credentialId : undefined) as
+      //   | string
+      //   | undefined
+
+      const credentialId =
+        typeof body.credentialId === 'string' && body.credentialId.trim() !== ''
+          ? body.credentialId
+          : undefined
 
       if (!credentialId) {
         return c.json(
           {
             error: 'invalid_request',
-            error_description: 'credentialId is required.',
+            error_description: 'credentialId must be a non-empty string.',
           },
           400
         )
@@ -94,7 +99,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         return c.json(
           {
             error: 'invalid_request',
-            error_description: 'state is required.',
+            error_description: 'state must be a non-empty string.',
           },
           400
         )
@@ -180,7 +185,16 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         )
       }
 
-      const formData = await c.req.formData()
+      const formData = await c.req.formData().catch(() => null)
+      if (!formData) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Request body must be a valid form data.',
+          },
+          400
+        )
+      }
       const parsed = parseFormPayload(formData)
 
       if (!parsed.ok) {
@@ -188,7 +202,17 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       }
 
       // Validate it using the AuthorizationResponse
-      const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
+      const parseResult = VerifierAuthorizationResponse.schema.safeParse(parsed.payload)
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid authorization response parameters.',
+          },
+          400
+        )
+      }
+      const authorizationResponse = parseResult.data
 
       const audResolved = vpAudTx.resolveExpectedAudFromWalletState(authorizationResponse.state)
       if (!audResolved.ok) {
@@ -226,14 +250,33 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           400
         )
       }
-      const formData = await c.req.formData()
+      const formData = await c.req.formData().catch(() => null)
+      if (!formData) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Request body must be a valid form data.',
+          },
+          400
+        )
+      }
       const parsed = parseFormPayload(formData)
       if (!parsed.ok) {
         return c.json(parsed.error, 400)
       }
 
       // Validate it using the AuthorizationResponse
-      const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
+      const parseResult = VerifierAuthorizationResponse.schema.safeParse(parsed.payload)
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid authorization response parameters.',
+          },
+          400
+        )
+      }
+      const authorizationResponse = parseResult.data
       const audResolved = vpAudTx.resolveExpectedAudFromWalletState(authorizationResponse.state)
       if (!audResolved.ok) {
         return c.json(audResolved.error, 400)
@@ -383,7 +426,17 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     try {
       console.log('request-object-Id:', c.req.param('request-object-Id'))
       const verifierId = VerifierClientId(baseUrl)
-      const requestObjectId = VerifierRequestObjectId(c.req.param('request-object-Id'))
+      const parseResult = VerifierRequestObjectId.schema.safeParse(c.req.param('request-object-Id'))
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid request-object-Id parameter.',
+          },
+          400
+        )
+      }
+      const requestObjectId = parseResult.data
       const jar = await verifierFlow.findRequestObject(verifierId, requestObjectId)
       return c.body(jar, 200, {
         'Content-Type': 'application/oauth-authz-req+jwt',
