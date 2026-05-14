@@ -11,7 +11,7 @@ type FirestorePreAuthorizedCodeDoc = Omit<PreAuthorizedCodeStoreEntry, 'tx_code'
 }
 
 export const firestorePreAuthorizedCodeStore = (
-  options?: FirestoreProviderOptions & { expiresIn?: number }
+  options?: FirestoreProviderOptions
 ): PreAuthorizedCodeStoreProvider => {
   const firestore = resolveFirestore(options)
   const ns = options?.namespace?.replace(/\//g, '') || 'vcknots'
@@ -27,9 +27,9 @@ export const firestorePreAuthorizedCodeStore = (
     name: 'firestore-pre-authorized-code-store-provider',
     single: true,
 
-    async save(code, tx_code, options) {
-      const ttlSec = options?.ttlSec ?? 300
-      const tx_code_input_mode = options?.tx_code_input_mode ?? 'numeric'
+    async save(code, tx_code, saveOptions) {
+      const ttlSec = saveOptions?.ttlSec ?? 300
+      const tx_code_input_mode = saveOptions?.tx_code_input_mode ?? 'numeric'
       const expiresAt = Timestamp.fromMillis(new Date().getTime() + ttlSec * 1000)
       const docRef = firestore.doc(`${ns}/v1/preCodes/${code}`)
 
