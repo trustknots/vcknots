@@ -23,7 +23,7 @@ const credentialSubjectPath = (path: string[]) => {
   }
   const subjectPath = path.slice(1)
   if (subjectPath.length === 0) {
-    throw raise('INVALID_CONFIGURATION', {
+    throw raise('invalid_configuration', {
       message: 'credential_metadata.claims[].path must point to a claim under credentialSubject.',
     })
   }
@@ -143,4 +143,3 @@ export const issueCredentialJwt = (
     },
   }
 }
-
