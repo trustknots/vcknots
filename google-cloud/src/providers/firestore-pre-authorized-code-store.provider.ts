@@ -28,7 +28,8 @@ export const firestorePreAuthorizedCodeStore = (
     single: true,
 
     async save(code, tx_code, saveOptions) {
-      const ttlSec = saveOptions?.ttlSec ?? 300
+      const ttlSecRaw = Number(saveOptions?.ttlSec ?? 300)
+      const ttlSec = Number.isFinite(ttlSecRaw) && ttlSecRaw > 0 ? Math.floor(ttlSecRaw) : 300
       const tx_code_input_mode = saveOptions?.tx_code_input_mode ?? 'numeric'
       const expiresAt = Timestamp.fromMillis(new Date().getTime() + ttlSec * 1000)
       const docRef = firestore.doc(`${ns}/v1/preCodes/${code}`)
