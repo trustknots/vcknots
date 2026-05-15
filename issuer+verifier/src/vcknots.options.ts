@@ -25,8 +25,8 @@ export type VcknotsOptions = {
   providers?: Providers
   extensions?: Extensions
   oauth?: OAuthOptions
+  allowInsecureHttp?: boolean
 }
 
-export const resolveDpopMode = (
-  options?: Pick<VcknotsOptions, 'oauth'>
-): DPoPMode => options?.oauth?.senderConstrainedAccessToken?.dpop?.mode ?? 'off'
+export const resolveDpopMode = (options?: Pick<VcknotsOptions, 'oauth'>): DPoPMode =>
+  options?.oauth?.senderConstrainedAccessToken?.dpop?.mode ?? 'off'
