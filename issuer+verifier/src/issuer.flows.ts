@@ -20,18 +20,18 @@ import { jwkSchema } from './jwk.type'
 
 type OfferOptions =
   | {
-    usePreAuth: false
-    state?: unknown
-  }
-  | {
-    usePreAuth: true
-    txCode?: {
-      input_mode?: 'numeric' | 'text'
-      length?: number
-      description?: string
+      usePreAuth: false
+      state?: unknown
     }
-    ttlSec?: number
-  }
+  | {
+      usePreAuth: true
+      txCode?: {
+        input_mode?: 'numeric' | 'text'
+        length?: number
+        description?: string
+      }
+      ttlSec?: number
+    }
 type IssueOptions = {
   alg: string
   cnonce?: {
@@ -117,9 +117,30 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const credentialProof$ = context.providers.get('credential-proof-provider')
   const transactionCode$ = context.providers.get('transaction-code-provider')
 
+  const rejectInsecureIssuerMetadata = (metadata: CredentialIssuerMetadata | null) => {
+    if (metadata) {
+      if (context.options?.allowInsecureHttp) {
+        return
+      }
+      const credentialEndpoints = [
+        metadata.credential_endpoint,
+        metadata.batch_credential_endpoint,
+        metadata.deferred_credential_endpoint,
+      ].filter((url): url is string => url !== undefined)
+
+      for (const url of credentialEndpoints) {
+        if (new URL(url).protocol === 'http:') {
+          throw err('INSECURE_HTTP_NOT_ALLOWED', {
+            message: `Insecure HTTP URL is not allowed: ${url}`,
+          })
+        }
+      }
+    }
+  }
   return {
     async findIssuerMetadata(id) {
       const metadata = await metadataStore$.fetch(id)
+      rejectInsecureIssuerMetadata(metadata)
       return metadata
     },
     async findJwtVcIssuerMetadata(id) {
@@ -127,6 +148,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       if (!metadata) {
         return null
       }
+      rejectInsecureIssuerMetadata(metadata)
       const jwtVcIssuerMetadata: JwtVcIssuerResponse = {
         issuer: metadata.credential_issuer,
       }
@@ -172,6 +194,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       return jwtVcIssuerMetadata
     },
     async createIssuerMetadata(issuer) {
+      rejectInsecureIssuerMetadata(issuer)
       const current = await metadataStore$.fetch(issuer.credential_issuer)
       if (current) {
         throw err('duplicate_issuer', {
@@ -206,6 +229,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         raise('issuer_not_found', {
           message: `Issuer metadata for ${issuer} not found.`,
         })
+      rejectInsecureIssuerMetadata(metadata)
 
       for (const configId of configurations) {
         if (metadata.credential_configurations_supported[configId] === undefined) {
@@ -270,6 +294,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         raise('issuer_not_found', {
           message: `Issuer metadata for ${issuer} not found.`,
         })
+      rejectInsecureIssuerMetadata(metadata)
 
       if (!credentialRequest.credential_configuration_id) {
         throw err('invalid_credential_request', {
@@ -309,10 +334,10 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
               ? options?.proofJwt?.usePreAuth === true
                 ? { usePreAuth: true, credentialIssuer: metadata.credential_issuer }
                 : {
-                  usePreAuth: false,
-                  credentialIssuer: metadata.credential_issuer,
-                  clientId: options?.proofJwt?.clientId,
-                }
+                    usePreAuth: false,
+                    credentialIssuer: metadata.credential_issuer,
+                    clientId: options?.proofJwt?.clientId,
+                  }
               : undefined
           verifyProof = await credentialProofProvider.verifyProof(proof, proofJwtCtx)
           if (!verifyProof) {
