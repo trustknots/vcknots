@@ -154,6 +154,19 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(doc.expires_at?.toMillis(), 1000)
   })
 
+  it('should fall back to default ttlSec when fractional ttlSec floors to zero', async () => {
+    mock.timers.enable({ apis: ['Date'] })
+
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('fractional-ttl-zero'), undefined, { ttlSec: 0.1 })
+
+    const doc = store.get('vcknots/v1/preCodes/fractional-ttl-zero') as {
+      expires_at?: { toMillis: () => number }
+    }
+    assert.ok(doc?.expires_at)
+    assert.equal(doc.expires_at?.toMillis(), 300 * 1000)
+  })
+
   it('should throw INVALID_GRANT for an unknown code', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await assert.rejects(provider.validate(PreAuthorizedCode('unknown-code')), {

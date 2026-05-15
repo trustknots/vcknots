@@ -145,5 +145,14 @@ describe('inMemoryPreAuthorizedCode', () => {
       mock.timers.tick(600)
       await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
     })
+
+    it('should fall back to default ttlSec when fractional ttlSec floors to zero', async () => {
+      mock.timers.enable({ apis: ['Date'] })
+      await provider.save(sampleCode, undefined, { ttlSec: 0.1 })
+      mock.timers.tick(299_000)
+      assert.strictEqual(await provider.validate(sampleCode), true)
+      mock.timers.tick(2_000)
+      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
+    })
   })
 })
