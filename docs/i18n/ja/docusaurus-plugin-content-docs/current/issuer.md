@@ -434,10 +434,33 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
 app.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
-      const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
-      const contentLength = c.req.header('content-length')
-      const options: OfferOptions | undefined =
-        contentLength && contentLength !== '0' ? await c.req.json<OfferOptions>() : undefined
+      const parseResult = CredentialConfigurationId.schema.safeParse(c.req.param('configuration'))
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid credential configuration ID.',
+          },
+          400
+        )
+      }
+      const configurations = [parseResult.data]
+      const rawBody = await c.req.text()
+
+      let options: OfferOptions | undefined
+      if (rawBody.trim().length > 0) {
+        try {
+          options = JSON.parse(rawBody) as OfferOptions
+        } catch {
+          return c.json(
+            {
+              error: 'invalid_request',
+              error_description: 'Request body must be valid JSON.',
+            },
+            400
+          )
+        }
+      }
 
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
@@ -556,8 +579,31 @@ app.post('/token', async (c) => {
     )
   }
 
-  const request = await c.req.formData()
-  const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()))
+  const request = await c.req.formData().catch(() => null)
+  if (!request) {
+    return c.json(
+      {
+        error: 'invalid_request',
+        error_description: 'Request body must be a valid form data.',
+      },
+      400
+    )
+  }
+  const requestData: Record<string, string | File | number> = Object.fromEntries(
+    request.entries()
+  )
+
+  const parseResult = AuthzTokenRequest.schema.safeParse(requestData)
+  if (!parseResult.success) {
+    return c.json(
+      {
+        error: 'invalid_request',
+        error_description: 'Invalid token request parameters.',
+      },
+      400
+    )
+  }
+  const tokenRequest = parseResult.data
   const issuer = AuthorizationServerIssuer(baseUrl)
 
   const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
@@ -1008,8 +1054,28 @@ app.post('/credentials', async (c) => {
       throw err
     }
 
-    const request = await c.req.json()
-    const parse = CredentialRequest(request)
+    const request = await c.req.json().catch(() => null)
+    if (!request) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Request body must be a valid JSON.',
+        },
+        400
+      )
+    }
+    const parseResult = CredentialRequest.schema.safeParse(request)
+    if (!parseResult.success) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Request body does not conform to CredentialRequest schema.',
+        },
+        400
+      )
+    }
+    const parse = parseResult.data
+
     const credential = await issuerFlow.issueCredential(issuer, parse, {
       alg: 'ES256',
       cnonce: {

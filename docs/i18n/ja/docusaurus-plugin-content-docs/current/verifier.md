@@ -310,7 +310,17 @@ JAR 生成時に保存された Request Object（JWT）を Wallet などのク�
 verifyApp.get('/verify/request.jwt/:request-object-Id', async (c) => {
   try {
     const verifierId = VerifierClientId(baseUrl)
-    const requestObjectId = RequestObjectId(c.req.param('request-object-Id'))
+    const parseResult = VerifierRequestObjectId.schema.safeParse(c.req.param('request-object-Id'))
+    if (!parseResult.success) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Invalid request-object-Id parameter.',
+        },
+        400
+      )
+    }
+    const requestObjectId = parseResult.data
     const jar = await verifierFlow.findRequestObject(verifierId, requestObjectId)
     return c.body(jar, 200, {
       'Content-Type': 'application/oauth-authz-req+jwt',
@@ -355,12 +365,32 @@ Wallet から返送される `vp_token` を受け取り、Verifier 側で検証 
 verifyApp.post('/verify/callback', async (c) => {
   try {
     const verifierId = VerifierClientId(baseUrl)
-    const parsed = parseFormPayload(await c.req.formData())
+    const formData = await c.req.formData().catch(() => null)
+    if (!formData) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Request body must be a valid form data.',
+        },
+        400
+      )
+    }
+    const parsed = parseFormPayload(formData)
     if (!parsed.ok) {
       return c.json(parsed.error, 400)
     }
 
-    const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
+    const parseResult = VerifierAuthorizationResponse.schema.safeParse(parsed.payload)
+    if (!parseResult.success) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Invalid authorization response parameters.',
+        },
+        400
+      )
+    }
+    const authorizationResponse = parseResult.data
 
     const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
       expectedAud: ClientIdentifier(`redirect_uri:${baseUrl}/callback`),
