@@ -21,6 +21,7 @@ import {
 
 const C_NONCE_TTL_MS = 2 * 60 * 1000
 const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
+const PRE_CODE_TTL_SEC = 10 * 60
 
 export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   const issueApp = new Hono()
@@ -127,6 +128,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
         txCode: options?.tx_code,
+        ttlSec: PRE_CODE_TTL_SEC,
       })
       // TODO: Share tx_code with user (e.g., display on issuance screen or send via email)
       console.log('tx_code:', tx_code)
