@@ -2,6 +2,7 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
 } from '../authorization-server.types'
+import { AuthzOAuthPolicy } from '../authz-oauth-policy.types'
 import type { ClientIdentifier } from '../client-id-scheme.types'
 import { ClientId } from '../client-id.types'
 import { Nonce } from '../nonce.types'
@@ -57,6 +58,15 @@ export type AuthzServerMetadataStoreProvider = {
 
   fetch(issuer: AuthorizationServerIssuer): Promise<AuthorizationServerMetadata | null>
   save(metadata: AuthorizationServerMetadata): Promise<void>
+}
+
+export type AuthzOAuthPolicyStoreProvider = {
+  kind: 'authz-oauth-policy-store-provider'
+  name: string
+  single: true
+
+  fetch(issuer: AuthorizationServerIssuer): Promise<AuthzOAuthPolicy | null>
+  save(issuer: AuthorizationServerIssuer, policy: AuthzOAuthPolicy): Promise<void>
 }
 
 export type VerifierMetadataStoreProvider = {
@@ -483,6 +493,7 @@ export type Provider =
   | AccessTokenProvider
   | CredentialOfferProvider
   | AuthzServerMetadataStoreProvider
+  | AuthzOAuthPolicyStoreProvider
   | NonceProvider
   | NonceStoreProvider
   | AuthzSignatureKeyStoreProvider

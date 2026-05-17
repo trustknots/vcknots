@@ -1,0 +1,63 @@
+{
+	"clients": [
+		{
+			"client_id": "https://wallet.example.com",
+			"client_name": "Example Wallet",
+			"token_endpoint_auth_method": "private_key_jwt",
+			"token_endpoint_auth_signing_alg": "ES256",
+			"client_assertion_audience": "https://authz.example.com",
+			"jwks": {
+				"keys": [
+					{
+						"kty": "EC",
+						"use": "sig",
+						"crv": "P-256",
+						"kid": "wallet-es256-2026-01",
+						"alg": "ES256",
+						"x": "0_3S7HedSywaxlekdt6Or8pkcR13hQaCPMqt9cuZBVc",
+						"y": "ZVXSCL3HlnMQWKrwMyIAe5wsAIWd3Eu1misKFr3POdA"
+					}
+				]
+			},
+			"allowed_grant_types": [
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code",
+				"authorization_code"
+			],
+			"senderConstrainedAccessToken": {
+				"method": "dpop",
+				"dpop": {
+					"mode": "required"
+				}
+			},
+			"enabled": true
+		},
+		{
+			"client_id": "https://wallet-rotation.example.com",
+			"client_name": "Example Wallet With JWKS URI",
+			"token_endpoint_auth_method": "private_key_jwt",
+			"token_endpoint_auth_signing_alg": "ES256",
+			"client_assertion_audience": "https://authz.example.com",
+			"jwks_uri": "https://wallet-rotation.example.com/.well-known/jwks.json",
+			"allowed_grant_types": [
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code"
+			],
+			"senderConstrainedAccessToken": {
+				"method": "dpop",
+				"dpop": {
+					"mode": "optional"
+				}
+			},
+			"enabled": true
+		},
+		{
+			"client_id": "https://public-wallet.example.com",
+			"client_name": "Registered Public Wallet",
+			"token_endpoint_auth_method": "none",
+			"allowed_grant_types": [
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code"
+			],
+			"comment": "senderConstrainedAccessToken を省略しているため、authorization_server.default_client の設定を利用します。",
+			"enabled": true
+		}
+	]
+}

@@ -16,6 +16,7 @@ describe('firestore provider registry', () => {
         'verifier-metadata-store-provider',
         'nonce-store-provider',
         'authz-server-metadata-store-provider',
+        'authz-oauth-policy-store-provider',
         'pre-authorized-code-store-provider',
         'request-object-store-provider',
         'dpop-proof-jti-store-provider',

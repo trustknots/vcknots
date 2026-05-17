@@ -1,4 +1,5 @@
 export * from './in-memory-authz-metadata-store.provider'
+export * from './in-memory-authz-oauth-policy-store.provider'
 export * from './in-memory-authz-signature-key-store.provider'
 export * from './in-memory-dpop-proof-jti-store.provider'
 export * from './in-memory-nonce-store.provider'

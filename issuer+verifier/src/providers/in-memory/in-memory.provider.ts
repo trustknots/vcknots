@@ -1,4 +1,5 @@
 import { inMemoryAuthzServerMetadata } from './in-memory-authz-metadata-store.provider'
+import { inMemoryAuthzOAuthPolicyStore } from './in-memory-authz-oauth-policy-store.provider'
 import { inMemoryAuthzSignatureKeyStore } from './in-memory-authz-signature-key-store.provider'
 import { inMemoryDpopProofJtiStore } from './in-memory-dpop-proof-jti-store.provider'
 import { inMemoryNonceStore } from './in-memory-nonce-store.provider'
@@ -17,6 +18,7 @@ export const inMemory = () => {
     inMemoryVerifierMetadataStore(),
     inMemoryIssuerSignatureKeyStore(),
     inMemoryAuthzServerMetadata(),
+    inMemoryAuthzOAuthPolicyStore(),
     inMemoryAuthzSignatureKeyStore(),
     inMemoryDpopProofJtiStore(),
     inMemoryNonceStore(),

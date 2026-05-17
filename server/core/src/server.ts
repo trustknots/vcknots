@@ -5,6 +5,7 @@ import type { VcknotsOptions } from '@trustknots/vcknots'
 import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
+  AuthzOAuthPolicy,
   initializeAuthzFlow,
 } from '@trustknots/vcknots/authz'
 import {
@@ -30,12 +31,16 @@ export const createServer = (options?: VcknotsOptions) => {
   const authorizationMetadataConfigRaw = JSON.parse(
     readFileSync(join(samplesDir, 'authorization_metadata.json'), 'utf-8')
   )
+  const authzOAuthPolicyConfigRaw = JSON.parse(
+    readFileSync(join(samplesDir, 'oauth-server.json'), 'utf-8')
+  )
   const verifierMetadataConfigRaw = JSON.parse(
     readFileSync(join(samplesDir, 'verifier_metadata.json'), 'utf-8')
   )
 
   const issuerMetadataConfig = CredentialIssuerMetadata(issuerMetadataConfigRaw)
   const authorizationMetadataConfig = AuthorizationServerMetadata(authorizationMetadataConfigRaw)
+  const authzOAuthPolicyConfig = AuthzOAuthPolicy(authzOAuthPolicyConfigRaw.authorization_server)
   const verifierMetadataConfig = VerifierMetadata(verifierMetadataConfigRaw)
 
   const context = initializeContext({
@@ -69,6 +74,14 @@ export const createServer = (options?: VcknotsOptions) => {
     authorizationMetadataConfig.token_endpoint = `${baseUrl}/token`
     if (!(await initializeAuthzMetadata(authorizationMetadataConfig))) {
       throw new Error('Failed to initialize authz metadata')
+    }
+    if (
+      !(await initializeAuthzOAuthPolicy(
+        AuthorizationServerIssuer(baseUrl),
+        authzOAuthPolicyConfig
+      ))
+    ) {
+      throw new Error('Failed to initialize authz OAuth policy')
     }
 
     serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, async () => {
@@ -111,6 +124,26 @@ export const createServer = (options?: VcknotsOptions) => {
       return true
     } catch (error) {
       console.error('Error initializing authz metadata:', error)
+      return false
+    }
+  }
+
+  async function initializeAuthzOAuthPolicy(
+    authz: AuthorizationServerIssuer,
+    policy: AuthzOAuthPolicy
+  ) {
+    try {
+      const current = await authzFlow.findAuthzOAuthPolicy(authz)
+      if (current) {
+        console.log('Authz OAuth policy already exists, skipping initialization')
+        return true
+      }
+
+      await authzFlow.createAuthzOAuthPolicy(authz, policy)
+      console.log('Authz OAuth policy initialized')
+      return true
+    } catch (error) {
+      console.error('Error initializing authz OAuth policy:', error)
       return false
     }
   }

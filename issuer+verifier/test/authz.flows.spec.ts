@@ -7,9 +7,11 @@ import {
   AuthorizationServerMetadata,
 } from '../src/authorization-server.types'
 import { AuthzFlow, initializeAuthzFlow } from '../src/authz.flows'
+import { AuthzOAuthPolicy } from '../src/authz-oauth-policy.types'
 import { PreAuthorizedCode } from '../src/pre-authorized-code.types'
 import {
   AccessTokenProvider,
+  AuthzOAuthPolicyStoreProvider,
   AuthzServerMetadataStoreProvider,
   DPoPProofJtiStoreProvider,
   DPoPProofProvider,
@@ -32,6 +34,14 @@ describe('AuthzFlows', () => {
     fetch: mock.fn(),
     save: mock.fn(),
   } satisfies AuthzServerMetadataStoreProvider
+
+  const mockAuthzOAuthPolicyStoreProvider = {
+    kind: 'authz-oauth-policy-store-provider',
+    name: 'mock-authz-oauth-policy-store-provider',
+    single: true,
+    fetch: mock.fn(),
+    save: mock.fn(),
+  } satisfies AuthzOAuthPolicyStoreProvider
 
   const mockCodeStoreProvider = {
     kind: 'pre-authorized-code-store-provider',
@@ -97,6 +107,24 @@ describe('AuthzFlows', () => {
     token_endpoint: 'https://auth.example.com/token',
     response_types_supported: ['code'],
   }
+  const sampleOAuthPolicy = AuthzOAuthPolicy({
+    default_client: {
+      senderConstrainedAccessToken: {
+        method: 'dpop',
+        dpop: {
+          mode: 'optional',
+        },
+      },
+    },
+    anonymous_client: {
+      senderConstrainedAccessToken: {
+        method: 'dpop',
+        dpop: {
+          mode: 'required',
+        },
+      },
+    },
+  })
 
   beforeEach(() => {
     mock.reset()
@@ -107,6 +135,8 @@ describe('AuthzFlows', () => {
           switch (kind) {
             case 'authz-server-metadata-store-provider':
               return mockAuthzMetadataProvider
+            case 'authz-oauth-policy-store-provider':
+              return mockAuthzOAuthPolicyStoreProvider
             case 'pre-authorized-code-store-provider':
               return mockCodeStoreProvider
             case 'access-token-provider':
@@ -183,6 +213,34 @@ describe('AuthzFlows', () => {
       await assert.rejects(() => flow.createAuthzServerMetadata(sampleMetadata), {
         name: 'DUPLICATE_AUTHZ_SERVER',
       })
+    })
+  })
+
+  describe('findAuthzOAuthPolicy()', () => {
+    it('should call the authz-oauth-policy-store-provider to fetch policy', async () => {
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
+
+      const result = await flow.findAuthzOAuthPolicy(sampleIssuer)
+
+      assert.strictEqual(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 1)
+      assert.deepStrictEqual(mockAuthzOAuthPolicyStoreProvider.fetch.mock.calls[0].arguments, [
+        sampleIssuer,
+      ])
+      assert.deepStrictEqual(result, sampleOAuthPolicy)
+    })
+  })
+
+  describe('createAuthzOAuthPolicy()', () => {
+    it('should call the authz-oauth-policy-store-provider to save policy by issuer', async () => {
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'save', async () => {})
+
+      await flow.createAuthzOAuthPolicy(sampleIssuer, sampleOAuthPolicy)
+
+      assert.strictEqual(mockAuthzOAuthPolicyStoreProvider.save.mock.callCount(), 1)
+      assert.deepStrictEqual(mockAuthzOAuthPolicyStoreProvider.save.mock.calls[0].arguments, [
+        sampleIssuer,
+        sampleOAuthPolicy,
+      ])
     })
   })
 

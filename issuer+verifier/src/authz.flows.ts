@@ -4,6 +4,7 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
 } from './authorization-server.types'
+import { AuthzOAuthPolicy } from './authz-oauth-policy.types'
 import type { DPoPProofVerifyContext } from './dpop-proof.types'
 import { err } from './errors/vcknots.error'
 import { GrantType, TokenRequest } from './token-request.types'
@@ -12,6 +13,8 @@ import { JwtPayload } from './jwt.types'
 import { Nonce } from './nonce.types'
 
 type AuthzKeyAlg = string
+
+export { AuthzOAuthPolicy } from './authz-oauth-policy.types'
 
 type DPoPProofContext = {
   proofJwt: string
@@ -52,6 +55,11 @@ export type AuthzFlow = {
     metadata: AuthorizationServerMetadata,
     options?: { alg?: AuthzKeyAlg }
   ): Promise<void>
+  findAuthzOAuthPolicy(issuer: AuthorizationServerIssuer): Promise<AuthzOAuthPolicy | null>
+  createAuthzOAuthPolicy(
+    issuer: AuthorizationServerIssuer,
+    policy: AuthzOAuthPolicy
+  ): Promise<void>
   createDpopNonceChallenge(ttlMs?: number): Promise<string>
   createAccessToken(
     authz: AuthorizationServerIssuer,
@@ -80,6 +88,7 @@ export type AuthzFlow = {
 
 export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   const authz$ = context.providers.get('authz-server-metadata-store-provider')
+  const authzOAuthPolicy$ = context.providers.get('authz-oauth-policy-store-provider')
   const codeStore$ = context.providers.get('pre-authorized-code-store-provider')
   const accessToken$ = context.providers.get('access-token-provider')
   const authzKey$ = context.providers.get('authz-signature-key-store-provider')
@@ -225,6 +234,12 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       }
       await authzKey$.save(metadata.issuer, privateKeyAlg)
       await authz$.save(metadata)
+    },
+    async findAuthzOAuthPolicy(issuer) {
+      return await authzOAuthPolicy$.fetch(issuer)
+    },
+    async createAuthzOAuthPolicy(issuer, policy) {
+      await authzOAuthPolicy$.save(issuer, policy)
     },
     async createDpopNonceChallenge(ttlMs) {
       const nonce$ = context.providers.get('nonce-provider')
