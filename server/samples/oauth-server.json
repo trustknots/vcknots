@@ -18,6 +18,6 @@
 			},
 			"comment": "client_id / client_assertion のどちらも無い token request に適用する匿名クライアント向け設定です。"
 		},
-		"comment": "default_client と anonymous_client はどちらも OAuthOptions と同じ形の senderConstrainedAccessToken を持ちます。method は none / dpop / mtls、dpop.mode は DPOP_MODE と同じ off / optional / required を指定します。現行実装では token endpoint と credential endpoint に同じ値が適用されます。"
+		"comment": "default_client と anonymous_client はどちらも OAuth policy として senderConstrainedAccessToken を持ちます。method は none / dpop / mtls、dpop.mode は off / optional / required を指定します。現行実装では token endpoint と credential endpoint に同じ値が適用されます。"
 	}
 }

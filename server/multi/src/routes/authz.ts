@@ -1,10 +1,14 @@
-import { parseDpopHeader, resolveDpopMode, VcknotsContext } from '@trustknots/vcknots'
+import { parseDpopHeader, VcknotsContext } from '@trustknots/vcknots'
 import { VcknotsError } from '@trustknots/vcknots/errors'
 import {
   AuthorizationServerIssuer,
   AuthzTokenRequest,
   initializeAuthzFlow,
 } from '@trustknots/vcknots/authz'
+import {
+  resolveAuthzPolicyDpopMode,
+  resolveTokenRequestPolicyClient,
+} from '@trustknots/server-core/utils/oauth-policy'
 import { Context, Hono } from 'hono'
 import { handleError } from '../utils/error-handler.js'
 
@@ -29,7 +33,15 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
 
   authzApp.post('/:issuer/token', async (c) => {
     try {
-      const dpopMode = resolveDpopMode(context.options)
+      const issuer = c.req.param('issuer')
+      const authz = AuthorizationServerIssuer(issuer)
+      const request = await c.req.formData()
+      const requestData = Object.fromEntries(request.entries())
+      const dpopMode = await resolveAuthzPolicyDpopMode(
+        authzFlow,
+        authz,
+        resolveTokenRequestPolicyClient(requestData)
+      )
       const dpopProof = parseDpopHeader(c.req.header('DPoP'))
       if (
         (dpopMode === 'required' && !dpopProof.ok) ||
@@ -49,10 +61,7 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
         )
       }
 
-      const issuer = c.req.param('issuer')
-      const authz = AuthorizationServerIssuer(issuer)
-      const request = await c.req.formData()
-      const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()))
+      const tokenRequest = AuthzTokenRequest(requestData)
       const accessToken = await authzFlow.createAccessToken(authz, tokenRequest, {
         ...(dpopMode !== 'off' && dpopProof.ok
           ? {

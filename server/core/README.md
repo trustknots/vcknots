@@ -46,23 +46,11 @@ Import from the package root (recommended):
 import { createApp, createServer } from '@trustknots/server-core'
 ```
 
-`createServer(options?)` also accepts OAuth-related configuration. For example, to enable DPoP nonce handling:
+`createServer(options?)` accepts implementation-specific settings such as Providers and Extensions. OAuth policy such as the DPoP mode is loaded from `server/samples/oauth-server.json` and registered in the per-authorization-server policy store at startup.
 
-```ts
-createServer({
-  oauth: {
-    senderConstrainedAccessToken: {
-      dpop: {
-        mode: 'optional',
-      },
-    },
-  },
-})
-```
+The shared `POST /nonce` route can add a `DPoP-Nonce` response header when the OAuth policy DPoP mode is not `off`. `c_nonce` and `DPoP-Nonce` are issued as different values, and `DPoP-Nonce` is used as the DPoP Proof nonce for the token endpoint.
 
-With this setting, the shared `POST /nonce` route can add a `DPoP-Nonce` response header when `mode !== 'off'`. `c_nonce` and `DPoP-Nonce` are issued as different values, and `DPoP-Nonce` is used as the DPoP Proof nonce for the token endpoint.
-
-The shared `POST /token` route also uses the same setting.
+The shared `POST /token` route also uses the same OAuth policy.
 
 | mode | `POST /token` behavior |
 |------|-------------------------|

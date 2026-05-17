@@ -128,21 +128,7 @@ If `proofJwt` does not match the real flow, `aud` / `iss` checks may fail with `
 
 When using the [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) (OID4VCI), Wallets can obtain a `c_nonce` before sending credential requests. This is useful when requesting multiple credentials—a single nonce can be reused within its validity period.
 
-If your HTTP server implementation needs to expose a DPoP nonce, you can keep the DPoP policy in `VcknotsOptions`:
-
-```typescript
-const vk = vcknots({
-  oauth: {
-    senderConstrainedAccessToken: {
-      dpop: {
-        mode: 'optional',
-      },
-    },
-  },
-})
-```
-
-Server implementations can consult this setting to decide whether `POST /nonce` should return a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values. See [server/core/src/routes/issue.ts](../server/core/src/routes/issue.ts) for an implementation example.
+If your HTTP server implementation needs to expose a DPoP nonce, manage the DPoP mode in the Authorization Server OAuth policy store. Server implementations can consult this policy to decide whether `POST /nonce` should return a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values. See [server/core/src/routes/issue.ts](../server/core/src/routes/issue.ts) for an implementation example.
 
 Set `nonce_endpoint` in your issuer metadata:
 

@@ -46,23 +46,11 @@ core/
 import { createApp, createServer } from '@trustknots/server-core'
 ```
 
-`createServer(options?)` では、OAuth 関連の設定も渡せます。例えば DPoP 用 nonce を有効にする場合は次のように指定します。
+`createServer(options?)` では Provider / Extension などの実装依存の設定を渡せます。DPoP mode などの OAuth policy は `server/samples/oauth-server.json` から読み込み、起動時に authorization server ごとの policy store へ登録します。
 
-```ts
-createServer({
-  oauth: {
-    senderConstrainedAccessToken: {
-      dpop: {
-        mode: 'optional',
-      },
-    },
-  },
-})
-```
+共有の `POST /nonce` ルートは、OAuth policy の DPoP mode が `off` 以外の場合に `DPoP-Nonce` レスポンスヘッダーを追加できます。`c_nonce` と `DPoP-Nonce` は別の値として発行され、`DPoP-Nonce` は token endpoint の DPoP Proof 用 nonce として使います。
 
-この設定を使うと、共有の `POST /nonce` ルートは `mode !== 'off'` の場合に `DPoP-Nonce` レスポンスヘッダーを追加できます。`c_nonce` と `DPoP-Nonce` は別の値として発行され、`DPoP-Nonce` は token endpoint の DPoP Proof 用 nonce として使います。
-
-共有の `POST /token` ルートも同じ設定を参照します。
+共有の `POST /token` ルートも同じ OAuth policy を参照します。
 
 | mode | `POST /token` の挙動 |
 |------|----------------------|

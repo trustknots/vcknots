@@ -2,18 +2,6 @@ import 'dotenv/config'
 import { cert, initializeApp } from 'firebase-admin/app'
 import { firestore, kms, secretManager } from '@trustknots/google-cloud'
 import { createServer } from '@trustknots/server-core'
-import type { DPoPMode } from '@trustknots/vcknots'
-
-const supportedDpopModes = ['off', 'optional', 'required'] as const
-
-const isDpopMode = (value: string): value is DPoPMode =>
-  supportedDpopModes.some((mode) => mode === value)
-
-const rawDpopMode = process.env.DPOP_MODE ?? 'optional'
-
-if (!isDpopMode(rawDpopMode)) {
-  throw new Error('DPOP_MODE must be one of: off, optional, required')
-}
 
 // Reference:
 // const vk = vcknots({
@@ -76,15 +64,6 @@ const firebaseApp = initializeApp({
 
 // Create a server with Firestore Providers
 createServer({
-  oauth: {
-    // DPoP を使わない場合は次のように設定します:
-    // senderConstrainedAccessToken: { method: 'none' },
-    senderConstrainedAccessToken: {
-      dpop: {
-        mode: rawDpopMode,
-      },
-    },
-  },
   providers: [
     firestore({
       app: firebaseApp,

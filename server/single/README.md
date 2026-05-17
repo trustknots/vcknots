@@ -55,11 +55,9 @@ To start this server, follow the steps below.
    # PORT: Server port number (default: 8080)
    # PRIVATE_KEY_PATH: Path to private key file (default: ../samples/certificate-openid-test/private_key_openid.pem)
    # CERTIFICATE_PATH: Path to certificate file (default: ../samples/certificate-openid-test/certificate_openid.pem)
-   # DPOP_MODE: DPoP configuration (off, optional, required)
-   # off: Do not use DPoP at the token or credential endpoint
-   # optional: At the token endpoint, verify proof and issue a DPoP-bound access token when a DPoP header is present. At the credential endpoint, tokens without sender binding may use Bearer only; tokens with cnf.jkt require Authorization: DPoP and a DPoP header
-   # required: DPoP header is required at the token endpoint. At the credential endpoint, Authorization: DPoP and the DPoP header are always required (Bearer-only is rejected)
    ```
+
+   Configure the DPoP mode (`off` / `optional` / `required`) in `authorization_server.default_client` / `authorization_server.anonymous_client` in `server/samples/oauth-server.json`.
 
 2. **Install Dependencies** (Run from root directory)
 
@@ -198,9 +196,9 @@ Create credential offer
 
 Issue credential
 
-**Request headers (depends on `DPOP_MODE` and token type):**
-- **Bearer:** `Authorization: Bearer {access_token}` — for access tokens without sender binding when `DPOP_MODE` is not `required`.
-- **DPoP:** `Authorization: DPoP {access_token}` and `DPoP: {compact_jwt}` (RFC 9449 DPoP Proof) — required when `DPOP_MODE` is `required`, or when the token contains `cnf.jkt` (even in `optional` mode, Bearer-only is rejected).
+**Request headers (depends on the OAuth policy DPoP mode and token type):**
+- **Bearer:** `Authorization: Bearer {access_token}` — for access tokens without sender binding when the DPoP mode is not `required`.
+- **DPoP:** `Authorization: DPoP {access_token}` and `DPoP: {compact_jwt}` (RFC 9449 DPoP Proof) — required when the DPoP mode is `required`, or when the token contains `cnf.jkt` (even in `optional` mode, Bearer-only is rejected).
 - Error responses may include `WWW-Authenticate: Bearer` or `WWW-Authenticate: DPoP` (see the Issuer docs on the credential endpoint and DPoP: [Issuer Setup and Usage](https://trustknots.github.io/vcknots/docs/issuer)).
 
 **Request Body (JSON):**
@@ -256,7 +254,7 @@ Create a nonce (c_nonce). Corresponds to the OID4VCI [nonce endpoint](https://op
 
 **Response Headers:**
 - `Cache-Control: no-store` - Disable caching
-- `DPoP-Nonce: <nonce>` - A DPoP nonce returned when `DPOP_MODE` is not `off`
+- `DPoP-Nonce: <nonce>` - A DPoP nonce returned when the OAuth policy DPoP mode is not `off`
 
 **Response:**
 - `200 OK` - `{ "c_nonce": string }` (nonce validity is 2 minutes)
@@ -315,9 +313,9 @@ pre-authorized_code={pre_authorized_code}
 }
 ```
 
-`DPOP_MODE` controls DPoP behavior for both the token endpoint and the credential endpoint via `@trustknots/server-core`.
+The DPoP mode is configured by the OAuth policy in `server/samples/oauth-server.json`. `anonymous_client` applies to token requests without `client_id` / `client_assertion`; `default_client` currently applies as the registered-client default and as the credential / nonce endpoint default.
 
-| `DPOP_MODE` | token endpoint | credential endpoint |
+| DPoP mode | token endpoint | credential endpoint |
 |-------------|----------------|---------------------|
 | `off` | DPoP is not used. The server issues a Bearer access token. | DPoP is not used. `Authorization: DPoP` or a `DPoP` header is rejected. |
 | `optional` | If the `DPoP` header is absent, the server issues a Bearer access token. If the `DPoP` header is present, the server verifies the proof and issues a DPoP-bound access token. | Tokens without sender binding may use `Authorization: Bearer`. Tokens carrying `cnf.jkt` require `Authorization: DPoP` and a `DPoP` header. |

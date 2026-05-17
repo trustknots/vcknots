@@ -536,7 +536,14 @@ Endpoint to issue an access token:
 
 ```typescript
 app.post('/token', async (c) => {
-  const dpopMode = resolveDpopMode(context.options)
+  const request = await c.req.formData()
+  const requestData = Object.fromEntries(request.entries())
+  const issuer = AuthorizationServerIssuer(baseUrl)
+  const dpopMode = await resolveAuthzPolicyDpopMode(
+    authzFlow,
+    issuer,
+    resolveTokenRequestPolicyClient(requestData)
+  )
   const dpopProof = parseDpopHeader(c.req.header('DPoP'))
 
   if (
@@ -557,10 +564,7 @@ app.post('/token', async (c) => {
     )
   }
 
-  const request = await c.req.formData()
-  const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()))
-  const issuer = AuthorizationServerIssuer(baseUrl)
-
+  const tokenRequest = AuthzTokenRequest(requestData)
   const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
     ...(dpopMode !== 'off' && dpopProof.ok
       ? {
@@ -602,7 +606,7 @@ curl -X POST http://localhost:8080/token \
 
 #### Token requests with DPoP Proof
 
-`oauth.senderConstrainedAccessToken.dpop.mode` controls DPoP Proof verification at the token endpoint.
+The Authorization Server OAuth policy controls DPoP Proof verification at the token endpoint.
 
 | mode | Token endpoint behavior |
 |------|--------------------------|
@@ -648,21 +652,9 @@ This endpoint corresponds to the OID4VCI [nonce endpoint](https://openid.net/spe
 
 When `nonce_endpoint` is set in the Issuer metadata, the Wallet references the nonce endpoint URL via the metadata obtained from `/.well-known/openid-credential-issuer`.
 
-If you also want to return a DPoP nonce, configure `oauth.senderConstrainedAccessToken.dpop.mode` in the server settings.
+Configure the DPoP mode in the OAuth policy in `server/samples/oauth-server.json`. Token requests without `client_id` / `client_assertion` use `anonymous_client`; other token requests currently use `default_client`.
 
-```typescript
-const context = initializeContext({
-  oauth: {
-    senderConstrainedAccessToken: {
-      dpop: {
-        mode: 'optional', // 'off' | 'optional' | 'required'
-      },
-    },
-  },
-})
-```
-
-When `mode !== 'off'`, `POST /nonce` returns a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values.
+When the OAuth policy DPoP mode is not `off`, `POST /nonce` returns a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values.
 
 `c_nonce` is used for credential proofs. `DPoP-Nonce` is used for DPoP Proofs presented to the token endpoint. Since they have different purposes, their TTLs can be configured separately.
 
@@ -674,7 +666,11 @@ app.post('/nonce', async (c) => {
     const C_NONCE_TTL_MS = 2 * 60 * 1000  // 2 minutes
     const DPOP_NONCE_TTL_MS = 5 * 60 * 1000  // 5 minutes
     const cnonce = await issuerFlow.createNonce(C_NONCE_TTL_MS)
-    const dpopMode = resolveDpopMode(context.options)
+    const dpopMode = await resolveAuthzPolicyDpopMode(
+      authzFlow,
+      AuthorizationServerIssuer(baseUrl),
+      'default_client'
+    )
     c.header('Cache-Control', 'no-store')
     if (dpopMode !== 'off') {
       const dpopNonce = await issuerFlow.createNonce(DPOP_NONCE_TTL_MS)
@@ -710,7 +706,7 @@ Content-Type: application/json
 }
 ```
 
-If `oauth.senderConstrainedAccessToken.dpop.mode` is `off`, the `DPoP-Nonce` header is not returned.
+If the OAuth policy DPoP mode is `off`, the `DPoP-Nonce` header is not returned.
 
 **Implementation example**:
 
@@ -803,7 +799,7 @@ Endpoint to issue a credential:
 
 #### DPoP-bound access token verification at the credential endpoint
 
-`oauth.senderConstrainedAccessToken.dpop.mode` controls how the access token and DPoP Proof are handled at the credential endpoint.
+The OAuth policy DPoP mode controls how the access token and DPoP Proof are handled at the credential endpoint.
 
 | mode | Credential endpoint behavior |
 |------|------------------------------|
@@ -862,7 +858,7 @@ app.post('/credentials', async (c) => {
   try {
     const issuer = CredentialIssuer(baseUrl)
     const authz = AuthorizationServerIssuer(baseUrl)
-    const dpopMode = resolveDpopMode(context.options)
+    const dpopMode = await resolveAuthzPolicyDpopMode(authzFlow, authz, 'default_client')
     const realm = baseUrl
 
     const hasCnfJkt = (payload: unknown): boolean => {

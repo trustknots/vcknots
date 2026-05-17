@@ -53,11 +53,9 @@ single/
    # PORT: サーバーのポート番号（デフォルト: 8080）
    # PRIVATE_KEY_PATH: 秘密鍵ファイルのパス（デフォルト: ../samples/certificate-openid-test/private_key_openid.pem）
    # CERTIFICATE_PATH: 証明書ファイルのパス（デフォルト: ../samples/certificate-openid-test/certificate_openid.pem）
-   # DPOP_MODE: DPoP 設定（off, optional, required）
-   # off: DPoP を利用しない（token / credential とも DPoP を要求しない）
-   # optional: token で DPoP ヘッダーがあるときは proof を検証し DPoP-bound access token を発行。credential は送信者拘束のないトークンは Bearer のみ可。cnf.jkt 付きトークンは Authorization: DPoP + DPoP ヘッダー必須
-   # required: token で DPoP ヘッダー必須。credential は常に Authorization: DPoP + DPoP ヘッダー必須（Bearer のみは不可）
    ```
+
+   DPoP の mode（`off` / `optional` / `required`）は、`server/samples/oauth-server.json` の `authorization_server.default_client` / `authorization_server.anonymous_client` で設定します。
 
 2. **依存関係のインストール**（ルートディレクトリで実行）
 
@@ -196,9 +194,9 @@ Authz metadata initialized
 
 クレデンシャルの発行
 
-**リクエストヘッダー（`DPOP_MODE` とトークンの種類に依存）:**
-- **Bearer:** `Authorization: Bearer {access_token}` — sender binding のないアクセストークン、`DPOP_MODE` が `required` でないときに利用。
-- **DPoP:** `Authorization: DPoP {access_token}` に加え、`DPoP: {compact_jwt}`（RFC 9449 の DPoP Proof）が必要 — `DPOP_MODE` が `required` のとき、またはトークンに `cnf.jkt` が含まれるとき（`optional` であっても Bearer のみでは不可）。
+**リクエストヘッダー（OAuth policy の DPoP mode とトークンの種類に依存）:**
+- **Bearer:** `Authorization: Bearer {access_token}` — sender binding のないアクセストークン、DPoP mode が `required` でないときに利用。
+- **DPoP:** `Authorization: DPoP {access_token}` に加え、`DPoP: {compact_jwt}`（RFC 9449 の DPoP Proof）が必要 — DPoP mode が `required` のとき、またはトークンに `cnf.jkt` が含まれるとき（`optional` であっても Bearer のみでは不可）。
 - エラー応答では `WWW-Authenticate: Bearer` または `WWW-Authenticate: DPoP` が返ることがあります（詳細は [Issuer ドキュメント](https://trustknots.github.io/vcknots/ja/docs/issuer) の credential endpoint / DPoP の節）。
 
 **リクエストボディ (JSON):**
@@ -254,7 +252,7 @@ nonce（c_nonce）の作成。OID4VCI の [nonce endpoint](https://openid.net/sp
 
 **レスポンスヘッダー:**
 - `Cache-Control: no-store` - キャッシュを無効化
-- `DPoP-Nonce: <nonce>` - `DPOP_MODE` が `off` 以外の場合に付与される DPoP 用 nonce
+- `DPoP-Nonce: <nonce>` - OAuth policy の DPoP mode が `off` 以外の場合に付与される DPoP 用 nonce
 
 **レスポンス:**
 - `200 OK` - `{ "c_nonce": string }`（nonce の有効期限は 2 分）
@@ -314,9 +312,9 @@ pre-authorized_code={pre_authorized_code}
 }
 ```
 
-`DPOP_MODE` は `@trustknots/server-core` 経由で、token endpoint と credential endpoint の両方の DPoP 挙動を制御します。
+DPoP mode は `server/samples/oauth-server.json` の OAuth policy で設定します。`anonymous_client` は `client_id` / `client_assertion` が無い token request に適用され、`default_client` は現時点では registered client の既定値、および credential / nonce endpoint の既定値として使われます。
 
-| `DPOP_MODE` | token endpoint | credential endpoint |
+| DPoP mode | token endpoint | credential endpoint |
 |-------------|----------------|---------------------|
 | `off` | DPoP を利用せず、Bearer access token を発行します。 | DPoP を利用しません。`Authorization: DPoP` または `DPoP` ヘッダーは拒否します。 |
 | `optional` | `DPoP` ヘッダーがない場合は Bearer access token を発行します。`DPoP` ヘッダーがある場合は proof を検証し、DPoP-bound access token を発行します。 | sender binding のない token は `Authorization: Bearer` で利用できます。`cnf.jkt` 付き token は `Authorization: DPoP` と `DPoP` ヘッダーが必要です。 |

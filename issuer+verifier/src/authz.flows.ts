@@ -15,6 +15,7 @@ import { Nonce } from './nonce.types'
 type AuthzKeyAlg = string
 
 export { AuthzOAuthPolicy } from './authz-oauth-policy.types'
+export type { DPoPMode } from './authz-oauth-policy.types'
 
 type DPoPProofContext = {
   proofJwt: string

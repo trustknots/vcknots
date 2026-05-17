@@ -3,6 +3,8 @@ import { z } from 'zod'
 const dpopModeSchema = z.enum(['off', 'optional', 'required'])
 const senderConstraintMethodSchema = z.enum(['none', 'dpop', 'mtls'])
 
+export type DPoPMode = z.infer<typeof dpopModeSchema>
+
 const dpopOptionsSchema = z.object({
   mode: dpopModeSchema.optional(),
 })

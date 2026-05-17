@@ -38,6 +38,14 @@
 			"types": "./lib/utils/www-authenticate.d.ts",
 			"default": "./lib/utils/www-authenticate.js"
 		},
+		"./utils/oauth-policy": {
+			"types": "./lib/utils/oauth-policy.d.ts",
+			"default": "./lib/utils/oauth-policy.js"
+		},
+		"./utils/oauth-policy.js": {
+			"types": "./lib/utils/oauth-policy.d.ts",
+			"default": "./lib/utils/oauth-policy.js"
+		},
 		"./utils/direct-post-vp-aud-transaction-store": {
 			"types": "./lib/utils/direct-post-vp-aud-transaction-store.d.ts",
 			"default": "./lib/utils/direct-post-vp-aud-transaction-store.js"

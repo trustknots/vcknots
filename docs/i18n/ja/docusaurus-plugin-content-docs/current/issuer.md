@@ -535,7 +535,14 @@ curl  http://localhost:8080/.well-known/oauth-authorization-server
 
 ```typescript
 app.post('/token', async (c) => {
-  const dpopMode = resolveDpopMode(context.options)
+  const request = await c.req.formData()
+  const requestData = Object.fromEntries(request.entries())
+  const issuer = AuthorizationServerIssuer(baseUrl)
+  const dpopMode = await resolveAuthzPolicyDpopMode(
+    authzFlow,
+    issuer,
+    resolveTokenRequestPolicyClient(requestData)
+  )
   const dpopProof = parseDpopHeader(c.req.header('DPoP'))
 
   if (
@@ -556,10 +563,7 @@ app.post('/token', async (c) => {
     )
   }
 
-  const request = await c.req.formData()
-  const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()))
-  const issuer = AuthorizationServerIssuer(baseUrl)
-
+  const tokenRequest = AuthzTokenRequest(requestData)
   const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
     ...(dpopMode !== 'off' && dpopProof.ok
       ? {
@@ -601,7 +605,7 @@ curl -X POST http://localhost:8080/token \
 
 #### DPoP Proof を利用する token request
 
-`oauth.senderConstrainedAccessToken.dpop.mode` により、token endpoint の DPoP Proof 検証を制御できます。
+DPoP mode は Authorization Server の OAuth policy により、token endpoint の DPoP Proof 検証を制御できます。
 
 | mode | token endpoint の挙動 |
 |------|------------------------|
@@ -647,21 +651,9 @@ OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-creden
 
 Issuer メタデータに `nonce_endpoint` を設定すると、Wallet は `/.well-known/openid-credential-issuer` から取得したメタデータ経由で nonce エンドポイントの URL を参照します。
 
-DPoP 用 nonce も返したい場合は、サーバー設定で `oauth.senderConstrainedAccessToken.dpop.mode` を指定します。
+DPoP mode は `server/samples/oauth-server.json` の OAuth policy で設定します。`client_id` / `client_assertion` がない token request は `anonymous_client`、それ以外は現時点では `default_client` の policy を参照します。
 
-```typescript
-const context = initializeContext({
-  oauth: {
-    senderConstrainedAccessToken: {
-      dpop: {
-        mode: 'optional', // 'off' | 'optional' | 'required'
-      },
-    },
-  },
-})
-```
-
-`mode !== 'off'` の場合、`POST /nonce` は JSON ボディの `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返します。`c_nonce` と `DPoP-Nonce` は別の値です。
+OAuth policy の DPoP mode が `off` 以外の場合、`POST /nonce` は JSON ボディの `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返します。`c_nonce` と `DPoP-Nonce` は別の値です。
 
 `c_nonce` は credential proof 用の nonce です。一方、`DPoP-Nonce` は token endpoint で提示する DPoP Proof 用の nonce です。用途が異なるため、TTL も別々に設定できます。
 
@@ -673,7 +665,11 @@ app.post('/nonce', async (c) => {
     const C_NONCE_TTL_MS = 2 * 60 * 1000  // 2分
     const DPOP_NONCE_TTL_MS = 5 * 60 * 1000  // 5分
     const cnonce = await issuerFlow.createNonce(C_NONCE_TTL_MS)
-    const dpopMode = resolveDpopMode(context.options)
+    const dpopMode = await resolveAuthzPolicyDpopMode(
+      authzFlow,
+      AuthorizationServerIssuer(baseUrl),
+      'default_client'
+    )
     c.header('Cache-Control', 'no-store')
     if (dpopMode !== 'off') {
       const dpopNonce = await issuerFlow.createNonce(DPOP_NONCE_TTL_MS)
@@ -709,7 +705,7 @@ Content-Type: application/json
 }
 ```
 
-`oauth.senderConstrainedAccessToken.dpop.mode` が `off` の場合、`DPoP-Nonce` ヘッダは付きません。
+OAuth policy の DPoP mode が `off` の場合、`DPoP-Nonce` ヘッダは付きません。
 
 **実装例**:
 
@@ -802,7 +798,7 @@ curl -X DELETE http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
 
 #### Credential endpoint での DPoP-bound access token 検証
 
-`oauth.senderConstrainedAccessToken.dpop.mode` により、credential endpoint で提示される access token と DPoP Proof の扱いを制御できます。
+OAuth policy の DPoP mode により、credential endpoint で提示される access token と DPoP Proof の扱いを制御できます。
 
 | mode | credential endpoint の挙動 |
 |------|-----------------------------|
@@ -861,7 +857,7 @@ app.post('/credentials', async (c) => {
   try {
     const issuer = CredentialIssuer(baseUrl)
     const authz = AuthorizationServerIssuer(baseUrl)
-    const dpopMode = resolveDpopMode(context.options)
+    const dpopMode = await resolveAuthzPolicyDpopMode(authzFlow, authz, 'default_client')
     const realm = baseUrl
 
     const hasCnfJkt = (payload: unknown): boolean => {
