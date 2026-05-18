@@ -134,7 +134,7 @@ describe('inMemoryPreAuthorizedCode', () => {
       mock.timers.tick(299_000)
       assert.strictEqual(await provider.validate(sampleCode), true)
       mock.timers.tick(2_000)
-      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
+      await assert.rejects(provider.validate(sampleCode), { name: 'invalid_grant' })
     })
 
     it('should floor fractional ttlSec values', async () => {
@@ -143,7 +143,7 @@ describe('inMemoryPreAuthorizedCode', () => {
       mock.timers.tick(500)
       assert.strictEqual(await provider.validate(sampleCode), true)
       mock.timers.tick(600)
-      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
+      await assert.rejects(provider.validate(sampleCode), { name: 'invalid_grant' })
     })
 
     it('should fall back to default ttlSec when fractional ttlSec floors to zero', async () => {
@@ -152,7 +152,7 @@ describe('inMemoryPreAuthorizedCode', () => {
       mock.timers.tick(299_000)
       assert.strictEqual(await provider.validate(sampleCode), true)
       mock.timers.tick(2_000)
-      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
+      await assert.rejects(provider.validate(sampleCode), { name: 'invalid_grant' })
     })
   })
 })

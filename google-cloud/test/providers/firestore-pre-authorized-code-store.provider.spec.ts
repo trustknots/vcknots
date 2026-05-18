@@ -167,7 +167,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(doc.expires_at?.toMillis(), 300 * 1000)
   })
 
-  it('should throw INVALID_GRANT for an unknown code', async () => {
+  it('should throw invalid_grant for an unknown code', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await assert.rejects(provider.validate(PreAuthorizedCode('unknown-code')), {
       name: 'invalid_grant',
