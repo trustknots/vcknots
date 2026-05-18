@@ -181,7 +181,7 @@ describe('AuthzFlows', () => {
       mock.method(mockAuthzMetadataProvider, 'fetch', async () => sampleMetadata)
 
       await assert.rejects(() => flow.createAuthzServerMetadata(sampleMetadata), {
-        name: 'DUPLICATE_AUTHZ_SERVER',
+        name: 'duplicate_authz_server',
       })
     })
   })
@@ -192,7 +192,7 @@ describe('AuthzFlows', () => {
         nonce: 'generated-dpop-nonce',
         nonce_expires_in: 1234,
       }))
-      mock.method(mockNonceStoreProvider, 'save', async () => { })
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
 
       const nonce = await flow.createDpopNonceChallenge(1234)
 
@@ -268,14 +268,14 @@ describe('AuthzFlows', () => {
       it('should throw if pre-authorized code is invalid', async () => {
         mock.method(mockCodeStoreProvider, 'validate', async () => false)
         await assert.rejects(() => flow.createAccessToken(sampleIssuer, tokenRequest), {
-          name: 'PRE_AUTHORIZED_CODE_NOT_FOUND',
+          name: 'invalid_grant',
         })
       })
 
       it('should throw if signing returns null', async () => {
         mock.method(mockAuthzKeyProvider, 'sign', async () => null)
         await assert.rejects(() => flow.createAccessToken(sampleIssuer, tokenRequest), {
-          name: 'INTERNAL_SERVER_ERROR',
+          name: 'internal_server_error',
         })
       })
 
@@ -316,7 +316,7 @@ describe('AuthzFlows', () => {
               },
             }),
           {
-            name: 'USE_DPOP_NONCE',
+            name: 'use_dpop_nonce',
             message: 'Authorization server requires nonce in DPoP proof.',
           }
         )
@@ -342,7 +342,7 @@ describe('AuthzFlows', () => {
               },
             }),
           {
-            name: 'USE_DPOP_NONCE',
+            name: 'use_dpop_nonce',
             message: 'Authorization server requires nonce in DPoP proof.',
           }
         )
@@ -386,7 +386,7 @@ describe('AuthzFlows', () => {
               },
             }),
           {
-            name: 'INVALID_DPOP_PROOF',
+            name: 'invalid_dpop_proof',
             message: 'DPoP proof JWT jti has already been used.',
           }
         )
@@ -399,7 +399,7 @@ describe('AuthzFlows', () => {
         code: 'some-auth-code',
       }
       await assert.rejects(() => flow.createAccessToken(sampleIssuer, authCodeTokenRequest), {
-        name: 'FEATURE_NOT_IMPLEMENTED_YET',
+        name: 'unsupported_grant_type',
       })
     })
 
@@ -409,7 +409,7 @@ describe('AuthzFlows', () => {
         code: 'some-auth-code',
       } as unknown as TokenRequest
       await assert.rejects(() => flow.createAccessToken(sampleIssuer, authCodeTokenRequest), {
-        name: 'INVALID_REQUEST',
+        name: 'invalid_request',
       })
     })
   })
@@ -442,13 +442,13 @@ describe('AuthzFlows', () => {
       mock.method(mockAuthzKeyProvider, 'fetch', async () => null)
 
       await assert.rejects(() => flow.verifyAccessToken(sampleIssuer, accessToken), {
-        name: 'AUTHZ_ISSUER_KEY_NOT_FOUND',
+        name: 'authz_issuer_key_not_found',
       })
     })
 
     it('should throw when access token is malformed', async () => {
       await assert.rejects(() => flow.verifyAccessToken(sampleIssuer, 'invalid-token'), {
-        name: 'INVALID_ACCESS_TOKEN',
+        name: 'invalid_access_token',
       })
     })
   })

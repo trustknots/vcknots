@@ -39,7 +39,7 @@ function normalizeHtu(value: string): string {
   try {
     normalized = new URL(value)
   } catch (error) {
-    throw raise('INVALID_DPOP_PROOF', {
+    throw raise('invalid_dpop_proof', {
       message: 'DPoP proof JWT htu claim must be a valid absolute URI.',
       cause: error,
     })
@@ -74,7 +74,7 @@ function parseDpopProofPayload(value: unknown): DPoPProofPayload {
   try {
     return DPoPProofPayload(value)
   } catch (error) {
-    throw raise('INVALID_DPOP_PROOF', {
+    throw raise('invalid_dpop_proof', {
       message: 'DPoP proof JWT payload claims are invalid.',
       cause: error,
     })
@@ -121,24 +121,24 @@ export const dpopProof = (factoryOptions?: DPoPProofFactoryOptions): DPoPProofPr
       const proofHeader = decodeProtectedHeader(proofJwt)
       const proofAlg = proofHeader.alg
       if (typeof proofAlg !== 'string' || isProhibitedDpopProofAlg(proofAlg)) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT alg must be an asymmetric signature algorithm.',
         })
       }
       if (proofHeader.typ !== DPOP_PROOF_TYP) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: `DPoP proof JWT typ must be "${DPOP_PROOF_TYP}".`,
         })
       }
 
       const jwk = proofHeader.jwk
       if (jwk === null || typeof jwk !== 'object' || Array.isArray(jwk)) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT header must contain a public JWK.',
         })
       }
       if ('d' in jwk && jwk.d !== undefined) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT header jwk must not contain a private key.',
         })
       }
@@ -147,7 +147,7 @@ export const dpopProof = (factoryOptions?: DPoPProofFactoryOptions): DPoPProofPr
       try {
         verificationKey = await importJWK(jwk as JsonWebKey, proofAlg)
       } catch (error) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message:
             error instanceof Error
               ? `Failed to import DPoP proof JWK: ${error.message}`
@@ -162,7 +162,7 @@ export const dpopProof = (factoryOptions?: DPoPProofFactoryOptions): DPoPProofPr
         maxTokenAge,
         clockTolerance,
       }).catch((error: unknown) => {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message:
             error instanceof Error
               ? `DPoP proof JWT verification failed: ${error.message}`
@@ -174,12 +174,12 @@ export const dpopProof = (factoryOptions?: DPoPProofFactoryOptions): DPoPProofPr
       const payload = parseDpopProofPayload(verifiedProof.payload)
 
       if (payload.htm !== verifyContext.htm.toUpperCase()) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT htm claim does not match the HTTP method.',
         })
       }
       if (normalizeHtu(payload.htu) !== normalizeHtu(verifyContext.htu)) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT htu claim does not match the target URI.',
         })
       }
@@ -189,18 +189,18 @@ export const dpopProof = (factoryOptions?: DPoPProofFactoryOptions): DPoPProofPr
       // credential endpoint verification does, making `ath` required there.
       if (verifyContext.accessToken !== undefined) {
         if (!payload.ath) {
-          throw raise('INVALID_DPOP_PROOF', {
+          throw raise('invalid_dpop_proof', {
             message: 'DPoP proof JWT ath claim is required.',
           })
         }
         if (payload.ath !== calculateAccessTokenHash(verifyContext.accessToken)) {
-          throw raise('INVALID_DPOP_PROOF', {
+          throw raise('invalid_dpop_proof', {
             message: 'DPoP proof JWT ath claim does not match the access token.',
           })
         }
       }
       if (verifyContext.nonce !== undefined && payload.nonce !== verifyContext.nonce) {
-        throw raise('INVALID_DPOP_PROOF', {
+        throw raise('invalid_dpop_proof', {
           message: 'DPoP proof JWT nonce claim does not match the expected nonce.',
         })
       }

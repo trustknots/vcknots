@@ -36,7 +36,7 @@ export const kmsIssuerSignatureKeyStore = (
       }),
     })
   if (!projectId) {
-    raise('INTERNAL_SERVER_ERROR', {
+    raise('internal_server_error', {
       message: 'Missing projectId in CloudKmsProviderOptions or GOOGLE_CLOUD_PROJECT_ID env var',
     })
   }
@@ -45,7 +45,7 @@ export const kmsIssuerSignatureKeyStore = (
   const md5 = (issuer: CredentialIssuer) => createHash('md5').update(issuer).digest('base64url')
   const issuerKeyId = (issuer: CredentialIssuer, alg: string) => {
     if (typeof alg !== 'string' || alg.trim().length === 0) {
-      raise('INTERNAL_SERVER_ERROR', {
+      raise('internal_server_error', {
         message: 'Issuer key algorithm is required to build a KMS key id',
       })
     }
@@ -70,20 +70,20 @@ export const kmsIssuerSignatureKeyStore = (
     async save(issuer, keyAlg, pair) {
       const declaredAlg = pair?.declaredAlg ?? keyAlg
       if (pair && pair.declaredAlg !== keyAlg) {
-        raise('ILLEGAL_ARGUMENT', {
+        raise('illegal_argument', {
           message: `The provided key pair algorithm ${pair.declaredAlg} does not match the requested key algorithm ${keyAlg}.`,
         })
       }
 
       const kmsAlgorithm = joseAlgorithmToKmsAlgorithm(declaredAlg)
       if (!kmsAlgorithm) {
-        raise('INTERNAL_SERVER_ERROR', {
+        raise('internal_server_error', {
           message: `Unsupported issuer key algorithm: ${declaredAlg}`,
         })
       }
 
       if (pair && (declaredAlg.startsWith('RS') || declaredAlg.startsWith('PS'))) {
-        raise('INTERNAL_SERVER_ERROR', {
+        raise('internal_server_error', {
           message: `Import for ${declaredAlg} requires RSA_AES wrapping (AES-KWP), which is not implemented`,
         })
       }
@@ -100,7 +100,7 @@ export const kmsIssuerSignatureKeyStore = (
       const importJobName = importJob.name
       const wrappingPublicKeyPem = importJob.publicKey?.pem
       if (!importJobName || !wrappingPublicKeyPem) {
-        raise('INTERNAL_SERVER_ERROR', {
+        raise('internal_server_error', {
           message: 'Import job is missing name or wrapping public key',
         })
       }
@@ -195,7 +195,7 @@ export const kmsIssuerSignatureKeyStore = (
           versions = listedVersions
         } catch (error) {
           if (grpcCode(error) === KMS_NOT_FOUND) {
-            raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+            raise('authz_issuer_key_not_found', {
               message: 'Issuer private key not found.',
             })
           }
@@ -204,13 +204,13 @@ export const kmsIssuerSignatureKeyStore = (
 
         const latestVersion = latestEnabledVersion(versions)
         if (!latestVersion?.name) {
-          raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+          raise('authz_issuer_key_not_found', {
             message: 'Issuer private key not found.',
           })
         }
 
         if (jwtHeader.alg !== keyAlg) {
-          raise('ILLEGAL_ARGUMENT', {
+          raise('illegal_argument', {
             message: `JWT header algorithm mismatch: header.alg=${jwtHeader.alg}, expected=${keyAlg}.`,
           })
         }
@@ -220,7 +220,7 @@ export const kmsIssuerSignatureKeyStore = (
         const signingInput = `${encodedHeader}.${encodedPayload}`
         const digestField = digestFieldName(keyAlg)
         if (!digestField) {
-          raise('INTERNAL_SERVER_ERROR', {
+          raise('internal_server_error', {
             message: `Unsupported issuer key algorithm: ${keyAlg}`,
           })
         }
@@ -242,7 +242,7 @@ export const kmsIssuerSignatureKeyStore = (
             return signResponse
           } catch (error) {
             if (grpcCode(error) === KMS_NOT_FOUND) {
-              raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+              raise('authz_issuer_key_not_found', {
                 message: 'Issuer private key not found.',
               })
             }
@@ -251,20 +251,20 @@ export const kmsIssuerSignatureKeyStore = (
         })()
 
         if (signed.name !== versionName) {
-          raise('INTERNAL_SERVER_ERROR', { message: 'KMS key version mismatch' })
+          raise('internal_server_error', { message: 'KMS key version mismatch' })
         }
         if (!signed.verifiedDigestCrc32c) {
-          raise('INTERNAL_SERVER_ERROR', {
+          raise('internal_server_error', {
             message: 'KMS digest CRC32C verification failed',
           })
         }
         if (!signed.signature || signed.signatureCrc32c?.value == null) {
-          raise('INTERNAL_SERVER_ERROR', { message: 'KMS signature is missing' })
+          raise('internal_server_error', { message: 'KMS signature is missing' })
         }
 
         const signature = Buffer.from(signed.signature as Uint8Array)
         if (crc32c(signature) !== Number(signed.signatureCrc32c.value)) {
-          raise('INTERNAL_SERVER_ERROR', {
+          raise('internal_server_error', {
             message: 'KMS signature CRC32C verification failed',
           })
         }
@@ -275,7 +275,7 @@ export const kmsIssuerSignatureKeyStore = (
         if (error instanceof VcknotsError) {
           throw error
         }
-        raise('INTERNAL_SERVER_ERROR', { message: `sign error: ${error}` })
+        raise('internal_server_error', { message: `sign error: ${error}` })
       }
     },
   }

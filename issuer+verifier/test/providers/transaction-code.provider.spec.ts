@@ -59,14 +59,14 @@ describe('transactionCode', () => {
     assert.throws(
       () => provider.generate('numeric', 3),
       (e: unknown) => {
-        assert.strictEqual((e as { name?: string }).name, 'INVALID_TX_CODE_OPTIONS')
+        assert.strictEqual((e as { name?: string }).name, 'invalid_tx_code_options')
         return true
       }
     )
     assert.throws(
       () => provider.generate('text', 1),
       (e: unknown) => {
-        assert.strictEqual((e as { name?: string }).name, 'INVALID_TX_CODE_OPTIONS')
+        assert.strictEqual((e as { name?: string }).name, 'invalid_tx_code_options')
         return true
       }
     )
@@ -76,14 +76,14 @@ describe('transactionCode', () => {
     assert.throws(
       () => provider.generate('numeric', 10),
       (e: unknown) => {
-        assert.strictEqual((e as { name?: string }).name, 'INVALID_TX_CODE_OPTIONS')
+        assert.strictEqual((e as { name?: string }).name, 'invalid_tx_code_options')
         return true
       }
     )
     assert.throws(
       () => provider.generate('text', 15),
       (e: unknown) => {
-        assert.strictEqual((e as { name?: string }).name, 'INVALID_TX_CODE_OPTIONS')
+        assert.strictEqual((e as { name?: string }).name, 'invalid_tx_code_options')
         return true
       }
     )
@@ -94,7 +94,7 @@ describe('transactionCode', () => {
     assert.throws(
       () => provider.generate('numeric', 4, longDescription),
       (e: unknown) => {
-        assert.strictEqual((e as { name?: string }).name, 'INVALID_TX_CODE_OPTIONS')
+        assert.strictEqual((e as { name?: string }).name, 'invalid_tx_code_options')
         return true
       }
     )

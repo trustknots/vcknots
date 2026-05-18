@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { beforeEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 import { PreAuthorizedCode } from '../../../src/pre-authorized-code.types'
 import { inMemoryPreAuthorizedCodeStore } from '../../../src/providers/in-memory/in-memory-pre-authorized-code-store.provider'
 
@@ -10,6 +10,10 @@ describe('inMemoryPreAuthorizedCode', () => {
 
   beforeEach(() => {
     provider = inMemoryPreAuthorizedCodeStore()
+  })
+
+  afterEach(() => {
+    mock.timers.reset()
   })
 
   it('should have kind, name, and single properties correctly set', () => {
@@ -37,9 +41,9 @@ describe('inMemoryPreAuthorizedCode', () => {
       assert.strictEqual(isValid, true)
     })
 
-    it('should throw INVALID_GRANT when validating with incorrect tx_code', async () => {
+    it('should throw invalid_grant when validating with incorrect tx_code', async () => {
       await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
-      await assert.rejects(provider.validate(sampleCode, 456), { name: 'INVALID_GRANT' })
+      await assert.rejects(provider.validate(sampleCode, 456), { name: 'invalid_grant' })
     })
 
     it('should allow string numeric tx_code in numeric mode', async () => {
@@ -48,9 +52,9 @@ describe('inMemoryPreAuthorizedCode', () => {
       assert.strictEqual(isValid, true)
     })
 
-    it('should throw INVALID_GRANT when tx_code is not numeric in numeric mode', async () => {
+    it('should throw invalid_grant when tx_code is not numeric in numeric mode', async () => {
       await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
-      await assert.rejects(provider.validate(sampleCode, '12a3'), { name: 'INVALID_GRANT' })
+      await assert.rejects(provider.validate(sampleCode, '12a3'), { name: 'invalid_grant' })
     })
 
     it('should preserve leading zeros in numeric mode', async () => {
@@ -59,13 +63,13 @@ describe('inMemoryPreAuthorizedCode', () => {
       assert.strictEqual(isValid, true)
     })
 
-    it('should throw INVALID_GRANT when leading-zero digit-string is validated as number', async () => {
+    it('should throw invalid_grant when leading-zero digit-string is validated as number', async () => {
       await provider.save(sampleCode, '0123', { tx_code_input_mode: 'numeric' })
-      await assert.rejects(provider.validate(sampleCode, 123), { name: 'INVALID_GRANT' })
+      await assert.rejects(provider.validate(sampleCode, 123), { name: 'invalid_grant' })
     })
 
-    it('should throw INVALID_GRANT when validating a non-existent code', async () => {
-      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' }) // sampleCode is not saved yet
+    it('should throw invalid_grant when validating a non-existent code', async () => {
+      await assert.rejects(provider.validate(sampleCode), { name: 'invalid_grant' }) // sampleCode is not saved yet
     })
 
     it('should handle multiple codes correctly', async () => {
@@ -78,12 +82,12 @@ describe('inMemoryPreAuthorizedCode', () => {
   })
 
   describe('delete', () => {
-    it('should delete a pre-authorized code, and validation should throw INVALID_GRANT', async () => {
+    it('should delete a pre-authorized code, and validation should throw invalid_grant', async () => {
       await provider.save(sampleCode)
       assert.strictEqual(await provider.validate(sampleCode), true)
 
       await provider.delete(sampleCode)
-      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
+      await assert.rejects(provider.validate(sampleCode), { name: 'invalid_grant' })
     })
 
     it('should not throw an error when trying to delete a non-existent code', async () => {
@@ -96,14 +100,14 @@ describe('inMemoryPreAuthorizedCode', () => {
 
       await provider.delete(sampleCode)
 
-      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
+      await assert.rejects(provider.validate(sampleCode), { name: 'invalid_grant' })
       assert.strictEqual(await provider.validate(anotherSampleCode), true)
     })
   })
 
   describe('edge cases', () => {
-    it('validate should throw INVALID_GRANT when the store is empty', async () => {
-      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
+    it('validate should throw invalid_grant when the store is empty', async () => {
+      await assert.rejects(provider.validate(sampleCode), { name: 'invalid_grant' })
     })
 
     it('save should not return a value (void promise)', async () => {
@@ -122,6 +126,33 @@ describe('inMemoryPreAuthorizedCode', () => {
       // This test just ensures no error is thrown with default values
       const isValid = await provider.validate(sampleCode)
       assert.strictEqual(isValid, true)
+    })
+
+    it('should fall back to default ttlSec when saveOptions.ttlSec is invalid', async () => {
+      mock.timers.enable({ apis: ['Date'] })
+      await provider.save(sampleCode, undefined, { ttlSec: NaN })
+      mock.timers.tick(299_000)
+      assert.strictEqual(await provider.validate(sampleCode), true)
+      mock.timers.tick(2_000)
+      await assert.rejects(provider.validate(sampleCode), { name: 'invalid_grant' })
+    })
+
+    it('should floor fractional ttlSec values', async () => {
+      mock.timers.enable({ apis: ['Date'] })
+      await provider.save(sampleCode, undefined, { ttlSec: 1.9 })
+      mock.timers.tick(500)
+      assert.strictEqual(await provider.validate(sampleCode), true)
+      mock.timers.tick(600)
+      await assert.rejects(provider.validate(sampleCode), { name: 'invalid_grant' })
+    })
+
+    it('should fall back to default ttlSec when fractional ttlSec floors to zero', async () => {
+      mock.timers.enable({ apis: ['Date'] })
+      await provider.save(sampleCode, undefined, { ttlSec: 0.1 })
+      mock.timers.tick(299_000)
+      assert.strictEqual(await provider.validate(sampleCode), true)
+      mock.timers.tick(2_000)
+      await assert.rejects(provider.validate(sampleCode), { name: 'invalid_grant' })
     })
   })
 })

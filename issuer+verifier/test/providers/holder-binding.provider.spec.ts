@@ -91,7 +91,7 @@ describe('HolderBindingProvider', () => {
     } as VerifiableCredential<JwtVcJson>
 
     await assert.rejects(provider.verify([credential], otherPublicKeyJwk), (err: VcknotsError) => {
-      assert.equal(err.name, 'INVALID_CREDENTIAL')
+      assert.equal(err.name, 'invalid_credential')
       assert.match(err.message, /Binding verification failed for VC/)
       return true
     })
@@ -102,7 +102,7 @@ describe('HolderBindingProvider', () => {
     provider.providers = createMockRegistry([mockDidProvider])
     const credential = { id: 'urn:uuid:12345' } as VerifiableCredential<JwtVcJson>
     await assert.rejects(provider.verify([credential], publicKeyJwk), (err: VcknotsError) => {
-      assert.equal(err.name, 'INVALID_CREDENTIAL')
+      assert.equal(err.name, 'invalid_credential')
       assert.match(err.message, /Missing credentialSubject in VC/)
       return true
     })
@@ -116,7 +116,7 @@ describe('HolderBindingProvider', () => {
       credentialSubject: {},
     } as VerifiableCredential<JwtVcJson>
     await assert.rejects(provider.verify([credential], publicKeyJwk), (err: VcknotsError) => {
-      assert.equal(err.name, 'INVALID_CREDENTIAL')
+      assert.equal(err.name, 'invalid_credential')
       assert.match(err.message, /Missing credentialSubject.id in VC/)
       return true
     })
@@ -132,7 +132,7 @@ describe('HolderBindingProvider', () => {
       },
     } as VerifiableCredential<JwtVcJson>
     await assert.rejects(provider.verify([credential], publicKeyJwk), (err: VcknotsError) => {
-      assert.equal(err.name, 'INVALID_PROOF')
+      assert.equal(err.name, 'invalid_proof')
       assert.match(err.message, /No kid or unsupported did type detected/)
       return true
     })
@@ -148,7 +148,7 @@ describe('HolderBindingProvider', () => {
       },
     } as VerifiableCredential<JwtVcJson>
     await assert.rejects(provider.verify([credential], publicKeyJwk), (err: VcknotsError) => {
-      assert.equal(err.name, 'INVALID_CREDENTIAL')
+      assert.equal(err.name, 'invalid_credential')
       assert.match(err.message, /Cannot resolve DID/)
       return true
     })
@@ -164,9 +164,10 @@ describe('HolderBindingProvider', () => {
       },
     } as VerifiableCredential<JwtVcJson>
     await assert.rejects(provider.verify([credential], publicKeyJwk), (err: VcknotsError) => {
-      assert.equal(err.name, 'INVALID_PROOF')
+      assert.equal(err.name, 'invalid_proof')
       assert.match(err.message, /Invalid DID format/)
       return true
     })
   })
 })
+

@@ -121,7 +121,7 @@ OID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一致�
 | アクセストークンが **事前認可コード（Pre-Authorized Code）** グラントで得られた場合 | `proofJwt: { usePreAuth: true }`。proof JWT に **`iss` は含めない**（仕様上の扱い）。 |
 | **認可コード** 等、通常の OAuth クライアント文脈の場合 | `proofJwt: { usePreAuth: false, clientId: '<そのリクエストの client_id>' }`。`iss` はその `client_id` または Credential Issuer Identifier と一致する必要があります。 |
 
-`proofJwt` を誤ると `aud` / `iss` の検証が意図とずれ、`INVALID_PROOF` となります。
+`proofJwt` を誤ると `aud` / `iss` の検証が意図とずれ、`invalid_proof` となります。
 
 #### 4. Nonce 管理（オプション）
 

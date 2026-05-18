@@ -44,13 +44,13 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(valid, true)
   })
 
-  it('should throw INVALID_GRANT for incorrect tx_code', async () => {
+  it('should throw invalid_grant for incorrect tx_code', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await provider.save(PreAuthorizedCode('test-code-wrong'), 123, {
       tx_code_input_mode: 'numeric',
     })
     await assert.rejects(provider.validate(PreAuthorizedCode('test-code-wrong'), 456), {
-      name: 'INVALID_GRANT',
+      name: 'invalid_grant',
     })
   })
 
@@ -61,14 +61,14 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(valid, true)
   })
 
-  it('should throw INVALID_GRANT for non-numeric string tx_code in numeric mode', async () => {
+  it('should throw invalid_grant for non-numeric string tx_code in numeric mode', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await provider.save(PreAuthorizedCode('test-code-invalid-numeric-string'), 123, {
       tx_code_input_mode: 'numeric',
     })
     await assert.rejects(
       provider.validate(PreAuthorizedCode('test-code-invalid-numeric-string'), '12a3'),
-      { name: 'INVALID_GRANT' }
+      { name: 'invalid_grant' }
     )
   })
 
@@ -81,14 +81,14 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(valid, true)
   })
 
-  it('should throw INVALID_GRANT when leading-zero digit-string is validated as number', async () => {
+  it('should throw invalid_grant when leading-zero digit-string is validated as number', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await provider.save(PreAuthorizedCode('test-code-leading-zero-mismatch'), '0123', {
       tx_code_input_mode: 'numeric',
     })
     await assert.rejects(
       provider.validate(PreAuthorizedCode('test-code-leading-zero-mismatch'), 123),
-      { name: 'INVALID_GRANT' }
+      { name: 'invalid_grant' }
     )
   })
 
@@ -128,23 +128,62 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(doc.expires_at?.toMillis(), 1000)
   })
 
-  it('should throw INVALID_GRANT for an unknown code', async () => {
+  it('should fall back to default ttlSec when saveOptions.ttlSec is invalid', async () => {
+    mock.timers.enable({ apis: ['Date'] })
+
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('invalid-ttl-fallback'), undefined, { ttlSec: NaN })
+
+    const doc = store.get('vcknots/v1/preCodes/invalid-ttl-fallback') as {
+      expires_at?: { toMillis: () => number }
+    }
+    assert.ok(doc?.expires_at)
+    assert.equal(doc.expires_at?.toMillis(), 300 * 1000)
+  })
+
+  it('should floor fractional ttlSec values', async () => {
+    mock.timers.enable({ apis: ['Date'] })
+
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('fractional-ttl'), undefined, { ttlSec: 1.9 })
+
+    const doc = store.get('vcknots/v1/preCodes/fractional-ttl') as {
+      expires_at?: { toMillis: () => number }
+    }
+    assert.ok(doc?.expires_at)
+    assert.equal(doc.expires_at?.toMillis(), 1000)
+  })
+
+  it('should fall back to default ttlSec when fractional ttlSec floors to zero', async () => {
+    mock.timers.enable({ apis: ['Date'] })
+
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('fractional-ttl-zero'), undefined, { ttlSec: 0.1 })
+
+    const doc = store.get('vcknots/v1/preCodes/fractional-ttl-zero') as {
+      expires_at?: { toMillis: () => number }
+    }
+    assert.ok(doc?.expires_at)
+    assert.equal(doc.expires_at?.toMillis(), 300 * 1000)
+  })
+
+  it('should throw invalid_grant for an unknown code', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await assert.rejects(provider.validate(PreAuthorizedCode('unknown-code')), {
-      name: 'INVALID_GRANT',
+      name: 'invalid_grant',
     })
   })
 
-  it('should delete a code and throw INVALID_GRANT when validating it afterwards', async () => {
+  it('should delete a code and throw invalid_grant when validating it afterwards', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await provider.save(PreAuthorizedCode('delete-me'))
     await provider.delete(PreAuthorizedCode('delete-me'))
     await assert.rejects(provider.validate(PreAuthorizedCode('delete-me')), {
-      name: 'INVALID_GRANT',
+      name: 'invalid_grant',
     })
   })
 
-  it('should throw INVALID_GRANT and delete an expired code', async () => {
+  it('should throw invalid_grant and delete an expired code', async () => {
     mock.timers.enable({ apis: ['Date'] })
 
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
@@ -153,7 +192,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
     mock.timers.tick(1001)
 
     await assert.rejects(provider.validate(PreAuthorizedCode('expiring-code')), {
-      name: 'INVALID_GRANT',
+      name: 'invalid_grant',
     })
     assert.ok(!store.has('vcknots/v1/preCodes/expiring-code'))
   })
@@ -172,7 +211,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
     // Expired after 5 minutes
     mock.timers.tick(2 * 60 * 1000)
     await assert.rejects(provider.validate(PreAuthorizedCode('default-expiry')), {
-      name: 'INVALID_GRANT',
+      name: 'invalid_grant',
     })
   })
 

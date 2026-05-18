@@ -122,7 +122,7 @@ For OID4VCI JWT proofs, `aud` must match the Credential Issuer Identifier, and `
 | Access token from the **pre-authorized code** grant | `proofJwt: { usePreAuth: true }`. The proof JWT must **not** include an **`iss`** claim (per the intended OID4VCI rules). |
 | **Authorization code** or other normal OAuth client context | `proofJwt: { usePreAuth: false, clientId: '<client_id for this credential request>' }`. `iss` must equal that `client_id` or the Credential Issuer Identifier. |
 
-If `proofJwt` does not match the real flow, `aud` / `iss` checks may fail with `INVALID_PROOF`. 
+If `proofJwt` does not match the real flow, `aud` / `iss` checks may fail with `invalid_proof`.
 
 #### 4. Nonce Management (Optional)
 
