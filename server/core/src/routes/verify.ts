@@ -75,9 +75,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       const verifierId = VerifierClientId(baseUrl)
       type Payload = Record<string, unknown>
       const body: Payload = await c.req.json<Payload>().catch(() => ({}))
-      // const credentialId = ('credentialId' in body ? body.credentialId : undefined) as
-      //   | string
-      //   | undefined
 
       const credentialId =
         typeof body.credentialId === 'string' && body.credentialId.trim() !== ''
