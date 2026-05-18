@@ -342,37 +342,37 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         )
       }
     }
-    const input =
-      parsed && typeof parsed === 'object' ? (parsed as Partial<RequestObjectShape>) : {}
-    const requestObject: RequestObjectShape = {
-      query:
-        typeof input.query === 'object' && input.query !== null
-          ? input.query
-          : {
-              presentation_definition: presentationDefinitionJwtVC,
-            },
-      state:
-        typeof input.state === 'string' && input.state.trim() !== ''
-          ? input.state
-          : randomUUID().replaceAll('-', ''),
-      base_url:
-        typeof input.base_url === 'string' && input.base_url.trim() !== ''
-          ? input.base_url
-          : baseUrl,
-      is_request_uri: typeof input.is_request_uri === 'boolean' ? input.is_request_uri : true,
-      is_transaction_data:
-        typeof input.is_transaction_data === 'boolean' ? input.is_transaction_data : false,
-      response_uri:
-        typeof input.response_uri === 'string' && input.response_uri.trim() !== ''
-          ? input.response_uri
-          : undefined,
-      client_id:
-        typeof input.client_id === 'string' && input.client_id.trim() !== ''
-          ? validateClientIdScheme(input.client_id)
-          : 'x509_san_dns:localhost',
-    }
-
     try {
+      const input =
+        parsed && typeof parsed === 'object' ? (parsed as Partial<RequestObjectShape>) : {}
+      const requestObject: RequestObjectShape = {
+        query:
+          typeof input.query === 'object' && input.query !== null
+            ? input.query
+            : {
+                presentation_definition: presentationDefinitionJwtVC,
+              },
+        state:
+          typeof input.state === 'string' && input.state.trim() !== ''
+            ? input.state
+            : randomUUID().replaceAll('-', ''),
+        base_url:
+          typeof input.base_url === 'string' && input.base_url.trim() !== ''
+            ? input.base_url
+            : baseUrl,
+        is_request_uri: typeof input.is_request_uri === 'boolean' ? input.is_request_uri : true,
+        is_transaction_data:
+          typeof input.is_transaction_data === 'boolean' ? input.is_transaction_data : false,
+        response_uri:
+          typeof input.response_uri === 'string' && input.response_uri.trim() !== ''
+            ? input.response_uri
+            : undefined,
+        client_id:
+          typeof input.client_id === 'string' && input.client_id.trim() !== ''
+            ? validateClientIdScheme(input.client_id)
+            : 'x509_san_dns:localhost',
+      }
+
       const verifierId = VerifierClientId(baseUrl)
       const request = await verifierFlow.createAuthzRequest(
         verifierId,
