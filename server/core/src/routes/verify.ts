@@ -52,22 +52,17 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   const canHandleClientIdScheme: VerifierClientIdScheme[] = ['redirect_uri', 'x509_san_dns']
   function validateClientIdScheme(client_id: string): ClientIdentifier {
-    try {
-      if (client_id == null || client_id === '') {
-        return 'x509_san_dns:localhost'
-      }
-      const m = client_id.match(/^([^:]+):(.+)$/)
-      const prefix = m?.[1]
-      if (!prefix || !canHandleClientIdScheme.includes(prefix as VerifierClientIdScheme)) {
-        throw new Error('Invalid client_id format')
-      }
-      return ClientIdentifier(client_id)
-    } catch (e) {
+    if (client_id == null || client_id === '') {
+      return 'x509_san_dns:localhost'
+    }
+    const m = client_id.match(/^([^:]+):(.+)$/)
+    const prefix = m?.[1]
+    if (!prefix || !canHandleClientIdScheme.includes(prefix as VerifierClientIdScheme)) {
       throw err('invalid_request', {
         message: 'Invalid client_id parameter.',
-        cause: e,
       })
     }
+    return ClientIdentifier(client_id)
   }
 
   verifyApp.post('/request', async (c) => {
