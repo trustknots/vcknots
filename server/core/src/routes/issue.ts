@@ -5,10 +5,10 @@ import {
   VcknotsContext,
 } from '@trustknots/vcknots'
 import {
-  CredentialConfigurationId,
   CredentialRequest,
   CredentialIssuer,
   initializeIssuerFlow,
+  CredentialConfigurationId,
 } from '@trustknots/vcknots/issuer'
 import { AuthorizationServerIssuer, initializeAuthzFlow } from '@trustknots/vcknots/authz'
 import { VcknotsError } from '@trustknots/vcknots/errors'
@@ -119,10 +119,34 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   issueApp.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
-      const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
+      const parseResult = CredentialConfigurationId.schema.safeParse(c.req.param('configuration'))
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid credential configuration ID.',
+          },
+          400
+        )
+      }
+      const configurations = [parseResult.data]
+
       const rawBody = await c.req.text()
-      const options: OfferOptions | undefined =
-        rawBody.trim().length > 0 ? (JSON.parse(rawBody) as OfferOptions) : undefined
+
+      let options: OfferOptions | undefined
+      if (rawBody.trim().length > 0) {
+        try {
+          options = JSON.parse(rawBody) as OfferOptions
+        } catch {
+          return c.json(
+            {
+              error: 'invalid_request',
+              error_description: 'Request body must be valid JSON.',
+            },
+            400
+          )
+        }
+      }
 
       // It only accepts a domain as an argument
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
@@ -237,7 +261,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
           }
         }
       } catch (err) {
-        if (err instanceof VcknotsError && err.name === 'INVALID_ACCESS_TOKEN') {
+        if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
           return unauthorized(
             c,
             {
@@ -247,16 +271,36 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
             { error: 'invalid_token' }
           )
         }
-        if (err instanceof VcknotsError && err.name === 'INVALID_DPOP_PROOF') {
+        if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
           return invalidDpopProof(c, err.message)
         }
-        if (err instanceof VcknotsError && err.name === 'USE_DPOP_NONCE') {
+        if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
           return dpopNonceResponse(c)
         }
         throw err
       }
-      const request = await c.req.json()
-      const parse = CredentialRequest(request)
+      const request = await c.req.json().catch(() => null)
+      if (!request) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Request body must be a valid JSON.',
+          },
+          400
+        )
+      }
+      const parseResult = CredentialRequest.schema.safeParse(request)
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Request body does not conform to CredentialRequest schema.',
+          },
+          400
+        )
+      }
+      const parse = parseResult.data
+
       // Issue Credential
       const credential = await issuerFlow.issueCredential(issuer, parse, {
         alg: 'ES256',

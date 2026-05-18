@@ -49,12 +49,33 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
         )
       }
 
-      const request = await c.req.formData()
+      const request = await c.req.formData().catch(() => null)
+      if (!request) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Request body must be a valid form data.',
+          },
+          400
+        )
+      }
+
       const requestData: Record<string, string | File | number> = Object.fromEntries(
         request.entries()
       )
 
-      const tokenRequest = AuthzTokenRequest(requestData)
+      const parseResult = AuthzTokenRequest.schema.safeParse(requestData)
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid token request parameters.',
+          },
+          400
+        )
+      }
+      const tokenRequest = parseResult.data
+
       const issuer = AuthorizationServerIssuer(baseUrl)
       const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
         ...(dpopMode !== 'off' && dpopProof.ok
@@ -70,7 +91,7 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
       })
       return c.json(accessToken)
     } catch (err) {
-      if (err instanceof VcknotsError && err.name === 'INVALID_DPOP_PROOF') {
+      if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
         return c.json(
           {
             error: 'invalid_dpop_proof',
@@ -79,7 +100,7 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
           400
         )
       }
-      if (err instanceof VcknotsError && err.name === 'USE_DPOP_NONCE') {
+      if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
         return dpopNonceResponse(c)
       }
       const errorResponse = handleError(err)

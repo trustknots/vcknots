@@ -45,3 +45,4 @@ export const CredentialRequest = (value?: {
     zip?: string
   }
 }) => credentialRequestSchema.parse(value)
+CredentialRequest.schema = credentialRequestSchema

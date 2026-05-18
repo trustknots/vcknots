@@ -20,12 +20,12 @@ export const transactionCode = (): TransactionCodeProvider => {
     ): string | number {
       const len = length ?? 6
       if (len < MIN_TX_CODE_LENGTH || len > MAX_TX_CODE_LENGTH) {
-        throw err('INVALID_TX_CODE_OPTIONS', {
+        throw err('invalid_tx_code_options', {
           message: `Length must be between ${MIN_TX_CODE_LENGTH} and ${MAX_TX_CODE_LENGTH}`,
         })
       }
       if (description?.length && description.length > 300) {
-        throw err('INVALID_TX_CODE_OPTIONS', {
+        throw err('invalid_tx_code_options', {
           message: 'Description must be less than 300 characters',
         })
       }

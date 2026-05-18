@@ -188,15 +188,14 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
               realm,
               {
                 error: 'invalid_token',
-                error_description:
-                  'DPoP-bound access token must be presented with DPoP scheme.',
+                error_description: 'DPoP-bound access token must be presented with DPoP scheme.',
               },
               { error: 'invalid_token' }
             )
           }
         }
       } catch (err) {
-        if (err instanceof VcknotsError && err.name === 'INVALID_ACCESS_TOKEN') {
+        if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
           return unauthorized(
             c,
             realm,
@@ -207,10 +206,10 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
             { error: 'invalid_token' }
           )
         }
-        if (err instanceof VcknotsError && err.name === 'INVALID_DPOP_PROOF') {
+        if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
           return invalidDpopProof(c, realm, err.message)
         }
-        if (err instanceof VcknotsError && err.name === 'USE_DPOP_NONCE') {
+        if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
           return dpopNonceResponse(c, realm)
         }
         throw err

@@ -7,14 +7,14 @@ export const isPlainObject = (value: unknown): value is Record<string, unknown> 
 
 export const assertSafePath = (path: string[]): void => {
   if (path.length === 0) {
-    throw raise('INVALID_CLAIMS', {
+    throw raise('invalid_claims', {
       message: 'Claim path must not be empty.',
     })
   }
 
   for (const segment of path) {
     if (forbiddenPathSegments.has(segment)) {
-      throw raise('INVALID_CLAIMS', {
+      throw raise('invalid_claims', {
         message: `Unsupported claim path segment: ${segment}`,
       })
     }
@@ -51,3 +51,4 @@ export const setClaimValue = (
   }
   current[path[path.length - 1]] = value
 }
+

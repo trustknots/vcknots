@@ -120,7 +120,7 @@ export const initializeProviderRegistry = (
 
   return {
     get(kind) {
-      const provider = providers[kind] ?? raise('PROVIDER_NOT_FOUND', { message: kind })
+      const provider = providers[kind] ?? raise('provider_not_found', { message: kind })
 
       for (const it of Array.isArray(provider) ? provider : [provider]) {
         if ('providers' in it) {
@@ -142,7 +142,7 @@ export const initializeProviderRegistry = (
       const candidates = Array.isArray(multiples) ? multiples : [multiples]
       const provider =
         candidates.find((it) => it.canHandle(value)) ??
-        raise('PROVIDER_NOT_FOUND', { message: `No provider found which can handle: ${value}` })
+        raise('provider_not_found', { message: `No provider found which can handle: ${value}` })
       return provider
     },
   }
@@ -150,7 +150,8 @@ export const initializeProviderRegistry = (
 
 export const withProviderRegistry = {
   providers: {
-    get: () => raise('ILLEGAL_STATE'),
-    select: () => raise('ILLEGAL_STATE'),
+    get: () => raise('illegal_state'),
+    select: () => raise('illegal_state'),
   },
 }
+

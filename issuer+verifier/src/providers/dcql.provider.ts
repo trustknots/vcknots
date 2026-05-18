@@ -10,7 +10,7 @@ export const dcql = (): CredentialQueryProvider => {
 
     async generate(options) {
       if (options.kind !== 'dcql') {
-        throw err('ILLEGAL_ARGUMENT', {
+        throw err('illegal_argument', {
           message: `${options.kind} is not supported.`,
         })
       }
@@ -21,3 +21,4 @@ export const dcql = (): CredentialQueryProvider => {
     },
   }
 }
+

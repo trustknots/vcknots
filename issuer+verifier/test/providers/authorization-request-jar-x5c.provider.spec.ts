@@ -19,7 +19,7 @@ describe('AuthzRequestJARProvider', () => {
         return x5c
       }
       return Promise.reject(
-        raise('CERTIFICATE_NOT_FOUND', { message: 'Verifier certificate not found.' })
+        raise('certificate_not_found', { message: 'Verifier certificate not found.' })
       )
     }),
     save: mock.fn(async () => {}),
@@ -127,9 +127,10 @@ describe('AuthzRequestJARProvider', () => {
     await assert.rejects(
       provider.generate('unknown-verifier' as ClientId, requestObject, alg, nonce),
       {
-        name: 'CERTIFICATE_NOT_FOUND',
+        name: 'certificate_not_found',
         message: 'Verifier certificate not found.',
       }
     )
   })
 })
+

@@ -93,7 +93,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   ): Promise<JwtPayload> => {
     const [jwtHeader, jwtPayload, jwtSignature] = accessToken.split('.')
     if (!jwtHeader || !jwtPayload || !jwtSignature) {
-      throw err('INVALID_ACCESS_TOKEN', {
+      throw err('invalid_access_token', {
         message: 'Access token is not a valid JWT.',
       })
     }
@@ -104,7 +104,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       decodedHeader = JSON.parse(base64url.decode(jwtHeader))
       decodedPayload = JSON.parse(base64url.decode(jwtPayload))
     } catch (error) {
-      throw err('INVALID_ACCESS_TOKEN', {
+      throw err('invalid_access_token', {
         message:
           error instanceof Error
             ? `Access token is not a valid JWT. ${error.message}`
@@ -114,14 +114,14 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
 
     const authzIssuer = AuthorizationServerIssuer(decodedPayload.iss)
     if (authzIssuer !== authz) {
-      throw err('INVALID_ACCESS_TOKEN', {
+      throw err('invalid_access_token', {
         message: `Access token issuer ${authzIssuer} does not match the expected issuer ${authz}.`,
       })
     }
     const keyAlg = decodedHeader.alg ?? options?.alg ?? 'ES256'
     const publicKey = await authzKey$.fetch(authzIssuer, keyAlg)
     if (!publicKey) {
-      throw err('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+      throw err('authz_issuer_key_not_found', {
         message: `Authorization server key for ${authzIssuer} not found.`,
       })
     }
@@ -131,7 +131,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         issuer: decodedPayload.iss,
       })
     } catch {
-      throw err('INVALID_ACCESS_TOKEN', {
+      throw err('invalid_access_token', {
         message: 'Access token verification failed.',
       })
     }
@@ -160,7 +160,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
     const payload = await verifyAccessTokenPayload(authz, accessToken, options)
     const accessTokenJkt = getCnfJkt(payload)
     if (!accessTokenJkt) {
-      throw err('INVALID_ACCESS_TOKEN', {
+      throw err('invalid_access_token', {
         message: 'DPoP-bound access token must contain cnf.jkt.',
       })
     }
@@ -175,13 +175,13 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
     if (nonceRequired) {
       const nonceStore$ = context.providers.get('nonce-store-provider')
       if (!verifiedDpopProof.nonce) {
-        throw err('USE_DPOP_NONCE', {
+        throw err('use_dpop_nonce', {
           message: 'Credential issuer requires nonce in DPoP proof.',
         })
       }
       const consumed = await nonceStore$.consume(Nonce({ nonce: verifiedDpopProof.nonce }))
       if (!consumed) {
-        throw err('USE_DPOP_NONCE', {
+        throw err('use_dpop_nonce', {
           message: 'Credential issuer requires nonce in DPoP proof.',
         })
       }
@@ -189,7 +189,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
 
     // Bind the access token to the DPoP proof key via cnf.jkt.
     if (verifiedDpopProof.jwkThumbprint !== accessTokenJkt) {
-      throw err('INVALID_DPOP_PROOF', {
+      throw err('invalid_dpop_proof', {
         message: 'DPoP proof public key does not match access token cnf.jkt.',
       })
     }
@@ -203,7 +203,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       { ttlMs: dpopProof$.proofJtiTtlMs }
     )
     if (!isNewJti) {
-      throw err('INVALID_DPOP_PROOF', {
+      throw err('invalid_dpop_proof', {
         message: 'DPoP proof JWT jti has already been used.',
       })
     }
@@ -219,7 +219,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       const privateKeyAlg = options?.alg ?? 'ES256'
       const current = await authz$.fetch(metadata.issuer)
       if (current) {
-        throw err('DUPLICATE_AUTHZ_SERVER', {
+        throw err('duplicate_authz_server', {
           message: `issuer ${metadata.issuer} is already registered.`,
         })
       }
@@ -248,14 +248,14 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             if (option?.dpopProof?.nonceRequired) {
               const nonceStore$ = context.providers.get('nonce-store-provider')
               if (!verifiedDpopProof.nonce) {
-                throw err('USE_DPOP_NONCE', {
+                throw err('use_dpop_nonce', {
                   message: 'Authorization server requires nonce in DPoP proof.',
                 })
               }
               const nonce = Nonce({ nonce: verifiedDpopProof.nonce })
               const consumed = await nonceStore$.consume(nonce)
               if (!consumed) {
-                throw err('USE_DPOP_NONCE', {
+                throw err('use_dpop_nonce', {
                   message: 'Authorization server requires nonce in DPoP proof.',
                 })
               }
@@ -266,7 +266,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
               { ttlMs: dpopProof$.proofJtiTtlMs }
             )
             if (!isNewJti) {
-              throw err('INVALID_DPOP_PROOF', {
+              throw err('invalid_dpop_proof', {
                 message: 'DPoP proof JWT jti has already been used.',
               })
             }
@@ -277,7 +277,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             tokenRequest.tx_code
           )
           if (!isValid) {
-            throw err('PRE_AUTHORIZED_CODE_NOT_FOUND', {
+            throw err('invalid_grant', {
               message: 'The provided pre-authorized code is invalid.',
             })
           }
@@ -302,7 +302,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           // sign with issuer private key
           const signature = await authzKey$.sign(authz, keyAlg, jwtPayload, jwtHeader)
           if (!signature) {
-            throw err('INTERNAL_SERVER_ERROR', {
+            throw err('internal_server_error', {
               message: 'Cannot sign access token.',
             })
           }
@@ -318,12 +318,12 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         }
         case 'authorization_code': {
           // TODO: Implement authorization code flow
-          throw err('FEATURE_NOT_IMPLEMENTED_YET', {
+          throw err('unsupported_grant_type', {
             message: 'Authorization code flow is not supported.',
           })
         }
         default: {
-          throw err('INVALID_REQUEST', {
+          throw err('invalid_request', {
             message: `Unsupported grant type: ${tokenRequest.grant_type}`,
           })
         }

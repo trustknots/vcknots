@@ -183,7 +183,7 @@ describe('sd-jwt provider', () => {
         expectedAud: dcExpectedAud,
       }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_SD_JWT')
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /Failed to fetch JWKS/)
         return true
       }
@@ -199,7 +199,7 @@ describe('sd-jwt provider', () => {
         expectedAud: ClientIdentifier('https://dummy'),
       }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'ILLEGAL_ARGUMENT')
+        assert.equal(err.name, 'illegal_argument')
         return true
       }
     )
@@ -212,7 +212,7 @@ describe('sd-jwt provider', () => {
     await assert.rejects(
       provider.verify(sdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_SD_JWT')
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /Failed to fetch issuer metadata/)
         return true
       }
@@ -242,7 +242,7 @@ describe('sd-jwt provider', () => {
     await assert.rejects(
       provider.verify(sdJwtNoKid, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_SD_JWT')
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /SD-JWT header missing kid for JWKs/)
         return true
       }
@@ -258,7 +258,7 @@ describe('sd-jwt provider', () => {
     await assert.rejects(
       provider.verify(sdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_SD_JWT')
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /No matching JWK found for kid/)
         return true
       }
@@ -272,7 +272,7 @@ describe('sd-jwt provider', () => {
     await assert.rejects(
       provider.verify(sdJwt, { kind: 'dc+sd-jwt', isKbJwt: true, expectedAud: dcExpectedAud }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_SD_JWT')
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /Expected Key-Binding JWT, but it was not present./)
         return true
       }
@@ -309,7 +309,7 @@ describe('sd-jwt provider', () => {
           expectedAud: dcKbJwtExpectedAud,
         }),
         (err: VcknotsError) => {
-          assert.equal(err.name, 'INVALID_NONCE')
+          assert.equal(err.name, 'invalid_nonce')
           assert.match(err.message, /Nonce could not be revoked/)
           return true
         }
@@ -358,3 +358,4 @@ describe('sd-jwt provider', () => {
     )
   })
 })
+

@@ -10,7 +10,7 @@ export const presentationExchange = (): CredentialQueryProvider => {
 
     async generate(options) {
       if (options.kind !== 'presentation-exchange') {
-        throw err('ILLEGAL_ARGUMENT', { message: `"${options.kind}" is not supported.` })
+        throw err('illegal_argument', { message: `"${options.kind}" is not supported.` })
       }
       return PresentationExchange(options.query)
     },
@@ -19,3 +19,4 @@ export const presentationExchange = (): CredentialQueryProvider => {
     },
   }
 }
+

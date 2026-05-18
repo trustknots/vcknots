@@ -434,10 +434,33 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
 app.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
-      const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
-      const contentLength = c.req.header('content-length')
-      const options: OfferOptions | undefined =
-        contentLength && contentLength !== '0' ? await c.req.json<OfferOptions>() : undefined
+      const parseResult = CredentialConfigurationId.schema.safeParse(c.req.param('configuration'))
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid credential configuration ID.',
+          },
+          400
+        )
+      }
+      const configurations = [parseResult.data]
+      const rawBody = await c.req.text()
+
+      let options: OfferOptions | undefined
+      if (rawBody.trim().length > 0) {
+        try {
+          options = JSON.parse(rawBody) as OfferOptions
+        } catch {
+          return c.json(
+            {
+              error: 'invalid_request',
+              error_description: 'Request body must be valid JSON.',
+            },
+            400
+          )
+        }
+      }
 
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
@@ -556,8 +579,31 @@ app.post('/token', async (c) => {
     )
   }
 
-  const request = await c.req.formData()
-  const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()))
+  const request = await c.req.formData().catch(() => null)
+  if (!request) {
+    return c.json(
+      {
+        error: 'invalid_request',
+        error_description: 'Request body must be a valid form data.',
+      },
+      400
+    )
+  }
+  const requestData: Record<string, string | File | number> = Object.fromEntries(
+    request.entries()
+  )
+
+  const parseResult = AuthzTokenRequest.schema.safeParse(requestData)
+  if (!parseResult.success) {
+    return c.json(
+      {
+        error: 'invalid_request',
+        error_description: 'Invalid token request parameters.',
+      },
+      400
+    )
+  }
+  const tokenRequest = parseResult.data
   const issuer = AuthorizationServerIssuer(baseUrl)
 
   const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
@@ -576,7 +622,7 @@ app.post('/token', async (c) => {
 })
 ```
 
-**リクエストボディは `application/x-www-form-urlencoded` です**（`AuthzTokenRequest` はフォームフィールドから組み立てます）。`INVALID_DPOP_PROOF`（`invalid_dpop_proof`）や `USE_DPOP_NONCE`（`DPoP-Nonce` ヘッダー付き）などの分岐を含む実装は [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts) を参照してください。
+**リクエストボディは `application/x-www-form-urlencoded` です**（`AuthzTokenRequest` はフォームフィールドから組み立てます）。`invalid_dpop_proof`（`invalid_dpop_proof`）や `use_dpop_nonce`（`DPoP-Nonce` ヘッダー付き）などの分岐を含む実装は [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts) を参照してください。
 
 **例**:
 
@@ -992,24 +1038,44 @@ app.post('/credentials', async (c) => {
         }
       }
     } catch (err) {
-      if (err instanceof VcknotsError && err.name === 'INVALID_ACCESS_TOKEN') {
+      if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
         return unauthorized(
           c,
           { error: 'invalid_token', error_description: err.message },
           { error: 'invalid_token' }
         )
       }
-      if (err instanceof VcknotsError && err.name === 'INVALID_DPOP_PROOF') {
+      if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
         return invalidDpopProof(c, err.message)
       }
-      if (err instanceof VcknotsError && err.name === 'USE_DPOP_NONCE') {
+      if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
         return dpopNonceResponse(c)
       }
       throw err
     }
 
-    const request = await c.req.json()
-    const parse = CredentialRequest(request)
+    const request = await c.req.json().catch(() => null)
+    if (!request) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Request body must be a valid JSON.',
+        },
+        400
+      )
+    }
+    const parseResult = CredentialRequest.schema.safeParse(request)
+    if (!parseResult.success) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Request body does not conform to CredentialRequest schema.',
+        },
+        400
+      )
+    }
+    const parse = parseResult.data
+
     const credential = await issuerFlow.issueCredential(issuer, parse, {
       alg: 'ES256',
       cnonce: {
@@ -1130,7 +1196,7 @@ createIssuerMetadata(issuer: CredentialIssuerMetadata): Promise<void>
 **戻り値**: なし
 
 **エラーケース**:
-- `PROVIDER_NOT_FOUND`: 未対応の`alg`が設定された
+- `provider_not_found`: 未対応の`alg`が設定された
 
 
 ### createNonce
@@ -1194,8 +1260,8 @@ offerCredential(
 
 
 **エラーケース**:
-- `FEATURE_NOT_IMPLEMENTED_YET`: 未対応のフローが設定された（認可コードフローには未対応です）
-- `ISSUER_NOT_FOUND`: 未登録のIssuerが設定された
+- `unsupported_grant_type`: 未対応のフローが設定された（認可コードフローには未対応です）
+- `issuer_not_found`: 未登録のIssuerが設定された
 
 #### CredentialConfigurationId{#CredentialConfigurationId}
 クレデンシャル構成IDを定義する型です。
@@ -1255,7 +1321,7 @@ JOSE 保護ヘッダの検証内容は [credential-proof-jwt.provider.ts](https:
 
 - **`typ`**: `openid4vci-proof+jwt` であること（RFC 8725 に基づく明示的タイピング）。
 - **`alg`**: `none` および IANA JWA の **対称署名（MAC、`HS*` で始まる識別子）** は拒否されます。
-- **`kid` / `jwk` / `x5c`**: **同時に複数を含めてはいけません**。また **少なくともいずれか 1 つは必須**です（いずれも無い場合も `INVALID_PROOF`）。
+- **`kid` / `jwk` / `x5c`**: **同時に複数を含めてはいけません**。また **少なくともいずれか 1 つは必須**です（いずれも無い場合も `invalid_proof`）。
 - **`trust_chain`**: 現在未対応です。
 
 keyごとの動き:
@@ -1267,15 +1333,14 @@ keyごとの動き:
 | **`x5c`** | 証明書チェーンを **`certificate-provider`** で検証したうえで、先頭証明書の公開鍵で検証します。`x5c` を使う構成では、Vcknots 初期化時に **`certificate-provider` をプロバイダ一覧へ登録**してください。 |
 
 **エラーケース**:
-- `ISSUER_NOT_FOUND`: 未登録のIssuerが設定された
-- `PROVIDER_NOT_FOUND`:  未対応の`format`が設定された
-- `INVALID_REQUEST`: `format`が未設定
-- `UNSUPPORTED_CREDENTIAL_TYPE`: 指定された`credential_definition`もしくは`proof_type`がサポートされていない
-- `INVALID_CREDENTIAL_REQUEST`: `proof`が見つからないかサポートされていない、設定 ID 不備など
-- `INVALID_PROOF`: `proof`が検証できない、OID4VCI の JWT proof に合わないヘッダ（`typ` / `alg` / `kid`・`jwk`・`x5c` の組み合わせなど）、未サポートの header、`nonce`が見つからない
-- `UNSUPPORTED_ISSUER_KEY_ALG`: Issuerの署名アルゴリズムがサポートされていない
-- `AUTHZ_ISSUER_KEY_NOT_FOUND`: Issuerの鍵が見つからない
-- `INTERNAL_SERVER_ERROR`: 署名に失敗した
+- `issuer_not_found`: 未登録のIssuerが設定された
+- `unknown_credential_configuration`: `credential_configuration_id`がサポートされていない
+- `unsupported_credential_type`: 指定された`credential_definition`もしくは`proof_type`がサポートされていない
+- `invalid_credential_request`: `proof`が見つからないかサポートされていない、設定 ID 不備など
+- `invalid_proof`: `proof`が検証できない、OID4VCI の JWT proof に合わないヘッダ（`typ` / `alg` / `kid`・`jwk`・`x5c` の組み合わせなど）、未サポートの header、`nonce`が見つからない
+- `unsupported_issuer_key_alg`: Issuerの署名アルゴリズムがサポートされていない
+- `authz_issuer_key_not_found`: Issuerの鍵が見つからない
+- `internal_server_error`: 署名に失敗した
 
 #### CredentialRequest{#CredentialRequest}
 クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。
@@ -1378,11 +1443,11 @@ createAccessToken<T extends GrantType>(
 ```
 
 **エラーケース**:
-- `PROVIDER_NOT_FOUND`:  秘密鍵で未対応のアルゴリズムが設定された
-- `PRE_AUTHORIZED_CODE_NOT_FOUND`: 有効でない事前認可コードが設定された
-- `INVALID_REQUEST`: 認可サーバーの鍵が未登録、アルゴリズムが未設定、グラントタイプがサポートされていない
-- `INTERNAL_SERVER_ERROR`: 署名に失敗した
-- `FEATURE_NOT_IMPLEMENTED_YET`: 認可コードフローを設定（現在未対応）
+- `provider_not_found`:  秘密鍵で未対応のアルゴリズムが設定された
+- `invalid_grant`: 有効でない事前認可コードが設定された
+- `invalid_request`: 認可サーバーの鍵が未登録、アルゴリズムが未設定、グラントタイプがサポートされていない
+- `internal_server_error`: 署名に失敗した
+- `unsupported_grant_type`: 認可コードフローを設定（現在未対応）
 
 #### TokenRequest{#TokenRequest}
 クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。
@@ -1418,9 +1483,9 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 **戻り値**: アクセストークンが有効をbooleanで返します。
 
 **エラーケース**:
-- `INVALID_ACCESS_TOKEN`:  アクセストークンが有効なjwtでないか、`authz`が期待されたものでない
-- `AUTHZ_ISSUER_KEY_NOT_FOUND`: 認可サーバーの鍵が見つからない
-- `PROVIDER_NOT_FOUND`: 署名アルゴリズムが未サポート
+- `invalid_access_token`:  アクセストークンが有効なjwtでないか、`authz`が期待されたものでない
+- `authz_issuer_key_not_found`: 認可サーバーの鍵が見つからない
+- `provider_not_found`: 署名アルゴリズムが未サポート
 
 
 ## 7. 注意事項
@@ -1441,8 +1506,8 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 - **Q:メタデータのバリデーションエラー**:
     - **A：** 提供されたメタデータがCredentialIssuerMetadataスキーマ、AuthorizationServerMetadataスキーマに適合しているかを確認してください。
 
-- **Q:クレデンシャルオファーの作成エラー**:`FEATURE_NOT_IMPLEMENTED_YET`
+- **Q:クレデンシャルオファーの作成エラー**:`unsupported_grant_type`
     - **A：**  未実装のフローを呼び出していないか確認してください。現在対応しているのは事前認可コードフローです。
 
-- **Q:クレデンシャル発行エラー**:`INVALID_PROOF`
+- **Q:クレデンシャル発行エラー**:`invalid_proof`
     - **A：**  クレデンシャルリクエストのproof.jwtのheaderがkidを含んでいるかを確認してください。また、proof に含まれる `nonce` が有効かを確認してください。
