@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { beforeEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 import { PreAuthorizedCode } from '../../../src/pre-authorized-code.types'
 import { inMemoryPreAuthorizedCodeStore } from '../../../src/providers/in-memory/in-memory-pre-authorized-code-store.provider'
 
@@ -10,6 +10,10 @@ describe('inMemoryPreAuthorizedCode', () => {
 
   beforeEach(() => {
     provider = inMemoryPreAuthorizedCodeStore()
+  })
+
+  afterEach(() => {
+    mock.timers.reset()
   })
 
   it('should have kind, name, and single properties correctly set', () => {
@@ -122,6 +126,33 @@ describe('inMemoryPreAuthorizedCode', () => {
       // This test just ensures no error is thrown with default values
       const isValid = await provider.validate(sampleCode)
       assert.strictEqual(isValid, true)
+    })
+
+    it('should fall back to default ttlSec when saveOptions.ttlSec is invalid', async () => {
+      mock.timers.enable({ apis: ['Date'] })
+      await provider.save(sampleCode, undefined, { ttlSec: NaN })
+      mock.timers.tick(299_000)
+      assert.strictEqual(await provider.validate(sampleCode), true)
+      mock.timers.tick(2_000)
+      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
+    })
+
+    it('should floor fractional ttlSec values', async () => {
+      mock.timers.enable({ apis: ['Date'] })
+      await provider.save(sampleCode, undefined, { ttlSec: 1.9 })
+      mock.timers.tick(500)
+      assert.strictEqual(await provider.validate(sampleCode), true)
+      mock.timers.tick(600)
+      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
+    })
+
+    it('should fall back to default ttlSec when fractional ttlSec floors to zero', async () => {
+      mock.timers.enable({ apis: ['Date'] })
+      await provider.save(sampleCode, undefined, { ttlSec: 0.1 })
+      mock.timers.tick(299_000)
+      assert.strictEqual(await provider.validate(sampleCode), true)
+      mock.timers.tick(2_000)
+      await assert.rejects(provider.validate(sampleCode), { name: 'INVALID_GRANT' })
     })
   })
 })
