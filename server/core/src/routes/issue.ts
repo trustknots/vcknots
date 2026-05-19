@@ -306,7 +306,20 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         )
       }
       const parse = parseResult.data
-      const accessTokenJti = accessTokenPayload.jti
+      const accessTokenJti =
+        typeof accessTokenPayload.jti === 'string' && accessTokenPayload.jti.length > 0
+          ? accessTokenPayload.jti
+          : undefined
+      if (!accessTokenJti) {
+        return unauthorized(
+          c,
+          {
+            error: 'invalid_token',
+            error_description: 'Access token must contain a jti claim.',
+          },
+          { error: 'invalid_token' }
+        )
+      }
 
       // Issue Credential
       const credential = await issuerFlow.issueCredential(issuer, parse, {

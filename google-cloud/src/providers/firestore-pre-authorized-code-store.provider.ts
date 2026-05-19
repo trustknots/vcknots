@@ -65,6 +65,14 @@ export const firestorePreAuthorizedCodeStore = (
         return null
       }
       const data = doc.data() as FirestorePreAuthorizedCodeDoc
+
+      if (data.expires_at.toMillis() < new Date().getTime()) {
+        await firestore.doc(`${ns}/v1/preCodes/${code}`).delete()
+        throw raise('invalid_grant', {
+          message: 'Pre-authorized code has expired',
+        })
+      }
+
       return data.credential_configuration_ids ?? null
     },
 

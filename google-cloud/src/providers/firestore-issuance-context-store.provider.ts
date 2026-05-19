@@ -22,7 +22,7 @@ export const firestoreIssuanceContextStore = (
     single: true,
 
     async save(jti, credential_configuration_ids, ttl) {
-      const ttlSecRaw = Number(ttl ?? 300)
+      const ttlSecRaw = Number(ttl ?? options?.expiresIn ?? 300)
       const ttlSecCandidate = Math.floor(ttlSecRaw)
       const ttlSec = Number.isFinite(ttlSecRaw) && ttlSecCandidate > 0 ? ttlSecCandidate : 300
       const expiresAt = Timestamp.fromMillis(new Date().getTime() + ttlSec * 1000)
