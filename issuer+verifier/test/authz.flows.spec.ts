@@ -307,11 +307,19 @@ describe('AuthzFlows', () => {
       })
 
       it('should use the same generated jti for issuance context and access token payload', async () => {
-        mock.method(mockAccessTokenProvider, 'createTokenPayload', async () => ({
-          iss: sampleIssuer,
-          sub: preAuthCode,
-          jti: 'test-jti',
-        }))
+        mock.method(
+          mockAccessTokenProvider,
+          'createTokenPayload',
+          async (
+            _authz: AuthorizationServerIssuer,
+            _code: PreAuthorizedCode,
+            options: { jti?: string }
+          ) => ({
+            iss: sampleIssuer,
+            sub: preAuthCode,
+            jti: options?.jti,
+          })
+        )
 
         const response = (await flow.createAccessToken(sampleIssuer, tokenRequest)) as TokenResponse
 
