@@ -262,11 +262,7 @@ export type DPoPProofJtiStoreProvider = {
   name: string
   single: true
 
-  saveIfAbsent(
-    jwkThumbprint: string,
-    jti: string,
-    options?: { ttlMs?: number }
-  ): Promise<boolean>
+  saveIfAbsent(jwkThumbprint: string, jti: string, options?: { ttlMs?: number }): Promise<boolean>
 }
 
 export type SignatureGenerationProvider = {
@@ -295,12 +291,28 @@ export type PreAuthorizedCodeStoreProvider = {
 
   save(
     code: PreAuthorizedCode,
+    credentialConfigurationIds: CredentialConfigurationId[],
     tx_code?: string | number,
     options?: { ttlSec?: number; tx_code_input_mode?: 'numeric' | 'text' }
   ): Promise<void>
+  fetch(code: PreAuthorizedCode): Promise<CredentialConfigurationId[] | null>
   // FIXME: validation logic is a kind of business logic. so we need to move this function into [PreAuthorizedCodeProvider]
   validate(code: PreAuthorizedCode, tx_code?: string | number): Promise<boolean>
   delete(code: PreAuthorizedCode): Promise<void>
+}
+
+export type IssuanceContextStoreProvider = {
+  kind: 'issuance-context-store-provider'
+  name: string
+  single: true
+
+  save(
+    jti: string,
+    credential_configuration_ids: CredentialConfigurationId[],
+    ttlSec?: number
+  ): Promise<void>
+  fetch(jti: string): Promise<CredentialConfigurationId[] | null>
+  delete(jti: string): Promise<void>
 }
 
 export type AccessTokenProvider = {
@@ -311,7 +323,7 @@ export type AccessTokenProvider = {
   createTokenPayload(
     authz: AuthorizationServerIssuer,
     code: PreAuthorizedCode,
-    options?: { ttlSec?: number; cnf?: { jkt: string } }
+    options?: { ttlSec?: number; jti?: string; cnf?: { jkt: string } }
   ): Promise<JwtPayload>
 }
 
@@ -480,6 +492,7 @@ export type Provider =
   | SignatureVerificationProvider
   | PreAuthorizedCodeProvider
   | PreAuthorizedCodeStoreProvider
+  | IssuanceContextStoreProvider
   | AccessTokenProvider
   | CredentialOfferProvider
   | AuthzServerMetadataStoreProvider

@@ -16,14 +16,28 @@ export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider
     name: 'in-memory-pre-authorized-code-provider',
     single: true,
 
-    async save(code, tx_code, options) {
+    async save(code, credentialConfigurationIds, tx_code, options) {
       const ttlSecRaw = Number(options?.ttlSec ?? 300)
       const ttlSecCandidate = Math.floor(ttlSecRaw)
       const ttlSec = Number.isFinite(ttlSecRaw) && ttlSecCandidate > 0 ? ttlSecCandidate : 300
       const tx_code_input_mode = options?.tx_code_input_mode ?? 'numeric'
       const expiresAt = new Date().getTime() + ttlSec * 1000
-      codes.set(code, { code, tx_code, tx_code_input_mode, expires_at: expiresAt })
+      codes.set(code, {
+        code,
+        credential_configuration_ids: credentialConfigurationIds,
+        tx_code,
+        tx_code_input_mode,
+        expires_at: expiresAt,
+      })
       return
+    },
+
+    async fetch(code) {
+      const entry = codes.get(code)
+      if (!entry) {
+        return null
+      }
+      return entry.credential_configuration_ids
     },
 
     async validate(code, tx_code) {

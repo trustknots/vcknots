@@ -1,10 +1,12 @@
 import { z } from 'zod'
 import { DeepPartialUnknown } from './type.utils'
+import { CredentialConfigurationId } from './credential-issuer.types'
 
 const preAuthorizedCodeSchema = z.string().brand('PreAuthorizedCode')
 
 const preAuthorizedCodeStoreEntrySchema = z.object({
   code: preAuthorizedCodeSchema,
+  credential_configuration_ids: z.array(CredentialConfigurationId.schema),
   tx_code: z.union([z.string(), z.number()]).optional(),
   tx_code_input_mode: z.enum(['numeric', 'text']).optional(),
   expires_at: z.number().optional(),

@@ -2,11 +2,15 @@ import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 import { PreAuthorizedCode } from '../../../src/pre-authorized-code.types'
 import { inMemoryPreAuthorizedCodeStore } from '../../../src/providers/in-memory/in-memory-pre-authorized-code-store.provider'
+import { CredentialConfigurationId } from '../../../src/credential-issuer.types'
 
 describe('inMemoryPreAuthorizedCode', () => {
   let provider: ReturnType<typeof inMemoryPreAuthorizedCodeStore>
   const sampleCode: PreAuthorizedCode = PreAuthorizedCode('test_code_123_abc')
   const anotherSampleCode: PreAuthorizedCode = PreAuthorizedCode('another_code_456_def')
+  const configurations: CredentialConfigurationId[] = [
+    CredentialConfigurationId('University_Degree'),
+  ]
 
   beforeEach(() => {
     provider = inMemoryPreAuthorizedCodeStore()
@@ -24,47 +28,47 @@ describe('inMemoryPreAuthorizedCode', () => {
 
   describe('save and validate', () => {
     it('should save a pre-authorized code and validate it successfully', async () => {
-      await provider.save(sampleCode)
+      await provider.save(sampleCode, configurations)
       const isValid = await provider.validate(sampleCode)
       assert.strictEqual(isValid, true)
     })
 
     it('should save a pre-authorized code with tx_code (numeric) and validate it', async () => {
-      await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
+      await provider.save(sampleCode, configurations, 123, { tx_code_input_mode: 'numeric' })
       const isValid = await provider.validate(sampleCode, 123)
       assert.strictEqual(isValid, true)
     })
 
     it('should save a pre-authorized code with tx_code (text) and validate it', async () => {
-      await provider.save(sampleCode, 'abc123', { tx_code_input_mode: 'text' })
+      await provider.save(sampleCode, configurations, 'abc123', { tx_code_input_mode: 'text' })
       const isValid = await provider.validate(sampleCode, 'abc123')
       assert.strictEqual(isValid, true)
     })
 
     it('should throw invalid_grant when validating with incorrect tx_code', async () => {
-      await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
+      await provider.save(sampleCode, configurations, 123, { tx_code_input_mode: 'numeric' })
       await assert.rejects(provider.validate(sampleCode, 456), { name: 'invalid_grant' })
     })
 
     it('should allow string numeric tx_code in numeric mode', async () => {
-      await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
+      await provider.save(sampleCode, configurations, 123, { tx_code_input_mode: 'numeric' })
       const isValid = await provider.validate(sampleCode, '123')
       assert.strictEqual(isValid, true)
     })
 
     it('should throw invalid_grant when tx_code is not numeric in numeric mode', async () => {
-      await provider.save(sampleCode, 123, { tx_code_input_mode: 'numeric' })
+      await provider.save(sampleCode, configurations, 123, { tx_code_input_mode: 'numeric' })
       await assert.rejects(provider.validate(sampleCode, '12a3'), { name: 'invalid_grant' })
     })
 
     it('should preserve leading zeros in numeric mode', async () => {
-      await provider.save(sampleCode, '0123', { tx_code_input_mode: 'numeric' })
+      await provider.save(sampleCode, configurations, '0123', { tx_code_input_mode: 'numeric' })
       const isValid = await provider.validate(sampleCode, '0123')
       assert.strictEqual(isValid, true)
     })
 
     it('should throw invalid_grant when leading-zero digit-string is validated as number', async () => {
-      await provider.save(sampleCode, '0123', { tx_code_input_mode: 'numeric' })
+      await provider.save(sampleCode, configurations, '0123', { tx_code_input_mode: 'numeric' })
       await assert.rejects(provider.validate(sampleCode, 123), { name: 'invalid_grant' })
     })
 
@@ -73,17 +77,64 @@ describe('inMemoryPreAuthorizedCode', () => {
     })
 
     it('should handle multiple codes correctly', async () => {
-      await provider.save(sampleCode)
-      await provider.save(anotherSampleCode)
+      await provider.save(sampleCode, configurations)
+      await provider.save(anotherSampleCode, configurations)
 
       assert.strictEqual(await provider.validate(sampleCode), true)
       assert.strictEqual(await provider.validate(anotherSampleCode), true)
     })
   })
+  describe('fetch', () => {
+    it('should return null when fetching a non-existent code', async () => {
+      const fetched = await provider.fetch(sampleCode)
+      assert.strictEqual(fetched, null)
+    })
 
+    it('should fetch credential configuration ids for an existing code', async () => {
+      await provider.save(sampleCode, configurations)
+
+      const fetched = await provider.fetch(sampleCode)
+
+      assert.deepStrictEqual(fetched, configurations)
+    })
+
+    it('should overwrite existing data when saving the same code again', async () => {
+      const updatedConfigurations: CredentialConfigurationId[] = [
+        CredentialConfigurationId('EmployeeID_JWT'),
+      ]
+
+      await provider.save(sampleCode, configurations)
+      await provider.save(sampleCode, updatedConfigurations)
+
+      const fetched = await provider.fetch(sampleCode)
+
+      assert.deepStrictEqual(fetched, updatedConfigurations)
+    })
+
+    it('should fetch the correct data for multiple saved codes', async () => {
+      const anotherConfigurations: CredentialConfigurationId[] = [
+        CredentialConfigurationId('EmployeeID_JWT'),
+      ]
+
+      await provider.save(sampleCode, configurations)
+      await provider.save(anotherSampleCode, anotherConfigurations)
+
+      assert.deepStrictEqual(await provider.fetch(sampleCode), configurations)
+      assert.deepStrictEqual(await provider.fetch(anotherSampleCode), anotherConfigurations)
+    })
+
+    it('should return null after the code is deleted', async () => {
+      await provider.save(sampleCode, configurations)
+
+      await provider.delete(sampleCode)
+
+      const fetched = await provider.fetch(sampleCode)
+      assert.strictEqual(fetched, null)
+    })
+  })
   describe('delete', () => {
     it('should delete a pre-authorized code, and validation should throw invalid_grant', async () => {
-      await provider.save(sampleCode)
+      await provider.save(sampleCode, configurations)
       assert.strictEqual(await provider.validate(sampleCode), true)
 
       await provider.delete(sampleCode)
@@ -95,8 +146,8 @@ describe('inMemoryPreAuthorizedCode', () => {
     })
 
     it('should only delete the specified code', async () => {
-      await provider.save(sampleCode)
-      await provider.save(anotherSampleCode)
+      await provider.save(sampleCode, configurations)
+      await provider.save(anotherSampleCode, configurations)
 
       await provider.delete(sampleCode)
 
@@ -111,18 +162,18 @@ describe('inMemoryPreAuthorizedCode', () => {
     })
 
     it('save should not return a value (void promise)', async () => {
-      const result = await provider.save(sampleCode)
+      const result = await provider.save(sampleCode, configurations)
       assert.strictEqual(result, undefined)
     })
 
     it('delete should not return a value (void promise)', async () => {
-      await provider.save(sampleCode)
+      await provider.save(sampleCode, configurations)
       const result = await provider.delete(sampleCode)
       assert.strictEqual(result, undefined)
     })
 
     it('should use default ttlSec when not specified', async () => {
-      await provider.save(sampleCode)
+      await provider.save(sampleCode, configurations)
       // This test just ensures no error is thrown with default values
       const isValid = await provider.validate(sampleCode)
       assert.strictEqual(isValid, true)
@@ -130,7 +181,7 @@ describe('inMemoryPreAuthorizedCode', () => {
 
     it('should fall back to default ttlSec when saveOptions.ttlSec is invalid', async () => {
       mock.timers.enable({ apis: ['Date'] })
-      await provider.save(sampleCode, undefined, { ttlSec: NaN })
+      await provider.save(sampleCode, configurations, undefined, { ttlSec: NaN })
       mock.timers.tick(299_000)
       assert.strictEqual(await provider.validate(sampleCode), true)
       mock.timers.tick(2_000)
@@ -139,7 +190,7 @@ describe('inMemoryPreAuthorizedCode', () => {
 
     it('should floor fractional ttlSec values', async () => {
       mock.timers.enable({ apis: ['Date'] })
-      await provider.save(sampleCode, undefined, { ttlSec: 1.9 })
+      await provider.save(sampleCode, configurations, undefined, { ttlSec: 1.9 })
       mock.timers.tick(500)
       assert.strictEqual(await provider.validate(sampleCode), true)
       mock.timers.tick(600)
@@ -148,7 +199,7 @@ describe('inMemoryPreAuthorizedCode', () => {
 
     it('should fall back to default ttlSec when fractional ttlSec floors to zero', async () => {
       mock.timers.enable({ apis: ['Date'] })
-      await provider.save(sampleCode, undefined, { ttlSec: 0.1 })
+      await provider.save(sampleCode, configurations, undefined, { ttlSec: 0.1 })
       mock.timers.tick(299_000)
       assert.strictEqual(await provider.validate(sampleCode), true)
       mock.timers.tick(2_000)

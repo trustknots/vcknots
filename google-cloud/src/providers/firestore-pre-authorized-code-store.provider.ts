@@ -27,7 +27,7 @@ export const firestorePreAuthorizedCodeStore = (
     name: 'firestore-pre-authorized-code-store-provider',
     single: true,
 
-    async save(code, tx_code, saveOptions) {
+    async save(code, credentialConfigurationIds, tx_code, saveOptions) {
       const ttlSecRaw = Number(saveOptions?.ttlSec ?? 300)
       const ttlSecCandidate = Math.floor(ttlSecRaw)
       const ttlSec = Number.isFinite(ttlSecRaw) && ttlSecCandidate > 0 ? ttlSecCandidate : 300
@@ -37,6 +37,7 @@ export const firestorePreAuthorizedCodeStore = (
 
       const data: FirestorePreAuthorizedCodeDoc = {
         code,
+        credential_configuration_ids: credentialConfigurationIds,
         tx_code_input_mode,
         expires_at: expiresAt,
       }
@@ -57,6 +58,16 @@ export const firestorePreAuthorizedCodeStore = (
 
       await docRef.set(data)
     },
+
+    async fetch(code) {
+      const doc = await firestore.doc(`${ns}/v1/preCodes/${code}`).get()
+      if (!doc.exists) {
+        return null
+      }
+      const data = doc.data() as FirestorePreAuthorizedCodeDoc
+      return data.credential_configuration_ids ?? null
+    },
+
     async validate(code, tx_code) {
       const doc = await firestore.doc(`${ns}/v1/preCodes/${code}`).get()
       if (!doc.exists) {

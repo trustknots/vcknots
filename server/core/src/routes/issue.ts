@@ -18,6 +18,7 @@ import {
   buildBearerAuthenticateHeader,
   buildDpopAuthenticateHeader,
 } from '../utils/www-authenticate.js'
+import { JwtPayload } from '../../../../issuer+verifier/lib/jwt.types.js'
 
 const C_NONCE_TTL_MS = 2 * 60 * 1000
 const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
@@ -201,6 +202,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         })
       }
 
+      let accessTokenPayload: JwtPayload
       try {
         if (authorization.value.scheme === 'dpop') {
           const dpopProof = parseDpopHeader(c.req.header('DPoP'))
@@ -226,14 +228,18 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
               nonceRequired: true,
             },
           })
-          await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
-            dpopProof: {
-              proofJwt: dpopProof.proofJwt,
-              htm: c.req.method,
-              htu: `${baseUrl}/credentials`,
-              nonceRequired: true,
-            },
-          })
+          accessTokenPayload = await authzFlow.verifyDpopBoundAccessToken(
+            authz,
+            authorization.value.token,
+            {
+              dpopProof: {
+                proofJwt: dpopProof.proofJwt,
+                htm: c.req.method,
+                htu: `${baseUrl}/credentials`,
+                nonceRequired: true,
+              },
+            }
+          )
         } else {
           if (dpopMode === 'required') {
             return unauthorized(
@@ -245,7 +251,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
               { error: 'invalid_token' }
             )
           }
-          const accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
+          accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
             authz,
             authorization.value.token
           )
@@ -300,10 +306,12 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         )
       }
       const parse = parseResult.data
+      const accessTokenJti = accessTokenPayload.jti
 
       // Issue Credential
       const credential = await issuerFlow.issueCredential(issuer, parse, {
         alg: 'ES256',
+        jti: accessTokenJti,
         cnonce: {
           c_nonce_expires_in: 60 * 5 * 1000,
         },

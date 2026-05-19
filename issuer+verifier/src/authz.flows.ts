@@ -10,6 +10,7 @@ import { GrantType, TokenRequest } from './token-request.types'
 import { VcknotsContext } from './vcknots.context'
 import { JwtPayload } from './jwt.types'
 import { Nonce } from './nonce.types'
+import { randomUUID } from 'node:crypto'
 
 type AuthzKeyAlg = string
 
@@ -85,6 +86,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   const authzKey$ = context.providers.get('authz-signature-key-store-provider')
   const dpopProof$ = context.providers.get('dpop-proof-provider')
   const dpopProofJtiStore$ = context.providers.get('dpop-proof-jti-store-provider')
+  const issuanceContextStore$ = context.providers.get('issuance-context-store-provider')
 
   const verifyAccessTokenPayload = async (
     authz: AuthorizationServerIssuer,
@@ -281,8 +283,21 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
               message: 'The provided pre-authorized code is invalid.',
             })
           }
-          // delete code from store
-          await codeStore$.delete(tokenRequest['pre-authorized_code'])
+
+          const credentialConfigurationIds = await codeStore$.fetch(
+            tokenRequest['pre-authorized_code']
+          )
+          if (!credentialConfigurationIds) {
+            throw err('invalid_grant', {
+              message:
+                'No credential configurations were found for the provided pre-authorized code.',
+            })
+          }
+
+          const ttlSec = option?.ttlSec ?? 86400
+          const jti = randomUUID()
+
+          await issuanceContextStore$.save(jti, credentialConfigurationIds, ttlSec)
 
           const keyAlg = options?.alg ?? 'ES256'
           // Authz access token (data)
@@ -296,6 +311,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             tokenRequest['pre-authorized_code'],
             {
               ttlSec: option?.ttlSec,
+              jti,
               ...(verifiedDpopProof ? { cnf: { jkt: verifiedDpopProof.jwkThumbprint } } : {}),
             }
           )
@@ -306,6 +322,8 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
               message: 'Cannot sign access token.',
             })
           }
+          // delete code from store
+          await codeStore$.delete(tokenRequest['pre-authorized_code'])
           // format JWT components
           const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
 

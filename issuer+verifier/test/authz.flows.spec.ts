@@ -17,6 +17,7 @@ import {
   NonceProvider,
   NonceStoreProvider,
   PreAuthorizedCodeStoreProvider,
+  IssuanceContextStoreProvider,
 } from '../src/providers'
 import { GrantType, TokenRequest, TokenResponse } from '../src/token-request.types'
 import type { VcknotsContext } from '../src/vcknots.context'
@@ -37,10 +38,20 @@ describe('AuthzFlows', () => {
     kind: 'pre-authorized-code-store-provider',
     name: 'mock-pre-authorized-code-store-provider',
     single: true,
+    fetch: mock.fn(),
     validate: mock.fn(),
     delete: mock.fn(),
     save: mock.fn(),
   } satisfies PreAuthorizedCodeStoreProvider
+
+  const mockIssuanceContextStoreProvider = {
+    kind: 'issuance-context-store-provider',
+    name: 'mock-issuance-context-store-provider',
+    single: true,
+    save: mock.fn(),
+    fetch: mock.fn(),
+    delete: mock.fn(),
+  } satisfies IssuanceContextStoreProvider
 
   const mockAccessTokenProvider = {
     kind: 'access-token-provider',
@@ -109,6 +120,8 @@ describe('AuthzFlows', () => {
               return mockAuthzMetadataProvider
             case 'pre-authorized-code-store-provider':
               return mockCodeStoreProvider
+            case 'issuance-context-store-provider':
+              return mockIssuanceContextStoreProvider
             case 'access-token-provider':
               return mockAccessTokenProvider
             case 'authz-signature-key-store-provider':
@@ -215,13 +228,15 @@ describe('AuthzFlows', () => {
       grant_type: GrantType.PreAuthorizedCode,
       'pre-authorized_code': preAuthCode,
     }
-    const samplePayload = { iss: sampleIssuer, sub: preAuthCode }
+    const samplePayload = { iss: sampleIssuer, sub: preAuthCode, jti: 'test-jti' }
     const sampleSignature = 'signed-jwt-signature-part'
 
     describe('Pre-Authorized Code Flow', () => {
       beforeEach(() => {
         mock.method(mockCodeStoreProvider, 'validate', async () => true)
+        mock.method(mockCodeStoreProvider, 'fetch', async () => ['test-credential-config-id'])
         mock.method(mockCodeStoreProvider, 'delete', async () => {})
+        mock.method(mockIssuanceContextStoreProvider, 'save', async () => {})
         mock.method(mockAuthzKeyProvider, 'sign', async () => sampleSignature)
         mock.method(mockAccessTokenProvider, 'createTokenPayload', async () => samplePayload)
         mock.method(mockDpopProofProvider, 'verifyProof', async () => ({
@@ -239,6 +254,8 @@ describe('AuthzFlows', () => {
         const response = (await flow.createAccessToken(sampleIssuer, tokenRequest)) as TokenResponse
 
         assert.strictEqual(mockCodeStoreProvider.validate.mock.callCount(), 1)
+        assert.strictEqual(mockCodeStoreProvider.fetch.mock.callCount(), 1)
+        assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 1)
         assert.strictEqual(mockCodeStoreProvider.delete.mock.callCount(), 1)
         assert.strictEqual(mockAuthzKeyProvider.sign.mock.callCount(), 1)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 1)
@@ -272,6 +289,48 @@ describe('AuthzFlows', () => {
         })
       })
 
+      it('should throw invalid_grant when no credential configurations are found for the pre-authorized code', async () => {
+        mock.method(mockCodeStoreProvider, 'validate', async () => true)
+        mock.method(mockCodeStoreProvider, 'fetch', async () => null)
+
+        await assert.rejects(() => flow.createAccessToken(sampleIssuer, tokenRequest), {
+          name: 'invalid_grant',
+          message: 'No credential configurations were found for the provided pre-authorized code.',
+        })
+
+        assert.strictEqual(mockCodeStoreProvider.validate.mock.callCount(), 1)
+        assert.strictEqual(mockCodeStoreProvider.fetch.mock.callCount(), 1)
+        assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 0)
+        assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 0)
+        assert.strictEqual(mockAuthzKeyProvider.sign.mock.callCount(), 0)
+        assert.strictEqual(mockCodeStoreProvider.delete.mock.callCount(), 0)
+      })
+
+      it('should use the same generated jti for issuance context and access token payload', async () => {
+        mock.method(mockAccessTokenProvider, 'createTokenPayload', async () => ({
+          iss: sampleIssuer,
+          sub: preAuthCode,
+          jti: 'test-jti',
+        }))
+
+        const response = (await flow.createAccessToken(sampleIssuer, tokenRequest)) as TokenResponse
+
+        assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 1)
+        assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 1)
+
+        const savedJti = mockIssuanceContextStoreProvider.save.mock.calls[0].arguments[0]
+        const payloadOptions = mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
+
+        assert.strictEqual(typeof savedJti, 'string')
+        assert.ok(savedJti.length > 0)
+        assert.strictEqual(payloadOptions?.jti, savedJti)
+
+        const [, encodedPayload] = response.access_token.split('.')
+        const decodedPayload = JSON.parse(base64url.decode(encodedPayload))
+
+        assert.strictEqual(decodedPayload.jti, savedJti)
+      })
+
       it('should throw if signing returns null', async () => {
         mock.method(mockAuthzKeyProvider, 'sign', async () => null)
         await assert.rejects(() => flow.createAccessToken(sampleIssuer, tokenRequest), {
@@ -294,13 +353,10 @@ describe('AuthzFlows', () => {
           'test-jti',
           { ttlMs: mockDpopProofProvider.proofJtiTtlMs },
         ])
-        assert.deepStrictEqual(
-          mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2],
-          {
-            ttlSec: undefined,
-            cnf: { jkt: 'test-jkt' },
-          }
-        )
+        const payload = mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
+        assert.deepStrictEqual(payload?.cnf, { jkt: 'test-jkt' })
+        assert.strictEqual(payload.ttlSec, undefined)
+        assert.strictEqual(typeof payload?.jti, 'string')
         assert.strictEqual(response.token_type, 'DPoP')
       })
 
