@@ -123,6 +123,32 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		}
 	})
 
+	t.Run("Ignores non-JSON verifier response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(http.StatusOK)
+			_, err := w.Write([]byte("ok"))
+			if err != nil {
+				t.Fatalf("failed to write response: %v", err)
+			}
+		}))
+		defer server.Close()
+
+		endpoint, err := url.Parse(server.URL)
+		if err != nil {
+			t.Fatalf("failed to parse server URL: %v", err)
+		}
+
+		p := &Oid4vpPresenter{}
+		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if redirectURI != "" {
+			t.Fatalf("expected empty redirect_uri, got %q", redirectURI)
+		}
+	})
+
 	// Test network error case with connection hijacking
 	t.Run("Network error (server closes connection)", func(t *testing.T) {
 		// Create a mock server that closes connection immediately

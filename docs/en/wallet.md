@@ -316,10 +316,14 @@ func presentTestCredential(key *MockKeyEntry) error {
     // 2. Call the Controller's PresentCredential
     // Parsing, searching, signing, and HTTP POST are all performed internally
     log.Println("Attempting to present credential...")
-    err = controller.PresentCredential(oid4vpRequestURI, key)
+    redirectURI, err := controller.PresentCredential(oid4vpRequestURI, key, nil)
     if err!= nil {
         log.Printf("Error presenting credential: %v\n", err)
         return err
+    }
+
+    if redirectURI != "" {
+        log.Printf("Verifier requested redirect: %s\n", redirectURI)
     }
 
     log.Println("Successfully presented credential to the verifier.")
