@@ -16,6 +16,8 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
 	"github.com/trustknots/vcknots/wallet/presenter/types"
@@ -109,18 +111,12 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		defer server.Close()
 
 		endpoint, err := url.Parse(server.URL)
-		if err != nil {
-			t.Fatalf("failed to parse server URL: %v", err)
-		}
+		require.NoError(t, err)
 
 		p := &Oid4vpPresenter{}
 		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
-		if err != nil {
-			t.Fatalf("expected no error,got:%v", err)
-		}
-		if redirectURI != "https://example.com/callback" {
-			t.Fatalf("expected redirect_uri %q,got %q", "https://example.com/callback", redirectURI)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, "https://example.com/callback", redirectURI)
 	})
 
 	t.Run("Ignores non-JSON verifier response", func(t *testing.T) {
@@ -135,18 +131,12 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		defer server.Close()
 
 		endpoint, err := url.Parse(server.URL)
-		if err != nil {
-			t.Fatalf("failed to parse server URL: %v", err)
-		}
+		require.NoError(t, err)
 
 		p := &Oid4vpPresenter{}
 		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-		if redirectURI != "" {
-			t.Fatalf("expected empty redirect_uri, got %q", redirectURI)
-		}
+		require.NoError(t, err)
+		assert.Empty(t, redirectURI)
 	})
 
 	// Test network error case with connection hijacking

@@ -982,18 +982,10 @@ func TestController_PresentCredential_CallsRedirectHandler(t *testing.T) {
 
 	mockKey := newMockKeyEntry()
 	redirectURI, err := controller.PresentCredentialWithOptions(presentationURI, mockKey, options)
-	if err != nil {
-		t.Fatalf("PresentCredentialWithOptions failed: %v", err)
-	}
-	if redirectURI != redirectTarget {
-		t.Fatalf("expected redirect_uri %q, got %q", redirectTarget, redirectURI)
-	}
-	if !called {
-		t.Fatalf("expected redirect handler to be called")
-	}
-	if captured != redirectTarget {
-		t.Fatalf("expected redirect handler to receive %q, got %q", redirectTarget, captured)
-	}
+	require.NoError(t, err)
+	require.Equal(t, redirectTarget, redirectURI)
+	require.True(t, called, "expected redirect handler to be called")
+	require.Equal(t, redirectTarget, captured)
 }
 
 func TestController_FetchCredentialIssuerMetadata_ErrorPaths_Integration(t *testing.T) {

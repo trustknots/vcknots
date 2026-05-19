@@ -151,16 +151,11 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 	if len(respBody) == 0 {
 		return "", nil
 	}
-	contentType := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
-	if !strings.HasPrefix(contentType, "application/json") {
-		return "", nil
-	}
 	var verifierResponse struct {
 		RedirectURI string `json:"redirect_uri"`
 	}
-	err = json.Unmarshal(respBody, &verifierResponse)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse verifier response: %w", err)
+	if err := json.Unmarshal(respBody, &verifierResponse); err != nil {
+		return "", nil
 	}
 
 	return verifierResponse.RedirectURI, nil
