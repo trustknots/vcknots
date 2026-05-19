@@ -272,6 +272,34 @@ func TestController_ReceiveCredential_EmptyConfigurationIDs_Integration(t *testi
 	}
 }
 
+func TestController_ReceiveCredential_UnsupportedConfigurationID(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	credentialIssuer := mustParseURL(t, "https://issuer.example.com")
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           credentialIssuer,
+			CredentialConfigurationIDs: []string{"unsupported-config"},
+			Grants: map[string]*CredentialOfferGrant{
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+					PreAuthorizedCode: "test-code",
+				},
+			},
+		},
+		Type: receiverTypes.Oid4vci,
+		Key:  newMockKeyEntry(),
+		CachedIssuerMetadata: &receiverTypes.CredentialIssuerMetadata{
+			CredentialConfigurationSupported: map[string]receiverTypes.CredentialConfiguration{
+				"test-config": {Format: "jwt_vc_json"},
+			},
+		},
+	}
+
+	_, err := controller.ReceiveCredential(req)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `credential configuration "unsupported-config" is not supported by issuer metadata`)
+}
+
 func TestController_GetCredentialEntries_Integration(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
@@ -1798,4 +1826,29 @@ func TestWallet_validateCredentialOffer(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestWallet_validateCredentialConfigurationIDs(t *testing.T) {
+	issuerURL := mustParseURL(t, "https://issuer.example.com")
+	offer := &CredentialOffer{
+		CredentialIssuer:           issuerURL,
+		CredentialConfigurationIDs: []string{"test-credential", "missing-credential"},
+		Grants: map[string]*CredentialOfferGrant{
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+				PreAuthorizedCode: "pre-auth-code",
+			},
+		},
+	}
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{
+		CredentialConfigurationSupported: map[string]receiverTypes.CredentialConfiguration{
+			"test-credential": {Format: "jwt_vc_json"},
+		},
+	}
+
+	w, err := NewWallet()
+	require.NoError(t, err)
+
+	err = w.validateCredentialConfigurationIDs(offer, issuerMetadata)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `credential configuration "missing-credential" is not supported by issuer metadata`)
 }

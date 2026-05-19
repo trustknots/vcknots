@@ -496,6 +496,23 @@ func (w *Wallet) validateCredentialOffer(offer *CredentialOffer) (string, error)
 	return preAuthCode, nil
 }
 
+func (w *Wallet) validateCredentialConfigurationIDs(offer *CredentialOffer, issuerMetadata *receiverTypes.CredentialIssuerMetadata) error {
+	if offer == nil {
+		return fmt.Errorf("credential offer is required")
+	}
+	if issuerMetadata == nil {
+		return fmt.Errorf("issuer metadata is required")
+	}
+
+	for _, configID := range offer.CredentialConfigurationIDs {
+		if _, ok := issuerMetadata.CredentialConfigurationSupported[configID]; !ok {
+			return fmt.Errorf("credential configuration %q is not supported by issuer metadata", configID)
+		}
+	}
+
+	return nil
+}
+
 func validateCredentialIssuerIdentifier(issuer *url.URL) error {
 	if issuer == nil {
 		return fmt.Errorf("credential issuer is not included in the offer")
@@ -531,6 +548,10 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch issuer metadata: %w", err)
 		}
+	}
+
+	if err := w.validateCredentialConfigurationIDs(req.CredentialOffer, issuerMetadata); err != nil {
+		return nil, nil, err
 	}
 
 	if len(issuerMetadata.AuthorizationServers) == 0 {
