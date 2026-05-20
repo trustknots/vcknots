@@ -164,14 +164,14 @@ importers:
   server/multi:
     dependencies:
       '@hono/node-server':
-        specifier: 1.19.9
-        version: 1.19.9(hono@4.11.4)
+        specifier: 1.19.14
+        version: 1.19.14(hono@4.12.18)
       '@trustknots/vcknots':
         specifier: workspace:*
         version: link:../../issuer+verifier
       hono:
-        specifier: 4.11.4
-        version: 4.11.4
+        specifier: 4.12.18
+        version: 4.12.18
 
   server/single:
     dependencies:
