@@ -52,7 +52,7 @@ func (m *MockSerializer) GetDefaultOption(flavor credential.SupportedSerializati
 }
 
 type MockSerializerOption struct {
-	Nonce string
+	Nonce    string
 	Audience string
 }
 
@@ -63,7 +63,6 @@ func (o *MockSerializerOption) SetAudience(audience string) {
 func (o *MockSerializerOption) SetNonce(nonce string) {
 	o.Nonce = nonce
 }
-
 
 type MockKeyEntry struct {
 	shouldSignError bool

@@ -186,7 +186,7 @@ func (s *JwtVcSerializer) SerializePresentation(flavor credential.SupportedSeria
 
 	// Set Nonce, Audience
 	if opts, ok := options.(*JwtVcPresentationOptions); ok && opts != nil {
-		if len(opts.Nonce) >= 1  {
+		if len(opts.Nonce) >= 1 {
 			customClaims["nonce"] = opts.Nonce
 		}
 		if len(opts.Audience) >= 1 {

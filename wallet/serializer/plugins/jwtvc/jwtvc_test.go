@@ -568,7 +568,7 @@ func TestConvertCredentialFromJSON(t *testing.T) {
 
 func TestJwtVcPresentationOptions_SetAudience(t *testing.T) {
 	tests := []struct {
-		name string
+		name     string
 		audience string
 	}{
 		{name: "audience-sample1", audience: "x509_san_dns:localhost"},
@@ -586,7 +586,7 @@ func TestJwtVcPresentationOptions_SetAudience(t *testing.T) {
 
 func TestJwtVcPresentationOptions_SetNonce(t *testing.T) {
 	tests := []struct {
-		name string
+		name  string
 		nonce string
 	}{
 		{name: "nonce-sample1", nonce: "asldkfjad4e4"},

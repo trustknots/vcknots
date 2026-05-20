@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-
 type EnvKey int
 
 const _PREFIX = "VCKNOTS_WALLET_"
@@ -27,12 +26,10 @@ func (k EnvKey) String() string {
 	return _PREFIX + postfix
 }
 
-
 func GetEnv(key EnvKey) string {
 	keyStr := key.String()
 	return os.Getenv(keyStr)
 }
-
 
 func SetDebugMode(value bool) {
 	if value {
@@ -45,7 +42,6 @@ func SetDebugMode(value bool) {
 func IsDebugMode() bool {
 	return strings.EqualFold(GetEnv(DEBUG), "true")
 }
-
 
 func SetHTTPAllowed(value bool) {
 	if value {

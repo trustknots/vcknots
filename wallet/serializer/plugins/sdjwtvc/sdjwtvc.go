@@ -61,7 +61,6 @@ func (o *SdJwtVcPresentationOptions) SetNonce(nonce string) {
 	}
 }
 
-
 // CombinedFormatForPresentation represents an SD-JWT in combined format for presentation
 // Format: <Issuer-signed JWT>~<Disclosure 1>~<Disclosure 2>~...~<Disclosure N>~<optional KB-JWT>
 type CombinedFormatForPresentation struct {

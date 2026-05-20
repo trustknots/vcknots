@@ -53,8 +53,8 @@ func NewPresenterError(protocol SupportedPresentationProtocol, endpoint, op stri
 
 // PresentationRequest contains the information needed to present a credential
 type PresentationRequest struct {
-	State                       string 
-	ClientMetadata              interface{} 
+	State                         string
+	ClientMetadata                interface{}
 	AuthorizationEncryptedRespAlg string
 	AuthorizationEncryptedRespEnc string
 }

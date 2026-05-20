@@ -36,7 +36,7 @@ func (m *mockKeyEntry) Sign(data []byte) ([]byte, error) {
 
 // mockKeyStorageComponent is a test implementation of KeyStorageComponent
 type mockKeyStorageComponent struct {
-	keys  map[string]KeyEntry
+	keys   map[string]KeyEntry
 	nextID int
 }
 

@@ -49,12 +49,12 @@ func TestIsDebugMode(t *testing.T) {
 
 		os.Setenv(env.DEBUG.String(), "true")
 		if result := env.IsDebugMode(); !result {
-			t.Fatalf("Set debug mode on, but result is %v", result);
+			t.Fatalf("Set debug mode on, but result is %v", result)
 		}
 
 		os.Setenv(env.DEBUG.String(), "false")
 		if result := env.IsDebugMode(); result {
-			t.Fatalf("Set debug mode on, but result is %v", result);
+			t.Fatalf("Set debug mode on, but result is %v", result)
 		}
 	})
 }

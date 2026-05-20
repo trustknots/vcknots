@@ -1311,7 +1311,7 @@ func TestSerializeDeserializeRoundTrip(t *testing.T) {
 
 func TestSdJwtVcPresentationOptions_SetAudience(t *testing.T) {
 	tests := []struct {
-		name string
+		name     string
 		audience string
 	}{
 		{name: "audience-sample1", audience: "x509_san_dns:localhost"},
@@ -1329,7 +1329,7 @@ func TestSdJwtVcPresentationOptions_SetAudience(t *testing.T) {
 
 func TestSdJwtVcPresentationOptions_SetNonce(t *testing.T) {
 	tests := []struct {
-		name string
+		name  string
 		nonce string
 	}{
 		{name: "nonce-sample1", nonce: "asldkfjad4e4"},

@@ -79,7 +79,7 @@ func (p *DIDPlugin) Create(opts ...types.CreateOption) (*types.IdentityProfile, 
 	if !exists {
 		return nil, fmt.Errorf("method parameter is required")
 	}
-	
+
 	method, ok := methodParam.(string)
 	if !ok {
 		return nil, fmt.Errorf("method parameter must be a string")

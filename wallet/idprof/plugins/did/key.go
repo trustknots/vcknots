@@ -49,7 +49,7 @@ func (p *DIDKeyPlugin) Create(opts ...types.CreateOption) (*types.IdentityProfil
 	if !exists {
 		return nil, fmt.Errorf("publicKey parameter is required for did:key creation")
 	}
-	
+
 	pubKey, ok := pubKeyParam.(*jose.JSONWebKey)
 	if !ok {
 		return nil, fmt.Errorf("publicKey parameter must be a *jose.JSONWebKey")
@@ -58,7 +58,7 @@ func (p *DIDKeyPlugin) Create(opts ...types.CreateOption) (*types.IdentityProfil
 	// Create the DID key profile
 	createOpts := &DIDKeyProfileCreateOptions{
 		DIDProfileCreateOptions: DIDProfileCreateOptions{Method: "key"},
-		PublicKey:              pubKey,
+		PublicKey:               pubKey,
 	}
 
 	didKeyProfile, err := NewDIDKeyProfile(createOpts)

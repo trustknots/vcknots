@@ -8,8 +8,8 @@ import (
 
 // MockServer provides common functionality for test servers
 type MockServer struct {
-	server        *httptest.Server
-	mux           *http.ServeMux
+	server         *httptest.Server
+	mux            *http.ServeMux
 	errorResponses map[string]int // path -> status code for error responses
 }
 
@@ -17,10 +17,10 @@ type MockServer struct {
 func NewMockServer() *MockServer {
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
-	
+
 	return &MockServer{
-		server:        server,
-		mux:           mux,
+		server:         server,
+		mux:            mux,
 		errorResponses: make(map[string]int),
 	}
 }
@@ -63,12 +63,12 @@ func CORSHandler(next http.HandlerFunc) http.HandlerFunc {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		
+
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		
+
 		next(w, r)
 	}
 }
@@ -111,7 +111,7 @@ func (ms *MockServer) SetJSONResponse(path string, statusCode int, data interfac
 	})
 }
 
-// SetTextResponse sets a text response for a specific path  
+// SetTextResponse sets a text response for a specific path
 func (ms *MockServer) SetTextResponse(path string, statusCode int, text string) {
 	ms.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(statusCode)
