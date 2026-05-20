@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { endpointUrlSchema } from './validators/endpoint-url.validator'
 
 /**
  * Zod schema for LogoDetails.
@@ -353,17 +352,17 @@ const credentialIssuerMetadataSchema = z
     /**
      * URL of the Credential Endpoint.
      */
-    credential_endpoint: endpointUrlSchema,
+    credential_endpoint: z.string().url(),
 
     /**
      * (Optional) URL of the Batch Credential Endpoint.
      */
-    batch_credential_endpoint: endpointUrlSchema.optional(),
+    batch_credential_endpoint: z.string().url().optional(),
 
     /**
      * (Optional) URL of the Deferred Credential Endpoint.
      */
-    deferred_credential_endpoint: endpointUrlSchema.optional(),
+    deferred_credential_endpoint: z.string().url().optional(),
 
     /**
      * URL of the Credential Issuer's Notification Endpoint

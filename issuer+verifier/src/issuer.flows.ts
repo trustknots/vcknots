@@ -119,7 +119,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
 
   const rejectInsecureIssuerMetadata = (metadata: CredentialIssuerMetadata | null) => {
     if (metadata) {
-      if (context.options?.allowInsecureHttp) {
+      if (context.options?.allowInsecureHttp || context.options?.debug) {
         return
       }
       const credentialEndpoints = [
@@ -137,6 +137,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       }
     }
   }
+
   return {
     async findIssuerMetadata(id) {
       const metadata = await metadataStore$.fetch(id)
