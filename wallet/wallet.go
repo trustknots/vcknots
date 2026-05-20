@@ -533,6 +533,10 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 		}
 	}
 
+	if err := validateCredentialConfigurationIDs(req.CredentialOffer, issuerMetadata); err != nil {
+		return nil, nil, err
+	}
+
 	if len(issuerMetadata.AuthorizationServers) == 0 {
 		return nil, nil, fmt.Errorf("no authorization servers found in issuer metadata")
 	}
@@ -558,6 +562,23 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 	}
 
 	return issuerMetadata, authMetadata, nil
+}
+
+func validateCredentialConfigurationIDs(offer *CredentialOffer, issuerMetadata *receiverTypes.CredentialIssuerMetadata) error {
+	if offer == nil {
+		return fmt.Errorf("credential offer is required")
+	}
+	if issuerMetadata == nil {
+		return fmt.Errorf("credential issuer metadata is nil")
+	}
+
+	for _, configID := range offer.CredentialConfigurationIDs {
+		if _, ok := issuerMetadata.CredentialConfigurationSupported[configID]; !ok {
+			return fmt.Errorf("credential configuration %s is not supported by issuer metadata", configID)
+		}
+	}
+
+	return nil
 }
 
 // obtainAccessToken obtains an access token using pre-authorization code.

@@ -1110,6 +1110,30 @@ func TestController_FetchCredentialIssuerMetadata_WithMockServer(t *testing.T) {
 	t.Logf("Successfully fetched metadata: %+v", metadata)
 }
 
+func TestWallet_fetchCredentialMetadata_RejectsUnsupportedCredentialConfigurationID(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	issuerURL := mustParseURL(t, "https://issuer.example.com")
+
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           issuerURL,
+			CredentialConfigurationIDs: []string{"supported-config", "missing-config"},
+		},
+		Type: receiverTypes.Oid4vci,
+		CachedIssuerMetadata: &receiverTypes.CredentialIssuerMetadata{
+			CredentialConfigurationSupported: map[string]receiverTypes.CredentialConfiguration{
+				"supported-config": {
+					Format: "jwt_vc_json",
+				},
+			},
+		},
+	}
+
+	_, _, err := controller.fetchCredentialMetadata(req)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "credential configuration missing-config is not supported by issuer metadata")
+}
+
 func TestController_PresentCredential_WithMockServer_Integration(t *testing.T) {
 	// First, create a mock OID4VCI server to get a credential
 	vciServer := createMockOID4VCIServer()
