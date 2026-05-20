@@ -95,13 +95,14 @@ func ConvertDERToRaw(derSig []byte, keySize int) ([]byte, error) {
 		return nil, fmt.Errorf("DER signature too short: %d bytes", len(derSig))
 	}
 
+	// Raw IEEE P1363 signatures have a fixed length and can begin with 0x30 by
+	// chance, so accept the raw length before using the DER sequence-tag heuristic.
+	if len(derSig) == keySize*2 {
+		return derSig, nil
+	}
+
 	// Check if it's DER format (starts with 0x30)
 	if derSig[0] != 0x30 {
-		// Not DER format - might already be raw format
-		// Check if it's the expected raw format length
-		if len(derSig) == keySize*2 {
-			return derSig, nil
-		}
 		return nil, fmt.Errorf("signature is not in DER format and length (%d) doesn't match expected raw format (%d)", len(derSig), keySize*2)
 	}
 
