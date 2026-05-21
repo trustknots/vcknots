@@ -990,6 +990,7 @@ app.post('/credentials', async (c) => {
       })
     }
 
+    let accessTokenPayload: JwtPayload
     try {
       if (authorization.value.scheme === 'dpop') {
         const dpopProof = parseDpopHeader(c.req.header('DPoP'))
@@ -1003,7 +1004,7 @@ app.post('/credentials', async (c) => {
                 : 'DPoP header must contain a compact JWT.'
           )
         }
-        await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
+        accessTokenPayload = await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
           dpopProof: {
             proofJwt: dpopProof.proofJwt,
             htm: c.req.method,
@@ -1022,7 +1023,7 @@ app.post('/credentials', async (c) => {
             { error: 'invalid_token' }
           )
         }
-        const accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
+        accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
           authz,
           authorization.value.token
         )
@@ -1076,7 +1077,21 @@ app.post('/credentials', async (c) => {
       )
     }
     const parse = parseResult.data
-    const credential = await issuerFlow.issueCredential(issuer, parse, {
+    const accessTokenJti =
+      typeof accessTokenPayload.jti === 'string' && accessTokenPayload.jti.length > 0
+        ? accessTokenPayload.jti
+        : undefined
+    if (!accessTokenJti) {
+      return unauthorized(
+        c,
+        {
+          error: 'invalid_token',
+          error_description: 'Access token must contain a jti claim.',
+        },
+        { error: 'invalid_token' }
+      )
+    }
+    const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenJti, {
       alg: 'ES256',
       cnonce: {
         c_nonce_expires_in: 60 * 5 * 1000,
@@ -1295,6 +1310,7 @@ Issues a credential.
 issueCredential(
   issuer: CredentialIssuer,
   credentialRequest: CredentialRequest,
+  accessTokenJti: string,
   options?: IssueOptions
 ): Promise<CredentialResponse>
 ```
@@ -1302,6 +1318,7 @@ issueCredential(
 **Parameters**:
 - `issuer`: Identifier of the Issuer ([CredentialIssuer](#CredentialIssuer))
 - `credentialRequest`: Credential request ([CredentialRequest](#CredentialRequest))
+- `accessTokenJti`: jti in the access token
 - `options`: Issuance options ([IssueOptions](#IssueOptions))
 
 **Return value**: Returns a credential response.
