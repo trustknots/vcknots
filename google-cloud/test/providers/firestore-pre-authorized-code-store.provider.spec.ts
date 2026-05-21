@@ -22,11 +22,11 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(provider.single, true)
   })
 
-  it('should save and validate a code', async () => {
+  it('should save and consume a code', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-    await provider.save(PreAuthorizedCode('test-code-123'))
-    const valid = await provider.validate(PreAuthorizedCode('test-code-123'))
-    assert.equal(valid, true)
+    await provider.save(PreAuthorizedCode('test-code-123'), configurations)
+    const valid = await provider.consume(PreAuthorizedCode('test-code-123'))
+    assert.equal(valid, configurations)
   })
 
   it('should save and validate a code with tx_code (numeric)', async () => {
@@ -34,8 +34,8 @@ describe('firestorePreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('test-code-numeric'), configurations, 123, {
       tx_code_input_mode: 'numeric',
     })
-    const valid = await provider.validate(PreAuthorizedCode('test-code-numeric'), 123)
-    assert.equal(valid, true)
+    const valid = await provider.consume(PreAuthorizedCode('test-code-numeric'), 123)
+    assert.equal(valid, configurations)
   })
 
   it('should save and validate a code with tx_code (text)', async () => {
@@ -43,8 +43,8 @@ describe('firestorePreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('test-code-text'), configurations, 'abc123', {
       tx_code_input_mode: 'text',
     })
-    const valid = await provider.validate(PreAuthorizedCode('test-code-text'), 'abc123')
-    assert.equal(valid, true)
+    const valid = await provider.consume(PreAuthorizedCode('test-code-text'), 'abc123')
+    assert.equal(valid, configurations)
   })
 
   it('should throw invalid_grant for incorrect tx_code', async () => {
@@ -52,7 +52,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('test-code-wrong'), configurations, 123, {
       tx_code_input_mode: 'numeric',
     })
-    await assert.rejects(provider.validate(PreAuthorizedCode('test-code-wrong'), 456), {
+    await assert.rejects(provider.consume(PreAuthorizedCode('test-code-wrong'), 456), {
       name: 'invalid_grant',
     })
   })
@@ -62,8 +62,8 @@ describe('firestorePreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('test-code-type'), configurations, 123, {
       tx_code_input_mode: 'numeric',
     })
-    const valid = await provider.validate(PreAuthorizedCode('test-code-type'), '123')
-    assert.equal(valid, true)
+    const valid = await provider.consume(PreAuthorizedCode('test-code-type'), '123')
+    assert.equal(valid, configurations)
   })
 
   it('should throw invalid_grant for non-numeric string tx_code in numeric mode', async () => {
@@ -77,7 +77,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
       }
     )
     await assert.rejects(
-      provider.validate(PreAuthorizedCode('test-code-invalid-numeric-string'), '12a3'),
+      provider.consume(PreAuthorizedCode('test-code-invalid-numeric-string'), '12a3'),
       { name: 'invalid_grant' }
     )
   })
@@ -87,8 +87,8 @@ describe('firestorePreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('test-code-leading-zero'), configurations, '0123', {
       tx_code_input_mode: 'numeric',
     })
-    const valid = await provider.validate(PreAuthorizedCode('test-code-leading-zero'), '0123')
-    assert.equal(valid, true)
+    const valid = await provider.consume(PreAuthorizedCode('test-code-leading-zero'), '0123')
+    assert.equal(valid, configurations)
   })
 
   it('should throw invalid_grant when leading-zero digit-string is validated as number', async () => {
@@ -102,7 +102,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
       }
     )
     await assert.rejects(
-      provider.validate(PreAuthorizedCode('test-code-leading-zero-mismatch'), 123),
+      provider.consume(PreAuthorizedCode('test-code-leading-zero-mismatch'), 123),
       { name: 'invalid_grant' }
     )
   })
@@ -194,16 +194,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
 
   it('should throw invalid_grant for an unknown code', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-    await assert.rejects(provider.validate(PreAuthorizedCode('unknown-code')), {
-      name: 'invalid_grant',
-    })
-  })
-
-  it('should delete a code and throw invalid_grant when validating it afterwards', async () => {
-    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-    await provider.save(PreAuthorizedCode('delete-me'), configurations)
-    await provider.delete(PreAuthorizedCode('delete-me'))
-    await assert.rejects(provider.validate(PreAuthorizedCode('delete-me')), {
+    await assert.rejects(provider.consume(PreAuthorizedCode('unknown-code'), undefined), {
       name: 'invalid_grant',
     })
   })
@@ -218,7 +209,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
 
     mock.timers.tick(1001)
 
-    await assert.rejects(provider.validate(PreAuthorizedCode('expiring-code')), {
+    await assert.rejects(provider.consume(PreAuthorizedCode('expiring-code'), undefined), {
       name: 'invalid_grant',
     })
     assert.ok(!store.has('vcknots/v1/preCodes/expiring-code'))
@@ -232,12 +223,12 @@ describe('firestorePreAuthorizedCodeStore', () => {
 
     // Still valid before 5 minutes
     mock.timers.tick(4 * 60 * 1000)
-    const validBefore = await provider.validate(PreAuthorizedCode('default-expiry'))
-    assert.equal(validBefore, true)
+    const validBefore = await provider.consume(PreAuthorizedCode('default-expiry'), undefined)
+    assert.equal(validBefore, configurations)
 
     // Expired after 5 minutes
     mock.timers.tick(2 * 60 * 1000)
-    await assert.rejects(provider.validate(PreAuthorizedCode('default-expiry')), {
+    await assert.rejects(provider.consume(PreAuthorizedCode('default-expiry'), undefined), {
       name: 'invalid_grant',
     })
   })
@@ -274,25 +265,6 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.ok(store.has('vcknots/v1/preCodes/my-code'))
   })
 
-  it('should fetch null for an unknown code', async () => {
-    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-
-    const fetched = await provider.fetch(PreAuthorizedCode('unknown-code'))
-
-    assert.equal(fetched, null)
-  })
-
-  it('should save credential_configuration_ids and fetch them back', async () => {
-    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-    const code = PreAuthorizedCode('fetchable-code')
-
-    await provider.save(code, configurations)
-
-    const fetched = await provider.fetch(code)
-
-    assert.deepStrictEqual(fetched, configurations)
-  })
-
   it('should persist credential_configuration_ids in Firestore document', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     const code = PreAuthorizedCode('stored-config-code')
@@ -302,17 +274,5 @@ describe('firestorePreAuthorizedCodeStore', () => {
     const doc = store.get('vcknots/v1/preCodes/stored-config-code')
     assert.ok(doc)
     assert.deepStrictEqual(doc.credential_configuration_ids, configurations)
-  })
-
-  it('should return null from fetch after the code is deleted', async () => {
-    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-    const code = PreAuthorizedCode('deleted-fetch-code')
-
-    await provider.save(code, configurations)
-    await provider.delete(code)
-
-    const fetched = await provider.fetch(code)
-
-    assert.equal(fetched, null)
   })
 })

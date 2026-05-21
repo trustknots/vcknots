@@ -102,6 +102,7 @@ export type IssuerFlow = {
   issueCredential(
     issuer: CredentialIssuer,
     credentialRequest: CredentialRequest,
+    accessTokenJti: string,
     options?: IssueOptions
   ): Promise<CredentialResponse>
 }
@@ -261,7 +262,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const lookupNonce = Nonce({ nonce })
       return cnonceStore$.revoke(lookupNonce)
     },
-    async issueCredential(issuer, credentialRequest, options) {
+    async issueCredential(issuer, credentialRequest, accessTokenJti, options) {
       if (options?.subject && !isUri(options.subject)) {
         throw err('invalid_credential_request', {
           message: 'Invalid options: subject must be a URI.',
@@ -288,7 +289,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: `Credential configuration ${credentialRequest.credential_configuration_id} is not supported by issuer ${issuer}.`,
         })
       }
-      const jti = options?.jti
+      const jti = accessTokenJti
       if (!jti) {
         throw err('invalid_credential_request', {
           message: 'jti is missing.',

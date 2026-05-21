@@ -274,23 +274,14 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             }
           }
           // Check pre-code validity
-          const isValid = await codeStore$.validate(
+          const credentialConfigurationIds = await codeStore$.consume(
             tokenRequest['pre-authorized_code'],
             tokenRequest.tx_code
-          )
-          if (!isValid) {
-            throw err('invalid_grant', {
-              message: 'The provided pre-authorized code is invalid.',
-            })
-          }
-
-          const credentialConfigurationIds = await codeStore$.fetch(
-            tokenRequest['pre-authorized_code']
           )
           if (!credentialConfigurationIds) {
             throw err('invalid_grant', {
               message:
-                'No credential configurations were found for the provided pre-authorized code.',
+                'The provided pre-authorized code is invalid or no credential configurations were found for the provided pre-authorized code.',
             })
           }
 
@@ -322,8 +313,6 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
               message: 'Cannot sign access token.',
             })
           }
-          // delete code from store
-          await codeStore$.delete(tokenRequest['pre-authorized_code'])
           // format JWT components
           const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
 

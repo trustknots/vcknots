@@ -32,15 +32,8 @@ export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider
       return
     },
 
-    async fetch(code) {
-      const entry = codes.get(code)
-      if (!entry) {
-        return null
-      }
-      return entry.credential_configuration_ids
-    },
-
-    async validate(code, tx_code) {
+    // validate and fetch credential configuration ids
+    async consume(code, tx_code) {
       const entry = codes.get(code)
       if (!entry) {
         throw raise('invalid_grant', {
@@ -74,18 +67,16 @@ export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider
             })
           }
         }
-        return true
+        codes.delete(code)
+        return entry.credential_configuration_ids
       }
       if (tx_code !== undefined) {
         throw raise('invalid_request', {
           message: 'tx_code should not be provided for this pre-authorized code',
         })
       }
-      return codes.has(code)
-    },
-
-    async delete(code) {
       codes.delete(code)
+      return entry.credential_configuration_ids
     },
   }
 }

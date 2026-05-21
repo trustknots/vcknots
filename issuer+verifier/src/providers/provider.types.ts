@@ -295,10 +295,10 @@ export type PreAuthorizedCodeStoreProvider = {
     tx_code?: string | number,
     options?: { ttlSec?: number; tx_code_input_mode?: 'numeric' | 'text' }
   ): Promise<void>
-  fetch(code: PreAuthorizedCode): Promise<CredentialConfigurationId[] | null>
-  // FIXME: validation logic is a kind of business logic. so we need to move this function into [PreAuthorizedCodeProvider]
-  validate(code: PreAuthorizedCode, tx_code?: string | number): Promise<boolean>
-  delete(code: PreAuthorizedCode): Promise<void>
+  consume(
+    code: PreAuthorizedCode,
+    tx_code?: string | number
+  ): Promise<CredentialConfigurationId[] | null>
 }
 
 export type IssuanceContextStoreProvider = {

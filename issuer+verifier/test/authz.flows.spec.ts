@@ -38,9 +38,7 @@ describe('AuthzFlows', () => {
     kind: 'pre-authorized-code-store-provider',
     name: 'mock-pre-authorized-code-store-provider',
     single: true,
-    fetch: mock.fn(),
-    validate: mock.fn(),
-    delete: mock.fn(),
+    consume: mock.fn(),
     save: mock.fn(),
   } satisfies PreAuthorizedCodeStoreProvider
 
@@ -233,9 +231,7 @@ describe('AuthzFlows', () => {
 
     describe('Pre-Authorized Code Flow', () => {
       beforeEach(() => {
-        mock.method(mockCodeStoreProvider, 'validate', async () => true)
-        mock.method(mockCodeStoreProvider, 'fetch', async () => ['test-credential-config-id'])
-        mock.method(mockCodeStoreProvider, 'delete', async () => {})
+        mock.method(mockCodeStoreProvider, 'consume', async () => ['test-credential-config-id'])
         mock.method(mockIssuanceContextStoreProvider, 'save', async () => {})
         mock.method(mockAuthzKeyProvider, 'sign', async () => sampleSignature)
         mock.method(mockAccessTokenProvider, 'createTokenPayload', async () => samplePayload)
@@ -253,10 +249,8 @@ describe('AuthzFlows', () => {
       it('should successfully create an access token with default expiry', async () => {
         const response = (await flow.createAccessToken(sampleIssuer, tokenRequest)) as TokenResponse
 
-        assert.strictEqual(mockCodeStoreProvider.validate.mock.callCount(), 1)
-        assert.strictEqual(mockCodeStoreProvider.fetch.mock.callCount(), 1)
+        assert.strictEqual(mockCodeStoreProvider.consume.mock.callCount(), 1)
         assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 1)
-        assert.strictEqual(mockCodeStoreProvider.delete.mock.callCount(), 1)
         assert.strictEqual(mockAuthzKeyProvider.sign.mock.callCount(), 1)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 1)
 
@@ -283,27 +277,25 @@ describe('AuthzFlows', () => {
       })
 
       it('should throw if pre-authorized code is invalid', async () => {
-        mock.method(mockCodeStoreProvider, 'validate', async () => false)
+        mock.method(mockCodeStoreProvider, 'consume', async () => null)
         await assert.rejects(() => flow.createAccessToken(sampleIssuer, tokenRequest), {
           name: 'invalid_grant',
         })
       })
 
       it('should throw invalid_grant when no credential configurations are found for the pre-authorized code', async () => {
-        mock.method(mockCodeStoreProvider, 'validate', async () => true)
-        mock.method(mockCodeStoreProvider, 'fetch', async () => null)
+        mock.method(mockCodeStoreProvider, 'consume', async () => null)
 
         await assert.rejects(() => flow.createAccessToken(sampleIssuer, tokenRequest), {
           name: 'invalid_grant',
-          message: 'No credential configurations were found for the provided pre-authorized code.',
+          message:
+            'The provided pre-authorized code is invalid or no credential configurations were found for the provided pre-authorized code.',
         })
 
-        assert.strictEqual(mockCodeStoreProvider.validate.mock.callCount(), 1)
-        assert.strictEqual(mockCodeStoreProvider.fetch.mock.callCount(), 1)
+        assert.strictEqual(mockCodeStoreProvider.consume.mock.callCount(), 1)
         assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 0)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 0)
         assert.strictEqual(mockAuthzKeyProvider.sign.mock.callCount(), 0)
-        assert.strictEqual(mockCodeStoreProvider.delete.mock.callCount(), 0)
       })
 
       it('should use the same generated jti for issuance context and access token payload', async () => {

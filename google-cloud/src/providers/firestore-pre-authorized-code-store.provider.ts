@@ -59,24 +59,7 @@ export const firestorePreAuthorizedCodeStore = (
       await docRef.set(data)
     },
 
-    async fetch(code) {
-      const doc = await firestore.doc(`${ns}/v1/preCodes/${code}`).get()
-      if (!doc.exists) {
-        return null
-      }
-      const data = doc.data() as FirestorePreAuthorizedCodeDoc
-
-      if (data.expires_at.toMillis() < new Date().getTime()) {
-        await firestore.doc(`${ns}/v1/preCodes/${code}`).delete()
-        throw raise('invalid_grant', {
-          message: 'Pre-authorized code has expired',
-        })
-      }
-
-      return data.credential_configuration_ids ?? null
-    },
-
-    async validate(code, tx_code) {
+    async consume(code, tx_code) {
       const doc = await firestore.doc(`${ns}/v1/preCodes/${code}`).get()
       if (!doc.exists) {
         throw raise('invalid_grant', {
@@ -113,18 +96,16 @@ export const firestorePreAuthorizedCodeStore = (
             })
           }
         }
-        return true
+        await firestore.doc(`${ns}/v1/preCodes/${code}`).delete()
+        return data.credential_configuration_ids ?? null
       }
       if (tx_code !== undefined) {
         throw raise('invalid_request', {
           message: 'tx_code should not be provided for this pre-authorized code',
         })
       }
-
-      return true
-    },
-    async delete(code) {
       await firestore.doc(`${ns}/v1/preCodes/${code}`).delete()
+      return data.credential_configuration_ids ?? null
     },
   }
 }

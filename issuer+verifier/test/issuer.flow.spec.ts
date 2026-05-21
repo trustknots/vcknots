@@ -49,9 +49,7 @@ describe('IssuerFlow', () => {
     name: 'mock-pre-authorized-code-store-provider',
     single: true,
     save: mock.fn(),
-    fetch: mock.fn(),
-    validate: mock.fn(),
-    delete: mock.fn(),
+    consume: mock.fn(),
   } satisfies PreAuthorizedCodeStoreProvider
 
   const mockIssuanceContextStoreProvider = {

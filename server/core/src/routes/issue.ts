@@ -3,6 +3,7 @@ import {
   parseDpopHeader,
   resolveDpopMode,
   VcknotsContext,
+  JwtPayload,
 } from '@trustknots/vcknots'
 import {
   CredentialRequest,
@@ -18,7 +19,6 @@ import {
   buildBearerAuthenticateHeader,
   buildDpopAuthenticateHeader,
 } from '../utils/www-authenticate.js'
-import { JwtPayload } from '../../../../issuer+verifier/lib/jwt.types.js'
 
 const C_NONCE_TTL_MS = 2 * 60 * 1000
 const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
@@ -322,9 +322,8 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       }
 
       // Issue Credential
-      const credential = await issuerFlow.issueCredential(issuer, parse, {
+      const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenJti, {
         alg: 'ES256',
-        jti: accessTokenJti,
         cnonce: {
           c_nonce_expires_in: 60 * 5 * 1000,
         },
