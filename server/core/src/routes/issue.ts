@@ -311,13 +311,13 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
           ? accessTokenPayload.jti
           : undefined
       if (!accessTokenJti) {
-        return unauthorized(
-          c,
+        // jti is used to bind the access token to the credential offer; it is not part of access token validation.
+        return c.json(
           {
-            error: 'invalid_token',
-            error_description: 'Access token must contain a jti claim.',
+            error: 'invalid_request',
+            error_description: 'Access token must contain jti claim.',
           },
-          { error: 'invalid_token' }
+          400
         )
       }
 
