@@ -20,18 +20,18 @@ import { jwkSchema } from './jwk.type'
 
 type OfferOptions =
   | {
-    usePreAuth: false
-    state?: unknown
-  }
-  | {
-    usePreAuth: true
-    txCode?: {
-      input_mode?: 'numeric' | 'text'
-      length?: number
-      description?: string
+      usePreAuth: false
+      state?: unknown
     }
-    ttlSec?: number
-  }
+  | {
+      usePreAuth: true
+      txCode?: {
+        input_mode?: 'numeric' | 'text'
+        length?: number
+        description?: string
+      }
+      ttlSec?: number
+    }
 type IssueOptions = {
   alg: string
   cnonce?: {
@@ -207,6 +207,12 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: `Issuer metadata for ${issuer} not found.`,
         })
 
+      if (new Set(configurations).size !== configurations.length) {
+        throw err('invalid_credential_request', {
+          message: 'credential_configuration_ids must be unique.',
+        })
+      }
+
       for (const configId of configurations) {
         if (metadata.credential_configurations_supported[configId] === undefined) {
           throw err('unknown_credential_configuration', {
@@ -309,10 +315,10 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
               ? options?.proofJwt?.usePreAuth === true
                 ? { usePreAuth: true, credentialIssuer: metadata.credential_issuer }
                 : {
-                  usePreAuth: false,
-                  credentialIssuer: metadata.credential_issuer,
-                  clientId: options?.proofJwt?.clientId,
-                }
+                    usePreAuth: false,
+                    credentialIssuer: metadata.credential_issuer,
+                    clientId: options?.proofJwt?.clientId,
+                  }
               : undefined
           verifyProof = await credentialProofProvider.verifyProof(proof, proofJwtCtx)
           if (!verifyProof) {

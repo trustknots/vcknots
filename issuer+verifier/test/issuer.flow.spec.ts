@@ -301,6 +301,20 @@ describe('IssuerFlow', () => {
     assert.rejects(suspects, 'unsupported_grant_type')
   })
 
+  it('should throw "invalid_credential_request" if credential_configuration_ids is not an array of unique strings', async () => {
+    const duplicateConfigurations = [
+      CredentialConfigurationId('VerifiableId'),
+      CredentialConfigurationId('VerifiableId'),
+    ]
+    const suspects = async () => {
+      return await issuerFlow.offerCredential(issuer, duplicateConfigurations, {
+        usePreAuth: false,
+      })
+    }
+
+    assert.rejects(suspects, 'invalid_credential_request')
+  })
+
   it('should throw "issuer_not_found" if issuer metadata is not found when usePreAuth is true', async () => {
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => null)
 
@@ -332,6 +346,7 @@ describe('IssuerFlow', () => {
     const code = 'PREAUTHCODE'
     const offer = CredentialOffer({
       credential_issuer: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('University_Degree')],
     })
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
     mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
@@ -375,6 +390,7 @@ describe('IssuerFlow', () => {
     const txCode = 1234
     const offer = CredentialOffer({
       credential_issuer: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('University_Degree')],
     })
 
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
