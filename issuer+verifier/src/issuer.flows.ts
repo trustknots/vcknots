@@ -20,20 +20,21 @@ import { jwkSchema } from './jwk.type'
 
 type OfferOptions =
   | {
-    usePreAuth: false
-    state?: unknown
-  }
-  | {
-    usePreAuth: true
-    txCode?: {
-      input_mode?: 'numeric' | 'text'
-      length?: number
-      description?: string
+      usePreAuth: false
+      state?: unknown
     }
-    ttlSec?: number
-  }
+  | {
+      usePreAuth: true
+      txCode?: {
+        input_mode?: 'numeric' | 'text'
+        length?: number
+        description?: string
+      }
+      ttlSec?: number
+    }
 type IssueOptions = {
   alg: string
+  jti?: string
   cnonce?: {
     c_nonce_expires_in: number
   }
@@ -101,6 +102,7 @@ export type IssuerFlow = {
   issueCredential(
     issuer: CredentialIssuer,
     credentialRequest: CredentialRequest,
+    accessTokenJti: string,
     options?: IssueOptions
   ): Promise<CredentialResponse>
 }
@@ -116,6 +118,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
   const transactionCode$ = context.providers.get('transaction-code-provider')
+  const issuanceContextStore$ = context.providers.get('issuance-context-store-provider')
 
   return {
     async findIssuerMetadata(id) {
@@ -229,7 +232,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       }
 
       const code = await auth$.generate()
-      await codeStore$.save(code, tx_code, preAuthorizedCodeStoreOptions)
+      await codeStore$.save(code, configurations, tx_code, preAuthorizedCodeStoreOptions)
       const offer = await offer$.create(metadata, configurations, {
         usePreAuth: true,
         code,
@@ -259,7 +262,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const lookupNonce = Nonce({ nonce })
       return cnonceStore$.revoke(lookupNonce)
     },
-    async issueCredential(issuer, credentialRequest, options) {
+    async issueCredential(issuer, credentialRequest, accessTokenJti, options) {
       if (options?.subject && !isUri(options.subject)) {
         throw err('invalid_credential_request', {
           message: 'Invalid options: subject must be a URI.',
@@ -286,6 +289,28 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: `Credential configuration ${credentialRequest.credential_configuration_id} is not supported by issuer ${issuer}.`,
         })
       }
+      const jti = accessTokenJti
+      if (!jti) {
+        throw err('invalid_credential_request', {
+          message: 'jti is missing.',
+        })
+      }
+      const allowedCredentialConfigurationIds = await issuanceContextStore$.fetch(jti)
+      if (!allowedCredentialConfigurationIds) {
+        throw err('invalid_credential_request', {
+          message: 'Issuance context for this jti was not found',
+        })
+      }
+      const requestedCredentialConfigurationId = CredentialConfigurationId(
+        credentialRequest.credential_configuration_id
+      )
+
+      if (!allowedCredentialConfigurationIds.includes(requestedCredentialConfigurationId)) {
+        throw err('invalid_credential_request', {
+          message: 'Requested credential_configuration_id is not allowed for this jti.',
+        })
+      }
+
       const issueCredentialProvider = selectProvider(issueCredential$, configuration.format)
 
       const supports = Object.keys(configuration.proof_types_supported ?? {})
@@ -309,10 +334,10 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
               ? options?.proofJwt?.usePreAuth === true
                 ? { usePreAuth: true, credentialIssuer: metadata.credential_issuer }
                 : {
-                  usePreAuth: false,
-                  credentialIssuer: metadata.credential_issuer,
-                  clientId: options?.proofJwt?.clientId,
-                }
+                    usePreAuth: false,
+                    credentialIssuer: metadata.credential_issuer,
+                    clientId: options?.proofJwt?.clientId,
+                  }
               : undefined
           verifyProof = await credentialProofProvider.verifyProof(proof, proofJwtCtx)
           if (!verifyProof) {

@@ -10,6 +10,7 @@ import { GrantType, TokenRequest } from './token-request.types'
 import { VcknotsContext } from './vcknots.context'
 import { JwtPayload } from './jwt.types'
 import { Nonce } from './nonce.types'
+import { randomUUID } from 'node:crypto'
 
 type AuthzKeyAlg = string
 
@@ -85,6 +86,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   const authzKey$ = context.providers.get('authz-signature-key-store-provider')
   const dpopProof$ = context.providers.get('dpop-proof-provider')
   const dpopProofJtiStore$ = context.providers.get('dpop-proof-jti-store-provider')
+  const issuanceContextStore$ = context.providers.get('issuance-context-store-provider')
 
   const verifyAccessTokenPayload = async (
     authz: AuthorizationServerIssuer,
@@ -272,17 +274,21 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             }
           }
           // Check pre-code validity
-          const isValid = await codeStore$.validate(
+          const credentialConfigurationIds = await codeStore$.consume(
             tokenRequest['pre-authorized_code'],
             tokenRequest.tx_code
           )
-          if (!isValid) {
+          if (!credentialConfigurationIds) {
             throw err('invalid_grant', {
-              message: 'The provided pre-authorized code is invalid.',
+              message:
+                'The provided pre-authorized code is invalid or no credential configurations were found for the provided pre-authorized code.',
             })
           }
-          // delete code from store
-          await codeStore$.delete(tokenRequest['pre-authorized_code'])
+
+          const ttlSec = option?.ttlSec ?? 86400
+          const jti = randomUUID()
+
+          await issuanceContextStore$.save(jti, credentialConfigurationIds, ttlSec)
 
           const keyAlg = options?.alg ?? 'ES256'
           // Authz access token (data)
@@ -296,6 +302,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             tokenRequest['pre-authorized_code'],
             {
               ttlSec: option?.ttlSec,
+              jti,
               ...(verifiedDpopProof ? { cnf: { jkt: verifiedDpopProof.jwkThumbprint } } : {}),
             }
           )

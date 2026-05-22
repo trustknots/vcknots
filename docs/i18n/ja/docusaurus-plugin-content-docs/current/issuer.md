@@ -989,6 +989,7 @@ app.post('/credentials', async (c) => {
       })
     }
 
+    let accessTokenPayload: JwtPayload
     try {
       if (authorization.value.scheme === 'dpop') {
         const dpopProof = parseDpopHeader(c.req.header('DPoP'))
@@ -1002,7 +1003,7 @@ app.post('/credentials', async (c) => {
                 : 'DPoP header must contain a compact JWT.'
           )
         }
-        await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
+        accessTokenPayload = await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
           dpopProof: {
             proofJwt: dpopProof.proofJwt,
             htm: c.req.method,
@@ -1021,7 +1022,7 @@ app.post('/credentials', async (c) => {
             { error: 'invalid_token' }
           )
         }
-        const accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
+        accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
           authz,
           authorization.value.token
         )
@@ -1075,8 +1076,21 @@ app.post('/credentials', async (c) => {
       )
     }
     const parse = parseResult.data
-
-    const credential = await issuerFlow.issueCredential(issuer, parse, {
+    const accessTokenJti =
+      typeof accessTokenPayload.jti === 'string' && accessTokenPayload.jti.length > 0
+        ? accessTokenPayload.jti
+        : undefined
+    if (!accessTokenJti) {
+      return unauthorized(
+        c,
+        {
+          error: 'invalid_token',
+          error_description: 'Access token must contain a jti claim.',
+        },
+        { error: 'invalid_token' }
+      )
+    }
+    const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenJti, {
       alg: 'ES256',
       cnonce: {
         c_nonce_expires_in: 60 * 5 * 1000,
@@ -1296,6 +1310,7 @@ type OfferOptions =
 issueCredential(
   issuer: CredentialIssuer,
   credentialRequest: CredentialRequest,
+  accessTokenJti: string,
   options?: IssueOptions
 ): Promise<CredentialResponse>
 ```
@@ -1303,6 +1318,7 @@ issueCredential(
 **パラメータ**:
 - `issuer`: Issuerの識別子（[CredentialIssuer](#CredentialIssuer)）
 - `credentialRequest`: クレデンシャルリクエスト（[CredentialRequest](#CredentialRequest)）
+- `accessTokenJti`: アクセストークンのjti
 - `options`: 発行オプション（[IssueOptions](#IssueOptions)）
 
 **戻り値**: クレデンシャルレスポンスを返します。
@@ -1342,12 +1358,12 @@ keyごとの動き:
 - `authz_issuer_key_not_found`: Issuerの鍵が見つからない
 - `internal_server_error`: 署名に失敗した
 
-#### CredentialRequest{#CredentialRequest}
+#### CredentialRequest {#CredentialRequest}
 クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。
 
 定義は[issuer+verifier/src/credential-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-request.types.ts)を参照してください。
 
-#### IssueOptions{#IssueOptions}
+#### IssueOptions {#IssueOptions}
 クレデンシャル発行オプションを定義する型です。アルゴリズムやクレーム、JWT プルーフ検証用のヒントなどを設定できます。
 定義は下記のとおりです（実装は [issuer.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/issuer.flows.ts) を参照）。
 

@@ -8,6 +8,7 @@ import { firestoreAuthzServerMetadataStore } from './firestore-authz-metadata-st
 import { firestoreDpopProofJtiStore } from './firestore-dpop-proof-jti-store.provider'
 import { firestorePreAuthorizedCodeStore } from './firestore-pre-authorized-code-store.provider'
 import { firestoreRequestObjectStore } from './firestore-request-object-store.provider'
+import { firestoreIssuanceContextStore } from './firestore-issuance-context-store.provider'
 
 const configuredInstances = new WeakSet<Firestore>()
 
@@ -63,5 +64,6 @@ export const firestore = (options?: FirestoreProviderOptions): Provider[] => {
     firestorePreAuthorizedCodeStore(options),
     firestoreRequestObjectStore(options),
     firestoreDpopProofJtiStore(options),
+    firestoreIssuanceContextStore(options),
   ]
 }

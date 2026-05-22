@@ -29,6 +29,7 @@ import { transactionData } from './transaction-data.provider'
 import { verifyVerifiablePresentation } from './verify-presentation-jwt-vp-json.provider'
 import { verifyVerifiablePresentationDcSdJwt } from './verify-presentation-dc-sd-jwt.provider'
 import { issueCredentialSDJWT } from './issue-credential-dc-sd-jwt.provider'
+import { inMemoryIssuanceContextStore } from './in-memory/in-memory-issuance-context-store.provider'
 
 type ArrayUnless<P extends Provider> = P['single'] extends true ? P : P[]
 
@@ -85,6 +86,7 @@ const initializeDefaultProviders = (
   transactionData(),
   verifyVerifiablePresentation(),
   verifyVerifiablePresentationDcSdJwt(),
+  inMemoryIssuanceContextStore(),
 ]
 
 export const initializeProviderRegistry = (
@@ -154,4 +156,3 @@ export const withProviderRegistry = {
     select: () => raise('illegal_state'),
   },
 }
-

@@ -3,6 +3,7 @@ import {
   parseDpopHeader,
   resolveDpopMode,
   VcknotsContext,
+  JwtPayload,
 } from '@trustknots/vcknots'
 import {
   CredentialRequest,
@@ -201,6 +202,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         })
       }
 
+      let accessTokenPayload: JwtPayload
       try {
         if (authorization.value.scheme === 'dpop') {
           const dpopProof = parseDpopHeader(c.req.header('DPoP'))
@@ -226,14 +228,18 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
               nonceRequired: true,
             },
           })
-          await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
-            dpopProof: {
-              proofJwt: dpopProof.proofJwt,
-              htm: c.req.method,
-              htu: `${baseUrl}/credentials`,
-              nonceRequired: true,
-            },
-          })
+          accessTokenPayload = await authzFlow.verifyDpopBoundAccessToken(
+            authz,
+            authorization.value.token,
+            {
+              dpopProof: {
+                proofJwt: dpopProof.proofJwt,
+                htm: c.req.method,
+                htu: `${baseUrl}/credentials`,
+                nonceRequired: true,
+              },
+            }
+          )
         } else {
           if (dpopMode === 'required') {
             return unauthorized(
@@ -245,7 +251,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
               { error: 'invalid_token' }
             )
           }
-          const accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
+          accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
             authz,
             authorization.value.token
           )
@@ -300,9 +306,23 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         )
       }
       const parse = parseResult.data
+      const accessTokenJti =
+        typeof accessTokenPayload.jti === 'string' && accessTokenPayload.jti.length > 0
+          ? accessTokenPayload.jti
+          : undefined
+      if (!accessTokenJti) {
+        // jti is used to bind the access token to the credential offer; it is not part of access token validation.
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Access token must contain jti claim.',
+          },
+          400
+        )
+      }
 
       // Issue Credential
-      const credential = await issuerFlow.issueCredential(issuer, parse, {
+      const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenJti, {
         alg: 'ES256',
         cnonce: {
           c_nonce_expires_in: 60 * 5 * 1000,

@@ -16,17 +16,24 @@ export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider
     name: 'in-memory-pre-authorized-code-provider',
     single: true,
 
-    async save(code, tx_code, options) {
+    async save(code, credentialConfigurationIds, tx_code, options) {
       const ttlSecRaw = Number(options?.ttlSec ?? 300)
       const ttlSecCandidate = Math.floor(ttlSecRaw)
       const ttlSec = Number.isFinite(ttlSecRaw) && ttlSecCandidate > 0 ? ttlSecCandidate : 300
       const tx_code_input_mode = options?.tx_code_input_mode ?? 'numeric'
       const expiresAt = new Date().getTime() + ttlSec * 1000
-      codes.set(code, { code, tx_code, tx_code_input_mode, expires_at: expiresAt })
+      codes.set(code, {
+        code,
+        credential_configuration_ids: credentialConfigurationIds,
+        tx_code,
+        tx_code_input_mode,
+        expires_at: expiresAt,
+      })
       return
     },
 
-    async validate(code, tx_code) {
+    // validate and fetch credential configuration ids
+    async consume(code, tx_code) {
       const entry = codes.get(code)
       if (!entry) {
         throw raise('invalid_grant', {
@@ -60,18 +67,16 @@ export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider
             })
           }
         }
-        return true
+        codes.delete(code)
+        return entry.credential_configuration_ids
       }
       if (tx_code !== undefined) {
         throw raise('invalid_request', {
           message: 'tx_code should not be provided for this pre-authorized code',
         })
       }
-      return codes.has(code)
-    },
-
-    async delete(code) {
       codes.delete(code)
+      return entry.credential_configuration_ids
     },
   }
 }

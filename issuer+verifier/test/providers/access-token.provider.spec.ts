@@ -51,5 +51,13 @@ describe('AccessTokenProvider', () => {
       assert.ok(payload.exp)
       assert.equal(payload.exp - payload.iat, customTtl, 'exp should reflect custom ttlSec')
     })
+
+    it('should include jti when provided in options', async () => {
+      const payload = await provider.createTokenPayload(issuer, code, {
+        jti: 'test-jti',
+      })
+
+      assert.equal(payload.jti, 'test-jti')
+    })
   })
 })
