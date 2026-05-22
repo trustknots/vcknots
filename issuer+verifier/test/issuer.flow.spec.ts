@@ -558,9 +558,8 @@ describe('IssuerFlow', () => {
 
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
       // 2. Act
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
         alg: 'ES256',
-        jti: 'test-jti',
       })
 
       // 3. Assert
@@ -739,9 +738,8 @@ describe('IssuerFlow', () => {
         (type) => type === ProofTypes.JWT
       )
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
-      await issuerFlow.issueCredential(issuer, credentialRequest, {
+      await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
         alg: 'ES256',
-        jti: 'test-jti',
       })
 
       assert.equal(mockCredentialProofProvider.verifyProof.mock.callCount(), 1)
@@ -1084,7 +1082,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256', jti: 'test-jti' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
         {
           message: 'Unsupported proof type',
         }
@@ -1112,7 +1110,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256', jti: 'test-jti' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
         {
           name: 'invalid_credential_request',
           message: 'Request contain no proofs supported by credential configuration.',
@@ -1146,7 +1144,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256', jti: 'test-jti' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
         {
           name: 'invalid_proof',
           message: 'Failed to verify Proof.',
@@ -1185,9 +1183,8 @@ describe('IssuerFlow', () => {
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
         alg: 'ES256',
-        jti: 'test-jti',
       })
 
       assert.ok(response)
@@ -1387,7 +1384,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'RS256', jti: 'test-jti' }), // Requesting unsupported alg
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'RS256' }), // Requesting unsupported alg
         { name: 'unsupported_issuer_key_alg' }
       )
     })
@@ -1426,7 +1423,7 @@ describe('IssuerFlow', () => {
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256', jti: 'test-jti' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
         { name: 'authz_issuer_key_not_found' }
       )
     })
@@ -1463,9 +1460,8 @@ describe('IssuerFlow', () => {
       )
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
         alg: 'ES256',
-        jti: 'test-jti',
       })
 
       assert.deepStrictEqual(response, {
@@ -1507,9 +1503,8 @@ describe('IssuerFlow', () => {
       )
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
         alg: 'ES256',
-        jti: 'test-jti',
       })
 
       assert.deepStrictEqual(response, {

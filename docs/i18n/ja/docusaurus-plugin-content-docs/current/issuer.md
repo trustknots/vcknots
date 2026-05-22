@@ -1358,12 +1358,12 @@ keyごとの動き:
 - `authz_issuer_key_not_found`: Issuerの鍵が見つからない
 - `internal_server_error`: 署名に失敗した
 
-#### CredentialRequest{#CredentialRequest}
+#### CredentialRequest {#CredentialRequest}
 クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。
 
 定義は[issuer+verifier/src/credential-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-request.types.ts)を参照してください。
 
-#### IssueOptions{#IssueOptions}
+#### IssueOptions {#IssueOptions}
 クレデンシャル発行オプションを定義する型です。アルゴリズムやクレーム、JWT プルーフ検証用のヒントなどを設定できます。
 定義は下記のとおりです（実装は [issuer.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/issuer.flows.ts) を参照）。
 

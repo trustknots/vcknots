@@ -26,7 +26,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await provider.save(PreAuthorizedCode('test-code-123'), configurations)
     const valid = await provider.consume(PreAuthorizedCode('test-code-123'))
-    assert.equal(valid, configurations)
+    assert.deepStrictEqual(valid, configurations)
   })
 
   it('should save and validate a code with tx_code (numeric)', async () => {
@@ -35,7 +35,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
       tx_code_input_mode: 'numeric',
     })
     const valid = await provider.consume(PreAuthorizedCode('test-code-numeric'), 123)
-    assert.equal(valid, configurations)
+    assert.deepStrictEqual(valid, configurations)
   })
 
   it('should save and validate a code with tx_code (text)', async () => {
@@ -44,7 +44,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
       tx_code_input_mode: 'text',
     })
     const valid = await provider.consume(PreAuthorizedCode('test-code-text'), 'abc123')
-    assert.equal(valid, configurations)
+    assert.deepStrictEqual(valid, configurations)
   })
 
   it('should throw invalid_grant for incorrect tx_code', async () => {
@@ -63,7 +63,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
       tx_code_input_mode: 'numeric',
     })
     const valid = await provider.consume(PreAuthorizedCode('test-code-type'), '123')
-    assert.equal(valid, configurations)
+    assert.deepStrictEqual(valid, configurations)
   })
 
   it('should throw invalid_grant for non-numeric string tx_code in numeric mode', async () => {
@@ -88,7 +88,7 @@ describe('firestorePreAuthorizedCodeStore', () => {
       tx_code_input_mode: 'numeric',
     })
     const valid = await provider.consume(PreAuthorizedCode('test-code-leading-zero'), '0123')
-    assert.equal(valid, configurations)
+    assert.deepStrictEqual(valid, configurations)
   })
 
   it('should throw invalid_grant when leading-zero digit-string is validated as number', async () => {

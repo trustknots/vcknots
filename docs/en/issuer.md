@@ -1318,7 +1318,7 @@ issueCredential(
 **Parameters**:
 - `issuer`: Identifier of the Issuer ([CredentialIssuer](#CredentialIssuer))
 - `credentialRequest`: Credential request ([CredentialRequest](#CredentialRequest))
-- `accessTokenJti`: jti in the access token
+- `accessTokenJti`: `jti` in the access token
 - `options`: Issuance options ([IssueOptions](#IssueOptions))
 
 **Return value**: Returns a credential response.
@@ -1357,12 +1357,12 @@ Per-header behavior:
 - `authz_issuer_key_not_found`: The Issuer’s key cannot be found
 - `internal_server_error`: Signing failed
 
-#### CredentialRequest{#CredentialRequest}
+#### CredentialRequest {#CredentialRequest}
 Defines the type for a credential issuance request. You can configure items such as the credential identifier.
 
 For the definition, see [issuer+verifier/src/credential-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-request.types.ts).
 
-#### IssueOptions{#IssueOptions}
+#### IssueOptions {#IssueOptions}
 Defines the type for credential issuance options. You can configure algorithms, claims, hints for JWT proof verification, and more.
 The definition is as follows (see [issuer.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/issuer.flows.ts) for the implementation).
 
