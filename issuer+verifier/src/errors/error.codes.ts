@@ -87,4 +87,4 @@ export type ErrorCodes =
   | 'request_object_not_found'
   | 'verifier_vp_formats_not_supported'
   | 'unsupported_cryptographic_binding_method'
-  | 'INSECURE_HTTP_NOT_ALLOWED'
+  | 'insecure_http_not_allowed'

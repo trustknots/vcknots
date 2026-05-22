@@ -123,15 +123,14 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         return
       }
       const credentialEndpoints = [
-        metadata.credential_endpoint,
-        metadata.batch_credential_endpoint,
-        metadata.deferred_credential_endpoint,
-      ].filter((url): url is string => url !== undefined)
+        ['credential_endpoint', metadata.credential_endpoint],
+        ['deferred_credential_endpoint', metadata.deferred_credential_endpoint],
+      ].filter((url): url is [string, string] => !!url[1])
 
-      for (const url of credentialEndpoints) {
+      for (const [field, url] of credentialEndpoints) {
         if (new URL(url).protocol === 'http:') {
-          throw err('INSECURE_HTTP_NOT_ALLOWED', {
-            message: `Insecure HTTP URL is not allowed: ${url}`,
+          throw err('insecure_http_not_allowed', {
+            message: `CredentialIssuerMetadata contains insecure http url in ${field}: ${url}`,
           })
         }
       }

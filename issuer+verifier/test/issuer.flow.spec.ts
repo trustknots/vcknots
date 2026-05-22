@@ -1354,7 +1354,8 @@ describe('IssuerFlow', () => {
 
       await assert.rejects(issuerFlow.findIssuerMetadata(CredentialIssuer('did:example:issuer')), {
         name: 'insecure_http_not_allowed',
-        message: 'Insecure http url is not allowed: http://example.com/credentials',
+        message:
+          'CredentialIssuerMetadata contains insecure http url in credential_endpoint: http://example.com/credentials',
       })
     })
 
@@ -1370,7 +1371,8 @@ describe('IssuerFlow', () => {
 
       await assert.rejects(issuerFlow.findIssuerMetadata(CredentialIssuer('did:example:issuer')), {
         name: 'insecure_http_not_allowed',
-        message: 'Insecure http url is not allowed: http://example.com/deferred',
+        message:
+          'CredentialIssuerMetadata contains insecure http url in deferred_credential_endpoint: http://example.com/deferred',
       })
     })
 
