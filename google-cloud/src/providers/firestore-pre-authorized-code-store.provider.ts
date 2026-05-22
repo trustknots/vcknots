@@ -32,7 +32,7 @@ export const firestorePreAuthorizedCodeStore = (
       const ttlSecCandidate = Math.floor(ttlSecRaw)
       const ttlSec = Number.isFinite(ttlSecRaw) && ttlSecCandidate > 0 ? ttlSecCandidate : 300
       const tx_code_input_mode = saveOptions?.tx_code_input_mode ?? 'numeric'
-      const expiresAt = Timestamp.fromMillis(new Date().getTime() + ttlSec * 1000)
+      const expiresAt = Timestamp.fromMillis(Date.now() + ttlSec * 1000)
       const docRef = firestore.doc(`${ns}/v1/preCodes/${code}`)
 
       const data: FirestorePreAuthorizedCodeDoc = {
@@ -70,7 +70,7 @@ export const firestorePreAuthorizedCodeStore = (
         }
         const data = doc.data() as FirestorePreAuthorizedCodeDoc
 
-        if (data.expires_at.toMillis() < new Date().getTime()) {
+        if (data.expires_at.toMillis() <= Date.now()) {
           transaction.delete(docRef)
           return { expired: true, credential_configuration_ids: null }
         }
