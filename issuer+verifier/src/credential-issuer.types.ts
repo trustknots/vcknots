@@ -355,9 +355,9 @@ const credentialIssuerMetadataSchema = z
     credential_endpoint: z.string().url(),
 
     /**
-     * (Optional) URL of the Batch Credential Endpoint.
+     * URL of the Credential Issuer's Nonce Endpoint.
      */
-    batch_credential_endpoint: z.string().url().optional(),
+    nonce_endpoint: z.string().url().optional(),
 
     /**
      * (Optional) URL of the Deferred Credential Endpoint.
