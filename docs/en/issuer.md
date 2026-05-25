@@ -47,6 +47,136 @@ const issuerFlow = initializeIssuerFlow(context);
 const authzFlow = initializeAuthzFlow(context);
 ```
 
+## VcknotsOptions
+
+Configuration options passed to `initializeContext()`.
+
+```typescript
+type VcknotsOptions = {
+  debug?: boolean
+  providers?: Providers
+  extensions?: Extensions
+  oauth?: OAuthOptions
+}
+```
+
+### debug
+
+Development option.
+
+```typescript
+const context = initializeContext({
+  debug: true,
+})
+```
+
+When `debug: true`:
+
+- insecure `http://` endpoints are allowed
+- localhost development workflows are enabled
+
+When `debug: false` (default):
+
+- using `http://` URLs in the following `CredentialIssuerMetadata` endpoints will throw an `insecure_http_not_allowed` error:
+  - `credential_endpoint`
+  - `deferred_credential_endpoint`
+
+```json
+{
+  "error": "insecure_http_not_allowed",
+  "error_description": "CredentialIssuerMetadata contains insecure http url in credential_endpoint: http://localhost:8080/credentials"
+}
+```
+
+Use HTTPS endpoints in production environments.
+
+---
+
+### oauth.senderConstrainedAccessToken
+
+Configuration for Sender-Constrained Access Tokens.
+
+```typescript
+const context = initializeContext({
+  oauth: {
+    senderConstrainedAccessToken: {
+      method: 'dpop',
+      dpop: {
+        mode: 'required',
+      },
+    },
+  },
+})
+```
+
+#### method
+
+Specifies the sender constraint method for access tokens.
+
+```typescript
+type SenderConstraintMethod = 'none' | 'dpop' | 'mtls'
+```
+
+| Value | Description |
+|---|---|
+| `none` | Sender-constrained access tokens are not used |
+| `dpop` | Uses DPoP-bound access tokens |
+| `mtls` | mTLS sender-constrained access tokens (planned) |
+
+---
+
+#### dpop.mode
+
+Specifies the DPoP enforcement level.
+
+```typescript
+type DPoPMode = 'off' | 'optional' | 'required'
+```
+
+| mode | token endpoint / credential endpoint behavior |
+|---|---|
+| `off` | DPoP is disabled |
+| `optional` | DPoP Proof is verified only when provided |
+| `required` | DPoP Proof is required for all requests |
+
+Internally, the mode is resolved using `resolveDpopMode()`.  
+If omitted, the default value is `off`.
+
+```typescript
+export const resolveDpopMode = (
+  options?: Pick<VcknotsOptions, 'oauth'>
+): DPoPMode =>
+  options?.oauth?.senderConstrainedAccessToken?.dpop?.mode ?? 'off'
+```
+
+---
+
+### providers
+
+Adds custom providers.
+
+```typescript
+const context = initializeContext({
+  providers: [
+    myProvider,
+  ],
+})
+```
+
+---
+
+### extensions
+
+Adds VCKnots extensions.
+
+```typescript
+const context = initializeContext({
+  extensions: [
+    myExtension,
+  ],
+})
+```
+
 ## 3. Sample Implementation of the Issuer Feature
 
 ### Parameters

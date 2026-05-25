@@ -47,6 +47,135 @@ const issuerFlow = initializeIssuerFlow(context);
 const authzFlow = initializeAuthzFlow(context);
 ```
 
+## VcknotsOptions
+
+`initializeContext()` に渡す設定オプションです。
+
+```typescript
+type VcknotsOptions = {
+  debug?: boolean
+  providers?: Providers
+  extensions?: Extensions
+  oauth?: OAuthOptions
+}
+```
+
+### debug
+
+開発用オプションです。
+
+```typescript
+const context = initializeContext({
+  debug: true,
+})
+```
+
+`debug: true` の場合:
+
+- insecure な `http://` endpoint を許可
+- localhost 開発環境向けの動作を有効化
+
+`debug: false`（デフォルト）の場合:
+
+- `CredentialIssuerMetadata` の以下の endpoint に `http://` URL を設定すると `insecure_http_not_allowed` エラーになります。
+  - `credential_endpoint`
+  - `deferred_credential_endpoint`
+
+```json
+{
+  "error": "insecure_http_not_allowed",
+  "error_description": "CredentialIssuerMetadata contains insecure http url in credential_endpoint: http://localhost:8080/credentials"
+}
+```
+
+本番環境では HTTPS endpoint を使用してください。
+
+---
+
+### oauth.senderConstrainedAccessToken
+
+Sender-Constrained Access Token の設定です。
+
+```typescript
+const context = initializeContext({
+  oauth: {
+    senderConstrainedAccessToken: {
+      method: 'dpop',
+      dpop: {
+        mode: 'required',
+      },
+    },
+  },
+})
+```
+
+#### method
+
+Access Token の sender constraint method を指定します。
+
+```typescript
+type SenderConstraintMethod = 'none' | 'dpop' | 'mtls'
+```
+
+| 値 | 説明 |
+|---|---|
+| `none` | sender-constrained access token を利用しません |
+| `dpop` | DPoP-bound access token を利用します |
+| `mtls` | mTLS sender-constrained access token（将来対応予定） |
+
+---
+
+#### dpop.mode
+
+DPoP の要求レベルを指定します。
+
+```typescript
+type DPoPMode = 'off' | 'optional' | 'required'
+```
+
+| mode | token endpoint / credential endpoint の動作 |
+|---|---|
+| `off` | DPoP を利用しません |
+| `optional` | DPoP Proof がある場合のみ検証します |
+| `required` | すべての request に DPoP Proof を必須化します |
+
+内部的には `resolveDpopMode()` により解決され、省略時は `off` になります。
+
+```typescript
+export const resolveDpopMode = (
+  options?: Pick<VcknotsOptions, 'oauth'>
+): DPoPMode =>
+  options?.oauth?.senderConstrainedAccessToken?.dpop?.mode ?? 'off'
+```
+
+---
+
+### providers
+
+カスタム provider を追加します。
+
+```typescript
+const context = initializeContext({
+  providers: [
+    myProvider,
+  ],
+})
+```
+
+---
+
+### extensions
+
+VCKnots extension を追加します。
+
+```typescript
+const context = initializeContext({
+  extensions: [
+    myExtension,
+  ],
+})
+```
+
 ## 3. Issuer機能のサンプル実装
 
 ### パラメータ
@@ -1497,6 +1626,19 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
    - HTTPSを使用して通信を暗号化してください
 
 3. **URLエンコード**: issuer IDにURLエンコードが必要な文字（例：`:`、`/`）が含まれる場合は、適切にエンコードしてください。
+
+4. **Issuer Metadata の HTTPS 制約**:
+   - 本番モード（`debug: false`）では、`CredentialIssuerMetadata` の以下の endpoint に `http://` URL を設定できません。
+     - `credential_endpoint`
+     - `deferred_credential_endpoint`
+   - insecure な URL が設定された場合、`insecure_http_not_allowed` エラーになります。
+   - ローカル開発用途では、`initializeContext({ debug: true })` を指定することで HTTP endpoint を許可できます。
+
+```typescript
+const context = initializeContext({
+  debug: true,
+})
+```
 
 
 ## 8. トラブルシューティング
