@@ -22,8 +22,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -300,12 +298,28 @@ const (
 func resolveCredentialRequestProofBindingMethod(
 	credentialConfiguration *receiverTypes.CredentialConfiguration,
 ) credentialRequestProofBindingMethod {
-	if credentialConfiguration == nil || credentialConfiguration.CryptographicBindingMethodsSupported == nil {
+	if credentialConfiguration == nil {
+		return credentialRequestProofBindingMethodKID
+	}
+
+	format := strings.ToLower(strings.TrimSpace(credentialConfiguration.Format))
+	if format == "jwt_vc_json" || format == "jwt_vc" {
+		return credentialRequestProofBindingMethodKID
+	}
+
+	if credentialConfiguration.CryptographicBindingMethodsSupported == nil {
 		return credentialRequestProofBindingMethodKID
 	}
 
 	for _, method := range *credentialConfiguration.CryptographicBindingMethodsSupported {
-		if strings.EqualFold(strings.TrimSpace(method), "jwk") {
+		normalized := strings.ToLower(strings.TrimSpace(method))
+		if strings.HasPrefix(normalized, "did:") {
+			return credentialRequestProofBindingMethodKID
+		}
+	}
+
+	for _, method := range *credentialConfiguration.CryptographicBindingMethodsSupported {
+		if strings.EqualFold(strings.TrimSpace(method), string(credentialRequestProofBindingMethodJWK)) {
 			return credentialRequestProofBindingMethodJWK
 		}
 	}
@@ -559,6 +573,10 @@ func (w *Wallet) selectCredentialConfiguration(
 	req ReceiveCredentialRequest,
 	issuerMetadata *receiverTypes.CredentialIssuerMetadata,
 ) (string, *receiverTypes.CredentialConfiguration, credential.SupportedSerializationFlavor, error) {
+	if req.CredentialOffer == nil || len(req.CredentialOffer.CredentialConfigurationIDs) == 0 {
+		return "", nil, "", fmt.Errorf("credential configuration IDs are empty")
+	}
+
 	defaultConfigurationID := req.CredentialOffer.CredentialConfigurationIDs[0]
 	defaultFlavor := credential.JwtVc
 
@@ -609,14 +627,37 @@ func (w *Wallet) selectCredentialConfiguration(
 }
 
 func shouldAttachCredentialRequestProof(req ReceiveCredentialRequest, credentialConfiguration *receiverTypes.CredentialConfiguration) bool {
-	if credentialConfiguration != nil &&
-		credentialConfiguration.CryptographicBindingMethodsSupported != nil &&
-		len(*credentialConfiguration.CryptographicBindingMethodsSupported) > 0 {
-		return true
+	if credentialConfiguration != nil {
+		if credentialConfiguration.ProofTypesSupported != nil {
+			return true
+		}
+		if credentialConfiguration.CryptographicBindingMethodsSupported != nil &&
+			len(*credentialConfiguration.CryptographicBindingMethodsSupported) > 0 {
+			return true
+		}
 	}
 
 	// Keep backward-compatible behavior for existing callers that do not specify format.
 	return req.RequestedFormat == ""
+}
+
+func ensureJWTProofSupported(credentialConfiguration *receiverTypes.CredentialConfiguration) error {
+	if credentialConfiguration == nil || credentialConfiguration.ProofTypesSupported == nil {
+		return nil
+	}
+
+	proofTypes := *credentialConfiguration.ProofTypesSupported
+	if len(proofTypes) == 0 {
+		return fmt.Errorf("proof_types_supported must not be empty")
+	}
+
+	for proofType := range proofTypes {
+		if strings.EqualFold(strings.TrimSpace(proofType), "jwt") {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("unsupported proof type: jwt proof is required")
 }
   
 func validateCredentialIssuerIdentifier(issuer *url.URL) error {
@@ -692,17 +733,6 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 	return accessToken, nil
 }
 
-type credentialNonceResponse struct {
-	CNonce *string `json:"c_nonce"`
-	Nonce  *string `json:"nonce"`
-}
-
-var nonceHTTPClient = &http.Client{
-	Timeout: 10 * time.Second,
-}
-
-const maxNonceResponseBodyBytes int64 = 4 << 10
-
 func accessTokenNonce(accessToken *receiverTypes.CredentialIssuanceAccessToken) *string {
 	if accessToken == nil || accessToken.CNonce == nil || *accessToken.CNonce == "" {
 		return nil
@@ -733,82 +763,27 @@ func accessTokenCredentialIdentifier(accessToken *receiverTypes.CredentialIssuan
 
 // fetchCredentialNonce retrieves nonce used for proof generation from nonce endpoint,
 // and falls back to c_nonce in the access token when nonce endpoint is not available.
-func (w *Wallet) fetchCredentialNonce(issuerMetadata *receiverTypes.CredentialIssuerMetadata, accessToken *receiverTypes.CredentialIssuanceAccessToken) (*string, error) {
+func (w *Wallet) fetchCredentialNonce(
+	receivingType receiverTypes.SupportedReceivingTypes,
+	issuerMetadata *receiverTypes.CredentialIssuerMetadata,
+	accessToken *receiverTypes.CredentialIssuanceAccessToken,
+) (*string, error) {
 	fallbackNonce := accessTokenNonce(accessToken)
 
 	if issuerMetadata.NonceEndpoint == nil {
 		return fallbackNonce, nil
 	}
 
-	nonceEndpointURL := url.URL(*issuerMetadata.NonceEndpoint)
-	if !env.IsHTTPAllowed() && !strings.EqualFold(nonceEndpointURL.Scheme, "https") {
-		if fallbackNonce != nil {
-			return fallbackNonce, nil
-		}
-		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", nonceEndpointURL.Scheme)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, nonceEndpointURL.String(), http.NoBody)
-	if err != nil {
-		if fallbackNonce != nil {
-			return fallbackNonce, nil
-		}
-		return nil, fmt.Errorf("failed to create nonce request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := nonceHTTPClient.Do(req)
+	nonce, err := w.receiver.FetchNonce(receivingType, *issuerMetadata.NonceEndpoint)
 	if err != nil {
 		if fallbackNonce != nil {
 			return fallbackNonce, nil
 		}
 		return nil, fmt.Errorf("failed to fetch nonce: %w", err)
 	}
-	defer resp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxNonceResponseBodyBytes+1))
-	if err != nil {
-		if fallbackNonce != nil {
-			return fallbackNonce, nil
-		}
-		return nil, fmt.Errorf("failed to read nonce response: %w", err)
-	}
-
-	if int64(len(bodyBytes)) > maxNonceResponseBodyBytes {
-		if fallbackNonce != nil {
-			return fallbackNonce, nil
-		}
-		return nil, fmt.Errorf("nonce endpoint response exceeds %d bytes", maxNonceResponseBodyBytes)
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		if fallbackNonce != nil {
-			return fallbackNonce, nil
-		}
-		return nil, fmt.Errorf("nonce endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	if len(bodyBytes) == 0 {
-		if fallbackNonce != nil {
-			return fallbackNonce, nil
-		}
-		return nil, fmt.Errorf("nonce endpoint returned empty response")
-	}
-
-	var nonceResponse credentialNonceResponse
-	if err := json.Unmarshal(bodyBytes, &nonceResponse); err != nil {
-		if fallbackNonce != nil {
-			return fallbackNonce, nil
-		}
-		return nil, fmt.Errorf("failed to parse nonce response: %w", err)
-	}
-
-	if nonceResponse.CNonce != nil && *nonceResponse.CNonce != "" {
-		return nonceResponse.CNonce, nil
-	}
-	if nonceResponse.Nonce != nil && *nonceResponse.Nonce != "" {
-		return nonceResponse.Nonce, nil
+	if nonce != nil && *nonce != "" {
+		return nonce, nil
 	}
 
 	if fallbackNonce != nil {
@@ -838,6 +813,10 @@ func (w *Wallet) requestCredential(
 			return nil, fmt.Errorf("key entry is required")
 		}
 
+		if err := ensureJWTProofSupported(credentialConfiguration); err != nil {
+			return nil, err
+		}
+
 		proofBindingMethod := resolveCredentialRequestProofBindingMethod(credentialConfiguration)
 
 		var did *idprofTypes.IdentityProfile
@@ -852,7 +831,7 @@ func (w *Wallet) requestCredential(
 			did = didGenerated
 		}
 
-		nonce, err := w.fetchCredentialNonce(issuerMetadata, accessToken)
+		nonce, err := w.fetchCredentialNonce(req.Type, issuerMetadata, accessToken)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch nonce for credential proof: %w", err)
 		}

@@ -112,64 +112,48 @@ func ParseCombinedFormatForPresentation(input string) *CombinedFormatForPresenta
 	return result
 }
 
-// Disclosure represents a parsed SD-JWT disclosure
-type Disclosure struct {
-	Salt           string      // Random salt
-	Name           string      // Claim name (empty for array elements)
-	Value          interface{} // Claim value
-	EncodedValue   string      // Original base64url encoded disclosure
-	Digest         string      // Computed hash of the disclosure
-	IsArrayElement bool        // True if this is an array element disclosure
-}
-
 // parseDisclosure parses a base64url encoded disclosure
-func parseDisclosure(encodedDisclosure string, sdAlg string) (*Disclosure, error) {
+func parseDisclosure(encodedDisclosure string, sdAlg string) (credential.SDJwtDisclosure, error) {
 	// Decode base64url
 	decoded, err := base64.RawURLEncoding.DecodeString(encodedDisclosure)
 	if err != nil {
-		return nil, types.NewDecodingError("failed to decode disclosure", err)
+		return credential.SDJwtDisclosure{}, types.NewDecodingError("failed to decode disclosure", err)
 	}
 
 	// Parse JSON array
 	var arr []interface{}
 	if err := json.Unmarshal(decoded, &arr); err != nil {
-		return nil, types.NewDecodingError("disclosure is not a valid JSON array", err)
+		return credential.SDJwtDisclosure{}, types.NewDecodingError("disclosure is not a valid JSON array", err)
 	}
 
-	disc := &Disclosure{
-		EncodedValue: encodedDisclosure,
-	}
+	disc := credential.SDJwtDisclosure{EncodedValue: encodedDisclosure}
 
 	// Array element disclosure:  [salt, value]
 	// Object property disclosure: [salt, name, value]
 	if len(arr) == 2 {
 		disc.IsArrayElement = true
-		salt, ok := arr[0].(string)
-		if !ok {
-			return nil, types.NewDecodingError("disclosure salt must be a string", nil)
+		if _, ok := arr[0].(string); !ok {
+			return credential.SDJwtDisclosure{}, types.NewDecodingError("disclosure salt must be a string", nil)
 		}
-		disc.Salt = salt
 		disc.Value = arr[1]
 	} else if len(arr) == 3 {
-		salt, ok := arr[0].(string)
-		if !ok {
-			return nil, types.NewDecodingError("disclosure salt must be a string", nil)
+		if _, ok := arr[0].(string); !ok {
+			return credential.SDJwtDisclosure{}, types.NewDecodingError("disclosure salt must be a string", nil)
 		}
 		name, ok := arr[1].(string)
 		if !ok {
-			return nil, types.NewDecodingError("disclosure name must be a string", nil)
+			return credential.SDJwtDisclosure{}, types.NewDecodingError("disclosure name must be a string", nil)
 		}
-		disc.Salt = salt
 		disc.Name = name
 		disc.Value = arr[2]
 	} else {
-		return nil, types.NewDecodingError("disclosure must have 2 or 3 elements", nil)
+		return credential.SDJwtDisclosure{}, types.NewDecodingError("disclosure must have 2 or 3 elements", nil)
 	}
 
 	// Compute digest
 	digest, err := computeDisclosureHash(encodedDisclosure, sdAlg)
 	if err != nil {
-		return nil, err
+		return credential.SDJwtDisclosure{}, err
 	}
 	disc.Digest = digest
 
@@ -420,13 +404,7 @@ func (s *SdJwtVcSerializer) DeserializeCredential(flavor credential.SupportedSer
 		if err != nil {
 			return nil, types.NewDecodingError("failed to parse disclosure", err)
 		}
-		parsedDisclosures = append(parsedDisclosures, credential.SDJwtDisclosure{
-			Name:           disc.Name,
-			Value:          disc.Value,
-			Digest:         disc.Digest,
-			EncodedValue:   disc.EncodedValue,
-			IsArrayElement: disc.IsArrayElement,
-		})
+		parsedDisclosures = append(parsedDisclosures, disc)
 		if !disc.IsArrayElement && disc.Name != "" {
 			disclosedClaims[disc.Name] = disc.Value
 		}

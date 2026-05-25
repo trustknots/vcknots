@@ -829,6 +829,8 @@ func TestController_generateJWTProof_WithoutIssuer_Integration(t *testing.T) {
 	}
 }
 
+const testMaxNonceResponseBodyBytes int64 = 4 << 10
+
 func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointMissing(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
@@ -836,7 +838,7 @@ func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointMissin
 	accessToken := &receiverTypes.CredentialIssuanceAccessToken{CNonce: &cnonce}
 	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{}
 
-	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	nonce, err := controller.fetchCredentialNonce(receiverTypes.Oid4vci, issuerMetadata, accessToken)
 	require.NoError(t, err)
 	require.NotNil(t, nonce)
 	assert.Equal(t, cnonce, *nonce)
@@ -845,7 +847,7 @@ func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointMissin
 func TestController_fetchCredentialNonce_ReturnsNilWhenNoNonceSource(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
-	nonce, err := controller.fetchCredentialNonce(&receiverTypes.CredentialIssuerMetadata{}, &receiverTypes.CredentialIssuanceAccessToken{})
+	nonce, err := controller.fetchCredentialNonce(receiverTypes.Oid4vci, &receiverTypes.CredentialIssuerMetadata{}, &receiverTypes.CredentialIssuanceAccessToken{})
 	require.NoError(t, err)
 	require.Nil(t, nonce)
 }
@@ -863,7 +865,7 @@ func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenEndpointFails(
 	accessToken := &receiverTypes.CredentialIssuanceAccessToken{CNonce: &cnonce}
 	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
 
-	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	nonce, err := controller.fetchCredentialNonce(receiverTypes.Oid4vci, issuerMetadata, accessToken)
 	require.NoError(t, err)
 	require.NotNil(t, nonce)
 	assert.Equal(t, cnonce, *nonce)
@@ -881,7 +883,7 @@ func TestController_fetchCredentialNonce_RejectsNonHTTPSNonceEndpoint(t *testing
 	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
 	accessToken := &receiverTypes.CredentialIssuanceAccessToken{}
 
-	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	nonce, err := controller.fetchCredentialNonce(receiverTypes.Oid4vci, issuerMetadata, accessToken)
 	require.Error(t, err)
 	require.Nil(t, nonce)
 	assert.Contains(t, err.Error(), "unsupported URL scheme")
@@ -910,7 +912,7 @@ func TestController_fetchCredentialNonce_UsesNonceEndpointWhenFallbackMissing(t 
 	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
 	accessToken := &receiverTypes.CredentialIssuanceAccessToken{}
 
-	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	nonce, err := controller.fetchCredentialNonce(receiverTypes.Oid4vci, issuerMetadata, accessToken)
 	require.NoError(t, err)
 	require.NotNil(t, nonce)
 	assert.Equal(t, nonceValue, *nonce)
@@ -933,7 +935,7 @@ func TestController_fetchCredentialNonce_ReturnsErrorWhenEndpointFailsWithoutFal
 	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
 	accessToken := &receiverTypes.CredentialIssuanceAccessToken{}
 
-	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	nonce, err := controller.fetchCredentialNonce(receiverTypes.Oid4vci, issuerMetadata, accessToken)
 	require.Error(t, err)
 	require.Nil(t, nonce)
 	assert.Contains(t, err.Error(), "nonce endpoint returned status")
@@ -945,7 +947,7 @@ func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenResponseTooLar
 	defer env.SetHTTPAllowed(httpAllowed)
 	env.SetHTTPAllowed(true)
 
-	largeNonce := strings.Repeat("a", int(maxNonceResponseBodyBytes))
+	largeNonce := strings.Repeat("a", int(testMaxNonceResponseBodyBytes))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"nonce":"` + largeNonce + `"}`))
@@ -959,7 +961,7 @@ func TestController_fetchCredentialNonce_FallbackToAccessTokenWhenResponseTooLar
 	accessToken := &receiverTypes.CredentialIssuanceAccessToken{CNonce: &fallback}
 	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
 
-	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	nonce, err := controller.fetchCredentialNonce(receiverTypes.Oid4vci, issuerMetadata, accessToken)
 	require.NoError(t, err)
 	require.NotNil(t, nonce)
 	assert.Equal(t, fallback, *nonce)
@@ -971,7 +973,7 @@ func TestController_fetchCredentialNonce_ReturnsErrorWhenResponseTooLargeWithout
 	defer env.SetHTTPAllowed(httpAllowed)
 	env.SetHTTPAllowed(true)
 
-	largeNonce := strings.Repeat("a", int(maxNonceResponseBodyBytes))
+	largeNonce := strings.Repeat("a", int(testMaxNonceResponseBodyBytes))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"nonce":"` + largeNonce + `"}`))
@@ -984,7 +986,7 @@ func TestController_fetchCredentialNonce_ReturnsErrorWhenResponseTooLargeWithout
 	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint}
 	accessToken := &receiverTypes.CredentialIssuanceAccessToken{}
 
-	nonce, err := controller.fetchCredentialNonce(issuerMetadata, accessToken)
+	nonce, err := controller.fetchCredentialNonce(receiverTypes.Oid4vci, issuerMetadata, accessToken)
 	require.Error(t, err)
 	require.Nil(t, nonce)
 	assert.Contains(t, err.Error(), "nonce endpoint response exceeds")
