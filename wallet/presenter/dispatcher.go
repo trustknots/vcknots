@@ -57,21 +57,21 @@ func (d *PresentationDispatcher) getPlugin(protocol types.SupportedPresentationP
 	return plugin, nil
 }
 
-func (d *PresentationDispatcher) Present(protocol SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission PresentationSubmission, request *PresentationRequest) error {
+func (d *PresentationDispatcher) Present(protocol SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission PresentationSubmission, request *PresentationRequest) (string, error) {
 	if len(serializedPresentation) == 0 {
-		return types.NewPresenterError(protocol, endpoint.String(), "present", types.ErrInvalidPresentation)
+		return "", types.NewPresenterError(protocol, endpoint.String(), "present", types.ErrInvalidPresentation)
 	}
 
 	plugin, err := d.getPlugin(protocol)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	if err := plugin.Present(protocol, endpoint, serializedPresentation, presentationSubmission, request); err != nil {
-		return types.NewPresenterError(protocol, endpoint.String(), "present", err)
+	redirectURI, err := plugin.Present(protocol, endpoint, serializedPresentation, presentationSubmission, request)
+	if err != nil {
+		return "", types.NewPresenterError(protocol, endpoint.String(), "present", err)
 	}
-
-	return nil
+	return redirectURI, nil
 }
 
 func (d *PresentationDispatcher) ParseRequestURI(uriString string) (*oid4vp.CredentialPresentationRequest, error) {

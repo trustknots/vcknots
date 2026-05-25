@@ -101,7 +101,7 @@ func (is *OID4VCIIssuerServer) handleAuthServerMetadata(w http.ResponseWriter, r
 	metadata := map[string]interface{}{
 		"issuer":         baseURL,
 		"token_endpoint": baseURL + "/token",
-		"pre_authorized_grant_anonymous_access_supported": is.config.PreAuthorizedGrantAnonymous,
+		"pre-authorized_grant_anonymous_access_supported": is.config.PreAuthorizedGrantAnonymous,
 		"response_types_supported":                        []string{"code"},
 	}
 

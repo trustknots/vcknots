@@ -16,6 +16,8 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
 	"github.com/trustknots/vcknots/wallet/presenter/types"
@@ -90,13 +92,53 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 				endpoint = *presenterURL
 			}
 			p := &Oid4vpPresenter{}
-			err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testSubmission, nil)
+			_, err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testSubmission, nil)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Oid4vpPresenter.Present() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
+	t.Run("Returns redirect_uri from verifier resposnse", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, err := w.Write([]byte(`{"redirect_uri":"https://example.com/callback"}`))
+			if err != nil {
+				t.Fatalf("failed to write response: %v", err)
+			}
+		}))
+		defer server.Close()
+
+		endpoint, err := url.Parse(server.URL)
+		require.NoError(t, err)
+
+		p := &Oid4vpPresenter{}
+		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "https://example.com/callback", redirectURI)
+	})
+
+	t.Run("Ignores non-JSON verifier response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(http.StatusOK)
+			_, err := w.Write([]byte("ok"))
+			if err != nil {
+				t.Fatalf("failed to write response: %v", err)
+			}
+		}))
+		defer server.Close()
+
+		endpoint, err := url.Parse(server.URL)
+		require.NoError(t, err)
+
+		p := &Oid4vpPresenter{}
+		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
+		require.NoError(t, err)
+		assert.Empty(t, redirectURI)
+	})
+
 	// Test network error case with connection hijacking
 	t.Run("Network error (server closes connection)", func(t *testing.T) {
 		// Create a mock server that closes connection immediately
@@ -114,7 +156,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		hijackURL, _ := url.Parse(hijackServer.URL() + "/present")
 
 		p := &Oid4vpPresenter{}
-		err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testSubmission, nil)
+		_, err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testSubmission, nil)
 
 		if err == nil {
 			t.Error("Expected error for hijacked connection, got nil")

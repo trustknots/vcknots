@@ -279,6 +279,15 @@ type SavedCredential struct {
 	Entry      *types.CredentialEntry
 }
 
+// RedirectHandler is called when the verifier returns a redirect URI.
+type RedirectHandler func(string) error
+
+// PresentCredentialOptions configures presentation serialization and redirect handling.
+type PresentCredentialOptions struct {
+	SerializeOptions serializerTypes.SerializePresentationOptions
+	OnRedirect       RedirectHandler
+}
+
 // IKeyEntry represents a key entry interface for signing operations.
 type IKeyEntry interface {
 	ID() string
@@ -601,36 +610,58 @@ func (w *Wallet) storeAndParseCredential(credentialJWT *string) (*SavedCredentia
 }
 
 // PresentCredential orchestrates the credential presentation flow.
-func (w *Wallet) PresentCredential(uriString string, key IKeyEntry, options serializerTypes.SerializePresentationOptions) error {
+func (w *Wallet) PresentCredential(uriString string, key IKeyEntry, options serializerTypes.SerializePresentationOptions) (string, error) {
+	return w.PresentCredentialWithOptions(uriString, key, &PresentCredentialOptions{SerializeOptions: options})
+}
+
+// PresentCredentialWithOptions orchestrates presentation and invokes redirect handler if provided.
+func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, options *PresentCredentialOptions) (string, error) {
+	var serializeOptions serializerTypes.SerializePresentationOptions
+	var onRedirect RedirectHandler
+	if options != nil {
+		serializeOptions = options.SerializeOptions
+		onRedirect = options.OnRedirect
+	}
+
 	req, endpoint, err := w.parseAuthorizationRequest(uriString)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	credentials, flavor, err := w.selectCredentialsForPresentation(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	if options == nil {
-		options, err = w.serializer.GetDefaultOption(*flavor)
+	if serializeOptions == nil {
+		serializeOptions, err = w.serializer.GetDefaultOption(*flavor)
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
-	applyOID4VPRequestOptions(req, options)
+	applyOID4VPRequestOptions(req, serializeOptions)
 
 	descriptorMap, err := w.buildDescriptorMap(credentials, flavor)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	presentation, err := w.buildPresentation(credentials, flavor, descriptorMap, key, req)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return w.submitPresentation(presentation, flavor, endpoint, descriptorMap, req, key, options)
+	redirectURI, err := w.submitPresentation(presentation, flavor, endpoint, descriptorMap, req, key, serializeOptions)
+	if err != nil {
+		return "", err
+	}
+	if redirectURI != "" && onRedirect != nil {
+		if err := onRedirect(redirectURI); err != nil {
+			return redirectURI, err
+		}
+	}
+
+	return redirectURI, nil
 }
 
 // parseAuthorizationRequest parses the authorization request URI and determines the endpoint.
@@ -796,7 +827,7 @@ func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, option
 }
 
 // submitPresentation serializes and submits the presentation to the verifier.
-func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentation, flavor *credential.SupportedSerializationFlavor, endpoint *url.URL, descriptorMap []presenterTypes.DescriptorMapItem, req *oid4vp.CredentialPresentationRequest, key IKeyEntry, options serializerTypes.SerializePresentationOptions) error {
+func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentation, flavor *credential.SupportedSerializationFlavor, endpoint *url.URL, descriptorMap []presenterTypes.DescriptorMapItem, req *oid4vp.CredentialPresentationRequest, key IKeyEntry, options serializerTypes.SerializePresentationOptions) (string, error) {
 	if len(req.TransactionData) > 0 {
 		if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok && sdOpts != nil {
 			transactionDataHashesAlg := req.TransactionDataHashesAlg
@@ -817,7 +848,7 @@ func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentat
 		options,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to serialize presentation: %w", err)
+		return "", fmt.Errorf("failed to serialize presentation: %w", err)
 	}
 
 	presentationSubmission := presenterTypes.PresentationSubmission{
@@ -836,5 +867,9 @@ func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentat
 		presentationRequest.AuthorizationEncryptedRespEnc = req.ClientMetadata.AuthorizationEncryptedResponseEnc
 	}
 
-	return w.presenter.Present(presenterTypes.Oid4vp, *endpoint, bytes, presentationSubmission, presentationRequest)
+	redirectURI, err := w.presenter.Present(presenterTypes.Oid4vp, *endpoint, bytes, presentationSubmission, presentationRequest)
+	if err != nil {
+		return "", err
+	}
+	return redirectURI, nil
 }

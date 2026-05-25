@@ -31,9 +31,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/trustknots/vcknots/wallet"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
+	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/examples/common"
 	"github.com/trustknots/vcknots/wallet/idprof"
 	"github.com/trustknots/vcknots/wallet/presenter"
@@ -129,7 +131,7 @@ func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger
 				},
 			},
 		},
-		"state":          "example-state",
+		"state":          "example-state-" + uuid.NewString(),
 		"base_url":       verifierURL,
 		"is_request_uri": true,
 		"response_uri":   verifierURL + "/callback",
@@ -218,6 +220,11 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	isConformanceMode := len(os.Args) >= 2
+	httpAllowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(httpAllowed)
+	if !isConformanceMode {
+		env.SetHTTPAllowed(true)
+	}
 
 	if isConformanceMode {
 		logger.Info("=== Conformance Test Mode ===")
@@ -342,10 +349,13 @@ func main() {
 	}
 
 	logger.Info("Presenting credential...")
-	err = w.PresentCredential(oid4vpURI, mockKey, options)
+	redirectURI, err := w.PresentCredential(oid4vpURI, mockKey, options)
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
 		os.Exit(1)
+	}
+	if redirectURI != "" {
+		logger.Info("Verifier requested redirect", "redirect_uri", redirectURI)
 	}
 	logger.Info("Credential presented successfully!")
 }
