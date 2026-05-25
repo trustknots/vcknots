@@ -119,7 +119,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
 
   const rejectInsecureIssuerMetadata = (metadata: CredentialIssuerMetadata | null) => {
     if (metadata) {
-      if (context.options?.allowInsecureHttp || context.options?.debug) {
+      if (context.options?.debug) {
         return
       }
       const credentialEndpoints = [

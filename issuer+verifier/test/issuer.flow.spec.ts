@@ -1376,34 +1376,6 @@ describe('IssuerFlow', () => {
       })
     })
 
-    it('should allow insecure http when allowInsecureHttp is true', async () => {
-      const allowInsecureContext = initializeContext({
-        providers: [
-          mockIssuerMetadataProvider,
-          mockPreAuthCodeProvider,
-          mockPreAuthCodeStoreProvider,
-          mockIssueCredentialProvider,
-          mockIssuerKeyStoreProvider,
-          mockCredentialOfferProvider,
-          mockCredentialProofProvider,
-          mockNonceProvider,
-          mockNonceStoreProvider,
-          mockTransactionCodeProvider,
-        ],
-        allowInsecureHttp: true,
-      })
-
-      const insecureIssuerFlow = initializeIssuerFlow(allowInsecureContext)
-
-      mock.method(mockIssuerMetadataProvider, 'fetch', async () => insecureMetadata)
-
-      const result = await insecureIssuerFlow.findIssuerMetadata(
-        CredentialIssuer('did:example:issuer')
-      )
-
-      assert.deepStrictEqual(result, insecureMetadata)
-    })
-
     it('should allow insecure http when debug is true', async () => {
       const debugContext = initializeContext({
         providers: [
