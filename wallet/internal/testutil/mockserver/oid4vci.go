@@ -125,18 +125,12 @@ func (is *OID4VCIIssuerServer) handleCredential(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	credentialJWT := is.config.CustomCredentials["test-config"]
-	if credentialJWT == "" {
-		var err error
-		credentialJWT, err = is.CreateCredentialJWT("did:key:mock-subject", map[string]interface{}{})
-		if err != nil {
-			ErrorResponse(w, http.StatusInternalServerError, "Failed to generate credential")
-			return
-		}
-	}
+	// For simplicity, return a default mock JWT credential
+	// In a real implementation, this would process the request and issue appropriate credentials
+	defaultCredentialJWT := "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlLmNvbSIsInN1YiI6ImRpZDprZXk6ejZNa2lvNFdEbWR0Z0VvNGY5SHE2aTZ0blc4V0Z3a25RUTRLSFVZOTlCR1k0RVZyIiwidHlwZSI6WyJWZXJpZmlhYmxlQ3JlZGVudGlhbCJdLCJpYXQiOjE2MjAyMzk4MDB9.mockSignature"
 
 	response := map[string]string{
-		"credential": credentialJWT,
+		"credential": defaultCredentialJWT,
 	}
 
 	JSONResponse(w, http.StatusOK, response)
