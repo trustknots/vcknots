@@ -47,6 +47,126 @@ const issuerFlow = initializeIssuerFlow(context);
 const authzFlow = initializeAuthzFlow(context);
 ```
 
+## VcknotsContext
+
+`VcknotsContext` is the core runtime context shared across VCKnots features.
+
+It manages the following settings. Each configuration is provided through `VcknotsOptions`.
+
+- providers
+- extensions
+- debug
+- OAuth-related settings
+
+## VcknotsOptions
+
+Configuration options passed to `initializeContext()`.
+
+```typescript
+type VcknotsOptions = {
+  providers?: Providers
+  extensions?: Extensions
+  debug?: boolean
+  oauth?: OAuthOptions
+}
+```
+
+### providers
+
+Adds custom providers.
+
+```typescript
+const context = initializeContext({
+  providers: [
+    myProvider,
+  ],
+})
+```
+
+---
+
+### extensions
+
+Adds VCKnots extensions.
+
+```typescript
+const context = initializeContext({
+  extensions: [
+    myExtension,
+  ],
+})
+```
+
+### debug
+
+Development option.
+
+```typescript
+const context = initializeContext({
+  debug: true,
+})
+```
+
+When `debug: true`:
+
+- insecure `http://` endpoints are allowed
+- localhost development workflows are enabled
+
+When `debug: false` or not set(undefined):
+
+- using `http://` URLs in the following `CredentialIssuerMetadata` endpoints will throw an `insecure_http_not_allowed` error:
+  - `credential_endpoint`
+  - `deferred_credential_endpoint`
+
+```json
+{
+  "error": "insecure_http_not_allowed",
+  "error_description": "CredentialIssuerMetadata contains insecure http url in credential_endpoint: http://localhost:8080/credentials"
+}
+```
+
+Use HTTPS endpoints in production environments.
+
+---
+
+### oauth
+
+Specifies Access Token related settings.
+
+```typescript
+const context = initializeContext({
+  oauth: {
+    senderConstrainedAccessToken: {
+      method: 'dpop',
+      dpop: {
+        mode: 'required',
+      },
+    },
+  },
+})
+```
+
+#### method
+
+Specifies the sender constraint method for Access Tokens.
+
+```typescript
+type SenderConstraintMethod = 'none' | 'dpop' | 'mtls'
+```
+
+| Value | Description |
+|---|---|
+| `none` | Sender-constrained access tokens are not used |
+| `dpop` | Uses DPoP-bound access tokens |
+| `mtls` | Uses mTLS sender-constrained access tokens (planned) |
+
+---
+
+#### dpop.mode
+
+Specifies the DPoP enforcement level.  
+For details, see [5. Access Token Issuance](#5-access-token-issuance).
+
 ## 3. Sample Implementation of the Issuer Feature
 
 ### Parameters

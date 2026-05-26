@@ -47,6 +47,125 @@ const issuerFlow = initializeIssuerFlow(context);
 const authzFlow = initializeAuthzFlow(context);
 ```
 
+## VcknotsContext
+
+`VcknotsContext` は、VCKnots の各機能で共有されるコアランタイムコンテキストです。
+
+以下を管理します。各設定はVcknotsOptionsによって渡されます。
+
+- providers
+- extensions
+- debug
+- OAuth 関連
+
+## VcknotsOptions
+
+`initializeContext()` に渡す設定オプションです。
+
+```typescript
+type VcknotsOptions = {
+  providers?: Providers
+  extensions?: Extensions
+  debug?: boolean
+  oauth?: OAuthOptions
+}
+```
+
+### providers
+
+カスタム provider を追加します。
+
+```typescript
+const context = initializeContext({
+  providers: [
+    myProvider,
+  ],
+})
+```
+
+---
+
+### extensions
+
+VCKnots extension を追加します。
+
+```typescript
+const context = initializeContext({
+  extensions: [
+    myExtension,
+  ],
+})
+```
+
+### debug
+
+開発用オプションです。
+
+```typescript
+const context = initializeContext({
+  debug: true,
+})
+```
+
+`debug: true` の場合:
+
+- insecure な `http://` endpoint を許可
+- localhost 開発環境向けの動作を有効化
+
+`debug: false` または設定無し(undefined)の場合: 
+
+- `CredentialIssuerMetadata` の以下の endpoint に `http://` URL を設定すると `insecure_http_not_allowed` エラーになります。
+  - `credential_endpoint`
+  - `deferred_credential_endpoint`
+
+```json
+{
+  "error": "insecure_http_not_allowed",
+  "error_description": "CredentialIssuerMetadata contains insecure http url in credential_endpoint: http://localhost:8080/credentials"
+}
+```
+
+本番環境では HTTPS endpoint を使用してください。
+
+---
+
+### oauth
+
+Access Tokenに関する設定を指定します。
+
+```typescript
+const context = initializeContext({
+  oauth: {
+    senderConstrainedAccessToken: {
+      method: 'dpop',
+      dpop: {
+        mode: 'required',
+      },
+    },
+  },
+})
+```
+
+#### method
+
+Access Token の sender constraint method を指定します。
+
+```typescript
+type SenderConstraintMethod = 'none' | 'dpop' | 'mtls'
+```
+
+| 値 | 説明 |
+|---|---|
+| `none` | sender-constrained access token を利用しません |
+| `dpop` | DPoP-bound access token を利用します |
+| `mtls` | mTLS sender-constrained access token（将来対応予定） |
+
+---
+
+#### dpop.mode
+
+DPoP の要求レベルを指定します。詳細は[5.アクセストークンの発行](#5-アクセストークンの発行)を参照
+
 ## 3. Issuer機能のサンプル実装
 
 ### パラメータ
@@ -1513,6 +1632,19 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
    - HTTPSを使用して通信を暗号化してください
 
 3. **URLエンコード**: issuer IDにURLエンコードが必要な文字（例：`:`、`/`）が含まれる場合は、適切にエンコードしてください。
+
+4. **Issuer Metadata の HTTPS 制約**:
+   - 本番モード（`debug: false`）では、`CredentialIssuerMetadata` の以下の endpoint に `http://` URL を設定できません。
+     - `credential_endpoint`
+     - `deferred_credential_endpoint`
+   - insecure な URL が設定された場合、`insecure_http_not_allowed` エラーになります。
+   - ローカル開発用途では、`initializeContext({ debug: true })` を指定することで HTTP endpoint を許可できます。
+
+```typescript
+const context = initializeContext({
+  debug: true,
+})
+```
 
 
 ## 8. トラブルシューティング

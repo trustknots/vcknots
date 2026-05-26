@@ -1545,4 +1545,66 @@ describe('IssuerFlow', () => {
       })
     })
   })
+  describe('rejectInsecureIssuerMetadata', () => {
+    const insecureMetadata: CredentialIssuerMetadata = {
+      credential_issuer: CredentialIssuer('did:example:issuer'),
+      credential_endpoint: 'http://example.com/credentials',
+      credential_configurations_supported: {},
+    }
+
+    it('should throw insecure_http_not_allowed for http credential_endpoint', async () => {
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => insecureMetadata)
+
+      await assert.rejects(issuerFlow.findIssuerMetadata(CredentialIssuer('did:example:issuer')), {
+        name: 'insecure_http_not_allowed',
+        message:
+          'CredentialIssuerMetadata contains insecure http url in credential_endpoint: http://example.com/credentials',
+      })
+    })
+
+    it('should throw insecure_http_not_allowed for http deferred_credential_endpoint', async () => {
+      const metadata: CredentialIssuerMetadata = {
+        credential_issuer: CredentialIssuer('did:example:issuer'),
+        credential_endpoint: 'https://example.com/credentials',
+        deferred_credential_endpoint: 'http://example.com/deferred',
+        credential_configurations_supported: {},
+      }
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+
+      await assert.rejects(issuerFlow.findIssuerMetadata(CredentialIssuer('did:example:issuer')), {
+        name: 'insecure_http_not_allowed',
+        message:
+          'CredentialIssuerMetadata contains insecure http url in deferred_credential_endpoint: http://example.com/deferred',
+      })
+    })
+
+    it('should allow insecure http when debug is true', async () => {
+      const debugContext = initializeContext({
+        providers: [
+          mockIssuerMetadataProvider,
+          mockPreAuthCodeProvider,
+          mockPreAuthCodeStoreProvider,
+          mockIssueCredentialProvider,
+          mockIssuerKeyStoreProvider,
+          mockCredentialOfferProvider,
+          mockCredentialProofProvider,
+          mockNonceProvider,
+          mockNonceStoreProvider,
+          mockTransactionCodeProvider,
+        ],
+        debug: true,
+      })
+
+      const debugIssuerFlow = initializeIssuerFlow(debugContext)
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => insecureMetadata)
+
+      const result = await debugIssuerFlow.findIssuerMetadata(
+        CredentialIssuer('did:example:issuer')
+      )
+
+      assert.deepStrictEqual(result, insecureMetadata)
+    })
+  })
 })

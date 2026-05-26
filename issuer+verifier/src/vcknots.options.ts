@@ -21,12 +21,11 @@ export type OAuthOptions = {
 }
 
 export type VcknotsOptions = {
-  debug?: boolean
   providers?: Providers
   extensions?: Extensions
+  debug?: boolean
   oauth?: OAuthOptions
 }
 
-export const resolveDpopMode = (
-  options?: Pick<VcknotsOptions, 'oauth'>
-): DPoPMode => options?.oauth?.senderConstrainedAccessToken?.dpop?.mode ?? 'off'
+export const resolveDpopMode = (options?: Pick<VcknotsOptions, 'oauth'>): DPoPMode =>
+  options?.oauth?.senderConstrainedAccessToken?.dpop?.mode ?? 'off'
