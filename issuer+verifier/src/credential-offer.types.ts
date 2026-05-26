@@ -32,8 +32,8 @@ const grantsSchema = z
 export const credentialOfferSchema = z.object({
   credential_issuer: CredentialIssuer.schema,
   grants: grantsSchema,
-  credential_configuration_ids: z.array(CredentialConfigurationId.schema).optional(),
   authorization_server: z.string().optional(),
+  credential_configuration_ids: z.array(CredentialConfigurationId.schema),
 })
 
 export type CredentialOffer = z.infer<typeof credentialOfferSchema>
@@ -45,8 +45,8 @@ export type TxCode = z.infer<typeof txCodeSchema>
 export const CredentialOffer = (value?: {
   credential_issuer?: string
   grants?: unknown // TODO: Define the appropriate type
-  credential_configuration_ids?: string[]
   authorization_server?: string
+  credential_configuration_ids: string[]
 }) => credentialOfferSchema.parse(value)
 CredentialOffer.schema = credentialOfferSchema
 

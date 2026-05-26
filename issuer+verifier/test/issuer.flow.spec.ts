@@ -311,6 +311,37 @@ describe('IssuerFlow', () => {
     assert.rejects(suspects, 'unsupported_grant_type')
   })
 
+  it('should throw "invalid_credential_request" if credential_configuration_ids is not an array of unique strings', async () => {
+    const duplicateConfigurations = [
+      CredentialConfigurationId('VerifiableId'),
+      CredentialConfigurationId('VerifiableId'),
+    ]
+    const suspects = async () => {
+      return await issuerFlow.offerCredential(issuer, duplicateConfigurations, {
+        usePreAuth: true,
+      })
+    }
+    const metadata = CredentialIssuerMetadata({
+      credential_issuer: issuer,
+      credential_endpoint: 'https://example.com/credentials',
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    })
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+
+    await assert.rejects(suspects, {
+      name: 'invalid_credential_request',
+      message: 'credential_configuration_ids must be unique.',
+    })
+  })
+
   it('should throw "issuer_not_found" if issuer metadata is not found when usePreAuth is true', async () => {
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => null)
 
@@ -342,6 +373,7 @@ describe('IssuerFlow', () => {
     const code = 'PREAUTHCODE'
     const offer = CredentialOffer({
       credential_issuer: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('University_Degree')],
     })
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
     mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
@@ -454,6 +486,7 @@ describe('IssuerFlow', () => {
     const txCode = 1234
     const offer = CredentialOffer({
       credential_issuer: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('University_Degree')],
     })
 
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
@@ -1579,6 +1612,68 @@ describe('IssuerFlow', () => {
       assert.deepStrictEqual(response, {
         credentials: [{ credential: issuedCredential }],
       })
+    })
+  })
+  describe('rejectInsecureIssuerMetadata', () => {
+    const insecureMetadata: CredentialIssuerMetadata = {
+      credential_issuer: CredentialIssuer('did:example:issuer'),
+      credential_endpoint: 'http://example.com/credentials',
+      credential_configurations_supported: {},
+    }
+
+    it('should throw insecure_http_not_allowed for http credential_endpoint', async () => {
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => insecureMetadata)
+
+      await assert.rejects(issuerFlow.findIssuerMetadata(CredentialIssuer('did:example:issuer')), {
+        name: 'insecure_http_not_allowed',
+        message:
+          'CredentialIssuerMetadata contains insecure http url in credential_endpoint: http://example.com/credentials',
+      })
+    })
+
+    it('should throw insecure_http_not_allowed for http deferred_credential_endpoint', async () => {
+      const metadata: CredentialIssuerMetadata = {
+        credential_issuer: CredentialIssuer('did:example:issuer'),
+        credential_endpoint: 'https://example.com/credentials',
+        deferred_credential_endpoint: 'http://example.com/deferred',
+        credential_configurations_supported: {},
+      }
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+
+      await assert.rejects(issuerFlow.findIssuerMetadata(CredentialIssuer('did:example:issuer')), {
+        name: 'insecure_http_not_allowed',
+        message:
+          'CredentialIssuerMetadata contains insecure http url in deferred_credential_endpoint: http://example.com/deferred',
+      })
+    })
+
+    it('should allow insecure http when debug is true', async () => {
+      const debugContext = initializeContext({
+        providers: [
+          mockIssuerMetadataProvider,
+          mockPreAuthCodeProvider,
+          mockPreAuthCodeStoreProvider,
+          mockIssueCredentialProvider,
+          mockIssuerKeyStoreProvider,
+          mockCredentialOfferProvider,
+          mockCredentialProofProvider,
+          mockNonceProvider,
+          mockNonceStoreProvider,
+          mockTransactionCodeProvider,
+        ],
+        debug: true,
+      })
+
+      const debugIssuerFlow = initializeIssuerFlow(debugContext)
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => insecureMetadata)
+
+      const result = await debugIssuerFlow.findIssuerMetadata(
+        CredentialIssuer('did:example:issuer')
+      )
+
+      assert.deepStrictEqual(result, insecureMetadata)
     })
   })
 })

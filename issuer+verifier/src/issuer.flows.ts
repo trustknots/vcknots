@@ -122,9 +122,30 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const transactionCode$ = context.providers.get('transaction-code-provider')
   const issuanceContextStore$ = context.providers.get('issuance-context-store-provider')
 
+  const rejectInsecureIssuerMetadata = (metadata: CredentialIssuerMetadata | null) => {
+    if (metadata) {
+      if (context.options?.debug) {
+        return
+      }
+      const credentialEndpoints = [
+        ['credential_endpoint', metadata.credential_endpoint],
+        ['deferred_credential_endpoint', metadata.deferred_credential_endpoint],
+      ].filter((url): url is [string, string] => !!url[1])
+
+      for (const [field, url] of credentialEndpoints) {
+        if (new URL(url).protocol === 'http:') {
+          throw err('insecure_http_not_allowed', {
+            message: `CredentialIssuerMetadata contains insecure http url in ${field}: ${url}`,
+          })
+        }
+      }
+    }
+  }
+
   return {
     async findIssuerMetadata(id) {
       const metadata = await metadataStore$.fetch(id)
+      rejectInsecureIssuerMetadata(metadata)
       return metadata
     },
     async findJwtVcIssuerMetadata(id) {
@@ -132,6 +153,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       if (!metadata) {
         return null
       }
+      rejectInsecureIssuerMetadata(metadata)
       const jwtVcIssuerMetadata: JwtVcIssuerResponse = {
         issuer: metadata.credential_issuer,
       }
@@ -177,6 +199,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       return jwtVcIssuerMetadata
     },
     async createIssuerMetadata(issuer) {
+      rejectInsecureIssuerMetadata(issuer)
       const current = await metadataStore$.fetch(issuer.credential_issuer)
       if (current) {
         throw err('duplicate_issuer', {
@@ -211,6 +234,13 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         raise('issuer_not_found', {
           message: `Issuer metadata for ${issuer} not found.`,
         })
+      rejectInsecureIssuerMetadata(metadata)
+
+      if (new Set(configurations).size !== configurations.length) {
+        throw err('invalid_credential_request', {
+          message: 'credential_configuration_ids must be unique.',
+        })
+      }
 
       if (
         options?.authorizationServer &&
@@ -285,6 +315,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         raise('issuer_not_found', {
           message: `Issuer metadata for ${issuer} not found.`,
         })
+      rejectInsecureIssuerMetadata(metadata)
 
       if (!credentialRequest.credential_configuration_id) {
         throw err('invalid_credential_request', {
