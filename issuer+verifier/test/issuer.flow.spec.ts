@@ -311,6 +311,37 @@ describe('IssuerFlow', () => {
     assert.rejects(suspects, 'unsupported_grant_type')
   })
 
+  it('should throw "invalid_credential_request" if credential_configuration_ids is not an array of unique strings', async () => {
+    const duplicateConfigurations = [
+      CredentialConfigurationId('VerifiableId'),
+      CredentialConfigurationId('VerifiableId'),
+    ]
+    const suspects = async () => {
+      return await issuerFlow.offerCredential(issuer, duplicateConfigurations, {
+        usePreAuth: true,
+      })
+    }
+    const metadata = CredentialIssuerMetadata({
+      credential_issuer: issuer,
+      credential_endpoint: 'https://example.com/credentials',
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    })
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+
+    await assert.rejects(suspects, {
+      name: 'invalid_credential_request',
+      message: 'credential_configuration_ids must be unique.',
+    })
+  })
+
   it('should throw "issuer_not_found" if issuer metadata is not found when usePreAuth is true', async () => {
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => null)
 
@@ -342,6 +373,7 @@ describe('IssuerFlow', () => {
     const code = 'PREAUTHCODE'
     const offer = CredentialOffer({
       credential_issuer: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('University_Degree')],
     })
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
     mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
@@ -385,6 +417,7 @@ describe('IssuerFlow', () => {
     const txCode = 1234
     const offer = CredentialOffer({
       credential_issuer: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('University_Degree')],
     })
 
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)

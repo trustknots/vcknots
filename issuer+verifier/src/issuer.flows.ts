@@ -210,6 +210,12 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: `Issuer metadata for ${issuer} not found.`,
         })
 
+      if (new Set(configurations).size !== configurations.length) {
+        throw err('invalid_credential_request', {
+          message: 'credential_configuration_ids must be unique.',
+        })
+      }
+
       for (const configId of configurations) {
         if (metadata.credential_configurations_supported[configId] === undefined) {
           throw err('unknown_credential_configuration', {
