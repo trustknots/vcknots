@@ -47,6 +47,42 @@ const issuerFlow = initializeIssuerFlow(context);
 const authzFlow = initializeAuthzFlow(context);
 ```
 
+## VcknotsContext
+
+`VcknotsContext` は、VCKnots の各機能で共有されるコアランタイムコンテキストです。
+
+以下を管理します。
+
+- providers
+- extensions
+- VcknotsOptionsによる設定(debugやOAuth関連)
+
+### providers
+
+カスタム provider を追加します。
+
+```typescript
+const context = initializeContext({
+  providers: [
+    myProvider,
+  ],
+})
+```
+
+---
+
+### extensions
+
+VCKnots extension を追加します。
+
+```typescript
+const context = initializeContext({
+  extensions: [
+    myExtension,
+  ],
+})
+```
+
 ## VcknotsOptions
 
 `initializeContext()` に渡す設定オプションです。
@@ -92,9 +128,9 @@ const context = initializeContext({
 
 ---
 
-### oauth.senderConstrainedAccessToken
+### oauth
 
-Sender-Constrained Access Token の設定です。
+Access Tokenに関する設定を指定します。
 
 ```typescript
 const context = initializeContext({
@@ -108,6 +144,8 @@ const context = initializeContext({
   },
 })
 ```
+
+---
 
 #### method
 
@@ -127,54 +165,7 @@ type SenderConstraintMethod = 'none' | 'dpop' | 'mtls'
 
 #### dpop.mode
 
-DPoP の要求レベルを指定します。
-
-```typescript
-type DPoPMode = 'off' | 'optional' | 'required'
-```
-
-| mode | token endpoint / credential endpoint の動作 |
-|---|---|
-| `off` | DPoP を利用しません |
-| `optional` | DPoP Proof がある場合のみ検証します |
-| `required` | すべての request に DPoP Proof を必須化します |
-
-内部的には `resolveDpopMode()` により解決され、省略時は `off` になります。
-
-```typescript
-export const resolveDpopMode = (
-  options?: Pick<VcknotsOptions, 'oauth'>
-): DPoPMode =>
-  options?.oauth?.senderConstrainedAccessToken?.dpop?.mode ?? 'off'
-```
-
----
-
-### providers
-
-カスタム provider を追加します。
-
-```typescript
-const context = initializeContext({
-  providers: [
-    myProvider,
-  ],
-})
-```
-
----
-
-### extensions
-
-VCKnots extension を追加します。
-
-```typescript
-const context = initializeContext({
-  extensions: [
-    myExtension,
-  ],
-})
-```
+DPoP の要求レベルを指定します。詳細は[5.アクセストークンの発行](#5-アクセストークンの発行)を参照
 
 ## 3. Issuer機能のサンプル実装
 

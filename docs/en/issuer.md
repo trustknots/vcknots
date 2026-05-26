@@ -47,6 +47,42 @@ const issuerFlow = initializeIssuerFlow(context);
 const authzFlow = initializeAuthzFlow(context);
 ```
 
+## VcknotsContext
+
+`VcknotsContext` is the core runtime context shared across VCKnots features.
+
+It manages:
+
+- providers
+- extensions
+- configuration through `VcknotsOptions` (debug and OAuth -related settings)
+
+### providers
+
+Adds custom providers.
+
+```typescript
+const context = initializeContext({
+  providers: [
+    myProvider,
+  ],
+})
+```
+
+---
+
+### extensions
+
+Adds VCKnots extensions.
+
+```typescript
+const context = initializeContext({
+  extensions: [
+    myExtension,
+  ],
+})
+```
+
 ## VcknotsOptions
 
 Configuration options passed to `initializeContext()`.
@@ -92,9 +128,9 @@ Use HTTPS endpoints in production environments.
 
 ---
 
-### oauth.senderConstrainedAccessToken
+### oauth
 
-Configuration for Sender-Constrained Access Tokens.
+Specifies Access Token related settings.
 
 ```typescript
 const context = initializeContext({
@@ -109,9 +145,11 @@ const context = initializeContext({
 })
 ```
 
+---
+
 #### method
 
-Specifies the sender constraint method for access tokens.
+Specifies the sender constraint method for Access Tokens.
 
 ```typescript
 type SenderConstraintMethod = 'none' | 'dpop' | 'mtls'
@@ -121,61 +159,14 @@ type SenderConstraintMethod = 'none' | 'dpop' | 'mtls'
 |---|---|
 | `none` | Sender-constrained access tokens are not used |
 | `dpop` | Uses DPoP-bound access tokens |
-| `mtls` | mTLS sender-constrained access tokens (planned) |
+| `mtls` | Uses mTLS sender-constrained access tokens (planned) |
 
 ---
 
 #### dpop.mode
 
-Specifies the DPoP enforcement level.
-
-```typescript
-type DPoPMode = 'off' | 'optional' | 'required'
-```
-
-| mode | token endpoint / credential endpoint behavior |
-|---|---|
-| `off` | DPoP is disabled |
-| `optional` | DPoP Proof is verified only when provided |
-| `required` | DPoP Proof is required for all requests |
-
-Internally, the mode is resolved using `resolveDpopMode()`.  
-If omitted, the default value is `off`.
-
-```typescript
-export const resolveDpopMode = (
-  options?: Pick<VcknotsOptions, 'oauth'>
-): DPoPMode =>
-  options?.oauth?.senderConstrainedAccessToken?.dpop?.mode ?? 'off'
-```
-
----
-
-### providers
-
-Adds custom providers.
-
-```typescript
-const context = initializeContext({
-  providers: [
-    myProvider,
-  ],
-})
-```
-
----
-
-### extensions
-
-Adds VCKnots extensions.
-
-```typescript
-const context = initializeContext({
-  extensions: [
-    myExtension,
-  ],
-})
-```
+Specifies the DPoP enforcement level.  
+For details, see [5. Access Token Issuance](#5-access-token-issuance).
 
 ## 3. Sample Implementation of the Issuer Feature
 
