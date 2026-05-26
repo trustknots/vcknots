@@ -356,6 +356,75 @@ describe('IssuerFlow', () => {
     assert.equal(mockPreAuthCodeStoreProvider.save.mock.callCount(), 1)
     assert.equal(mockCredentialOfferProvider.create.mock.callCount(), 1)
   })
+  it('should create a credential offer with pre-authorized code with authz server', async () => {
+    const metadata = CredentialIssuerMetadata({
+      credential_issuer: issuer,
+      credential_endpoint: 'https://example.com/credentials',
+      authorization_servers: ['https://example.com/auth'],
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+            credentialSubject: {},
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    })
+    const options = {
+      usePreAuth: true,
+      authorization_server: 'https://example.com/auth',
+    }
+    const code = 'PREAUTHCODE'
+    const offer = CredentialOffer({
+      credential_issuer: issuer,
+      authorization_server: 'https://example.com/auth',
+    })
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+    mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
+    mock.method(mockPreAuthCodeStoreProvider, 'save', async () => {})
+    mock.method(mockCredentialOfferProvider, 'create', async () => offer)
+
+    const result = await issuerFlow.offerCredential(issuer, configurations, options)
+
+    assert.ok(result)
+    assert.equal(mockIssuerMetadataProvider.fetch.mock.callCount(), 1)
+    assert.equal(mockPreAuthCodeProvider.generate.mock.callCount(), 1)
+    assert.equal(mockPreAuthCodeStoreProvider.save.mock.callCount(), 1)
+    assert.equal(mockCredentialOfferProvider.create.mock.callCount(), 1)
+  })
+  it(`should throw 'invalid_credential_request'  error when the provided authorization server is not found in the issuer metadata`, async () => {
+    const metadata = CredentialIssuerMetadata({
+      credential_issuer: issuer,
+      credential_endpoint: 'https://example.com/credentials',
+      authorization_servers: ['https://example.com/auth'],
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+            credentialSubject: {},
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    })
+
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+
+    const suspects = async () => {
+      return await issuerFlow.offerCredential(issuer, configurations, {
+        usePreAuth: true,
+        authorizationServer: 'https://example.com/failed',
+      })
+    }
+
+    await assert.rejects(suspects, {
+      name: 'invalid_credential_request',
+      message: `Authorization server https://example.com/failed is not supported by issuer ${issuer}.`,
+    })
+  })
 
   it('should create a credential offer with txCode when txCode options are provided', async () => {
     const metadata: CredentialIssuerMetadata = {

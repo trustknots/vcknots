@@ -34,6 +34,9 @@ export const credentialOffer = (): CredentialOfferProvider => {
         credential_issuer: issuer.credential_issuer,
         credential_configuration_ids: configurations,
         grants,
+        ...(options.authorizationServer && {
+          authorization_server: options.authorizationServer,
+        }),
       }
     },
   }

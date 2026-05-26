@@ -465,6 +465,7 @@ app.post('/configurations/:configuration/offer', async (c) => {
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
         txCode: options?.tx_code,
+        authorizationServer: c.req.query('authorization_server'),
       })
 
       console.log('offer:', offer)

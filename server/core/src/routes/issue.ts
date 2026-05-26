@@ -154,6 +154,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         usePreAuth: true,
         txCode: options?.tx_code,
         ttlSec: PRE_CODE_TTL_SEC,
+        authorizationServer: c.req.query('authorization_server'),
       })
       // TODO: Share tx_code with user (e.g., display on issuance screen or send via email)
       console.log('tx_code:', tx_code)
