@@ -412,6 +412,7 @@ describe('IssuerFlow', () => {
     const offer = CredentialOffer({
       credential_issuer: issuer,
       authorization_server: 'https://example.com/auth',
+      credential_configuration_ids: [CredentialConfigurationId('VerifiableId')],
     })
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
     mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
