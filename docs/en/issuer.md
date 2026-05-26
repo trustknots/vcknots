@@ -51,11 +51,25 @@ const authzFlow = initializeAuthzFlow(context);
 
 `VcknotsContext` is the core runtime context shared across VCKnots features.
 
-It manages:
+It manages the following settings. Each configuration is provided through `VcknotsOptions`.
 
 - providers
 - extensions
-- configuration through `VcknotsOptions` (debug and OAuth -related settings)
+- debug
+- OAuth-related settings
+
+## VcknotsOptions
+
+Configuration options passed to `initializeContext()`.
+
+```typescript
+type VcknotsOptions = {
+  providers?: Providers
+  extensions?: Extensions
+  debug?: boolean
+  oauth?: OAuthOptions
+}
+```
 
 ### providers
 
@@ -81,19 +95,6 @@ const context = initializeContext({
     myExtension,
   ],
 })
-```
-
-## VcknotsOptions
-
-Configuration options passed to `initializeContext()`.
-
-```typescript
-type VcknotsOptions = {
-  debug?: boolean
-  providers?: Providers
-  extensions?: Extensions
-  oauth?: OAuthOptions
-}
 ```
 
 ### debug
@@ -144,8 +145,6 @@ const context = initializeContext({
   },
 })
 ```
-
----
 
 #### method
 
