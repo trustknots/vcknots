@@ -406,7 +406,7 @@ describe('IssuerFlow', () => {
     })
     const options = {
       usePreAuth: true,
-      authorization_server: 'https://example.com/auth',
+      authorizationServer: 'https://example.com/auth',
     }
     const code = 'PREAUTHCODE'
     const offer = CredentialOffer({
