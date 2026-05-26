@@ -308,11 +308,28 @@ describe('IssuerFlow', () => {
     ]
     const suspects = async () => {
       return await issuerFlow.offerCredential(issuer, duplicateConfigurations, {
-        usePreAuth: false,
+        usePreAuth: true,
       })
     }
+    const metadata = CredentialIssuerMetadata({
+      credential_issuer: issuer,
+      credential_endpoint: 'https://example.com/credentials',
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    })
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
 
-    assert.rejects(suspects, 'invalid_credential_request')
+    await assert.rejects(suspects, {
+      name: 'invalid_credential_request',
+      message: 'credential_configuration_ids must be unique.',
+    })
   })
 
   it('should throw "issuer_not_found" if issuer metadata is not found when usePreAuth is true', async () => {
