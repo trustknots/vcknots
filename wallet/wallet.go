@@ -512,7 +512,7 @@ func (w *Wallet) generateDPoPProof(key IKeyEntry, method string, htu string) (st
 
 	signerAdapter, err := joseutil.NewJWKSigner(key, jose.ES256)
 	if err != nil {
-		return "", fmt.Errorf("failed to create dpop signer: %w", err)
+		return "", fmt.Errorf("failed to create dpop signer adapter: %w", err)
 	}
 
 	signingKey := jose.SigningKey{

@@ -91,6 +91,48 @@ func newMockKeyEntry() *mockKeyEntry {
 	}
 }
 
+type captureDpopReceiver struct {
+	capturedProof *string
+}
+
+func (c *captureDpopReceiver) FetchIssuerMetadata(endpoint common.URIField, rt receiverTypes.SupportedReceivingTypes) (*receiverTypes.CredentialIssuerMetadata, error) {
+
+	return nil, fmt.Errorf("unexpected call to FetchIssuerMetadata")
+
+}
+
+func (c *captureDpopReceiver) FetchAuthorizationServerMetadata(endpoint common.URIField, rt receiverTypes.SupportedReceivingTypes) (*receiverTypes.AuthorizationServerMetadata, error) {
+
+	return nil, fmt.Errorf("unexpected call to FetchAuthorizationServerMetadata")
+
+}
+
+func (c *captureDpopReceiver) FetchAccessToken(rt receiverTypes.SupportedReceivingTypes, endpoint common.URIField, authzCode string, dpopProof *string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
+
+	c.capturedProof = dpopProof
+	return &receiverTypes.CredentialIssuanceAccessToken{
+		Token:     "tok",
+		TokenType: "Bearer",
+	}, nil
+
+}
+
+func (c *captureDpopReceiver) ReceiveCredential(
+
+	rt receiverTypes.SupportedReceivingTypes,
+	endpoint common.URIField,
+	credentialConfigurationID string,
+	credentialIdentifier *string,
+	accessToken receiverTypes.CredentialIssuanceAccessToken,
+	credentialDefinition *receiverTypes.CredentialDefinition,
+	jwtProof *string,
+
+) (*string, error) {
+
+	return nil, fmt.Errorf("unexpected call to ReceiveCredential")
+
+}
+
 // createTestControllerWithDefaults uses default configurations for integration testing
 func createTestControllerWithDefaults(t *testing.T) *Wallet {
 	controller, err := NewWallet()
@@ -153,6 +195,22 @@ func TestNewWalletWithConfig_WithValidConfig(t *testing.T) {
 	if controller == nil {
 		t.Error("expected non-nil controller")
 	}
+}
+
+// This test focuses on DPoP key auto-generation.
+// If default initialization becomes flaky in CI, inject explicit test dependencies.
+func TestNewWalletWithConfig_DPoP_AutoGeneratesKey(t *testing.T) {
+	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
+	if err != nil {
+		t.Skipf("credential store not available in this environment: %v", err)
+	}
+	w, err := NewWalletWithConfig(Config{
+		CredStore: credStore,
+		DPoP:      DPoPConfig{Enabled: true},
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, w.dpop.Key)
 }
 
 func TestNewWalletWithConfig_MissingComponents(t *testing.T) {
@@ -795,6 +853,127 @@ func TestController_FetchAuthorizationServerMetadata_Integration(t *testing.T) {
 	if err == nil {
 		t.Error("Expected ReceiveCredential to fail in test environment without proper server setup")
 	}
+}
+func TestWallet_generateDPoPProof_HeaderAndPayload(t *testing.T) {
+	key, err := newInMemoryECKeyEntry()
+	require.NoError(t, err)
+
+	w := &Wallet{}
+	proof, err := w.generateDPoPProof(key, http.MethodPost, "https://server.example.com/token")
+	require.NoError(t, err)
+
+	parts := strings.Split(proof, ".")
+	require.Len(t, parts, 3)
+
+	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	require.NoError(t, err)
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+
+	var header map[string]any
+	var payload map[string]any
+
+	require.NoError(t, json.Unmarshal(headerBytes, &header))
+	require.NoError(t, json.Unmarshal(payloadBytes, &payload))
+
+	assert.Equal(t, "dpop+jwt", header["typ"])
+	assert.Equal(t, "ES256", header["alg"])
+
+	jwk, ok := header["jwk"].(map[string]any)
+	require.True(t, ok)
+	assert.NotNil(t, jwk["kty"])
+	assert.Nil(t, jwk["d"])
+
+	assert.NotEmpty(t, payload["jti"])
+	assert.Equal(t, "POST", payload["htm"])
+	assert.Equal(t, "https://server.example.com/token", payload["htu"])
+	assert.NotNil(t, payload["iat"])
+}
+
+func TestWallet_generateDPoPProof_JtiIsUnique(t *testing.T) {
+	key, err := newInMemoryECKeyEntry()
+	require.NoError(t, err)
+	w := &Wallet{}
+	proof1, err := w.generateDPoPProof(
+		key,
+		http.MethodPost,
+		"https://server.example.com/token",
+	)
+	require.NoError(t, err)
+	proof2, err := w.generateDPoPProof(
+		key,
+		http.MethodPost,
+		"https://server.example.com/token",
+	)
+	require.NoError(t, err)
+	jti1 := extractPayloadField(t, proof1, "jti")
+	jti2 := extractPayloadField(t, proof2, "jti")
+	assert.NotEqual(t, jti1, jti2)
+}
+
+func TestWallet_generateDPoPProof_NilKey(t *testing.T) {
+	w := &Wallet{}
+	_, err := w.generateDPoPProof(
+		nil,
+		http.MethodPost,
+		"https://server.example.com/token",
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dpop key is required")
+}
+
+func TestWallet_obtainAccessToken_DPoPEnabledControlsProof(t *testing.T) {
+
+	tokenEndpoint, err := common.ParseURIField("https://server.example.com/token")
+	require.NoError(t, err)
+	authMetadata := &receiverTypes.AuthorizationServerMetadata{
+		TokenEndpoint: tokenEndpoint,
+	}
+	t.Run("disabled does not attach proof", func(t *testing.T) {
+		cap := &captureDpopReceiver{}
+		d, err := receiver.NewReceivingDispatcher(receiver.WithPlugin(receiverTypes.Mock, cap))
+		require.NoError(t, err)
+		w := &Wallet{
+			receiver: d,
+			dpop:     DPoPConfig{Enabled: false},
+		}
+		_, err = w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code")
+		require.NoError(t, err)
+		assert.Nil(t, cap.capturedProof)
+	})
+	t.Run("enabled attaches proof", func(t *testing.T) {
+		key, err := newInMemoryECKeyEntry()
+		require.NoError(t, err)
+		cap := &captureDpopReceiver{}
+		d, err := receiver.NewReceivingDispatcher(receiver.WithPlugin(receiverTypes.Mock, cap))
+		require.NoError(t, err)
+		w := &Wallet{
+			receiver: d,
+			dpop: DPoPConfig{
+				Enabled: true,
+				Key:     key,
+			},
+		}
+		_, err = w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code")
+		require.NoError(t, err)
+		require.NotNil(t, cap.capturedProof)
+		assert.NotEmpty(t, *cap.capturedProof)
+	})
+
+}
+
+func extractPayloadField(t *testing.T, compactJWT string, field string) any {
+	t.Helper()
+	parts := strings.Split(compactJWT, ".")
+	require.Len(t, parts, 3)
+	b, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(b, &payload))
+	value, ok := payload[field]
+	require.True(t, ok, "field %q not found in payload", field)
+	return value
 }
 
 func TestController_generateJWTProof_AnonymousPreAuthorizedFlow_OmitsIss(t *testing.T) {

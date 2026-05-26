@@ -364,6 +364,82 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		require.NoError(t, <-handlerErrCh)
 	})
 
+	t.Run("DPoP header is set when proof is provided", func(t *testing.T) {
+
+		httpAllowed := env.IsHTTPAllowed()
+		defer env.SetHTTPAllowed(httpAllowed)
+		env.SetHTTPAllowed(true)
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+		var capturedDPoPValues []string
+		captureServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			capturedDPoPValues = r.Header.Values("DPoP")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"tok","token_type":"Bearer","expires_in":3600}`))
+		})
+		captureURL, err := url.Parse(captureServer.URL())
+		require.NoError(t, err)
+		proof := "header.payload.signature"
+		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "code", &proof)
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		require.Len(t, capturedDPoPValues, 1)
+		assert.Equal(t, proof, capturedDPoPValues[0])
+	})
+
+	t.Run("DPoP header is absent when proof is nil", func(t *testing.T) {
+
+		httpAllowed := env.IsHTTPAllowed()
+		defer env.SetHTTPAllowed(httpAllowed)
+		env.SetHTTPAllowed(true)
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+		var capturedDPoPValues []string
+		captureServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			capturedDPoPValues = r.Header.Values("DPoP")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"tok","token_type":"Bearer","expires_in":3600}`))
+		})
+		captureURL, err := url.Parse(captureServer.URL())
+		require.NoError(t, err)
+		token, err := receiver.FetchAccessToken(
+			types.Oid4vci,
+			common.URIField(*captureURL),
+			"code",
+			nil,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		assert.Len(t, capturedDPoPValues, 0)
+	})
+
+	t.Run("DPoP header is absent when proof is empty string", func(t *testing.T) {
+
+		httpAllowed := env.IsHTTPAllowed()
+		defer env.SetHTTPAllowed(httpAllowed)
+		env.SetHTTPAllowed(true)
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+		var capturedDPoPValues []string
+		captureServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			capturedDPoPValues = r.Header.Values("DPoP")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"tok","token_type":"Bearer","expires_in":3600}`))
+		})
+		captureURL, err := url.Parse(captureServer.URL())
+		require.NoError(t, err)
+		empty := ""
+		token, err := receiver.FetchAccessToken(
+			types.Oid4vci,
+			common.URIField(*captureURL),
+			"code",
+			&empty,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		assert.Len(t, capturedDPoPValues, 0)
+	})
+
 	t.Run("Server error", func(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetHTTPAllowed(http_allowed)
