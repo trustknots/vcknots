@@ -81,25 +81,20 @@ func (o *Oid4vciReceiver) doRequest(method string, endpoint common.URIField, pat
 	default:
 		return fmt.Errorf("unsupported HTTP method: %s", method)
 	}
-
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
-
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
-
 	if len(bodyBytes) == 0 {
 		return fmt.Errorf("empty response body")
 	}
-
 	if err := json.Unmarshal(bodyBytes, target); err != nil {
 		return fmt.Errorf("failed to parse JSON: %w", err)
 	}
@@ -133,25 +128,74 @@ func (o *Oid4vciReceiver) FetchAuthorizationServerMetadata(endpoint common.URIFi
 	return &metadata, nil
 }
 
-func (o *Oid4vciReceiver) FetchAccessToken(receivingTypes types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string) (*types.CredentialIssuanceAccessToken, error) {
+func (o *Oid4vciReceiver) FetchAccessToken(
+	receivingTypes types.SupportedReceivingTypes,
+	endpoint common.URIField,
+	authzCode string,
+	txCode string,
+	dpopProof *string,
+) (*types.CredentialIssuanceAccessToken, error) {
 	if receivingTypes != types.Oid4vci {
 		return nil, fmt.Errorf("unsupported flavor: %v", receivingTypes)
 	}
-
-	// Prepare form data for token request
 	formData := url.Values{}
 	formData.Set("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
 	formData.Set("pre-authorized_code", authzCode)
 	if txCode != "" {
 		formData.Set("tx_code", txCode)
 	}
+	endpointURL := url.URL(endpoint)
 
-	var accessToken types.CredentialIssuanceAccessToken
-	if err := o.doRequest("POST", endpoint, "/token", strings.NewReader(formData.Encode()), &accessToken); err != nil {
-		return nil, fmt.Errorf("failed to fetch access token: %w", err)
+	if !env.IsHTTPAllowed() && !strings.EqualFold(endpointURL.Scheme, "https") {
+		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
 	}
 
+	if !strings.HasSuffix(endpointURL.Path, "/token") {
+		endpointURL = *endpointURL.JoinPath("/token")
+	}
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		endpointURL.String(),
+		strings.NewReader(formData.Encode()),
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	if dpopProof != nil && *dpopProof != "" {
+		req.Header.Set("DPoP", *dpopProof)
+	}
+	resp, err := http.DefaultClient.Do(req)
+
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	defer resp.Body.Close()
+	bodyBytes, err := io.ReadAll(resp.Body)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf(
+			"unexpected status code: %d response: %s",
+			resp.StatusCode,
+			string(bodyBytes),
+		)
+	}
+
+	var accessToken types.CredentialIssuanceAccessToken
+	if err := json.Unmarshal(bodyBytes, &accessToken); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
 	return &accessToken, nil
+
 }
 
 func (o *Oid4vciReceiver) FetchNonce(receivingTypes types.SupportedReceivingTypes, endpoint common.URIField) (*string, error) {

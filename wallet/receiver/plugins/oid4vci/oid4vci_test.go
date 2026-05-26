@@ -292,7 +292,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		env.SetDebugMode(false)
 		env.SetHTTPAllowed(false)
 
-		_, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code", "")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code", "", nil)
 		if err == nil {
 			t.Fatal("FetchAccessToken should be error when issuer's schema is http")
 		}
@@ -303,7 +303,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		defer env.SetHTTPAllowed(http_allowed)
 		env.SetHTTPAllowed(true)
 
-		token, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code", "")
+		token, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code", "", nil)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -358,7 +358,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 			})
 		})
 		captureURL, _ := url.Parse(captureServer.URL())
-		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "test-code", "123456")
+		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "test-code", "123456", nil)
 		require.NoError(t, err)
 		require.NotNil(t, token)
 		require.NoError(t, <-handlerErrCh)
@@ -376,7 +376,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		errorServer.SetErrorResponse("/token", http.StatusInternalServerError)
 
 		errorURL, _ := url.Parse(errorServer.URL())
-		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*errorURL), "test-code", "")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*errorURL), "test-code", "", nil)
 		if err == nil {
 			t.Fatal("Expected error for server error")
 		}
@@ -393,7 +393,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		invalidJSONServer.SetTextResponse("/token", http.StatusOK, "{invalid-json")
 
 		invalidJSONURL, _ := url.Parse(invalidJSONServer.URL())
-		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*invalidJSONURL), "test-code", "")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*invalidJSONURL), "test-code", "", nil)
 		if err == nil {
 			t.Fatal("Expected error for invalid JSON response")
 		}
