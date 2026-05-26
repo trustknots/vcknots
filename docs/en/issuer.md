@@ -112,7 +112,7 @@ When `debug: true`:
 - insecure `http://` endpoints are allowed
 - localhost development workflows are enabled
 
-When `debug: false` (default):
+When `debug: false` or not set(undefined):
 
 - using `http://` URLs in the following `CredentialIssuerMetadata` endpoints will throw an `insecure_http_not_allowed` error:
   - `credential_endpoint`

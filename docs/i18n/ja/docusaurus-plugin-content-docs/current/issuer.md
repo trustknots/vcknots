@@ -112,7 +112,7 @@ const context = initializeContext({
 - insecure な `http://` endpoint を許可
 - localhost 開発環境向けの動作を有効化
 
-`debug: false`（デフォルト）の場合:
+`debug: false` または設定無し(undefined)の場合: 
 
 - `CredentialIssuerMetadata` の以下の endpoint に `http://` URL を設定すると `insecure_http_not_allowed` エラーになります。
   - `credential_endpoint`
