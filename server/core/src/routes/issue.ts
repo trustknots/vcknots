@@ -63,6 +63,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       length?: number
       description?: string
     }
+    authorization_server?: string
   }
   const dpopNonceResponse = async (c: Context) => {
     const dpopNonce = await authzFlow.createDpopNonceChallenge(DPOP_NONCE_TTL_MS)
@@ -154,7 +155,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         usePreAuth: true,
         txCode: options?.tx_code,
         ttlSec: PRE_CODE_TTL_SEC,
-        authorizationServer: c.req.query('authorization_server'),
+        authorizationServer: options?.authorization_server,
       })
       // TODO: Share tx_code with user (e.g., display on issuance screen or send via email)
       console.log('tx_code:', tx_code)
