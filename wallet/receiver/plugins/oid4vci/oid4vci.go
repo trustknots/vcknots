@@ -150,8 +150,11 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
 	}
 
-	if !strings.HasSuffix(endpointURL.Path, "/token") {
-		endpointURL = *endpointURL.JoinPath("/token")
+	normalizedPath := strings.TrimRight(endpointURL.Path, "/")
+	if !strings.HasSuffix(normalizedPath, "/token") {
+		endpointURL = *endpointURL.JoinPath("token")
+	} else {
+		endpointURL.Path = normalizedPath
 	}
 
 	req, err := http.NewRequest(
@@ -169,7 +172,8 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	if dpopProof != nil && *dpopProof != "" {
 		req.Header.Set("DPoP", *dpopProof)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
 
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
