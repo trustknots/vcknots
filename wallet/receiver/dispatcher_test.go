@@ -27,7 +27,7 @@ func (m *mockReceiver) FetchAuthorizationServerMetadata(endpoint common.URIField
 	return &types.AuthorizationServerMetadata{}, nil
 }
 
-func (m *mockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, dpopProof *string) (*types.CredentialIssuanceAccessToken, error) {
+func (m *mockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, options ...*types.TokenRequestOptions) (*types.CredentialIssuanceAccessToken, error) {
 	if m.shouldError {
 		return nil, fmt.Errorf("mock error")
 	}

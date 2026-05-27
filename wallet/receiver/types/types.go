@@ -220,6 +220,10 @@ type CredentialRequestOptions struct {
 	DPoPProofJWT *string
 }
 
+type TokenRequestOptions struct {
+	DPoPProofJWT *string
+}
+
 // Receiver defines the interface for credential receiving components
 type Receiver interface {
 	// FetchIssuerMetadata fetches OID4VCI Credential Issuer Metadata
@@ -229,7 +233,7 @@ type Receiver interface {
 	FetchAuthorizationServerMetadata(endpoint common.URIField, receivingType SupportedReceivingTypes) (*AuthorizationServerMetadata, error)
 
 	// FetchAccessToken fetches access token through OID4VCI
-	FetchAccessToken(receivingType SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, dpopProof *string) (*CredentialIssuanceAccessToken, error)
+	FetchAccessToken(receivingType SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, options ...*TokenRequestOptions) (*CredentialIssuanceAccessToken, error)
 
 	// FetchNonce fetches nonce from the issuer nonce endpoint
 	FetchNonce(receivingType SupportedReceivingTypes, endpoint common.URIField) (*string, error)

@@ -128,12 +128,21 @@ func (o *Oid4vciReceiver) FetchAuthorizationServerMetadata(endpoint common.URIFi
 	return &metadata, nil
 }
 
+func firstTokenRequestOptions(options []*types.TokenRequestOptions) *types.TokenRequestOptions {
+	for _, opt := range options {
+		if opt != nil {
+			return opt
+		}
+	}
+	return nil
+}
+
 func (o *Oid4vciReceiver) FetchAccessToken(
 	receivingTypes types.SupportedReceivingTypes,
 	endpoint common.URIField,
 	authzCode string,
 	txCode string,
-	dpopProof *string,
+	options ...*types.TokenRequestOptions,
 ) (*types.CredentialIssuanceAccessToken, error) {
 	if receivingTypes != types.Oid4vci {
 		return nil, fmt.Errorf("unsupported flavor: %v", receivingTypes)
@@ -169,8 +178,9 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	if dpopProof != nil && *dpopProof != "" {
-		req.Header.Set("DPoP", *dpopProof)
+	requestOptions := firstTokenRequestOptions(options)
+	if requestOptions != nil && requestOptions.DPoPProofJWT != nil && *requestOptions.DPoPProofJWT != "" {
+		req.Header.Set("DPoP", *requestOptions.DPoPProofJWT)
 	}
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)

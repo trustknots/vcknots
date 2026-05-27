@@ -107,9 +107,11 @@ func (c *captureDpopReceiver) FetchAuthorizationServerMetadata(endpoint common.U
 
 }
 
-func (c *captureDpopReceiver) FetchAccessToken(rt receiverTypes.SupportedReceivingTypes, endpoint common.URIField, authzCode string, dpopProof *string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
+func (c *captureDpopReceiver) FetchAccessToken(rt receiverTypes.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, options ...*receiverTypes.TokenRequestOptions) (*receiverTypes.CredentialIssuanceAccessToken, error) {
 
-	c.capturedProof = dpopProof
+	if len(options) > 0 && options[0] != nil {
+		c.capturedProof = options[0].DPoPProofJWT
+	}
 	return &receiverTypes.CredentialIssuanceAccessToken{
 		Token:     "tok",
 		TokenType: "Bearer",
@@ -126,7 +128,7 @@ func (c *captureDpopReceiver) ReceiveCredential(
 	accessToken receiverTypes.CredentialIssuanceAccessToken,
 	credentialDefinition *receiverTypes.CredentialDefinition,
 	jwtProof *string,
-
+	options ...*receiverTypes.CredentialRequestOptions,
 ) (*string, error) {
 
 	return nil, fmt.Errorf("unexpected call to ReceiveCredential")
@@ -859,7 +861,7 @@ func TestWallet_generateDPoPProof_HeaderAndPayload(t *testing.T) {
 	require.NoError(t, err)
 
 	w := &Wallet{}
-	proof, err := w.generateDPoPProof(key, http.MethodPost, "https://server.example.com/token")
+	proof, err := w.generateDPoPProof(key, http.MethodPost, "https://server.example.com/token", "", nil)
 	require.NoError(t, err)
 
 	parts := strings.Split(proof, ".")
@@ -899,12 +901,16 @@ func TestWallet_generateDPoPProof_JtiIsUnique(t *testing.T) {
 		key,
 		http.MethodPost,
 		"https://server.example.com/token",
+		"",
+		nil,
 	)
 	require.NoError(t, err)
 	proof2, err := w.generateDPoPProof(
 		key,
 		http.MethodPost,
 		"https://server.example.com/token",
+		"",
+		nil,
 	)
 	require.NoError(t, err)
 	jti1 := extractPayloadField(t, proof1, "jti")
@@ -918,6 +924,8 @@ func TestWallet_generateDPoPProof_NilKey(t *testing.T) {
 		nil,
 		http.MethodPost,
 		"https://server.example.com/token",
+		"",
+		nil,
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "dpop key is required")
@@ -938,7 +946,7 @@ func TestWallet_obtainAccessToken_DPoPEnabledControlsProof(t *testing.T) {
 			receiver: d,
 			dpop:     DPoPConfig{Enabled: false},
 		}
-		_, err = w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code")
+		_, err = w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
 		require.NoError(t, err)
 		assert.Nil(t, cap.capturedProof)
 	})
@@ -955,7 +963,7 @@ func TestWallet_obtainAccessToken_DPoPEnabledControlsProof(t *testing.T) {
 				Key:     key,
 			},
 		}
-		_, err = w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code")
+		_, err = w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
 		require.NoError(t, err)
 		require.NotNil(t, cap.capturedProof)
 		assert.NotEmpty(t, *cap.capturedProof)

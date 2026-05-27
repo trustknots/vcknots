@@ -380,7 +380,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		captureURL, err := url.Parse(captureServer.URL())
 		require.NoError(t, err)
 		proof := "header.payload.signature"
-		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "code", &proof)
+		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "code", "", &types.TokenRequestOptions{DPoPProofJWT: &proof})
 		require.NoError(t, err)
 		require.NotNil(t, token)
 		require.Len(t, capturedDPoPValues, 1)
@@ -406,6 +406,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 			types.Oid4vci,
 			common.URIField(*captureURL),
 			"code",
+			"",
 			nil,
 		)
 		require.NoError(t, err)
@@ -433,7 +434,8 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 			types.Oid4vci,
 			common.URIField(*captureURL),
 			"code",
-			&empty,
+			"",
+			&types.TokenRequestOptions{DPoPProofJWT: &empty},
 		)
 		require.NoError(t, err)
 		require.NotNil(t, token)
