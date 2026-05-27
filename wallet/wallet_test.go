@@ -293,8 +293,33 @@ func TestController_ReceiveCredential_TxCodeRequired_Integration(t *testing.T) {
 	_, err := controller.ReceiveCredential(req)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "tx_code is required by credential offer")
-
 }
+
+func TestController_ReceiveCredential_TxCodeProvided_Integration(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	credentialIssuer, _ := url.Parse("https://issuer.example.com")
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           credentialIssuer,
+			CredentialConfigurationIDs: []string{"test-config"},
+			Grants: map[string]*CredentialOfferGrant{
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+					PreAuthorizedCode: "test-code",
+					TxCode:            &TxCode{},
+				},
+			},
+		},
+		Type:   receiverTypes.Oid4vci,
+		Key:    newMockKeyEntry(),
+		TxCode: "123456",
+	}
+
+	_, err := controller.ReceiveCredential(req)
+	if err != nil {
+		require.NotContains(t, err.Error(), "tx_code is required by credential offer")
+	}
+}
+
 func TestController_GetCredentialEntries_Integration(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
