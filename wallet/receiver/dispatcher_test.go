@@ -50,6 +50,7 @@ func (m *mockReceiver) ReceiveCredential(
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
+	options ...*types.CredentialRequestOptions,
 ) (*string, error) {
 	if m.shouldError {
 		return nil, fmt.Errorf("mock error")

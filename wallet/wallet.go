@@ -25,7 +25,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -488,7 +491,7 @@ func (w *Wallet) generateJWTProof(
 	return signingInput + "." + b64Signature, nil
 }
 
-func (w *Wallet) generateDPoPProof(key IKeyEntry, method string, htu string) (string, error) {
+func (w *Wallet) generateDPoPProof(key IKeyEntry, method, targetURL, accessToken string, nonce *string) (string, error) {
 	if key == nil {
 		return "", fmt.Errorf("dpop key is required")
 	}
@@ -538,9 +541,17 @@ func (w *Wallet) generateDPoPProof(key IKeyEntry, method string, htu string) (st
 
 	claims := map[string]any{
 		"jti": uuid.NewString(),
-		"htm": method,
-		"htu": htu,
+		"htm": strings.ToUpper(method),
+		"htu": targetURL,
 		"iat": time.Now().Unix(),
+	}
+
+	if accessToken != "" {
+		accessTokenHash := sha256.Sum256([]byte(accessToken))
+		claims["ath"] = base64.RawURLEncoding.EncodeToString(accessTokenHash[:])
+	}
+	if nonce != nil && *nonce != "" {
+		claims["nonce"] = *nonce
 	}
 
 	proof, err := jwt.Signed(signer).Claims(claims).Serialize()
@@ -968,6 +979,49 @@ func (w *Wallet) fetchCredentialNonce(
 	return nil, fmt.Errorf("nonce response does not contain c_nonce or nonce")
 }
 
+func (w *Wallet) fetchDPoPNonce(issuerMetadata *receiverTypes.CredentialIssuerMetadata) (*string, error) {
+	if issuerMetadata == nil || issuerMetadata.NonceEndpoint == nil {
+		return nil, fmt.Errorf("issuer metadata does not contain nonce endpoint")
+	}
+
+	nonceEndpointURL := url.URL(*issuerMetadata.NonceEndpoint)
+	if !env.IsHTTPAllowed() && !strings.EqualFold(nonceEndpointURL.Scheme, "https") {
+		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", nonceEndpointURL.Scheme)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, nonceEndpointURL.String(), http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DPoP nonce request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := nonceHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch DPoP nonce: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxNonceResponseBodyBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read DPoP nonce response: %w", err)
+	}
+	if int64(len(bodyBytes)) > maxNonceResponseBodyBytes {
+		return nil, fmt.Errorf("DPoP nonce endpoint response exceeds %d bytes", maxNonceResponseBodyBytes)
+	}
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("DPoP nonce endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	nonce := strings.TrimSpace(resp.Header.Get("DPoP-Nonce"))
+	if nonce == "" {
+		return nil, fmt.Errorf("DPoP nonce endpoint response does not contain DPoP-Nonce header")
+	}
+
+	return &nonce, nil
+}
+
 // requestCredential requests the credential from the issuer with JWT proof.
 func (w *Wallet) requestCredential(
 	req ReceiveCredentialRequest,
@@ -1031,15 +1085,38 @@ func (w *Wallet) requestCredential(
 		credentialDefinition = credentialConfiguration.CredentialDefinition
 	}
 
-	credentialJWT, err := w.receiver.ReceiveCredential(
-		req.Type,
-		issuerMetadata.CredentialEndpoint,
-		credentialConfigurationID,
-		credentialIdentifier,
-		*accessToken,
-		credentialDefinition,
-		proof,
-	)
+	receiveCredential := func(dpopNonce *string) (*string, error) {
+		var options *receiverTypes.CredentialRequestOptions
+		if strings.EqualFold(accessToken.TokenType, "DPoP") {
+			dpopProof, err := w.generateDPoPProof(req.Key, http.MethodPost, issuerMetadata.CredentialEndpoint.String(), accessToken.Token, dpopNonce)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate DPoP proof: %w", err)
+			}
+			options = &receiverTypes.CredentialRequestOptions{
+				DPoPProofJWT: &dpopProof,
+			}
+		}
+
+		return w.receiver.ReceiveCredential(
+			req.Type,
+			issuerMetadata.CredentialEndpoint,
+			credentialConfigurationID,
+			credentialIdentifier,
+			*accessToken,
+			credentialDefinition,
+			proof,
+			options,
+		)
+	}
+
+	credentialJWT, err := receiveCredential(nil)
+	if err != nil && strings.EqualFold(accessToken.TokenType, "DPoP") && errors.Is(err, receiverTypes.ErrUseDPoPNonce) {
+		dpopNonce, nonceErr := w.fetchDPoPNonce(issuerMetadata)
+		if nonceErr != nil {
+			return nil, fmt.Errorf("failed to fetch DPoP nonce: %w", nonceErr)
+		}
+		credentialJWT, err = receiveCredential(dpopNonce)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive credential: %w", err)
 	}

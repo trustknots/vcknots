@@ -144,6 +144,7 @@ func (d *ReceivingDispatcher) ReceiveCredential(
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
+	options ...*types.CredentialRequestOptions,
 ) (*string, error) {
 	hasCredentialIdentifier := credentialIdentifier != nil && *credentialIdentifier != ""
 	if credentialConfigurationID == "" && !hasCredentialIdentifier {
@@ -155,7 +156,7 @@ func (d *ReceivingDispatcher) ReceiveCredential(
 		return nil, err
 	}
 
-	credential, err := plugin.ReceiveCredential(receivingType, endpoint, credentialConfigurationID, credentialIdentifier, accessToken, credentialDefinition, jwtProof)
+	credential, err := plugin.ReceiveCredential(receivingType, endpoint, credentialConfigurationID, credentialIdentifier, accessToken, credentialDefinition, jwtProof, options...)
 	if err != nil {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "receive_credential", err)
 	}

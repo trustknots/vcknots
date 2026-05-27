@@ -423,8 +423,8 @@ func TestController_ReceiveCredential_TxCodeProvided_Integration(t *testing.T) {
 
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
 		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
-			"issuer":                                          server.URL,
-			"token_endpoint":                                  server.URL + "/token",
+			"issuer":         server.URL,
+			"token_endpoint": server.URL + "/token",
 			"pre-authorized_grant_anonymous_access_supported": true,
 			"response_types_supported":                        []string{"code"},
 		})
@@ -1033,6 +1033,43 @@ func TestController_generateJWTProof_AnonymousPreAuthorizedFlow_OmitsIss(t *test
 	}
 }
 
+func TestController_generateDPoPProof_IncludesAccessTokenHashAndNonce(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	key := newMockKeyEntry()
+	accessToken := "dpop-access-token"
+	nonce := "dpop-nonce"
+	htu := "https://issuer.example.com/credential"
+
+	proof, err := controller.generateDPoPProof(key, http.MethodPost, htu, accessToken, &nonce)
+	require.NoError(t, err)
+
+	parts := strings.Split(proof, ".")
+	require.Len(t, parts, 3)
+
+	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	require.NoError(t, err)
+	var header map[string]interface{}
+	require.NoError(t, json.Unmarshal(headerBytes, &header))
+	assert.Equal(t, "dpop+jwt", header["typ"])
+	assert.Equal(t, "ES256", header["alg"])
+	assert.Contains(t, header, "jwk")
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal(payloadBytes, &payload))
+
+	accessTokenHash := sha256.Sum256([]byte(accessToken))
+	expectedAth := base64.RawURLEncoding.EncodeToString(accessTokenHash[:])
+	assert.Equal(t, http.MethodPost, payload["htm"])
+	assert.Equal(t, htu, payload["htu"])
+	assert.Equal(t, expectedAth, payload["ath"])
+	assert.Equal(t, nonce, payload["nonce"])
+	assert.NotEmpty(t, payload["jti"])
+	assert.NotZero(t, payload["iat"])
+}
+
 func TestController_generateJWTProof_NonAnonymousFlow_EmptyClientIDReturnsError(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
@@ -1322,6 +1359,172 @@ func TestController_fetchCredentialNonce_ReturnsErrorWhenResponseTooLargeWithout
 	require.Error(t, err)
 	require.Nil(t, nonce)
 	assert.Contains(t, err.Error(), "nonce endpoint response exceeds")
+}
+
+func TestController_fetchDPoPNonce_ReturnsHeaderValue(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		w.Header().Set("DPoP-Nonce", "dpop-nonce")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"c_nonce":"credential-proof-nonce"}`))
+	}))
+	defer server.Close()
+
+	nonceEndpoint, err := common.ParseURIField(server.URL)
+	require.NoError(t, err)
+	nonce, err := controller.fetchDPoPNonce(&receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint})
+	require.NoError(t, err)
+	require.NotNil(t, nonce)
+	assert.Equal(t, "dpop-nonce", *nonce)
+}
+
+func TestController_fetchDPoPNonce_ReturnsErrorWhenEndpointMissing(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	nonce, err := controller.fetchDPoPNonce(&receiverTypes.CredentialIssuerMetadata{})
+	require.Error(t, err)
+	require.Nil(t, nonce)
+	assert.Contains(t, err.Error(), "nonce endpoint")
+}
+
+func TestController_fetchDPoPNonce_ReturnsErrorWhenHeaderMissing(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"c_nonce":"credential-proof-nonce"}`))
+	}))
+	defer server.Close()
+
+	nonceEndpoint, err := common.ParseURIField(server.URL)
+	require.NoError(t, err)
+	nonce, err := controller.fetchDPoPNonce(&receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint})
+	require.Error(t, err)
+	require.Nil(t, nonce)
+	assert.Contains(t, err.Error(), "DPoP-Nonce")
+}
+
+func TestController_requestCredential_DPoPAccessTokenRetriesWithNonceFromHeader(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	const (
+		accessTokenValue = "dpop-access-token"
+		dpopNonce        = "issuer-dpop-nonce"
+	)
+
+	var credentialRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/nonce":
+			if r.Method != http.MethodPost {
+				http.Error(w, "invalid method", http.StatusMethodNotAllowed)
+				return
+			}
+			w.Header().Set("DPoP-Nonce", dpopNonce)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"c_nonce":"credential-proof-nonce"}`))
+		case "/credential":
+			credentialRequests++
+			if got := r.Header.Get("Authorization"); got != "DPoP "+accessTokenValue {
+				http.Error(w, "invalid authorization header: "+got, http.StatusBadRequest)
+				return
+			}
+			dpopProof := r.Header.Get("DPoP")
+			if dpopProof == "" {
+				http.Error(w, "missing DPoP header", http.StatusBadRequest)
+				return
+			}
+
+			parts := strings.Split(dpopProof, ".")
+			if len(parts) != 3 {
+				http.Error(w, "invalid DPoP proof", http.StatusBadRequest)
+				return
+			}
+			payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+			if err != nil {
+				http.Error(w, "invalid DPoP payload", http.StatusBadRequest)
+				return
+			}
+			var payload map[string]interface{}
+			if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+				http.Error(w, "invalid DPoP payload json", http.StatusBadRequest)
+				return
+			}
+
+			accessTokenHash := sha256.Sum256([]byte(accessTokenValue))
+			expectedAth := base64.RawURLEncoding.EncodeToString(accessTokenHash[:])
+			if payload["ath"] != expectedAth {
+				http.Error(w, "invalid ath", http.StatusBadRequest)
+				return
+			}
+
+			if credentialRequests == 1 {
+				if _, exists := payload["nonce"]; exists {
+					http.Error(w, "first DPoP proof should not include nonce", http.StatusBadRequest)
+					return
+				}
+				mockserver.JSONResponse(w, http.StatusBadRequest, map[string]string{
+					"error": "use_dpop_nonce",
+				})
+				return
+			}
+
+			if payload["nonce"] != dpopNonce {
+				http.Error(w, "retry DPoP proof missing nonce", http.StatusBadRequest)
+				return
+			}
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credentials": []map[string]string{{
+					"credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
+				}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	credentialEndpoint, err := common.ParseURIField(server.URL + "/credential")
+	require.NoError(t, err)
+	nonceEndpoint, err := common.ParseURIField(server.URL + "/nonce")
+	require.NoError(t, err)
+
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{
+		CredentialIssuer:   server.URL,
+		CredentialEndpoint: *credentialEndpoint,
+		NonceEndpoint:      nonceEndpoint,
+	}
+	offerURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           offerURL,
+			CredentialConfigurationIDs: []string{"test-config"},
+		},
+		Type: receiverTypes.Oid4vci,
+		Key:  newMockKeyEntry(),
+	}
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{
+		Token:     accessTokenValue,
+		TokenType: "DPoP",
+	}
+
+	credential, err := controller.requestCredential(req, issuerMetadata, accessToken)
+	require.NoError(t, err)
+	require.NotNil(t, credential)
+	assert.Equal(t, 2, credentialRequests)
 }
 
 func TestAccessTokenCredentialIdentifier(t *testing.T) {
@@ -1625,9 +1828,9 @@ func newCredentialIssuanceMockServer(t *testing.T, opts credentialIssuanceMockSe
 		switch r.URL.Path {
 		case "/.well-known/openid-credential-issuer":
 			issuerResponse := map[string]interface{}{
-				"credential_issuer":                    baseURL,
-				"credential_endpoint":                  baseURL + "/credential",
-				"authorization_servers":                []string{baseURL},
+				"credential_issuer":                   baseURL,
+				"credential_endpoint":                 baseURL + "/credential",
+				"authorization_servers":               []string{baseURL},
 				"credential_configurations_supported": opts.credentialConfigurationsSupported,
 			}
 			if opts.includeNonceEndpoint {

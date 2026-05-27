@@ -19,6 +19,7 @@ var (
 	ErrTokenRequestFailed        = errors.New("token request failed")
 	ErrInvalidTokenResponse      = errors.New("invalid token response")
 	ErrProofGenerationFailed     = errors.New("proof generation failed")
+	ErrUseDPoPNonce              = errors.New("use DPoP nonce")
 	ErrInvalidProofType          = errors.New("invalid or unsupported proof type")
 	ErrNetworkFailed             = errors.New("network request failed")
 	ErrTimeoutExpired            = errors.New("request timeout expired")
@@ -215,6 +216,10 @@ type CredentialIssuanceAccessToken struct {
 	AuthorizationDetails []CredentialIssuanceAuthorizationDetail `json:"authorization_details,omitempty"`
 }
 
+type CredentialRequestOptions struct {
+	DPoPProofJWT *string
+}
+
 // Receiver defines the interface for credential receiving components
 type Receiver interface {
 	// FetchIssuerMetadata fetches OID4VCI Credential Issuer Metadata
@@ -238,5 +243,6 @@ type Receiver interface {
 		accessToken CredentialIssuanceAccessToken,
 		credentialDefinition *CredentialDefinition,
 		jwtProof *string,
+		options ...*CredentialRequestOptions,
 	) (*string, error)
 }

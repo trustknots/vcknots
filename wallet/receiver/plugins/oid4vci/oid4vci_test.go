@@ -632,6 +632,58 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		assert.False(t, exists, "format should not be present in credential request body")
 	})
 
+	t.Run("DPoP access token sends DPoP authorization and proof headers", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		dpopProof := "dpop.proof.jwt"
+		dpopAccessToken := types.CredentialIssuanceAccessToken{
+			Token:     "dpop-access-token",
+			TokenType: "DPoP",
+		}
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/credential", func(w http.ResponseWriter, r *http.Request) {
+			if got := r.Header.Get("Authorization"); got != "DPoP dpop-access-token" {
+				handlerErrCh <- fmt.Errorf("Authorization header = %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Header.Get("DPoP"); got != dpopProof {
+				handlerErrCh <- fmt.Errorf("DPoP header = %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credentials": []map[string]string{{
+					"credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
+				}},
+			})
+		})
+
+		captureURL, _ := url.Parse(captureServer.URL() + "/credential")
+		captureEndpoint := common.URIField(*captureURL)
+
+		credential, err := receiver.ReceiveCredential(
+			types.Oid4vci,
+			captureEndpoint,
+			"test-config",
+			nil,
+			dpopAccessToken,
+			nil,
+			nil,
+			&types.CredentialRequestOptions{DPoPProofJWT: &dpopProof},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, credential)
+		require.NoError(t, <-handlerErrCh)
+	})
+
 	t.Run("Request uses credential_identifier when provided", func(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetHTTPAllowed(http_allowed)

@@ -264,6 +264,7 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
+	options ...*types.CredentialRequestOptions,
 ) (*string, error) {
 	if receivingTypes != types.Oid4vci {
 		return nil, fmt.Errorf("unsupported flavor: %v", receivingTypes)
@@ -299,11 +300,18 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 		return nil, err
 	}
 
+	requestOptions := firstCredentialRequestOptions(options)
+
 	// Set headers
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	// Capitalize the token type (e.g., "bearer" -> "Bearer") for spec compliance
-	tokenType := cases.Title(language.English).String(strings.ToLower(accessToken.TokenType))
+	tokenType := authorizationScheme(accessToken.TokenType)
 	req.Header.Set("Authorization", fmt.Sprintf("%s %s", tokenType, accessToken.Token))
+	if strings.EqualFold(accessToken.TokenType, "DPoP") {
+		if requestOptions == nil || requestOptions.DPoPProofJWT == nil || *requestOptions.DPoPProofJWT == "" {
+			return nil, fmt.Errorf("DPoP proof JWT is required for DPoP access token")
+		}
+		req.Header.Set("DPoP", *requestOptions.DPoPProofJWT)
+	}
 	req.Header.Set("Accept", "application/json")
 	req.ContentLength = int64(len(reqBodyBytes))
 
@@ -320,6 +328,9 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	}
 
 	if resp.StatusCode != 200 {
+		if isUseDPoPNonceError(bodyBytes) {
+			return nil, fmt.Errorf("%w; status: %d; endpoint: %s; response: %s", types.ErrUseDPoPNonce, resp.StatusCode, endpointURL.String(), string(bodyBytes))
+		}
 		return nil, fmt.Errorf("failed to receive credential; status: %d; endpoint: %s; response: %s", resp.StatusCode, endpointURL.String(), string(bodyBytes))
 	}
 
@@ -372,4 +383,32 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	}
 
 	return &credentialStr, nil
+}
+
+func firstCredentialRequestOptions(options []*types.CredentialRequestOptions) *types.CredentialRequestOptions {
+	if len(options) == 0 {
+		return nil
+	}
+	return options[0]
+}
+
+func authorizationScheme(tokenType string) string {
+	switch {
+	case strings.EqualFold(tokenType, "bearer"):
+		return "Bearer"
+	case strings.EqualFold(tokenType, "dpop"):
+		return "DPoP"
+	default:
+		return cases.Title(language.English).String(strings.ToLower(tokenType))
+	}
+}
+
+func isUseDPoPNonceError(bodyBytes []byte) bool {
+	var errorResponse struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(bodyBytes, &errorResponse); err != nil {
+		return false
+	}
+	return errorResponse.Error == "use_dpop_nonce"
 }
