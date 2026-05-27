@@ -388,6 +388,7 @@ describe('IssuerFlow', () => {
     assert.equal(mockPreAuthCodeStoreProvider.save.mock.callCount(), 1)
     assert.equal(mockCredentialOfferProvider.create.mock.callCount(), 1)
   })
+
   it('should create a credential offer with pre-authorized code with authz server', async () => {
     const metadata = CredentialIssuerMetadata({
       credential_issuer: issuer,
@@ -427,7 +428,49 @@ describe('IssuerFlow', () => {
     assert.equal(mockPreAuthCodeStoreProvider.save.mock.callCount(), 1)
     assert.equal(mockCredentialOfferProvider.create.mock.callCount(), 1)
   })
-  it(`should throw 'invalid_credential_request'  error when the provided authorization server is not found in the issuer metadata`, async () => {
+
+  it('should create a credential offer when authorizationServer equals credential_issuer and authorization_servers is undefined', async () => {
+    const metadata = CredentialIssuerMetadata({
+      credential_issuer: issuer,
+      credential_endpoint: 'https://example.com/credentials',
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+            credentialSubject: {},
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    })
+    const options = {
+      usePreAuth: true,
+      authorizationServer: issuer,
+    }
+    const code = 'PREAUTHCODE'
+    const offer = CredentialOffer({
+      credential_issuer: issuer,
+      authorization_server: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('VerifiableId')],
+    })
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+    mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
+    mock.method(mockPreAuthCodeStoreProvider, 'save', async () => {})
+    mock.method(mockCredentialOfferProvider, 'create', async () => offer)
+
+    const result = await issuerFlow.offerCredential(issuer, configurations, options)
+
+    assert.ok(result)
+    assert.equal(mockCredentialOfferProvider.create.mock.callCount(), 1)
+    assert.deepStrictEqual(mockCredentialOfferProvider.create.mock.calls[0].arguments[2], {
+      usePreAuth: true,
+      authorizationServer: issuer,
+      code,
+    })
+  })
+
+  it(`should throw 'invalid_credential_request' error when the provided authorization server is not found in the issuer metadata`, async () => {
     const metadata = CredentialIssuerMetadata({
       credential_issuer: issuer,
       credential_endpoint: 'https://example.com/credentials',
