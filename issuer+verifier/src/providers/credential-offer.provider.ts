@@ -22,11 +22,17 @@ export const credentialOffer = (): CredentialOfferProvider => {
             'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
               'pre-authorized_code': options.code,
               ...(txCode && { tx_code: txCode }),
+              ...(options.authorizationServer && {
+                authorization_server: options.authorizationServer,
+              }),
             },
           }
         : {
             authorization_code: {
               issuer_state: String(options.state),
+              ...(options.authorizationServer && {
+                authorization_server: options.authorizationServer,
+              }),
             },
           }
 
@@ -34,9 +40,6 @@ export const credentialOffer = (): CredentialOfferProvider => {
         credential_issuer: issuer.credential_issuer,
         credential_configuration_ids: configurations,
         grants,
-        ...(options.authorizationServer && {
-          authorization_server: options.authorizationServer,
-        }),
       }
     },
   }

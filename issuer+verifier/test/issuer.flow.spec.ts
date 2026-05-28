@@ -412,8 +412,13 @@ describe('IssuerFlow', () => {
     const code = 'PREAUTHCODE'
     const offer = CredentialOffer({
       credential_issuer: issuer,
-      authorization_server: 'https://example.com/auth',
       credential_configuration_ids: [CredentialConfigurationId('VerifiableId')],
+      grants: {
+        'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
+          'pre-authorized_code': code,
+          authorization_server: 'https://example.com/auth',
+        },
+      },
     })
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
     mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
@@ -451,8 +456,13 @@ describe('IssuerFlow', () => {
     const code = 'PREAUTHCODE'
     const offer = CredentialOffer({
       credential_issuer: issuer,
-      authorization_server: issuer,
       credential_configuration_ids: [CredentialConfigurationId('VerifiableId')],
+      grants: {
+        'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
+          'pre-authorized_code': code,
+          authorization_server: 'https://example.com/auth',
+        },
+      },
     })
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
     mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
