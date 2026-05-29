@@ -473,7 +473,7 @@ describe('IssuerFlow', () => {
       return await issuerFlow.offerCredential(issuer, configurations, options)
     }
 
-    assert.rejects(suspects, {
+    await assert.rejects(suspects, {
       name: 'invalid_credential_request',
       message:
         'authorization_server can only be used when authorization_servers has multiple entries.',
@@ -520,7 +520,7 @@ describe('IssuerFlow', () => {
       return await issuerFlow.offerCredential(issuer, configurations, options)
     }
 
-    assert.rejects(suspects, {
+    await assert.rejects(suspects, {
       name: 'invalid_credential_request',
       message:
         'authorization_server can only be used when authorization_servers has multiple entries.',

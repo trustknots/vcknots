@@ -56,8 +56,7 @@ export const createServer = (options?: VcknotsOptions) => {
     }
 
     issuerMetadataConfig.credential_issuer = CredentialIssuer(baseUrl)
-    // Add a second authorization server entry to avoid validation errors when testing authorization_server hint handling.
-    issuerMetadataConfig.authorization_servers = [baseUrl, 'https://authz.example.com']
+    issuerMetadataConfig.authorization_servers = [baseUrl]
     issuerMetadataConfig.credential_endpoint = `${baseUrl}/credentials`
     issuerMetadataConfig.deferred_credential_endpoint = `${baseUrl}/deferred_credential`
     issuerMetadataConfig.nonce_endpoint = `${baseUrl}/nonce`
