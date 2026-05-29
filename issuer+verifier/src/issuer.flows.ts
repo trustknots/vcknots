@@ -243,11 +243,17 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       }
 
       if (options?.authorizationServer) {
-        const supportedAuthorizationServers = metadata.authorization_servers ?? [
-          metadata.credential_issuer,
-        ]
+        if (
+          metadata.authorization_servers === undefined ||
+          metadata.authorization_servers.length <= 1
+        ) {
+          throw err('invalid_credential_request', {
+            message:
+              'authorization_server can only be used when authorization_servers has multiple entries.',
+          })
+        }
 
-        if (!supportedAuthorizationServers.includes(options.authorizationServer)) {
+        if (!metadata.authorization_servers.includes(options.authorizationServer)) {
           throw err('invalid_credential_request', {
             message: `Authorization server ${options.authorizationServer} is not supported by issuer ${issuer}.`,
           })

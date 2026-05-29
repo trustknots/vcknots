@@ -393,7 +393,7 @@ describe('IssuerFlow', () => {
     const metadata = CredentialIssuerMetadata({
       credential_issuer: issuer,
       credential_endpoint: 'https://example.com/credentials',
-      authorization_servers: ['https://example.com/auth'],
+      authorization_servers: ['https://example.com/auth', 'https://example.com/auth2'],
       credential_configurations_supported: {
         VerifiableId: {
           format: 'jwt_vc_json',
@@ -434,7 +434,7 @@ describe('IssuerFlow', () => {
     assert.equal(mockCredentialOfferProvider.create.mock.callCount(), 1)
   })
 
-  it('should create a credential offer when authorizationServer equals credential_issuer and authorization_servers is undefined', async () => {
+  it(`should throw 'invalid_credential_request' when authorization_servers is undefined`, async () => {
     const metadata = CredentialIssuerMetadata({
       credential_issuer: issuer,
       credential_endpoint: 'https://example.com/credentials',
@@ -469,14 +469,61 @@ describe('IssuerFlow', () => {
     mock.method(mockPreAuthCodeStoreProvider, 'save', async () => {})
     mock.method(mockCredentialOfferProvider, 'create', async () => offer)
 
-    const result = await issuerFlow.offerCredential(issuer, configurations, options)
+    const suspects = async () => {
+      return await issuerFlow.offerCredential(issuer, configurations, options)
+    }
 
-    assert.ok(result)
-    assert.equal(mockCredentialOfferProvider.create.mock.callCount(), 1)
-    assert.deepStrictEqual(mockCredentialOfferProvider.create.mock.calls[0].arguments[2], {
+    assert.rejects(suspects, {
+      name: 'invalid_credential_request',
+      message:
+        'authorization_server can only be used when authorization_servers has multiple entries.',
+    })
+  })
+
+  it(`should throw 'invalid_credential_request' when authorization_servers is only one entry`, async () => {
+    const metadata = CredentialIssuerMetadata({
+      credential_issuer: issuer,
+      authorization_servers: ['https://example.com/auth'],
+      credential_endpoint: 'https://example.com/credentials',
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+            credentialSubject: {},
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    })
+    const options = {
       usePreAuth: true,
       authorizationServer: issuer,
-      code,
+    }
+    const code = 'PREAUTHCODE'
+    const offer = CredentialOffer({
+      credential_issuer: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('VerifiableId')],
+      grants: {
+        'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
+          'pre-authorized_code': code,
+          authorization_server: 'https://example.com/auth',
+        },
+      },
+    })
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+    mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
+    mock.method(mockPreAuthCodeStoreProvider, 'save', async () => {})
+    mock.method(mockCredentialOfferProvider, 'create', async () => offer)
+
+    const suspects = async () => {
+      return await issuerFlow.offerCredential(issuer, configurations, options)
+    }
+
+    assert.rejects(suspects, {
+      name: 'invalid_credential_request',
+      message:
+        'authorization_server can only be used when authorization_servers has multiple entries.',
     })
   })
 
@@ -484,7 +531,7 @@ describe('IssuerFlow', () => {
     const metadata = CredentialIssuerMetadata({
       credential_issuer: issuer,
       credential_endpoint: 'https://example.com/credentials',
-      authorization_servers: ['https://example.com/auth'],
+      authorization_servers: ['https://example.com/auth', 'https://example.com/auth2'],
       credential_configurations_supported: {
         VerifiableId: {
           format: 'jwt_vc_json',
