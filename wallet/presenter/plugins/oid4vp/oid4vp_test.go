@@ -987,4 +987,21 @@ func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
 			t.Fatalf("expected https-required error, got: %v", rb.errValidation)
 		}
 	})
+
+	// Non-http(s) schemes must be rejected regardless of HTTP_ALLOWED.
+	t.Run("rejects non-http(s) scheme even when HTTP_ALLOWED is true", func(t *testing.T) {
+		t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+		for _, badURI := range []string{
+			"ftp://example.com/request-object",
+			"file:///etc/passwd",
+			"data:text/plain,foo",
+		} {
+			rb := requestBuilder{}
+			rb.WithRequestObjectURI(badURI, RequestURIMethodGET)
+			if rb.errValidation == nil || !strings.Contains(rb.errValidation.Error(), "https required") {
+				t.Errorf("uri=%q: expected https-required error, got: %v", badURI, rb.errValidation)
+			}
+		}
+	})
 }
