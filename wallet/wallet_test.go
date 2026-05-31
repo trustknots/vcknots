@@ -1110,6 +1110,39 @@ func TestController_FetchCredentialIssuerMetadata_WithMockServer(t *testing.T) {
 	t.Logf("Successfully fetched metadata: %+v", metadata)
 }
 
+func TestController_ReceiveCredential_RejectsUnsupportedCredentialConfigurationID(t *testing.T) {
+	server := createMockOID4VCIServer()
+	defer server.Close()
+
+	controller := createTestControllerWithDefaults(t)
+
+	serverURL, err := url.Parse(server.URL())
+	require.NoError(t, err)
+
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           serverURL,
+			CredentialConfigurationIDs: []string{"unsupported-config"},
+			Grants: map[string]*CredentialOfferGrant{
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+					PreAuthorizedCode: "test-code",
+				},
+			},
+		},
+		Type: receiverTypes.Oid4vci,
+		Key:  newMockKeyEntry(),
+	}
+
+	credential, err := controller.ReceiveCredential(req)
+	require.Error(t, err)
+	require.Nil(t, credential)
+	require.Contains(t, err.Error(), `credential configuration "unsupported-config" is not supported by issuer metadata`)
+}
+
 func TestController_PresentCredential_WithMockServer_Integration(t *testing.T) {
 	// First, create a mock OID4VCI server to get a credential
 	vciServer := createMockOID4VCIServer()
@@ -1796,6 +1829,71 @@ func TestWallet_validateCredentialOffer(t *testing.T) {
 
 			require.NoError(t, gotErr)
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestWallet_validateCredentialConfigurationIDs(t *testing.T) {
+	tests := []struct {
+		name            string
+		offer           *CredentialOffer
+		issuerMetadata  *receiverTypes.CredentialIssuerMetadata
+		wantErr         bool
+		wantErrContains string
+	}{
+		{
+			name:    "all offered configuration IDs are supported",
+			offer:   &CredentialOffer{CredentialConfigurationIDs: []string{"EmployeeID_jwt_vc_json", "StudentID_jwt_vc_json"}},
+			wantErr: false,
+			issuerMetadata: &receiverTypes.CredentialIssuerMetadata{
+				CredentialConfigurationSupported: map[string]receiverTypes.CredentialConfiguration{
+					"EmployeeID_jwt_vc_json": {Format: "jwt_vc_json"},
+					"StudentID_jwt_vc_json":  {Format: "jwt_vc_json"},
+				},
+			},
+		},
+		{
+			name:  "unsupported offered configuration ID is rejected",
+			offer: &CredentialOffer{CredentialConfigurationIDs: []string{"EmployeeID_jwt_vc_json", "UnknownID_jwt_vc_json"}},
+			issuerMetadata: &receiverTypes.CredentialIssuerMetadata{
+				CredentialConfigurationSupported: map[string]receiverTypes.CredentialConfiguration{
+					"EmployeeID_jwt_vc_json": {Format: "jwt_vc_json"},
+				},
+			},
+			wantErr:         true,
+			wantErrContains: `credential configuration "UnknownID_jwt_vc_json" is not supported by issuer metadata`,
+		},
+		{
+			name:            "missing issuer metadata is rejected",
+			offer:           &CredentialOffer{CredentialConfigurationIDs: []string{"EmployeeID_jwt_vc_json"}},
+			issuerMetadata:  nil,
+			wantErr:         true,
+			wantErrContains: "issuer metadata is required",
+		},
+		{
+			name:  "missing supported configurations in metadata is rejected",
+			offer: &CredentialOffer{CredentialConfigurationIDs: []string{"EmployeeID_jwt_vc_json"}},
+			issuerMetadata: &receiverTypes.CredentialIssuerMetadata{
+				CredentialConfigurationSupported: map[string]receiverTypes.CredentialConfiguration{},
+			},
+			wantErr:         true,
+			wantErrContains: "credential configurations supported are missing in issuer metadata",
+		},
+	}
+
+	w, err := NewWallet()
+	require.NoError(t, err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := w.validateCredentialConfigurationIDs(tt.offer, tt.issuerMetadata)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.wantErrContains)
+				return
+			}
+
+			require.NoError(t, err)
 		})
 	}
 }
