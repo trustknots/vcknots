@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/assert"
@@ -269,6 +270,142 @@ func TestController_ReceiveCredential_EmptyConfigurationIDs_Integration(t *testi
 	}
 	if err.Error() != "credential configuration IDs are empty" {
 		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestController_ReceiveCredential_TxCodeRequired_Integration(t *testing.T) {
+
+	controller := createTestControllerWithDefaults(t)
+	credentialIssuer, _ := url.Parse("https://issuer.example.com")
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           credentialIssuer,
+			CredentialConfigurationIDs: []string{"test-config"},
+			Grants: map[string]*CredentialOfferGrant{
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+					PreAuthorizedCode: "test-code",
+					TxCode:            &TxCode{},
+				},
+			},
+		},
+		Type: receiverTypes.Oid4vci,
+		Key:  newMockKeyEntry(),
+	}
+	_, err := controller.ReceiveCredential(req)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tx_code is required by credential offer")
+}
+
+func TestController_ReceiveCredential_TxCodeProvided_Integration(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	txCodeCh := make(chan string, 1)
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	issuerKeyPair := mockserver.MustGenerateKeyPair("issuer-key-id")
+	jwtBuilder := mockserver.MustNewJWTBuilder(issuerKeyPair)
+	defaultCredentialJWT, err := jwtBuilder.CreateSignedJWT(server.URL, map[string]interface{}{
+		"sub": "did:key:z6Mkio4WDmdtgEo4f9Hq6i6tnW8WFwknQQ4KHUY99BGY4EVr",
+		"vc": map[string]interface{}{
+			"@context": []string{
+				"https://www.w3.org/2018/credentials/v1",
+			},
+			"id":           "http://example.com/credential/1",
+			"type":         []string{"VerifiableCredential"},
+			"issuer":       server.URL,
+			"issuanceDate": "2023-01-01T00:00:00Z",
+			"credentialSubject": map[string]interface{}{
+				"id":   "http://example.com/subject",
+				"name": "John Doe",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	mux.HandleFunc("/.well-known/openid-credential-issuer", func(w http.ResponseWriter, r *http.Request) {
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"credential_issuer":     server.URL,
+			"credential_endpoint":   server.URL + "/credential",
+			"nonce_endpoint":        server.URL + "/nonce",
+			"authorization_servers": []string{server.URL},
+			"credential_configurations_supported": map[string]interface{}{
+				"test-config": map[string]interface{}{
+					"format": "jwt_vc_json",
+					"credential_definition": map[string]interface{}{
+						"type": []string{"VerifiableCredential"},
+					},
+				},
+			},
+		})
+	})
+
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"issuer":                                          server.URL,
+			"token_endpoint":                                  server.URL + "/token",
+			"pre-authorized_grant_anonymous_access_supported": true,
+			"response_types_supported":                        []string{"code"},
+		})
+	})
+
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		txCodeCh <- r.Form.Get("tx_code")
+
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"access_token": "test-access-token",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+			"c_nonce":      "test-nonce",
+		})
+	})
+
+	mux.HandleFunc("/nonce", func(w http.ResponseWriter, r *http.Request) {
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"c_nonce": "test-nonce",
+		})
+	})
+
+	mux.HandleFunc("/credential", func(w http.ResponseWriter, r *http.Request) {
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"credentials": []map[string]string{{
+				"credential": defaultCredentialJWT,
+			}},
+		})
+	})
+
+	credentialIssuer, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           credentialIssuer,
+			CredentialConfigurationIDs: []string{"test-config"},
+			Grants: map[string]*CredentialOfferGrant{
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+					PreAuthorizedCode: "test-code",
+					TxCode:            &TxCode{},
+				},
+			},
+		},
+		Type:   receiverTypes.Oid4vci,
+		Key:    newMockKeyEntry(),
+		TxCode: "123456",
+	}
+
+	_, err = controller.ReceiveCredential(req)
+	require.NoError(t, err)
+
+	select {
+	case got := <-txCodeCh:
+		require.Equal(t, "123456", got)
+	case <-time.After(2 * time.Second):
+		require.FailNow(t, "tx_code was not received at token endpoint")
 	}
 }
 
