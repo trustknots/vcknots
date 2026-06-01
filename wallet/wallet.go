@@ -533,7 +533,7 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 		}
 	}
 
-	if err := validateCredentialConfigurationIDs(req.CredentialOffer, issuerMetadata); err != nil {
+	if err := w.validateCredentialConfigurationIDs(req.CredentialOffer, issuerMetadata); err != nil {
 		return nil, nil, err
 	}
 
@@ -564,17 +564,20 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 	return issuerMetadata, authMetadata, nil
 }
 
-func validateCredentialConfigurationIDs(offer *CredentialOffer, issuerMetadata *receiverTypes.CredentialIssuerMetadata) error {
+func (w *Wallet) validateCredentialConfigurationIDs(offer *CredentialOffer, issuerMetadata *receiverTypes.CredentialIssuerMetadata) error {
 	if offer == nil {
 		return fmt.Errorf("credential offer is required")
 	}
 	if issuerMetadata == nil {
-		return fmt.Errorf("credential issuer metadata is nil")
+		return fmt.Errorf("issuer metadata is required")
+	}
+	if len(issuerMetadata.CredentialConfigurationSupported) == 0 {
+		return fmt.Errorf("credential configurations supported are missing in issuer metadata")
 	}
 
 	for _, configID := range offer.CredentialConfigurationIDs {
-		if _, ok := issuerMetadata.CredentialConfigurationSupported[configID]; !ok {
-			return fmt.Errorf("credential configuration %s is not supported by issuer metadata", configID)
+		if _, exists := issuerMetadata.CredentialConfigurationSupported[configID]; !exists {
+			return fmt.Errorf("credential configuration %q is not supported by issuer metadata", configID)
 		}
 	}
 
