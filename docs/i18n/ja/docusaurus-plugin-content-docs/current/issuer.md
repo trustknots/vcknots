@@ -604,8 +604,10 @@ app.post('/configurations/:configuration/offer', async (c) => {
 
 **リクエスト**
 
-`tx_code` や `authorization_server` 指定する場合のみ、リクエストボディ（JSON）を付けて送信します。
-`authorization_server` は、Issuer Metadata の `authorization_servers` に複数のエントリーが含まれる場合にのみ指定できます。
+任意パラメータを指定する場合のみ、リクエストボディ（JSON）を含めてください。
+
+- tx_code は、Credential Offer にトランザクションコードを含めるために使用できます。
+- authorization_server は、Issuer Metadata の authorization_servers に複数のエントリーが含まれる場合にのみ指定できます。
 
 ```bash
 curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer \
