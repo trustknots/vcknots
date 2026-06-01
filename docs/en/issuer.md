@@ -606,7 +606,8 @@ app.post('/configurations/:configuration/offer', async (c) => {
 
 **Request**
 
-Include a request body (JSON) only when specifying `tx_code`.
+Include a request body (JSON) only when specifying `tx_code` or `authorization_server`.
+`authorization_server` can be included only when the Issuer Metadata contains multiple entries in `authorization_servers`.
 
 ```bash
 curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer \
@@ -616,8 +617,7 @@ curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/off
       "input_mode": "numeric",
       "length": 6,
       "description": "Please enter the one-time code."
-    },
-    "authorization_server":"http://localhost:8080"
+    }
   }'
 ```
 
