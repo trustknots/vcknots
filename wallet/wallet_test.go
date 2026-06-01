@@ -307,7 +307,25 @@ func TestController_ReceiveCredential_TxCodeProvided_Integration(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	const defaultCredentialJWT = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlLmNvbSIsInN1YiI6ImRpZDprZXk6ejZNa2lvNFdEbWR0Z0VvNGY5SHE2aTZ0blc4V0Z3a25RUTRLSFVZOTlCR1k0RVZyIiwidHlwZSI6WyJWZXJpZmlhYmxlQ3JlZGVudGlhbCJdLCJpYXQiOjE2MjAyMzk4MDB9.mockSignature"
+	issuerKeyPair := mockserver.MustGenerateKeyPair("issuer-key-id")
+	jwtBuilder := mockserver.MustNewJWTBuilder(issuerKeyPair)
+	defaultCredentialJWT, err := jwtBuilder.CreateSignedJWT(server.URL, map[string]interface{}{
+		"sub": "did:key:z6Mkio4WDmdtgEo4f9Hq6i6tnW8WFwknQQ4KHUY99BGY4EVr",
+		"vc": map[string]interface{}{
+			"@context": []string{
+				"https://www.w3.org/2018/credentials/v1",
+			},
+			"id":           "http://example.com/credential/1",
+			"type":         []string{"VerifiableCredential"},
+			"issuer":       server.URL,
+			"issuanceDate": "2023-01-01T00:00:00Z",
+			"credentialSubject": map[string]interface{}{
+				"id":   "http://example.com/subject",
+				"name": "John Doe",
+			},
+		},
+	})
+	require.NoError(t, err)
 
 	mux.HandleFunc("/.well-known/openid-credential-issuer", func(w http.ResponseWriter, r *http.Request) {
 		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
@@ -381,15 +399,13 @@ func TestController_ReceiveCredential_TxCodeProvided_Integration(t *testing.T) {
 	}
 
 	_, err = controller.ReceiveCredential(req)
-	if err != nil {
-		require.NotContains(t, err.Error(), "tx_code is required by credential offer")
-	}
+	require.NoError(t, err)
 
 	select {
 	case got := <-txCodeCh:
 		require.Equal(t, "123456", got)
 	case <-time.After(2 * time.Second):
-		t.Fatal("tx_code was not received at token endpoint")
+		require.FailNow(t, "tx_code was not received at token endpoint")
 	}
 }
 
