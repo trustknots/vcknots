@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/assert"
@@ -297,7 +298,72 @@ func TestController_ReceiveCredential_TxCodeRequired_Integration(t *testing.T) {
 
 func TestController_ReceiveCredential_TxCodeProvided_Integration(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
-	credentialIssuer, _ := url.Parse("https://issuer.example.com")
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	txCodeCh := make(chan string, 1)
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	const defaultCredentialJWT = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlLmNvbSIsInN1YiI6ImRpZDprZXk6ejZNa2lvNFdEbWR0Z0VvNGY5SHE2aTZ0blc4V0Z3a25RUTRLSFVZOTlCR1k0RVZyIiwidHlwZSI6WyJWZXJpZmlhYmxlQ3JlZGVudGlhbCJdLCJpYXQiOjE2MjAyMzk4MDB9.mockSignature"
+
+	mux.HandleFunc("/.well-known/openid-credential-issuer", func(w http.ResponseWriter, r *http.Request) {
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"credential_issuer":     server.URL,
+			"credential_endpoint":   server.URL + "/credential",
+			"nonce_endpoint":        server.URL + "/nonce",
+			"authorization_servers": []string{server.URL},
+			"credential_configurations_supported": map[string]interface{}{
+				"test-config": map[string]interface{}{
+					"format": "jwt_vc_json",
+					"credential_definition": map[string]interface{}{
+						"type": []string{"VerifiableCredential"},
+					},
+				},
+			},
+		})
+	})
+
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"issuer":                                          server.URL,
+			"token_endpoint":                                  server.URL + "/token",
+			"pre-authorized_grant_anonymous_access_supported": true,
+			"response_types_supported":                        []string{"code"},
+		})
+	})
+
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		txCodeCh <- r.Form.Get("tx_code")
+
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"access_token": "test-access-token",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+			"c_nonce":      "test-nonce",
+		})
+	})
+
+	mux.HandleFunc("/nonce", func(w http.ResponseWriter, r *http.Request) {
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"c_nonce": "test-nonce",
+		})
+	})
+
+	mux.HandleFunc("/credential", func(w http.ResponseWriter, r *http.Request) {
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"credentials": []map[string]string{{
+				"credential": defaultCredentialJWT,
+			}},
+		})
+	})
+
+	credentialIssuer, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
 	req := ReceiveCredentialRequest{
 		CredentialOffer: &CredentialOffer{
 			CredentialIssuer:           credentialIssuer,
@@ -314,9 +380,16 @@ func TestController_ReceiveCredential_TxCodeProvided_Integration(t *testing.T) {
 		TxCode: "123456",
 	}
 
-	_, err := controller.ReceiveCredential(req)
+	_, err = controller.ReceiveCredential(req)
 	if err != nil {
 		require.NotContains(t, err.Error(), "tx_code is required by credential offer")
+	}
+
+	select {
+	case got := <-txCodeCh:
+		require.Equal(t, "123456", got)
+	case <-time.After(2 * time.Second):
+		t.Fatal("tx_code was not received at token endpoint")
 	}
 }
 
