@@ -584,6 +584,7 @@ app.post('/configurations/:configuration/offer', async (c) => {
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
         txCode: options?.tx_code,
+        authorizationServer: options?.authorization_server,
       })
       console.log('offer:', offer)
       console.log('tx_code:', tx_code)
@@ -603,7 +604,10 @@ app.post('/configurations/:configuration/offer', async (c) => {
 
 **リクエスト**
 
-`tx_code` を指定する場合のみ、リクエストボディ（JSON）を付けて送信します。
+任意パラメータを指定する場合のみ、リクエストボディ（JSON）を含めてください。
+
+- tx_code は、Credential Offer にトランザクションコードを含めるために使用できます。
+- authorization_server は、Issuer Metadata の authorization_servers に複数のエントリーが含まれる場合にのみ指定できます。
 
 ```bash
 curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer \
@@ -1410,6 +1414,7 @@ type OfferOptions =
   | {
       usePreAuth: false
       state?: unknown
+      authorizationServer?: string
     }
   | {
       usePreAuth: true
@@ -1419,6 +1424,7 @@ type OfferOptions =
         description?: string
       }
       ttlSec?: number
+      authorizationServer?: string
     }
 ```
 

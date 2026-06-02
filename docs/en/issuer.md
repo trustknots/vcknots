@@ -585,6 +585,7 @@ app.post('/configurations/:configuration/offer', async (c) => {
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
         txCode: options?.tx_code,
+        authorizationServer: options?.authorization_server,
       })
 
       console.log('offer:', offer)
@@ -605,7 +606,10 @@ app.post('/configurations/:configuration/offer', async (c) => {
 
 **Request**
 
-Include a request body (JSON) only when specifying `tx_code`.
+Include a request body (JSON) only when specifying optional parameters.
+
+- `tx_code` can be used to include a transaction code in the Credential Offer.
+- `authorization_server` can be included only when the Issuer Metadata contains multiple entries in `authorization_servers`.
 
 ```bash
 curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer \
@@ -1411,6 +1415,7 @@ type OfferOptions =
   | {
       usePreAuth: false
       state?: unknown
+      authorizationServer?: string
     }
   | {
       usePreAuth: true
@@ -1420,6 +1425,7 @@ type OfferOptions =
         description?: string
       }
       ttlSec?: number
+      authorizationServer?: string
     }
 ```
 

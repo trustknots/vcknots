@@ -13,12 +13,14 @@ const preAuthorizedCodeGrantSchema = z
   .object({
     'pre-authorized_code': z.string(),
     tx_code: txCodeSchema,
+    authorization_server: z.string().url().optional(),
   })
   .optional()
 
 const authorizationCodeGrantSchema = z
   .object({
     issuer_state: z.string().optional(),
+    authorization_server: z.string().url().optional(),
   })
   .optional()
 

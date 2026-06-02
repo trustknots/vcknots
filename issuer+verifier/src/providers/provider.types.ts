@@ -379,10 +379,12 @@ export type CredentialOfferProvider = {
             length?: number
             description?: string
           }
+          authorizationServer?: string
         }
       | {
           usePreAuth: false
           state: unknown
+          authorizationServer?: string
         }
   ): Promise<CredentialOffer>
 }

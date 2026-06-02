@@ -22,6 +22,7 @@ type OfferOptions =
   | {
       usePreAuth: false
       state?: unknown
+      authorizationServer?: string
     }
   | {
       usePreAuth: true
@@ -31,6 +32,7 @@ type OfferOptions =
         description?: string
       }
       ttlSec?: number
+      authorizationServer?: string
     }
 type IssueOptions = {
   alg: string
@@ -240,6 +242,24 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         })
       }
 
+      if (options?.authorizationServer) {
+        if (
+          metadata.authorization_servers === undefined ||
+          metadata.authorization_servers.length <= 1
+        ) {
+          throw err('invalid_credential_request', {
+            message:
+              'authorization_server can only be used when authorization_servers has multiple entries.',
+          })
+        }
+
+        if (!metadata.authorization_servers.includes(options.authorizationServer)) {
+          throw err('invalid_credential_request', {
+            message: `Authorization server ${options.authorizationServer} is not supported by issuer ${issuer}.`,
+          })
+        }
+      }
+
       for (const configId of configurations) {
         if (metadata.credential_configurations_supported[configId] === undefined) {
           throw err('unknown_credential_configuration', {
@@ -273,6 +293,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
             description: options.txCode.description,
           },
         }),
+        ...(options?.authorizationServer && { authorizationServer: options.authorizationServer }),
       })
       return {
         offer,
