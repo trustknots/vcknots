@@ -62,21 +62,21 @@ describe('verifyCredentialJwt provider', () => {
     assert.strictEqual(result, true)
   })
 
-  it('should throw ILLEGAL_ARGUMENT if vc is not a string', async () => {
+  it('should throw illegal_argument if vc is not a string', async () => {
     await assert.rejects(provider.verify({} as never), (err: VcknotsError) => {
-      assert.strictEqual(err.name, 'ILLEGAL_ARGUMENT')
+      assert.strictEqual(err.name, 'illegal_argument')
       assert.strictEqual(err.message, 'VC represented as object is not supported.')
       return true
     })
   })
 
-  it('should throw INVALID_CREDENTIAL for non-https issuer URI', async () => {
+  it('should throw invalid_credential for non-https issuer URI', async () => {
     const vcWithHttpIssuer = { ...vc, issuer: 'http://issuer.example.com' }
     const jwtWithHttpIssuer = jwt.sign({ vc: vcWithHttpIssuer }, privateKey, {
       algorithm: 'RS256',
     })
     await assert.rejects(provider.verify(jwtWithHttpIssuer), (err: VcknotsError) => {
-      assert.strictEqual(err.name, 'INVALID_CREDENTIAL')
+      assert.strictEqual(err.name, 'invalid_credential')
       assert.strictEqual(err.message, 'Issuer URI must use https scheme')
       return true
     })
@@ -96,22 +96,22 @@ describe('verifyCredentialJwt provider', () => {
     assert.strictEqual(fetch.mock.calls[0].arguments[0], `${issuer}/.well-known/jwt-vc-issuer/path`)
   })
 
-  it('should throw INVALID_CREDENTIAL if fetching metadata fails', async () => {
+  it('should throw invalid_credential if fetching metadata fails', async () => {
     mockFetch(404, {}, false)
     await assert.rejects(provider.verify(vcJwt), (err: VcknotsError) => {
-      assert.strictEqual(err.name, 'INVALID_CREDENTIAL')
+      assert.strictEqual(err.name, 'invalid_credential')
       assert.strictEqual(err.message, 'Failed to fetch issuer metadata: Status 404')
       return true
     })
   })
 
-  it('should throw INVALID_CREDENTIAL if issuer in metadata does not match', async () => {
+  it('should throw invalid_credential if issuer in metadata does not match', async () => {
     mockFetch(200, {
       issuer: 'https://wrong-issuer.example.com',
       jwks: { keys: [jwk] },
     })
     await assert.rejects(provider.verify(vcJwt), (err: VcknotsError) => {
-      assert.strictEqual(err.name, 'INVALID_CREDENTIAL')
+      assert.strictEqual(err.name, 'invalid_credential')
       assert.strictEqual(err.message, 'Issuer in metadata does not match VC issuer')
       return true
     })
@@ -141,7 +141,7 @@ describe('verifyCredentialJwt provider', () => {
     assert.strictEqual(fetch.mock.calls[1].arguments[0], jwksUri)
   })
 
-  it('should throw JWKS_NOT_FOUND if fetching jwks_uri fails', async () => {
+  it('should throw jwks_not_found if fetching jwks_uri fails', async () => {
     const jwksUri = 'https://issuer.example.com/jwks.json'
     const fetch = mock.fn(
       (url: string) => {
@@ -161,25 +161,25 @@ describe('verifyCredentialJwt provider', () => {
     )
     mock.method(global, 'fetch', fetch)
     await assert.rejects(provider.verify(vcJwt), (err: VcknotsError) => {
-      assert.strictEqual(err.name, 'JWKS_NOT_FOUND')
+      assert.strictEqual(err.name, 'jwks_not_found')
       assert.strictEqual(err.message, 'Failed to fetch JWKS: Not Found')
       return true
     })
   })
 
-  it('should throw JWKS_NOT_FOUND if no jwks or jwks_uri in metadata', async () => {
+  it('should throw jwks_not_found if no jwks or jwks_uri in metadata', async () => {
     mockFetch(200, { issuer })
     await assert.rejects(provider.verify(vcJwt), (err: VcknotsError) => {
-      assert.strictEqual(err.name, 'JWKS_NOT_FOUND')
+      assert.strictEqual(err.name, 'jwks_not_found')
       assert.strictEqual(err.message, 'No JWKS or JWKS URI found in issuer metadata')
       return true
     })
   })
 
-  it('should throw JWKS_NOT_FOUND if jwks keys are empty', async () => {
+  it('should throw jwks_not_found if jwks keys are empty', async () => {
     mockFetch(200, { issuer, jwks: { keys: [] } })
     await assert.rejects(provider.verify(vcJwt), (err: VcknotsError) => {
-      assert.strictEqual(err.name, 'JWKS_NOT_FOUND')
+      assert.strictEqual(err.name, 'jwks_not_found')
       assert.match(
         err.message,
         /Empty JWKS keys in jwt-vc-issuer for: https:\/\/issuer.example.com\//
@@ -188,7 +188,7 @@ describe('verifyCredentialJwt provider', () => {
     })
   })
 
-  it('should throw INVALID_CREDENTIAL if issuer is not found in jwt', async () => {
+  it('should throw invalid_credential if issuer is not found in jwt', async () => {
     const payload = JSON.parse(base64url.decode(vcJwt.split('.')[1]))
     const newPayload = { ...payload, vc: { ...payload.vc, issuer: undefined } }
     const newJwt = `${vcJwt.split('.')[0]}.${base64url.encode(
@@ -196,7 +196,7 @@ describe('verifyCredentialJwt provider', () => {
     )}.${vcJwt.split('.')[2]}`
 
     await assert.rejects(provider.verify(newJwt), (err: VcknotsError) => {
-      assert.strictEqual(err.name, 'INVALID_CREDENTIAL')
+      assert.strictEqual(err.name, 'invalid_credential')
       return true
     })
   })
@@ -235,3 +235,4 @@ describe('verifyCredentialJwt provider', () => {
     assert.strictEqual(result, true)
   })
 })
+

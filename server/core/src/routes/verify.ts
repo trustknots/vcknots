@@ -12,6 +12,7 @@ import {
 import { randomUUID } from 'node:crypto'
 import { handleError } from '../utils/error-handler.js'
 import { createDirectPostVpAudTransactionStore } from '../utils/direct-post-vp-aud-transaction-store.js'
+import { err } from '@trustknots/vcknots/errors'
 
 export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
   const verifyApp = new Hono()
@@ -57,7 +58,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     const m = client_id.match(/^([^:]+):(.+)$/)
     const prefix = m?.[1]
     if (!prefix || !canHandleClientIdScheme.includes(prefix as VerifierClientIdScheme)) {
-      throw new Error('Invalid client_id format')
+      throw err('invalid_request', {
+        message: 'Invalid client_id parameter.',
+      })
     }
     return ClientIdentifier(client_id)
   }
@@ -67,15 +70,17 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       const verifierId = VerifierClientId(baseUrl)
       type Payload = Record<string, unknown>
       const body: Payload = await c.req.json<Payload>().catch(() => ({}))
-      const credentialId = ('credentialId' in body ? body.credentialId : undefined) as
-        | string
-        | undefined
+
+      const credentialId =
+        typeof body.credentialId === 'string' && body.credentialId.trim() !== ''
+          ? body.credentialId
+          : undefined
 
       if (!credentialId) {
         return c.json(
           {
             error: 'invalid_request',
-            error_description: 'credentialId is required.',
+            error_description: 'credentialId must be a non-empty string.',
           },
           400
         )
@@ -86,7 +91,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         return c.json(
           {
             error: 'invalid_request',
-            error_description: 'state is required.',
+            error_description: 'state must be a non-empty string.',
           },
           400
         )
@@ -172,7 +177,16 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         )
       }
 
-      const formData = await c.req.formData()
+      const formData = await c.req.formData().catch(() => null)
+      if (!formData) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Request body must be a valid form data.',
+          },
+          400
+        )
+      }
       const parsed = parseFormPayload(formData)
 
       if (!parsed.ok) {
@@ -180,7 +194,17 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       }
 
       // Validate it using the AuthorizationResponse
-      const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
+      const parseResult = VerifierAuthorizationResponse.schema.safeParse(parsed.payload)
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid authorization response parameters.',
+          },
+          400
+        )
+      }
+      const authorizationResponse = parseResult.data
 
       const audResolved = vpAudTx.resolveExpectedAudFromWalletState(authorizationResponse.state)
       if (!audResolved.ok) {
@@ -218,14 +242,33 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           400
         )
       }
-      const formData = await c.req.formData()
+      const formData = await c.req.formData().catch(() => null)
+      if (!formData) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Request body must be a valid form data.',
+          },
+          400
+        )
+      }
       const parsed = parseFormPayload(formData)
       if (!parsed.ok) {
         return c.json(parsed.error, 400)
       }
 
       // Validate it using the AuthorizationResponse
-      const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
+      const parseResult = VerifierAuthorizationResponse.schema.safeParse(parsed.payload)
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid authorization response parameters.',
+          },
+          400
+        )
+      }
+      const authorizationResponse = parseResult.data
       const audResolved = vpAudTx.resolveExpectedAudFromWalletState(authorizationResponse.state)
       if (!audResolved.ok) {
         return c.json(audResolved.error, 400)
@@ -299,37 +342,37 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         )
       }
     }
-    const input =
-      parsed && typeof parsed === 'object' ? (parsed as Partial<RequestObjectShape>) : {}
-    const requestObject: RequestObjectShape = {
-      query:
-        typeof input.query === 'object' && input.query !== null
-          ? input.query
-          : {
-              presentation_definition: presentationDefinitionJwtVC,
-            },
-      state:
-        typeof input.state === 'string' && input.state.trim() !== ''
-          ? input.state
-          : randomUUID().replaceAll('-', ''),
-      base_url:
-        typeof input.base_url === 'string' && input.base_url.trim() !== ''
-          ? input.base_url
-          : baseUrl,
-      is_request_uri: typeof input.is_request_uri === 'boolean' ? input.is_request_uri : true,
-      is_transaction_data:
-        typeof input.is_transaction_data === 'boolean' ? input.is_transaction_data : false,
-      response_uri:
-        typeof input.response_uri === 'string' && input.response_uri.trim() !== ''
-          ? input.response_uri
-          : undefined,
-      client_id:
-        typeof input.client_id === 'string' && input.client_id.trim() !== ''
-          ? validateClientIdScheme(input.client_id)
-          : 'x509_san_dns:localhost',
-    }
-
     try {
+      const input =
+        parsed && typeof parsed === 'object' ? (parsed as Partial<RequestObjectShape>) : {}
+      const requestObject: RequestObjectShape = {
+        query:
+          typeof input.query === 'object' && input.query !== null
+            ? input.query
+            : {
+                presentation_definition: presentationDefinitionJwtVC,
+              },
+        state:
+          typeof input.state === 'string' && input.state.trim() !== ''
+            ? input.state
+            : randomUUID().replaceAll('-', ''),
+        base_url:
+          typeof input.base_url === 'string' && input.base_url.trim() !== ''
+            ? input.base_url
+            : baseUrl,
+        is_request_uri: typeof input.is_request_uri === 'boolean' ? input.is_request_uri : true,
+        is_transaction_data:
+          typeof input.is_transaction_data === 'boolean' ? input.is_transaction_data : false,
+        response_uri:
+          typeof input.response_uri === 'string' && input.response_uri.trim() !== ''
+            ? input.response_uri
+            : undefined,
+        client_id:
+          typeof input.client_id === 'string' && input.client_id.trim() !== ''
+            ? validateClientIdScheme(input.client_id)
+            : 'x509_san_dns:localhost',
+      }
+
       const verifierId = VerifierClientId(baseUrl)
       const request = await verifierFlow.createAuthzRequest(
         verifierId,
@@ -375,7 +418,17 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     try {
       console.log('request-object-Id:', c.req.param('request-object-Id'))
       const verifierId = VerifierClientId(baseUrl)
-      const requestObjectId = VerifierRequestObjectId(c.req.param('request-object-Id'))
+      const parseResult = VerifierRequestObjectId.schema.safeParse(c.req.param('request-object-Id'))
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid request-object-Id parameter.',
+          },
+          400
+        )
+      }
+      const requestObjectId = parseResult.data
       const jar = await verifierFlow.findRequestObject(verifierId, requestObjectId)
       return c.body(jar, 200, {
         'Content-Type': 'application/oauth-authz-req+jwt',

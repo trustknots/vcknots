@@ -77,6 +77,7 @@ describe('VerifierFlow', () => {
     save: mock.fn(),
     validate: mock.fn(),
     revoke: mock.fn(async () => true),
+    consume: mock.fn(async () => true),
   } satisfies NonceStoreProvider
 
   const mockCredentialQueryProvider = {
@@ -446,7 +447,7 @@ describe('VerifierFlow', () => {
       assert.equal(req.nonce, 'nonce-123')
     })
 
-    it('should throw VERIFIER_NOT_FOUND if metadata missing', async () => {
+    it('should throw verifier_not_found if metadata missing', async () => {
       const presentationDefinition = {
         id: 'test-pd-id',
         input_descriptors: [
@@ -477,7 +478,7 @@ describe('VerifierFlow', () => {
           false,
           {}
         ),
-        { name: 'VERIFIER_NOT_FOUND' }
+        { name: 'verifier_not_found' }
       )
     })
 
@@ -550,7 +551,7 @@ describe('VerifierFlow', () => {
       assert.equal(mockRequestObjectStoreProvider.save.mock.callCount(), 1)
     })
 
-    it('should throw INVALID_REQUEST when request_uri is true and base_url is not present', async () => {
+    it('should throw invalid_request when request_uri is true and base_url is not present', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
         vp_formats: {
@@ -606,11 +607,11 @@ describe('VerifierFlow', () => {
           true,
           {}
         ),
-        { name: 'INVALID_REQUEST' }
+        { name: 'invalid_request' }
       )
     })
 
-    it('should throw INVALID_REQUEST when neither request_uri nor base_url is present', async () => {
+    it('should throw invalid_request when neither request_uri nor base_url is present', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
         vp_formats: {
@@ -666,7 +667,7 @@ describe('VerifierFlow', () => {
           true,
           {}
         ),
-        { name: 'INVALID_REQUEST' }
+        { name: 'invalid_request' }
       )
     })
   })
@@ -826,3 +827,4 @@ describe('VerifierFlow', () => {
     })
   })
 })
+

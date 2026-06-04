@@ -63,14 +63,24 @@ To start this server, follow the steps below.
    - `FIREBASE_CLIENT_EMAIL`
    - `SECRET_MANAGER_PRIVATE_KEY`
    - `SECRET_MANAGER_CLIENT_EMAIL`
+   - `TX_CODE_PEPPER`
+
+   `TX_CODE_PEPPER` is a secret pepper value used to HMAC-hash `tx_code` values before storing them in Firestore.
+   This value is required in the Google Cloud provider path; if it is missing, the server fails at startup with
+   `TX_CODE_PEPPER environment variable is required`.
+   Use a sufficiently long random secret and keep it stable per environment (do not rotate casually, because
+   previously stored `tx_code` hashes will no longer validate after changing it).
 
    Optional variables:
 
    - `FIRESTORE_DATABASE_ID`
    - `BASE_URL` (e.g., `http://localhost:8080`)
    - `PORT` (default: `8080`)
+   - `DPOP_MODE` (`off` / `optional` / `required`)
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
+
+   `DPOP_MODE` controls DPoP behavior for both the token endpoint and the credential endpoint via **`@trustknots/server-core`**. The Google Cloud server uses the same `server-core` implementation as the single server, so see the [`DPOP_MODE` description in the single-server README](../single/README.md#post-token) for mode-specific behavior, nonce challenges, and error responses.
 
 2. **Install Dependencies** (Run from root directory)
 
@@ -163,6 +173,8 @@ The server starts on `http://localhost:8080` by default.
 
 - [`POST /token`](../single/README.md#post-token) - Token endpoint
 - [`GET /.well-known/oauth-authorization-server`](../single/README.md#get-well-knownoauth-authorization-server) - Get Authorization Server metadata
+
+`POST /token` and `POST /credentials` follow `DPOP_MODE` for DPoP behavior. See the [single-server README](../single/README.md#post-token) for mode-specific behavior, nonce challenges, and error responses.
 
 #### Verifier
 

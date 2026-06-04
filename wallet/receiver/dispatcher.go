@@ -102,7 +102,7 @@ func (d *ReceivingDispatcher) FetchAuthorizationServerMetadata(endpoint common.U
 }
 
 // FetchAccessToken fetches access token using the appropriate plugin
-func (d *ReceivingDispatcher) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string) (*types.CredentialIssuanceAccessToken, error) {
+func (d *ReceivingDispatcher) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string) (*types.CredentialIssuanceAccessToken, error) {
 	if authzCode == "" {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "fetch_access_token", types.ErrAuthorizationFailed)
 	}
@@ -112,7 +112,7 @@ func (d *ReceivingDispatcher) FetchAccessToken(receivingType types.SupportedRece
 		return nil, err
 	}
 
-	token, err := plugin.FetchAccessToken(receivingType, endpoint, authzCode)
+	token, err := plugin.FetchAccessToken(receivingType, endpoint, authzCode, txCode)
 	if err != nil {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "fetch_access_token", err)
 	}

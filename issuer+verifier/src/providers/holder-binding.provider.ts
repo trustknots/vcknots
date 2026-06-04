@@ -16,26 +16,26 @@ export const holderBinding = (): HolderBindingProvider & WithProviderRegistry =>
     async verify(credentials, publicKey): Promise<boolean> {
       for (const vc of credentials) {
         if (!vc.credentialSubject) {
-          throw err('INVALID_CREDENTIAL', {
+          throw err('invalid_credential', {
             message: `Missing credentialSubject in VC: ${vc.id}`,
           })
         }
 
         if (!vc.credentialSubject.id) {
-          throw err('INVALID_CREDENTIAL', {
+          throw err('invalid_credential', {
             message: `Missing credentialSubject.id in VC: ${vc.id}`,
           })
         }
 
         const didSplit = vc.credentialSubject.id.split(':')
         if (didSplit.length < 3 || didSplit[0] !== 'did') {
-          throw raise('INVALID_PROOF', {
+          throw raise('invalid_proof', {
             message: `Invalid DID format: ${vc.credentialSubject.id}`,
           })
         }
         const didProvider$ = this.providers.get('did-provider')
         if (!didProvider$ || didProvider$.length === 0) {
-          throw raise('INVALID_PROOF', {
+          throw raise('invalid_proof', {
             message: 'No kid or unsupported did type detected.',
           })
         }
@@ -43,7 +43,7 @@ export const holderBinding = (): HolderBindingProvider & WithProviderRegistry =>
         const didDoc = await didProvider.resolveDid(vc.credentialSubject.id)
 
         if (!didDoc || !didDoc.verificationMethod) {
-          throw err('INVALID_CREDENTIAL', {
+          throw err('invalid_credential', {
             message: `Cannot resolve DID: ${vc.credentialSubject.id}`,
           })
         }
@@ -51,7 +51,7 @@ export const holderBinding = (): HolderBindingProvider & WithProviderRegistry =>
         let success = false
         for (const vm of didDoc.verificationMethod) {
           if (!vm.publicKeyJwk) {
-            throw err('INVALID_CREDENTIAL', {
+            throw err('invalid_credential', {
               message: `Missing publicKeyJwk in DID: ${vc.credentialSubject.id}`,
             })
           }
@@ -71,7 +71,7 @@ export const holderBinding = (): HolderBindingProvider & WithProviderRegistry =>
         }
 
         if (!success) {
-          throw err('INVALID_CREDENTIAL', {
+          throw err('invalid_credential', {
             message: `Binding verification failed for VC: ${vc.id}`,
           })
         }
@@ -81,3 +81,4 @@ export const holderBinding = (): HolderBindingProvider & WithProviderRegistry =>
     },
   }
 }
+

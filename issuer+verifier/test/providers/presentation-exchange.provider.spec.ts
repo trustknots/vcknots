@@ -46,9 +46,10 @@ describe('PresentationExchangeProvider', () => {
       } satisfies CredentialQueryGenerationOptions
 
       await assert.rejects(provider.generate(options), {
-        name: 'ILLEGAL_ARGUMENT',
+        name: 'illegal_argument',
         message: '"dcql" is not supported.',
       })
     })
   })
 })
+

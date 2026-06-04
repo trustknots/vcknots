@@ -11,7 +11,6 @@ sidebar_position: 2
 - OpenID for Verifiable Credential Issuance 1.0 に対応([OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html))  
 なお、以下は現時点では未実装ですが、今後対応予定です。
   - 現在対応しているフローは 事前認可コードフロー（Pre-Authorized Code Flow）のみです
-  - Credential Offerの`tx_code`は未対応（今後対応予定）
   - Credential Requestの`credential_response_encryption`は未対応（今後対応予定）
   - Credential Requestのproof typeは`jwt`のみ対応 （`di_vp`,`attestation`今後対応予定）
 - Node.js v14以降がインストールされていること
@@ -47,6 +46,125 @@ const context = initializeContext({
 const issuerFlow = initializeIssuerFlow(context);
 const authzFlow = initializeAuthzFlow(context);
 ```
+
+## VcknotsContext
+
+`VcknotsContext` は、VCKnots の各機能で共有されるコアランタイムコンテキストです。
+
+以下を管理します。各設定はVcknotsOptionsによって渡されます。
+
+- providers
+- extensions
+- debug
+- OAuth 関連
+
+## VcknotsOptions
+
+`initializeContext()` に渡す設定オプションです。
+
+```typescript
+type VcknotsOptions = {
+  providers?: Providers
+  extensions?: Extensions
+  debug?: boolean
+  oauth?: OAuthOptions
+}
+```
+
+### providers
+
+カスタム provider を追加します。
+
+```typescript
+const context = initializeContext({
+  providers: [
+    myProvider,
+  ],
+})
+```
+
+---
+
+### extensions
+
+VCKnots extension を追加します。
+
+```typescript
+const context = initializeContext({
+  extensions: [
+    myExtension,
+  ],
+})
+```
+
+### debug
+
+開発用オプションです。
+
+```typescript
+const context = initializeContext({
+  debug: true,
+})
+```
+
+`debug: true` の場合:
+
+- insecure な `http://` endpoint を許可
+- localhost 開発環境向けの動作を有効化
+
+`debug: false` または設定無し(undefined)の場合: 
+
+- `CredentialIssuerMetadata` の以下の endpoint に `http://` URL を設定すると `insecure_http_not_allowed` エラーになります。
+  - `credential_endpoint`
+  - `deferred_credential_endpoint`
+
+```json
+{
+  "error": "insecure_http_not_allowed",
+  "error_description": "CredentialIssuerMetadata contains insecure http url in credential_endpoint: http://localhost:8080/credentials"
+}
+```
+
+本番環境では HTTPS endpoint を使用してください。
+
+---
+
+### oauth
+
+Access Tokenに関する設定を指定します。
+
+```typescript
+const context = initializeContext({
+  oauth: {
+    senderConstrainedAccessToken: {
+      method: 'dpop',
+      dpop: {
+        mode: 'required',
+      },
+    },
+  },
+})
+```
+
+#### method
+
+Access Token の sender constraint method を指定します。
+
+```typescript
+type SenderConstraintMethod = 'none' | 'dpop' | 'mtls'
+```
+
+| 値 | 説明 |
+|---|---|
+| `none` | sender-constrained access token を利用しません |
+| `dpop` | DPoP-bound access token を利用します |
+| `mtls` | mTLS sender-constrained access token（将来対応予定） |
+
+---
+
+#### dpop.mode
+
+DPoP の要求レベルを指定します。詳細は[5.アクセストークンの発行](#5-アクセストークンの発行)を参照
 
 ## 3. Issuer機能のサンプル実装
 
@@ -186,7 +304,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
             "format": "jwt_vc_json",
             "scope": "UniversityDegree",
             "cryptographic_binding_methods_supported": [
-                "jwk"
+                "did:key"
             ],
             "proof_types_supported": {
                 "jwt": {
@@ -214,6 +332,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
                 "claims": [
                     {
                         "path": [
+                            "credentialSubject",
                             "given_name"
                         ],
                         "mandatory": true,
@@ -230,6 +349,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
                     },
                     {
                         "path": [
+                            "credentialSubject",
                             "family_name"
                         ],
                         "display": [
@@ -245,6 +365,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
                     },
                     {
                         "path": [
+                            "credentialSubject",
                             "degree"
                         ],
                         "display": [
@@ -260,6 +381,7 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
                     },
                     {
                         "path": [
+                            "credentialSubject",
                             "gpa"
                         ],
                         "display": [
@@ -431,12 +553,41 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
 app.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
-      const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
+      const parseResult = CredentialConfigurationId.schema.safeParse(c.req.param('configuration'))
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid credential configuration ID.',
+          },
+          400
+        )
+      }
+      const configurations = [parseResult.data]
+      const rawBody = await c.req.text()
 
-      const offer = await issuerFlow.offerCredential(issuer, configurations, {
+      let options: OfferOptions | undefined
+      if (rawBody.trim().length > 0) {
+        try {
+          options = JSON.parse(rawBody) as OfferOptions
+        } catch {
+          return c.json(
+            {
+              error: 'invalid_request',
+              error_description: 'Request body must be valid JSON.',
+            },
+            400
+          )
+        }
+      }
+
+      const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
+        txCode: options?.tx_code,
+        authorizationServer: options?.authorization_server,
       })
       console.log('offer:', offer)
+      console.log('tx_code:', tx_code)
 
       return c.text(
         `openid-credential-offer://?credential_offer=${encodeURIComponent(JSON.stringify(offer))}`
@@ -453,14 +604,27 @@ app.post('/configurations/:configuration/offer', async (c) => {
 
 **リクエスト**
 
+任意パラメータを指定する場合のみ、リクエストボディ（JSON）を含めてください。
+
+- tx_code は、Credential Offer にトランザクションコードを含めるために使用できます。
+- authorization_server は、Issuer Metadata の authorization_servers に複数のエントリーが含まれる場合にのみ指定できます。
+
 ```bash
-curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer
+curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tx_code": {
+      "input_mode": "numeric",
+      "length": 6,
+      "description": "Please enter the one-time code."
+    }
+  }'
 ```
 
 **レスポンス**
 
 ```raw
-openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%3A8080%22%2C%22credential_configuration_ids%22%3A%5B%22UniversityDegreeCredential%22%5D%2C%22grants%22%3A%7B%22urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code%22%3A%7B%22pre-authorized_code%22%3A%22343ce17f1d274aa8bb3d19c140484889%22%7D%7D%7D
+openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%3A8080%22%2C%22credential_configuration_ids%22%3A%5B%22UniversityDegreeCredentialSdJwt%22%5D%2C%22grants%22%3A%7B%22urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code%22%3A%7B%22pre-authorized_code%22%3A%2268baf35e74ae430684662d85ea87160e%22%2C%22tx_code%22%3A%7B%22input_mode%22%3A%22numeric%22%2C%22length%22%3A6%2C%22description%22%3A%22Please%20enter%20the%20one-time%20code.%22%7D%7D%7D%7D
 ```
 
 
@@ -500,8 +664,8 @@ curl  http://localhost:8080/.well-known/oauth-authorization-server
 {
   "pre-authorized_grant_anonymous_access_supported": true,
   "issuer": "http://localhost:8080",
-  "authorization_endpoint": "http://localhost:8080/authz/authorize",
-  "token_endpoint": "http://localhost:8080/authz/token",
+  "authorization_endpoint": "http://localhost:8080/authorize",
+  "token_endpoint": "http://localhost:8080/token",
   "scopes_supported": [
       "openid"
   ],
@@ -516,18 +680,72 @@ curl  http://localhost:8080/.well-known/oauth-authorization-server
 アクセストークンを発行するエンドポイント：
 
 ```typescript
-app.post("/token", async (c) => {
-  const request = await c.req.formData();
-  const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()));
-  console.log("tokenRequest:", tokenRequest);
-  const issuer = AuthorizationServerIssuer(issuerId);
+app.post('/token', async (c) => {
+  const dpopMode = resolveDpopMode(context.options)
+  const dpopProof = parseDpopHeader(c.req.header('DPoP'))
 
-  const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest);
-  return c.json(accessToken);
-});
+  if (
+    (dpopMode === 'required' && !dpopProof.ok) ||
+    (dpopMode !== 'off' && !dpopProof.ok && dpopProof.reason !== 'missing')
+  ) {
+    return c.json(
+      {
+        error: 'invalid_request',
+        error_description:
+          dpopProof.reason === 'missing'
+            ? 'DPoP proof JWT is required.'
+            : dpopProof.reason === 'duplicate'
+              ? 'DPoP header must appear exactly once.'
+              : 'DPoP header must contain a compact JWT.',
+      },
+      400
+    )
+  }
 
+  const request = await c.req.formData().catch(() => null)
+  if (!request) {
+    return c.json(
+      {
+        error: 'invalid_request',
+        error_description: 'Request body must be a valid form data.',
+      },
+      400
+    )
+  }
+  const requestData: Record<string, string | File | number> = Object.fromEntries(
+    request.entries()
+  )
 
+  const parseResult = AuthzTokenRequest.schema.safeParse(requestData)
+  if (!parseResult.success) {
+    return c.json(
+      {
+        error: 'invalid_request',
+        error_description: 'Invalid token request parameters.',
+      },
+      400
+    )
+  }
+  const tokenRequest = parseResult.data
+  const issuer = AuthorizationServerIssuer(baseUrl)
+
+  const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
+    ...(dpopMode !== 'off' && dpopProof.ok
+      ? {
+          dpopProof: {
+            proofJwt: dpopProof.proofJwt,
+            htm: c.req.method,
+            htu: `${baseUrl}/token`,
+            nonceRequired: true,
+          },
+        }
+      : {}),
+  })
+  return c.json(accessToken)
+})
 ```
+
+**リクエストボディは `application/x-www-form-urlencoded` です**（`AuthzTokenRequest` はフォームフィールドから組み立てます）。`invalid_dpop_proof`（`invalid_dpop_proof`）や `use_dpop_nonce`（`DPoP-Nonce` ヘッダー付き）などの分岐を含む実装は [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts) を参照してください。
 
 **例**:
 
@@ -535,11 +753,9 @@ app.post("/token", async (c) => {
 
 ```bash
 curl -X POST http://localhost:8080/token \
-  -H "Content-Type: application/json" \
-  -d ' {
-    "grant_type": "urn:ietf:params:oauth:grant-type:pre-authorized_code",
-    "pre-authorized_code": "343ce17f1d274aa8bb3d19c140484889"
-  }'
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:pre-authorized_code" \
+  --data-urlencode "pre-authorized_code=343ce17f1d274aa8bb3d19c140484889"
 ```
 
 **レスポンス**
@@ -552,20 +768,86 @@ curl -X POST http://localhost:8080/token \
 }
 ```
 
+#### DPoP Proof を利用する token request
+
+`oauth.senderConstrainedAccessToken.dpop.mode` により、token endpoint の DPoP Proof 検証を制御できます。
+
+| mode | token endpoint の挙動 |
+|------|------------------------|
+| `off` | DPoP を利用しません。Bearer access token を発行します。 |
+| `optional` | DPoP ヘッダーがない場合は Bearer access token を発行します。DPoP ヘッダーがある場合は proof を検証し、DPoP-bound access token を発行します。 |
+| `required` | DPoP ヘッダーを必須にします。未指定または不正な DPoP ヘッダーは `invalid_request` になります。 |
+
+DPoP Proof に `nonce` がない、または nonce が無効な場合、Authorization Server は `DPoP-Nonce` レスポンスヘッダー付きで `use_dpop_nonce` を返します。Wallet はこの nonce を DPoP Proof JWT の `nonce` クレームに入れて token request を再送します。
+
+```http
+HTTP/1.1 400 Bad Request
+DPoP-Nonce: 9288f7b2dffb42c2b08f2f4d4d8635d8
+Content-Type: application/json
+
+{
+  "error": "use_dpop_nonce",
+  "error_description": "Authorization server requires nonce in DPoP proof."
+}
+```
+
+DPoP Proof の検証に成功した場合、レスポンスの `token_type` は `DPoP` になります。また、発行される access token には DPoP Proof の JOSE ヘッダーに含まれる公開鍵の JWK Thumbprint が `cnf.jkt` として含まれます。
+
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "DPoP",
+  "expires_in": 86400
+}
+```
+
+DPoP-bound access token を使う後続リクエストでは、同じ公開鍵に対応する秘密鍵で署名した DPoP Proof を提示する必要があります。
+
+#### Token endpoint（AS）と credential endpoint（RS）でのエラー応答の違い
+
+[server/core](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts) の実装では、役割によって HTTP ステータスとチャレンジの付け方が次のように異なります。
+
+- **`POST /token`（Authorization Server）:** DPoP／リクエスト不正は多く **HTTP 400** と JSON ボディ（`invalid_request` / `invalid_dpop_proof` / `use_dpop_nonce`）で返します。`use_dpop_nonce` のときはレスポンスに **`DPoP-Nonce`** が付きますが、**現行実装では `WWW-Authenticate` は付けません**。
+- **`POST /credentials`（Resource Server）:** アクセストークンや DPoP 検証の失敗は **HTTP 401** が中心です。**`invalid_token`** 相当では **`WWW-Authenticate: Bearer`**（`realm`・`error`・`error_description`）、**`invalid_dpop_proof`** および **`use_dpop_nonce`**（credential 側のメッセージ）では **`WWW-Authenticate: DPoP`** を付けます。後者は **`DPoP-Nonce` ヘッダー**も返る場合があります。
+
 ### 6. Nonceエンドポイント
 
 OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) に相当するエンドポイントです。Wallet が credential リクエストを送る前に c_nonce を取得する際に使用します。
 
 Issuer メタデータに `nonce_endpoint` を設定すると、Wallet は `/.well-known/openid-credential-issuer` から取得したメタデータ経由で nonce エンドポイントの URL を参照します。
 
+DPoP 用 nonce も返したい場合は、サーバー設定で `oauth.senderConstrainedAccessToken.dpop.mode` を指定します。
+
+```typescript
+const context = initializeContext({
+  oauth: {
+    senderConstrainedAccessToken: {
+      dpop: {
+        mode: 'optional', // 'off' | 'optional' | 'required'
+      },
+    },
+  },
+})
+```
+
+`mode !== 'off'` の場合、`POST /nonce` は JSON ボディの `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返します。`c_nonce` と `DPoP-Nonce` は別の値です。
+
+`c_nonce` は credential proof 用の nonce です。一方、`DPoP-Nonce` は token endpoint で提示する DPoP Proof 用の nonce です。用途が異なるため、TTL も別々に設定できます。
+
 #### POST /nonce - nonce（c_nonce）の作成
 
 ```typescript
 app.post('/nonce', async (c) => {
   try {
-    const NONCE_TTL_MS = 2 * 60 * 1000  // 2分
-    const cnonce = await issuerFlow.createNonce(NONCE_TTL_MS)
+    const C_NONCE_TTL_MS = 2 * 60 * 1000  // 2分
+    const DPOP_NONCE_TTL_MS = 5 * 60 * 1000  // 5分
+    const cnonce = await issuerFlow.createNonce(C_NONCE_TTL_MS)
+    const dpopMode = resolveDpopMode(context.options)
     c.header('Cache-Control', 'no-store')
+    if (dpopMode !== 'off') {
+      const dpopNonce = await issuerFlow.createNonce(DPOP_NONCE_TTL_MS)
+      c.header('DPoP-Nonce', dpopNonce)
+    }
     return c.json({ c_nonce: cnonce }, 200)
   } catch (err) {
     const errorResponse = handleError(err)
@@ -580,16 +862,27 @@ app.post('/nonce', async (c) => {
 **リクエスト**
 
 ```bash
-curl -X POST http://localhost:8080/nonce
+curl -i -X POST http://localhost:8080/nonce
 ```
 
 **レスポンス**
 
-```json
+```http
+HTTP/1.1 200 OK
+Cache-Control: no-store
+DPoP-Nonce: 9288f7b2dffb42c2b08f2f4d4d8635d8
+Content-Type: application/json
+
 {
   "c_nonce": "3ccc7973abef4102ad70a871e200304b"
 }
 ```
+
+`oauth.senderConstrainedAccessToken.dpop.mode` が `off` の場合、`DPoP-Nonce` ヘッダは付きません。
+
+**実装例**:
+
+- [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts)
 
 #### GET /nonce/:nonce - nonceの有効性検証
 
@@ -676,38 +969,251 @@ curl -X DELETE http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
 
 クレデンシャルを発行するエンドポイント：
 
+#### Credential endpoint での DPoP-bound access token 検証
+
+`oauth.senderConstrainedAccessToken.dpop.mode` により、credential endpoint で提示される access token と DPoP Proof の扱いを制御できます。
+
+| mode | credential endpoint の挙動 |
+|------|-----------------------------|
+| `off` | DPoP を利用しません。`Authorization: DPoP <access_token>` または `DPoP` ヘッダーが送られた場合は拒否します。 |
+| `optional` | DPoP を credential endpoint では必須にしません。送信者拘束のないアクセストークンは `Authorization: Bearer` のみで提示できます。一方、トークンに `cnf.jkt` が含まれる（送信者拘束／DPoP-bound）場合は `Authorization: Bearer` だけでは受け付けず、`Authorization: DPoP <access_token>` と `DPoP` ヘッダー（DPoP Proof JWT）を組み合わせて送る必要があります。 |
+| `required` | すべてのリクエストで `Authorization: DPoP <access_token>` と `DPoP` ヘッダー（DPoP Proof JWT）が必要です。`Authorization: Bearer` のみの提示は拒否します。 |
+
+credential endpoint はリソースサーバーとして動作するため、DPoP-bound access token を受け取った場合は RFC 9449 に沿って DPoP Proof を検証します。
+
+- `DPoP` ヘッダーが単一の compact JWT であること（実装では値に **カンマ**が含まれると複数ヘッダの結合とみなし拒否します）。
+- DPoP Proof JWT の JOSE ヘッダー `typ` が `dpop+jwt` であること。
+- `alg` が `none` や HMAC 系ではなく、非対称署名アルゴリズムであること。
+- JOSE ヘッダーの `jwk` に公開鍵が含まれ、秘密鍵が含まれていないこと。
+- DPoP Proof JWT の署名を `jwk` の公開鍵で検証できること。
+- payload に `jti`, `iat`, `htm`, `htu` が含まれること。
+- `htm` が実際の HTTP method と一致すること。
+- `htu` がクエリとフラグメントを除いた credential endpoint の URI と一致すること。
+- credential endpoint では `ath` が必須であり、提示された access token の SHA-256 hash を base64url エンコードした値と一致すること。
+- access token の `cnf.jkt` と DPoP Proof の `jwk` thumbprint が一致すること。
+- `jti` を保存し、同じ DPoP Proof の再利用（リプレイ）を拒否すること。
+- DPoP Proof の `iat` は、実装既定では `maxTokenAge` 300 秒と `clockTolerance` 60 秒の範囲で有効とみなされます（`issuer+verifier` の DPoP proof プロバイダ。工場オプションで変更可能）。
+
+DPoP Proof が不正な場合、credential endpoint は `401 Unauthorized` と `WWW-Authenticate: DPoP` を返します。アクセストークン JWT の形式・署名・issuer 不一致など **`invalid_token`** 相当の場合は、同じく **401** と **`WWW-Authenticate: Bearer`**（`realm` および `error="invalid_token"` 等）になります。
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: DPoP realm="http://localhost:8080", error="invalid_dpop_proof", error_description="DPoP proof JWT ath claim does not match the access token."
+Content-Type: application/json
+
+{
+  "error": "invalid_dpop_proof",
+  "error_description": "DPoP proof JWT ath claim does not match the access token."
+}
+```
+
+`use_dpop_nonce` の場合、credential endpoint は `401 Unauthorized` を返し、レスポンスヘッダーに `DPoP-Nonce` を含めます。Wallet はこの `DPoP-Nonce` ヘッダーの値を DPoP Proof JWT の `nonce` クレームに入れて credential request を再送します。
+
+```http
+HTTP/1.1 401 Unauthorized
+DPoP-Nonce: 9288f7b2dffb42c2b08f2f4d4d8635d8
+WWW-Authenticate: DPoP realm="http://localhost:8080", error="use_dpop_nonce", error_description="Credential issuer requires nonce in DPoP proof."
+Content-Type: application/json
+
+{
+  "error": "use_dpop_nonce",
+  "error_description": "Credential issuer requires nonce in DPoP proof."
+}
+```
+
+次のコードは処理の順序（**先にアクセストークンと DPoP を検証し、その後 JSON ボディを読む**）、`nonceRequired: true`、`Bearer` で提示されるトークンに `cnf.jkt` が含まれる場合の拒否、および **401 と `WWW-Authenticate`** を [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts) に合わせた抜粋です。`Context`（Hono）、`VcknotsError`、`buildBearerAuthenticateHeader` / `buildDpopAuthenticateHeader` などのインポート・本番向けのログは省略しています。
+
 ```typescript
+const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
+
 app.post('/credentials', async (c) => {
   try {
-    const issuer = AuthorizationServerIssuer(baseUrl)
+    const issuer = CredentialIssuer(baseUrl)
+    const authz = AuthorizationServerIssuer(baseUrl)
+    const dpopMode = resolveDpopMode(context.options)
+    const realm = baseUrl
 
-    const request = await c.req.json()
-    const parsedReq = CredentialRequest(request)
-  
-    // AccessToken 検証
-    const accessToken = c.req.header('Authorization')?.replace('Bearer ', '')
-    if (!accessToken) {
+    const hasCnfJkt = (payload: unknown): boolean => {
+      if (payload === null || typeof payload !== 'object' || Array.isArray(payload))
+        return false
+      const cnf = (payload as { cnf?: unknown }).cnf
+      if (cnf === null || typeof cnf !== 'object' || Array.isArray(cnf)) return false
+      return typeof (cnf as { jkt?: unknown }).jkt === 'string'
+    }
+
+    const unauthorized = (
+      c: Context,
+      body: { error: string; error_description: string },
+      challenge: { error?: 'invalid_request' | 'invalid_token' | 'insufficient_scope' } = {}
+    ) => {
+      c.header(
+        'WWW-Authenticate',
+        buildBearerAuthenticateHeader({
+          realm,
+          error: challenge.error,
+          errorDescription: challenge.error ? body.error_description : undefined,
+        })
+      )
+      return c.json(body, 401)
+    }
+
+    const invalidDpopProof = (c: Context, errorDescription: string) => {
+      c.header(
+        'WWW-Authenticate',
+        buildDpopAuthenticateHeader({
+          realm,
+          error: 'invalid_dpop_proof',
+          errorDescription,
+        })
+      )
+      return c.json(
+        { error: 'invalid_dpop_proof', error_description: errorDescription },
+        401
+      )
+    }
+
+    const dpopNonceResponse = async (c: Context) => {
+      const dpopNonce = await authzFlow.createDpopNonceChallenge(DPOP_NONCE_TTL_MS)
+      const errorDescription = 'Credential issuer requires nonce in DPoP proof.'
+      c.header('DPoP-Nonce', dpopNonce)
+      c.header(
+        'WWW-Authenticate',
+        buildDpopAuthenticateHeader({
+          realm,
+          error: 'use_dpop_nonce',
+          errorDescription,
+        })
+      )
       return c.json(
         {
-          error: 'invalid_token',
-          error_description: 'Access token is required.',
+          error: 'use_dpop_nonce',
+          error_description: errorDescription,
         },
         401
       )
     }
-    const isValid = await authzFlow.verifyAccessToken(issuer, accessToken)
-    console.log('isValid:', isValid)
-    if (!isValid) {
+
+    const authorization = parseAuthorizationHeader(c.req.header('Authorization'))
+    if (!authorization.ok) {
+      return unauthorized(c, {
+        error: 'invalid_token',
+        error_description:
+          authorization.reason === 'missing'
+            ? 'Access token is required.'
+            : 'Authorization header must use Bearer or DPoP scheme.',
+      })
+    }
+
+    if (dpopMode === 'off' && (authorization.value.scheme === 'dpop' || c.req.header('DPoP'))) {
+      return unauthorized(c, {
+        error: 'invalid_token',
+        error_description:
+          'DPoP access tokens are not supported by this credential endpoint.',
+      })
+    }
+
+    let accessTokenPayload: JwtPayload
+    try {
+      if (authorization.value.scheme === 'dpop') {
+        const dpopProof = parseDpopHeader(c.req.header('DPoP'))
+        if (!dpopProof.ok) {
+          return invalidDpopProof(
+            c,
+            dpopProof.reason === 'missing'
+              ? 'DPoP proof JWT is required.'
+              : dpopProof.reason === 'duplicate'
+                ? 'DPoP header must appear exactly once.'
+                : 'DPoP header must contain a compact JWT.'
+          )
+        }
+        accessTokenPayload = await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
+          dpopProof: {
+            proofJwt: dpopProof.proofJwt,
+            htm: c.req.method,
+            htu: `${baseUrl}/credentials`,
+            nonceRequired: true,
+          },
+        })
+      } else {
+        if (dpopMode === 'required') {
+          return unauthorized(
+            c,
+            {
+              error: 'invalid_token',
+              error_description: 'DPoP access token is required.',
+            },
+            { error: 'invalid_token' }
+          )
+        }
+        accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
+          authz,
+          authorization.value.token
+        )
+        if (hasCnfJkt(accessTokenPayload)) {
+          return unauthorized(
+            c,
+            {
+              error: 'invalid_token',
+              error_description:
+                'DPoP-bound access token must be presented with DPoP scheme.',
+            },
+            { error: 'invalid_token' }
+          )
+        }
+      }
+    } catch (err) {
+      if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
+        return unauthorized(
+          c,
+          { error: 'invalid_token', error_description: err.message },
+          { error: 'invalid_token' }
+        )
+      }
+      if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
+        return invalidDpopProof(c, err.message)
+      }
+      if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
+        return dpopNonceResponse(c)
+      }
+      throw err
+    }
+
+    const request = await c.req.json().catch(() => null)
+    if (!request) {
       return c.json(
         {
-          error: 'invalid_token',
-          error_description: 'Access token is invalid.',
+          error: 'invalid_request',
+          error_description: 'Request body must be a valid JSON.',
         },
-        401
+        400
       )
     }
-    // Credential 発行（JWT proof 検証には proofJwt でトークン取得フローを伝える）
-    const credential = await issuerFlow.issueCredential(CredentialIssuer(baseUrl), parse, {
+    const parseResult = CredentialRequest.schema.safeParse(request)
+    if (!parseResult.success) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Request body does not conform to CredentialRequest schema.',
+        },
+        400
+      )
+    }
+    const parse = parseResult.data
+    const accessTokenJti =
+      typeof accessTokenPayload.jti === 'string' && accessTokenPayload.jti.length > 0
+        ? accessTokenPayload.jti
+        : undefined
+    if (!accessTokenJti) {
+      return unauthorized(
+        c,
+        {
+          error: 'invalid_token',
+          error_description: 'Access token must contain a jti claim.',
+        },
+        { error: 'invalid_token' }
+      )
+    }
+    const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenJti, {
       alg: 'ES256',
       cnonce: {
         c_nonce_expires_in: 60 * 5 * 1000,
@@ -720,11 +1226,11 @@ app.post('/credentials', async (c) => {
       },
       proofJwt: { usePreAuth: true },
     })
-
     return c.json(credential)
   } catch (err) {
     const errorResponse = handleError(err)
-    return c.json(errorResponse, 400)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
   }
 })
 ```
@@ -735,7 +1241,7 @@ app.post('/credentials', async (c) => {
 
 ```bash
 curl -X POST http://localhost:8080/credentials \
-  -H "Authorization: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjgwODAiLCJzdWIiOiJmZGMzMzIzYmM3MTg0ZmJkYWE0NTc2YTgwODU2OGE0MSIsImV4cCI6MTc2MTk3ODAwNSwiaWF0IjoxNzYxODkxNjA1fQ.PBKg31GJbIIKqtQL6gpZYoIM_PGlY681u4Rjjhxek38Kzl3prEBggXcqjUq3l-cBRYC1KS1fcJY6jUiUllwyJw" \
+  -H "Authorization: Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..." \
   -H "Content-Type: application/json" \
   --data '{
   "credential_configuration_id": "UniversityDegreeCredential",
@@ -827,7 +1333,7 @@ createIssuerMetadata(issuer: CredentialIssuerMetadata): Promise<void>
 **戻り値**: なし
 
 **エラーケース**:
-- `PROVIDER_NOT_FOUND`: 未対応の`alg`が設定された
+- `provider_not_found`: 未対応の`alg`が設定された
 
 
 ### createNonce
@@ -891,8 +1397,8 @@ offerCredential(
 
 
 **エラーケース**:
-- `FEATURE_NOT_IMPLEMENTED_YET`: 未対応のフローが設定された（認可コードフローには未対応です）
-- `ISSUER_NOT_FOUND`: 未登録のIssuerが設定された
+- `unsupported_grant_type`: 未対応のフローが設定された（認可コードフローには未対応です）
+- `issuer_not_found`: 未登録のIssuerが設定された
 
 #### CredentialConfigurationId{#CredentialConfigurationId}
 クレデンシャル構成IDを定義する型です。
@@ -908,14 +1414,17 @@ type OfferOptions =
   | {
       usePreAuth: false
       state?: unknown
+      authorizationServer?: string
     }
   | {
       usePreAuth: true
       txCode?: {
-        inputMode?: 'numeric' | 'text'
+        input_mode?: 'numeric' | 'text'
         length?: number
         description?: string
       }
+      ttlSec?: number
+      authorizationServer?: string
     }
 ```
 
@@ -926,6 +1435,7 @@ type OfferOptions =
 issueCredential(
   issuer: CredentialIssuer,
   credentialRequest: CredentialRequest,
+  accessTokenJti: string,
   options?: IssueOptions
 ): Promise<CredentialResponse>
 ```
@@ -933,6 +1443,7 @@ issueCredential(
 **パラメータ**:
 - `issuer`: Issuerの識別子（[CredentialIssuer](#CredentialIssuer)）
 - `credentialRequest`: クレデンシャルリクエスト（[CredentialRequest](#CredentialRequest)）
+- `accessTokenJti`: アクセストークンのjti
 - `options`: 発行オプション（[IssueOptions](#IssueOptions)）
 
 **戻り値**: クレデンシャルレスポンスを返します。
@@ -951,7 +1462,7 @@ JOSE 保護ヘッダの検証内容は [credential-proof-jwt.provider.ts](https:
 
 - **`typ`**: `openid4vci-proof+jwt` であること（RFC 8725 に基づく明示的タイピング）。
 - **`alg`**: `none` および IANA JWA の **対称署名（MAC、`HS*` で始まる識別子）** は拒否されます。
-- **`kid` / `jwk` / `x5c`**: **同時に複数を含めてはいけません**。また **少なくともいずれか 1 つは必須**です（いずれも無い場合も `INVALID_PROOF`）。
+- **`kid` / `jwk` / `x5c`**: **同時に複数を含めてはいけません**。また **少なくともいずれか 1 つは必須**です（いずれも無い場合も `invalid_proof`）。
 - **`trust_chain`**: 現在未対応です。
 
 keyごとの動き:
@@ -963,22 +1474,21 @@ keyごとの動き:
 | **`x5c`** | 証明書チェーンを **`certificate-provider`** で検証したうえで、先頭証明書の公開鍵で検証します。`x5c` を使う構成では、Vcknots 初期化時に **`certificate-provider` をプロバイダ一覧へ登録**してください。 |
 
 **エラーケース**:
-- `ISSUER_NOT_FOUND`: 未登録のIssuerが設定された
-- `PROVIDER_NOT_FOUND`:  未対応の`format`が設定された
-- `INVALID_REQUEST`: `format`が未設定
-- `UNSUPPORTED_CREDENTIAL_TYPE`: 指定された`credential_definition`もしくは`proof_type`がサポートされていない
-- `INVALID_CREDENTIAL_REQUEST`: `proof`が見つからないかサポートされていない、設定 ID 不備など
-- `INVALID_PROOF`: `proof`が検証できない、OID4VCI の JWT proof に合わないヘッダ（`typ` / `alg` / `kid`・`jwk`・`x5c` の組み合わせなど）、未サポートの header、`nonce`が見つからない
-- `UNSUPPORTED_ISSUER_KEY_ALG`: Issuerの署名アルゴリズムがサポートされていない
-- `AUTHZ_ISSUER_KEY_NOT_FOUND`: Issuerの鍵が見つからない
-- `INTERNAL_SERVER_ERROR`: 署名に失敗した
+- `issuer_not_found`: 未登録のIssuerが設定された
+- `unknown_credential_configuration`: `credential_configuration_id`がサポートされていない
+- `unsupported_credential_type`: 指定された`credential_definition`もしくは`proof_type`がサポートされていない
+- `invalid_credential_request`: `proof`が見つからないかサポートされていない、設定 ID 不備など
+- `invalid_proof`: `proof`が検証できない、OID4VCI の JWT proof に合わないヘッダ（`typ` / `alg` / `kid`・`jwk`・`x5c` の組み合わせなど）、未サポートの header、`nonce`が見つからない
+- `unsupported_issuer_key_alg`: Issuerの署名アルゴリズムがサポートされていない
+- `authz_issuer_key_not_found`: Issuerの鍵が見つからない
+- `internal_server_error`: 署名に失敗した
 
-#### CredentialRequest{#CredentialRequest}
+#### CredentialRequest {#CredentialRequest}
 クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。
 
 定義は[issuer+verifier/src/credential-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-request.types.ts)を参照してください。
 
-#### IssueOptions{#IssueOptions}
+#### IssueOptions {#IssueOptions}
 クレデンシャル発行オプションを定義する型です。アルゴリズムやクレーム、JWT プルーフ検証用のヒントなどを設定できます。
 定義は下記のとおりです（実装は [issuer.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/issuer.flows.ts) を参照）。
 
@@ -1074,11 +1584,11 @@ createAccessToken<T extends GrantType>(
 ```
 
 **エラーケース**:
-- `PROVIDER_NOT_FOUND`:  秘密鍵で未対応のアルゴリズムが設定された
-- `PRE_AUTHORIZED_CODE_NOT_FOUND`: 有効でない事前認可コードが設定された
-- `INVALID_REQUEST`: 認可サーバーの鍵が未登録、アルゴリズムが未設定、グラントタイプがサポートされていない
-- `INTERNAL_SERVER_ERROR`: 署名に失敗した
-- `FEATURE_NOT_IMPLEMENTED_YET`: 認可コードフローを設定（現在未対応）
+- `provider_not_found`:  秘密鍵で未対応のアルゴリズムが設定された
+- `invalid_grant`: 有効でない事前認可コードが設定された
+- `invalid_request`: 認可サーバーの鍵が未登録、アルゴリズムが未設定、グラントタイプがサポートされていない
+- `internal_server_error`: 署名に失敗した
+- `unsupported_grant_type`: 認可コードフローを設定（現在未対応）
 
 #### TokenRequest{#TokenRequest}
 クレデンシャル発行リクエストを定義する型です。クレデンシャルの識別子などを設定できます。
@@ -1114,9 +1624,9 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 **戻り値**: アクセストークンが有効をbooleanで返します。
 
 **エラーケース**:
-- `INVALID_ACCESS_TOKEN`:  アクセストークンが有効なjwtでないか、`authz`が期待されたものでない
-- `AUTHZ_ISSUER_KEY_NOT_FOUND`: 認可サーバーの鍵が見つからない
-- `PROVIDER_NOT_FOUND`: 署名アルゴリズムが未サポート
+- `invalid_access_token`:  アクセストークンが有効なjwtでないか、`authz`が期待されたものでない
+- `authz_issuer_key_not_found`: 認可サーバーの鍵が見つからない
+- `provider_not_found`: 署名アルゴリズムが未サポート
 
 
 ## 7. 注意事項
@@ -1129,6 +1639,19 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 
 3. **URLエンコード**: issuer IDにURLエンコードが必要な文字（例：`:`、`/`）が含まれる場合は、適切にエンコードしてください。
 
+4. **Issuer Metadata の HTTPS 制約**:
+   - 本番モード（`debug: false`）では、`CredentialIssuerMetadata` の以下の endpoint に `http://` URL を設定できません。
+     - `credential_endpoint`
+     - `deferred_credential_endpoint`
+   - insecure な URL が設定された場合、`insecure_http_not_allowed` エラーになります。
+   - ローカル開発用途では、`initializeContext({ debug: true })` を指定することで HTTP endpoint を許可できます。
+
+```typescript
+const context = initializeContext({
+  debug: true,
+})
+```
+
 
 ## 8. トラブルシューティング
 
@@ -1137,11 +1660,8 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 - **Q:メタデータのバリデーションエラー**:
     - **A：** 提供されたメタデータがCredentialIssuerMetadataスキーマ、AuthorizationServerMetadataスキーマに適合しているかを確認してください。
 
-- **Q:クレデンシャルオファーの作成エラー**:`FEATURE_NOT_IMPLEMENTED_YET`
+- **Q:クレデンシャルオファーの作成エラー**:`unsupported_grant_type`
     - **A：**  未実装のフローを呼び出していないか確認してください。現在対応しているのは事前認可コードフローです。
 
-- **Q:クレデンシャル発行エラー**:`INVALID_PROOF`
+- **Q:クレデンシャル発行エラー**:`invalid_proof`
     - **A：**  クレデンシャルリクエストのproof.jwtのheaderがkidを含んでいるかを確認してください。また、proof に含まれる `nonce` が有効かを確認してください。
-
-
-

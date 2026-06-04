@@ -119,7 +119,7 @@ func (o *Oid4vciReceiver) FetchAuthorizationServerMetadata(endpoint common.URIFi
 	return &metadata, nil
 }
 
-func (o *Oid4vciReceiver) FetchAccessToken(receivingTypes types.SupportedReceivingTypes, endpoint common.URIField, authzCode string) (*types.CredentialIssuanceAccessToken, error) {
+func (o *Oid4vciReceiver) FetchAccessToken(receivingTypes types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string) (*types.CredentialIssuanceAccessToken, error) {
 	if receivingTypes != types.Oid4vci {
 		return nil, fmt.Errorf("unsupported flavor: %v", receivingTypes)
 	}
@@ -128,6 +128,9 @@ func (o *Oid4vciReceiver) FetchAccessToken(receivingTypes types.SupportedReceivi
 	formData := url.Values{}
 	formData.Set("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
 	formData.Set("pre-authorized_code", authzCode)
+	if txCode != "" {
+		formData.Set("tx_code", txCode)
+	}
 
 	var accessToken types.CredentialIssuanceAccessToken
 	if err := o.doRequest("POST", endpoint, "/token", strings.NewReader(formData.Encode()), &accessToken); err != nil {

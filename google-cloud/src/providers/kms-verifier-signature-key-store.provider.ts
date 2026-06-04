@@ -36,7 +36,7 @@ export const kmsVerifierSignatureKeyStore = (
       }),
     })
   if (!projectId) {
-    raise('INTERNAL_SERVER_ERROR', {
+    raise('internal_server_error', {
       message: 'Missing projectId in CloudKmsProviderOptions or GOOGLE_CLOUD_PROJECT_ID env var',
     })
   }
@@ -64,14 +64,14 @@ export const kmsVerifierSignatureKeyStore = (
     async save(verifier, keyAlg, pair) {
       const declaredAlg = pair?.declaredAlg ?? keyAlg
       if (pair && pair.declaredAlg !== keyAlg) {
-        raise('ILLEGAL_ARGUMENT', {
+        raise('illegal_argument', {
           message: `The provided key pair algorithm ${pair.declaredAlg} does not match the requested key algorithm ${keyAlg}.`,
         })
       }
 
       const kmsAlgorithm = joseAlgorithmToKmsAlgorithm(declaredAlg)
       if (!kmsAlgorithm) {
-        raise('INTERNAL_SERVER_ERROR', {
+        raise('internal_server_error', {
           message: `Unsupported verifier key algorithm: ${declaredAlg}`,
         })
       }
@@ -88,13 +88,13 @@ export const kmsVerifierSignatureKeyStore = (
       const importJobName = importJob.name
       const wrappingPublicKeyPem = importJob.publicKey?.pem
       if (!importJobName || !wrappingPublicKeyPem) {
-        raise('INTERNAL_SERVER_ERROR', {
+        raise('internal_server_error', {
           message: 'Import job is missing name or wrapping public key',
         })
       }
 
       if (declaredAlg.startsWith('RS') || declaredAlg.startsWith('PS')) {
-        raise('INTERNAL_SERVER_ERROR', {
+        raise('internal_server_error', {
           message: `Import for ${declaredAlg} requires RSA_AES wrapping (AES-KWP), which is not implemented`,
         })
       }
@@ -187,13 +187,13 @@ export const kmsVerifierSignatureKeyStore = (
 
         const latestVersion = latestEnabledVersion(versions)
         if (!latestVersion?.name) {
-          raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+          raise('authz_verifier_key_not_found', {
             message: 'Verifier private key not found.',
           })
         }
 
         if (jwtHeader.alg !== keyAlg) {
-          raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+          raise('authz_verifier_key_not_found', {
             message: `Verifier private key algorithm mismatch: header alg ${jwtHeader.alg}, key alg ${keyAlg}.`,
           })
         }
@@ -203,7 +203,7 @@ export const kmsVerifierSignatureKeyStore = (
         const signingInput = `${encodedHeader}.${encodedPayload}`
         const digestField = digestFieldName(keyAlg)
         if (!digestField) {
-          raise('INTERNAL_SERVER_ERROR', {
+          raise('internal_server_error', {
             message: `Unsupported verifier key algorithm: ${keyAlg}`,
           })
         }
@@ -225,7 +225,7 @@ export const kmsVerifierSignatureKeyStore = (
             return signResponse
           } catch (error) {
             if (grpcCode(error) === KMS_NOT_FOUND) {
-              raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+              raise('authz_verifier_key_not_found', {
                 message: 'Verifier private key not found.',
               })
             }
@@ -235,20 +235,20 @@ export const kmsVerifierSignatureKeyStore = (
 
         // https://cloud.google.com/kms/docs/data-integrity-guidelines
         if (signed.name !== versionName) {
-          raise('INTERNAL_SERVER_ERROR', { message: 'KMS key version mismatch' })
+          raise('internal_server_error', { message: 'KMS key version mismatch' })
         }
         if (!signed.verifiedDigestCrc32c) {
-          raise('INTERNAL_SERVER_ERROR', {
+          raise('internal_server_error', {
             message: 'KMS digest CRC32C verification failed',
           })
         }
         if (!signed.signature || signed.signatureCrc32c?.value == null) {
-          raise('INTERNAL_SERVER_ERROR', { message: 'KMS signature is missing' })
+          raise('internal_server_error', { message: 'KMS signature is missing' })
         }
 
         const signature = Buffer.from(signed.signature as Uint8Array)
         if (crc32c(signature) !== Number(signed.signatureCrc32c.value)) {
-          raise('INTERNAL_SERVER_ERROR', {
+          raise('internal_server_error', {
             message: 'KMS signature CRC32C verification failed',
           })
         }
@@ -259,7 +259,7 @@ export const kmsVerifierSignatureKeyStore = (
         if (error instanceof VcknotsError) {
           throw error
         }
-        raise('INTERNAL_SERVER_ERROR', { message: `sign error: ${error}` })
+        raise('internal_server_error', { message: `sign error: ${error}` })
       }
     },
   }

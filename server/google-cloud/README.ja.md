@@ -63,14 +63,24 @@ google-cloud/
    - `FIREBASE_CLIENT_EMAIL`
    - `SECRET_MANAGER_PRIVATE_KEY`
    - `SECRET_MANAGER_CLIENT_EMAIL`
+   - `TX_CODE_PEPPER`
+
+   `TX_CODE_PEPPER` は、`tx_code` を Firestore に保存する前に HMAC-SHA256 でハッシュ化するための
+   秘密値（pepper）です。Google Cloud 用 Provider では必須で、未設定の場合は起動時に
+   `TX_CODE_PEPPER environment variable is required` でエラーになります。
+   十分に長いランダム文字列を設定し、環境ごとに固定して運用してください（安易に変更すると、
+   既存データの `tx_code` 検証に失敗するようになります）。
 
    任意の環境変数:
 
    - `FIRESTORE_DATABASE_ID`
    - `BASE_URL`（例: `http://localhost:8080`）
    - `PORT`（既定値: `8080`）
+   - `DPOP_MODE`（`off` / `optional` / `required`）
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
+
+   `DPOP_MODE` は **`@trustknots/server-core`** 経由で、**token endpoint** と **credential endpoint** の両方の DPoP 挙動を制御します。Google Cloud 版も single server と同じ `server-core` 実装を利用するため、mode 別の挙動、nonce challenge、エラー応答の詳細は [シングルサーバー README](../single/README.ja.md#post-token) の `DPOP_MODE` 説明を参照してください。
 
 2. **依存関係をインストール（ルートで実行）**
 
@@ -163,6 +173,8 @@ Authz metadata initialized
 
 - [`POST /token`](../single/README.md#post-token) - トークンエンドポイント
 - [`GET /.well-known/oauth-authorization-server`](../single/README.md#get-well-knownoauth-authorization-server) - Authorization Server メタデータを取得
+
+`POST /token` と `POST /credentials` の DPoP 挙動は `DPOP_MODE` に従います。mode 別の挙動、nonce challenge、エラー応答の詳細は [シングルサーバー README](../single/README.ja.md#post-token) を参照してください。
 
 #### Verifier
 

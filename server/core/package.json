@@ -30,14 +30,6 @@
 			"types": "./lib/utils/error-handler.d.ts",
 			"default": "./lib/utils/error-handler.js"
 		},
-		"./utils/authorization-header": {
-			"types": "./lib/utils/authorization-header.d.ts",
-			"default": "./lib/utils/authorization-header.js"
-		},
-		"./utils/authorization-header.js": {
-			"types": "./lib/utils/authorization-header.d.ts",
-			"default": "./lib/utils/authorization-header.js"
-		},
 		"./utils/www-authenticate": {
 			"types": "./lib/utils/www-authenticate.d.ts",
 			"default": "./lib/utils/www-authenticate.js"

@@ -23,7 +23,7 @@
 		"UniversityDegreeCredential": {
 			"format": "jwt_vc_json",
 			"scope": "UniversityDegree",
-			"cryptographic_binding_methods_supported": ["jwk"],
+			"cryptographic_binding_methods_supported": ["did:key"],
 			"credential_signing_alg_values_supported": ["ES256"],
 			"credential_definition": {
 				"type": ["VerifiableCredential", "UniversityDegreeCredential"]
@@ -48,7 +48,7 @@
 				],
 				"claims": [
 					{
-						"path": ["given_name"],
+						"path": ["credentialSubject", "given_name"],
 						"display": [
 							{
 								"name": "Given Name",
@@ -62,7 +62,7 @@
 						"mandatory": true
 					},
 					{
-						"path": ["family_name"],
+						"path": ["credentialSubject", "family_name"],
 						"display": [
 							{
 								"name": "Surname",
@@ -75,7 +75,7 @@
 						]
 					},
 					{
-						"path": ["degree"],
+						"path": ["credentialSubject", "degree"],
 						"display": [
 							{
 								"name": "Degree",
@@ -88,7 +88,7 @@
 						]
 					},
 					{
-						"path": ["gpa"],
+						"path": ["credentialSubject", "gpa"],
 						"display": [
 							{
 								"name": "GPA",

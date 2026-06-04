@@ -254,6 +254,7 @@ type ReceiveCredentialRequest struct {
 	Key                  IKeyEntry
 	RequestedFormat      credential.SupportedSerializationFlavor
 	CachedIssuerMetadata *receiverTypes.CredentialIssuerMetadata
+	TxCode               string
 }
 
 // CredentialOffer represents a credential offer from an issuer.
@@ -265,7 +266,14 @@ type CredentialOffer struct {
 
 // CredentialOfferGrant represents a grant in a credential offer.
 type CredentialOfferGrant struct {
-	PreAuthorizedCode string `json:"pre-authorized_code"`
+	PreAuthorizedCode string  `json:"pre-authorized_code"`
+	TxCode            *TxCode `json:"tx_code,omitempty"`
+}
+
+type TxCode struct {
+	InputMode   string `json:"input_mode,omitempty"`
+	Length      int    `json:"length,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // GetCredentialEntriesRequest holds parameters for querying credential entries.
@@ -508,17 +516,25 @@ func (w *Wallet) ReceiveCredential(req ReceiveCredentialRequest) (*SavedCredenti
 		return nil, err
 	}
 
+	preAuthGrant := req.CredentialOffer.Grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"]
+
+	if preAuthGrant.TxCode != nil && strings.TrimSpace(req.TxCode) == "" {
+		return nil, fmt.Errorf("tx_code is required by credential offer")
+	}
+
 	issuerMetadata, authMetadata, err := w.fetchCredentialMetadata(req)
 	if err != nil {
 		return nil, err
 	}
+
 
 	credentialConfigurationID, credentialConfiguration, serializationFlavor, err := w.selectCredentialConfiguration(req, issuerMetadata)
 	if err != nil {
 		return nil, err
 	}
 
-	accessToken, err := w.obtainAccessToken(req.Type, authMetadata, preAuthCode)
+	accessToken, err := w.obtainAccessToken(req.Type, authMetadata, preAuthCode, req.TxCode)
+
 	if err != nil {
 		return nil, err
 	}
@@ -660,6 +676,26 @@ func ensureJWTProofSupported(credentialConfiguration *receiverTypes.CredentialCo
 	return fmt.Errorf("unsupported proof type: jwt proof is required")
 }
   
+func (w *Wallet) validateCredentialConfigurationIDs(offer *CredentialOffer, issuerMetadata *receiverTypes.CredentialIssuerMetadata) error {
+	if offer == nil {
+		return fmt.Errorf("credential offer is required")
+	}
+	if issuerMetadata == nil {
+		return fmt.Errorf("issuer metadata is required")
+	}
+	if len(issuerMetadata.CredentialConfigurationSupported) == 0 {
+		return fmt.Errorf("credential configurations supported are missing in issuer metadata")
+	}
+
+	for _, configID := range offer.CredentialConfigurationIDs {
+		if _, exists := issuerMetadata.CredentialConfigurationSupported[configID]; !exists {
+			return fmt.Errorf("credential configuration %q is not supported by issuer metadata", configID)
+		}
+	}
+
+	return nil
+}
+
 func validateCredentialIssuerIdentifier(issuer *url.URL) error {
 	if issuer == nil {
 		return fmt.Errorf("credential issuer is not included in the offer")
@@ -697,6 +733,10 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 		}
 	}
 
+	if err := w.validateCredentialConfigurationIDs(req.CredentialOffer, issuerMetadata); err != nil {
+		return nil, nil, err
+	}
+
 	if len(issuerMetadata.AuthorizationServers) == 0 {
 		return nil, nil, fmt.Errorf("no authorization servers found in issuer metadata")
 	}
@@ -725,8 +765,8 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 }
 
 // obtainAccessToken obtains an access token using pre-authorization code.
-func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivingTypes, authMetadata *receiverTypes.AuthorizationServerMetadata, preAuthCode string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
-	accessToken, err := w.receiver.FetchAccessToken(receivingType, *authMetadata.TokenEndpoint, preAuthCode)
+func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivingTypes, authMetadata *receiverTypes.AuthorizationServerMetadata, preAuthCode string, txCode string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
+	accessToken, err := w.receiver.FetchAccessToken(receivingType, *authMetadata.TokenEndpoint, preAuthCode, txCode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch access token: %w", err)
 	}

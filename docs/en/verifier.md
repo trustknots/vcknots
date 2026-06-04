@@ -78,7 +78,7 @@ app.post('/verify/request', async (c) => {
     const verifierId = VerifierClientId(baseUrl)
     const { credentialId } = (await c.req.json()) ?? {};
 
-    if (!credentialId) throw err("INVALID_REQUEST");
+    if (!credentialId) throw err("invalid_request");
     const client_id = 'x509_san_dns:localhost'
 
     const query = {
@@ -180,7 +180,7 @@ This endpoint uses a JWT Authorization Request (JAR) to generate and store a Req
       const verifierId = VerifierClientId(baseUrl)
 
       const body = await c.req.json()
-      if (!body) throw err('INVALID_REQUEST')
+      if (!body) throw err('invalid_request')
       const {
         client_id: clientId,
         state,
@@ -309,7 +309,17 @@ This is an endpoint for Wallets and other clients to retrieve the Request Object
 verifyApp.get('/verify/request.jwt/:request-object-Id', async (c) => {
   try {
     const verifierId = VerifierClientId(baseUrl)
-    const requestObjectId = RequestObjectId(c.req.param('request-object-Id'))
+    const parseResult = VerifierRequestObjectId.schema.safeParse(c.req.param('request-object-Id'))
+    if (!parseResult.success) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Invalid request-object-Id parameter.',
+        },
+        400
+      )
+    }
+    const requestObjectId = parseResult.data
     const jar = await verifierFlow.findRequestObject(verifierId, requestObjectId)
     return c.body(jar, 200, {
       'Content-Type': 'application/oauth-authz-req+jwt',
@@ -354,12 +364,32 @@ This is an endpoint where the Verifier receives the `vp_token` returned from the
 verifyApp.post('/verify/callback', async (c) => {
   try {
     const verifierId = VerifierClientId(baseUrl)
-    const parsed = parseFormPayload(await c.req.formData())
+    const formData = await c.req.formData().catch(() => null)
+    if (!formData) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Request body must be a valid form data.',
+        },
+        400
+      )
+    }
+    const parsed = parseFormPayload(formData)
     if (!parsed.ok) {
       return c.json(parsed.error, 400)
     }
 
-    const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
+    const parseResult = VerifierAuthorizationResponse.schema.safeParse(parsed.payload)
+    if (!parseResult.success) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Invalid authorization response parameters.',
+        },
+        400
+      )
+    }
+    const authorizationResponse = parseResult.data
 
     const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
       expectedAud: ClientIdentifier(`redirect_uri:${baseUrl}/callback`),
@@ -530,9 +560,9 @@ createVerifierMetadata(
 - None
 
 **Error cases**:
-- `DUPLICATE_VERIFIER`: Metadata with the same `verifierId` is already registered
-- `INTERNAL_SERVER_ERROR`: `options.alg` is not specified (required when specifying a public key/certificate)
-- `INVALID_CERTIFICATE`: The provided certificate is invalid
+- `duplicate_verifier`: Metadata with the same `verifierId` is already registered
+- `internal_server_error`: `options.alg` is not specified (required when specifying a public key/certificate)
+- `invalid_certificate`: The provided certificate is invalid
 
 #### CreateVerifierMetadataOptions{#CreateVerifierMetadataOptions}
 Defines the options used when creating verifier metadata. It allows configuration of certificates or public keys.
@@ -592,9 +622,9 @@ createAuthzRequest(
   ```
 
 **Error cases**:
-- `UNSUPPORTED_CLIENT_ID_SCHEME`: An unsupported client_id_scheme was specified
-- `CERTIFICATE_NOT_FOUND`: Certificate is not registered when using x509_san_dns or x509_san_uri
-- `INVALID_REQUEST`: options.base_url is not specified even though isRequestUri = true
+- `unsupported_client_id_scheme`: An unsupported client_id_scheme was specified
+- `certificate_not_found`: Certificate is not registered when using x509_san_dns or x509_san_uri
+- `invalid_request`: options.base_url is not specified even though isRequestUri = true
 
 
 
@@ -636,11 +666,11 @@ findRequestObject(
     {base64url(header)}.{base64url(payload)}.{signature}
 ```
 **Error cases**:
-- `VERIFIER_NOT_FOUND`: The specified Verifier does not exist
-- `REQUEST_OBJECT_NOT_FOUND`: The specified Request Object does not exist
-- `PROVIDER_NOT_FOUND`: Provider for the Authorization Request JAR cannot be found
-- `AUTHZ_VERIFIER_KEY_NOT_FOUND`: Signing key provider for the specified algorithm cannot be found
-- `INTERNAL_SERVER_ERROR`: Failed to generate the signature for the Request Object
+- `verifier_not_found`: The specified Verifier does not exist
+- `request_object_not_found`: The specified Request Object does not exist
+- `provider_not_found`: Provider for the Authorization Request JAR cannot be found
+- `authz_verifier_key_not_found`: Signing key provider for the specified algorithm cannot be found
+- `internal_server_error`: Failed to generate the signature for the Request Object
 
 **Notes**:
 - A Request Object can be retrieved only once.
@@ -717,14 +747,14 @@ Options passed from your verifier application into VP / credential-format–spec
 - **Implementer responsibility**: This library **does not** automatically persist or manage verified payloads. Binding to sessions or databases, retention, and whether to write audit logs must be **designed and implemented by your (integrator) application** in line with business requirements.
 
 **Error cases**:
-- `VERIFIER_NOT_FOUND`: The Verifier does not exist
-- `UNSUPPORTED_VP_TOKEN`: Unsupported `vp_token` shape or format (for example, multiple VPs, or formats not wired to a provider)
-- `ILLEGAL_ARGUMENT`: Missing/invalid arguments (for example, flow not implemented yet without `presentation_submission`, or VP provider rejects options)
-- `INVALID_NONCE`: The authorization request `nonce` is missing from the VP or does not match
-- `INVALID_CREDENTIAL`: Invalid embedded VC (for example, `jwt_vp_json` path) or issuer/JWKS resolution failure
-- `INVALID_VP_TOKEN`: VP structure or binding checks failed (for example, `aud` does not match `expectedAud`)
-- `INVALID_SD_JWT` / `HOLDER_BINDING_FAILED`: SD-JWT or Key Binding verification failures
-- `INVALID_PRESENTATION_SUBMISSION`: Invalid `presentation_submission`
+- `verifier_not_found`: The Verifier does not exist
+- `unsupported_vp_token`: Unsupported `vp_token` shape or format (for example, multiple VPs, or formats not wired to a provider)
+- `illegal_argument`: Missing/invalid arguments (for example, flow not implemented yet without `presentation_submission`, or VP provider rejects options)
+- `invalid_nonce`: The authorization request `nonce` is missing from the VP or does not match
+- `invalid_credential`: Invalid embedded VC (for example, `jwt_vp_json` path) or issuer/JWKS resolution failure
+- `invalid_vp_token`: VP structure or binding checks failed (for example, `aud` does not match `expectedAud`)
+- `invalid_sd_jwt` / `holder_binding_failed`: SD-JWT or Key Binding verification failures
+- `invalid_presentation_submission`: Invalid `presentation_submission`
 
 **Notes**:
 - Pass the **same** value as the **`client_id`** from the authorization request (including the scheme prefix, e.g. `redirect_uri:` or `x509_san_dns:`) as `expectedAud`. It **must match** the `aud` claim the Wallet sets on the VP or KB-JWT.
@@ -769,7 +799,7 @@ Note:
 
 ## 9. Troubleshooting
 
-- **Q: Certificate-related error**: `INVALID_CERTIFICATE`
+- **Q: Certificate-related error**: `invalid_certificate`
   - **A:** Check that the path to the certificate file is correct and that the file exists. Also verify that the certificate is valid.
 
 - **Q: Metadata validation error**:
@@ -778,10 +808,10 @@ Note:
 - **Q: Error when creating authorization request**: `invalid_request`
   - **A:** Verify that all required parameters have been provided.
 
-- **Q: Error retrieving request object**: `REQUEST_OBJECT_NOT_FOUND`
+- **Q: Error retrieving request object**: `request_object_not_found`
   - **A:** A request object can be retrieved only once. Calling with the same Request Object ID multiple times results in an error.
 
-- **Q: Nonce verification error for vp_token**: fails with `INVALID_NONCE` – nonce is not valid.
+- **Q: Nonce verification error for vp_token**: fails with `invalid_nonce` – nonce is not valid.
   - **A:** Check the following possible causes and solutions.
   - **Causes**:
     - The nonce in `vp_token` does not match the one generated at the time of the authorization request
@@ -792,5 +822,3 @@ Note:
     - Check that multiple authentications are not being attempted with the same nonce
     - Confirm that nonce generation and storage processing are functioning correctly
     - Make sure clocks are synchronized (for expiration checks)
-
-

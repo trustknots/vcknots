@@ -13,6 +13,8 @@ export const accessToken = (): AccessTokenProvider => {
         sub: code,
         exp: timeStamp + (options?.ttlSec ?? 86400),
         iat: timeStamp,
+        ...(options?.jti ? { jti: options.jti } : {}),
+        ...(options?.cnf ? { cnf: options.cnf } : {}),
       }
       return payload
     },

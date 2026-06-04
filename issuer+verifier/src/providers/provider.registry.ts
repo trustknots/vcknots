@@ -8,6 +8,7 @@ import { authzSignatureKey } from './authz-signature-key.provider'
 import { nonce } from './nonce.provider'
 import { credentialOffer } from './credential-offer.provider'
 import { credentialProofJWT } from './credential-proof-jwt.provider'
+import { dpopProof } from './dpop-proof.provider'
 import { verifyCredentialJwt } from './verify-credential-jwt-vc-json.provider'
 import { dcql } from './dcql.provider'
 import { did } from './did-key.provider'
@@ -23,10 +24,12 @@ import { Provider } from './provider.types'
 import { requestObjectId } from './request-object-id.provider'
 import { verifierSignatureKey } from './verifier-signature-key.provider'
 import { certificate } from './certificate.provider'
+import { transactionCode } from './transaction-code.provider'
 import { transactionData } from './transaction-data.provider'
 import { verifyVerifiablePresentation } from './verify-presentation-jwt-vp-json.provider'
 import { verifyVerifiablePresentationDcSdJwt } from './verify-presentation-dc-sd-jwt.provider'
 import { issueCredentialSDJWT } from './issue-credential-dc-sd-jwt.provider'
+import { inMemoryIssuanceContextStore } from './in-memory/in-memory-issuance-context-store.provider'
 
 type ArrayUnless<P extends Provider> = P['single'] extends true ? P : P[]
 
@@ -61,6 +64,7 @@ const initializeDefaultProviders = (
   nonce(),
   accessToken(),
   preAuthorizedCode(),
+  transactionCode(),
   issuerSignatureKey(),
   authzSignatureKey(),
   issueCredentialJwt(),
@@ -69,6 +73,7 @@ const initializeDefaultProviders = (
   presentationExchange(),
   dcql(),
   credentialProofJWT(),
+  dpopProof(),
   verifyCredentialJwt(),
   jwtSignature(),
   holderBinding(),
@@ -81,6 +86,7 @@ const initializeDefaultProviders = (
   transactionData(),
   verifyVerifiablePresentation(),
   verifyVerifiablePresentationDcSdJwt(),
+  inMemoryIssuanceContextStore(),
 ]
 
 export const initializeProviderRegistry = (
@@ -116,7 +122,7 @@ export const initializeProviderRegistry = (
 
   return {
     get(kind) {
-      const provider = providers[kind] ?? raise('PROVIDER_NOT_FOUND', { message: kind })
+      const provider = providers[kind] ?? raise('provider_not_found', { message: kind })
 
       for (const it of Array.isArray(provider) ? provider : [provider]) {
         if ('providers' in it) {
@@ -138,7 +144,7 @@ export const initializeProviderRegistry = (
       const candidates = Array.isArray(multiples) ? multiples : [multiples]
       const provider =
         candidates.find((it) => it.canHandle(value)) ??
-        raise('PROVIDER_NOT_FOUND', { message: `No provider found which can handle: ${value}` })
+        raise('provider_not_found', { message: `No provider found which can handle: ${value}` })
       return provider
     },
   }
@@ -146,7 +152,7 @@ export const initializeProviderRegistry = (
 
 export const withProviderRegistry = {
   providers: {
-    get: () => raise('ILLEGAL_STATE'),
-    select: () => raise('ILLEGAL_STATE'),
+    get: () => raise('illegal_state'),
+    select: () => raise('illegal_state'),
   },
 }

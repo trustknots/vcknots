@@ -27,9 +27,11 @@ import { Certificate, SignatureKeyPair, SignatureKeyEntry } from '../signature-k
 import { DeepPartialUnknown } from '../type.utils'
 import { VerifierMetadata } from '../verifier-metadata.types'
 import type { CredentialProofJwtVerifyContext } from '../credential-proof-jwt.types'
+import type { DPoPProofVerifyContext, VerifiedDpopProof } from '../dpop-proof.types'
 import { DiVpProof } from '../proofs.types'
 
 export type { CredentialProofJwtVerifyContext } from '../credential-proof-jwt.types'
+export type { DPoPProofVerifyContext, VerifiedDpopProof } from '../dpop-proof.types'
 
 export type AuthzRequestProviderOptions = {
   kid?: string
@@ -169,7 +171,7 @@ export type VerifyVerifiablePresentationVerifyOptions =
       expectedNonce?: string
       expectedTransactionDataHashes?: string[]
     }
-  // | {
+// | {
 //     kind: 'dc+sd-jwt'
 //     specifiedDisclosures?: string[]
 //     isKbJwt?: boolean
@@ -246,6 +248,23 @@ export type CredentialRevocationProvider = {
   single: true
 }
 
+export type DPoPProofProvider = {
+  kind: 'dpop-proof-provider'
+  name: string
+  single: true
+  proofJtiTtlMs: number
+
+  verifyProof(proofJwt: string, context: DPoPProofVerifyContext): Promise<VerifiedDpopProof>
+}
+
+export type DPoPProofJtiStoreProvider = {
+  kind: 'dpop-proof-jti-store-provider'
+  name: string
+  single: true
+
+  saveIfAbsent(jwkThumbprint: string, jti: string, options?: { ttlMs?: number }): Promise<boolean>
+}
+
 export type SignatureGenerationProvider = {
   kind: 'signature-generation-provider'
   name: string
@@ -270,10 +289,30 @@ export type PreAuthorizedCodeStoreProvider = {
   name: string
   single: true
 
-  save(code: PreAuthorizedCode, options?: { ttlSec: number }): Promise<void>
-  // FIXME: validation logic is a kind of business logic. so we need to move this function into [PreAuthorizedCodeProvider]
-  validate(code: PreAuthorizedCode): Promise<boolean>
-  delete(code: PreAuthorizedCode): Promise<void>
+  save(
+    code: PreAuthorizedCode,
+    credentialConfigurationIds: CredentialConfigurationId[],
+    tx_code?: string | number,
+    options?: { ttlSec?: number; tx_code_input_mode?: 'numeric' | 'text' }
+  ): Promise<void>
+  consume(
+    code: PreAuthorizedCode,
+    tx_code?: string | number
+  ): Promise<CredentialConfigurationId[] | null>
+}
+
+export type IssuanceContextStoreProvider = {
+  kind: 'issuance-context-store-provider'
+  name: string
+  single: true
+
+  save(
+    jti: string,
+    credential_configuration_ids: CredentialConfigurationId[],
+    ttlSec?: number
+  ): Promise<void>
+  fetch(jti: string): Promise<CredentialConfigurationId[] | null>
+  delete(jti: string): Promise<void>
 }
 
 export type AccessTokenProvider = {
@@ -284,7 +323,7 @@ export type AccessTokenProvider = {
   createTokenPayload(
     authz: AuthorizationServerIssuer,
     code: PreAuthorizedCode,
-    options?: { ttlSec: number }
+    options?: { ttlSec?: number; jti?: string; cnf?: { jkt: string } }
   ): Promise<JwtPayload>
 }
 
@@ -315,6 +354,14 @@ export type VerifierSignatureKeyProvider = {
   canHandle(keyAlg: string): boolean
 }
 
+export type TransactionCodeProvider = {
+  kind: 'transaction-code-provider'
+  name: string
+  single: true
+
+  generate(input_mode?: 'numeric' | 'text', length?: number, description?: string): string | number
+}
+
 export type CredentialOfferProvider = {
   kind: `credential-offer-provider`
   name: string
@@ -332,10 +379,12 @@ export type CredentialOfferProvider = {
             length?: number
             description?: string
           }
+          authorizationServer?: string
         }
       | {
           usePreAuth: false
           state: unknown
+          authorizationServer?: string
         }
   ): Promise<CredentialOffer>
 }
@@ -356,6 +405,7 @@ export type NonceStoreProvider = {
   save(nonce: Nonce): Promise<void>
   validate(nonce: Nonce): Promise<boolean>
   revoke(nonce: Nonce): Promise<boolean>
+  consume(nonce: Nonce): Promise<boolean>
 }
 
 export type IssueCredentialCreateCredentialOptions = {
@@ -437,11 +487,14 @@ export type Provider =
   | PublicKeyResolverProvider
   | CredentialFormatProvider
   | CredentialProofProvider
+  | DPoPProofProvider
+  | DPoPProofJtiStoreProvider
   | CredentialRevocationProvider
   | SignatureGenerationProvider
   | SignatureVerificationProvider
   | PreAuthorizedCodeProvider
   | PreAuthorizedCodeStoreProvider
+  | IssuanceContextStoreProvider
   | AccessTokenProvider
   | CredentialOfferProvider
   | AuthzServerMetadataStoreProvider
@@ -466,3 +519,4 @@ export type Provider =
   | VerifierCertificateStoreProvider
   | CertificateProvider
   | TransactionDataProvider
+  | TransactionCodeProvider
