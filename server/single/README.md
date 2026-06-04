@@ -313,7 +313,7 @@ pre-authorized_code={pre_authorized_code}
 }
 ```
 
-The DPoP mode is configured by the OAuth policy in `server/samples/oauth-server.json`. `anonymous_client` applies to token requests without `client_id` / `client_assertion`; `default_client` currently applies as the registered-client default and as the credential / nonce endpoint default.
+The DPoP mode is configured by the OAuth policy in `server/samples/oauth-server.json` and by per-client sender constraint settings in `server/samples/oauth-clients.json`. `anonymous_client` applies to token requests without `client_id` / `client_assertion`; `default_client` applies when a registered client has no sender constraint setting and as the credential / nonce endpoint default.
 
 | DPoP mode | token endpoint | credential endpoint |
 |-------------|----------------|---------------------|
@@ -363,6 +363,21 @@ When DPoP Proof verification succeeds, `token_type` is `DPoP`. The issued access
   "expires_in": 86400
 }
 ```
+
+#### OAuth clients and private_key_jwt
+
+OAuth clients are configured in `server/samples/oauth-clients.json`. If the token request body contains `client_id`, that value is used first. If it is absent, the client id is derived from the `client_assertion` JWT `iss` / `sub`. If neither source yields a client id, the `anonymous_client` policy is applied.
+
+For a registered client with `token_endpoint_auth_method: "private_key_jwt"`, the token request must include these form fields:
+
+```text
+client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+client_assertion=<compact JWT>
+```
+
+The private_key_jwt verifier checks that `iss` / `sub` match the registered `client_id`, that `aud` matches the registered `client_assertion_audience` or the Authorization Server token endpoint / issuer, that `exp` / `iat` / `jti` are present, that `alg` is an allowed asymmetric signing algorithm, and that the signature verifies with a public key from the registered `jwks.keys`. A client assertion with the same `jti` cannot be reused.
+
+Each client may override the DPoP mode with `senderConstrainedAccessToken`. If it is omitted, the `authorization_server.default_client` policy is used. The authenticated client id is included in the issued access token payload as `client_id`.
 
 <a id="get-well-knownoauth-authorization-server"></a>
 #### `GET /.well-known/oauth-authorization-server`

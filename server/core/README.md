@@ -50,7 +50,9 @@ import { createApp, createServer } from '@trustknots/server-core'
 
 The shared `POST /nonce` route can add a `DPoP-Nonce` response header when the OAuth policy DPoP mode is not `off`. `c_nonce` and `DPoP-Nonce` are issued as different values, and `DPoP-Nonce` is used as the DPoP Proof nonce for the token endpoint.
 
-The shared `POST /token` route also uses the same OAuth policy.
+The shared `POST /token` route also uses the same OAuth policy. It can also verify `private_key_jwt` client authentication using clients registered in the OAuth client store. In the samples, `server/samples/oauth-clients.json` is loaded at startup and registers per-client sender constraint settings, `jwks.keys`, `client_assertion_audience`, and related metadata.
+
+If the token request body contains `client_id`, that value is used first. If it is absent, the client id is derived from the `client_assertion` JWT `iss` / `sub`. If neither source yields a client id, the anonymous client policy is used. See the [single-server README](../single/README.md#post-token) for details.
 
 | mode | `POST /token` behavior |
 |------|-------------------------|

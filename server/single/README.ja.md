@@ -312,7 +312,7 @@ pre-authorized_code={pre_authorized_code}
 }
 ```
 
-DPoP mode は `server/samples/oauth-server.json` の OAuth policy で設定します。`anonymous_client` は `client_id` / `client_assertion` が無い token request に適用され、`default_client` は現時点では registered client の既定値、および credential / nonce endpoint の既定値として使われます。
+DPoP mode は `server/samples/oauth-server.json` の OAuth policy と、`server/samples/oauth-clients.json` の client ごとの sender constraint 設定で決まります。`anonymous_client` は `client_id` / `client_assertion` が無い token request に適用され、`default_client` は registered client に sender constraint 設定がない場合、および credential / nonce endpoint の既定値として使われます。
 
 | DPoP mode | token endpoint | credential endpoint |
 |-------------|----------------|---------------------|
@@ -362,6 +362,21 @@ DPoP Proof の検証に成功した場合、`token_type` は `DPoP` になりま
   "expires_in": 86400
 }
 ```
+
+#### OAuth client と private_key_jwt
+
+OAuth client は `server/samples/oauth-clients.json` で管理します。token request body に `client_id` がある場合はその値を優先し、ない場合は `client_assertion` JWT の `iss` / `sub` から client_id を導出します。どちらも無い場合は `anonymous_client` の policy を適用します。
+
+登録済み client の `token_endpoint_auth_method` が `private_key_jwt` の場合、token request には次のフォーム項目が必要です。
+
+```text
+client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+client_assertion=<compact JWT>
+```
+
+`private_key_jwt` の検証では、`iss` / `sub` が登録済み `client_id` と一致すること、`aud` が登録済み `client_assertion_audience` または Authorization Server の token endpoint / issuer と一致すること、`exp` / `iat` / `jti` が含まれること、`alg` が許可された非対称署名アルゴリズムであること、登録済み `jwks.keys` の公開鍵で署名検証できることを確認します。同じ `jti` の client assertion は再利用できません。
+
+client ごとの DPoP mode は、client 定義の `senderConstrainedAccessToken` で上書きできます。client 側に指定がない場合は `authorization_server.default_client` の policy を使います。認証済み client の `client_id` は、発行される access token payload に `client_id` として含まれます。
 
 <a id="get-well-knownoauth-authorization-server"></a>
 #### `GET /.well-known/oauth-authorization-server`

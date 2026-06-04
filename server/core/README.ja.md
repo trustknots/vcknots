@@ -50,7 +50,9 @@ import { createApp, createServer } from '@trustknots/server-core'
 
 共有の `POST /nonce` ルートは、OAuth policy の DPoP mode が `off` 以外の場合に `DPoP-Nonce` レスポンスヘッダーを追加できます。`c_nonce` と `DPoP-Nonce` は別の値として発行され、`DPoP-Nonce` は token endpoint の DPoP Proof 用 nonce として使います。
 
-共有の `POST /token` ルートも同じ OAuth policy を参照します。
+共有の `POST /token` ルートも同じ OAuth policy を参照します。また、OAuth client store に登録された client を使って `private_key_jwt` client authentication を検証できます。サンプルでは `server/samples/oauth-clients.json` を起動時に読み込み、client ごとの sender constraint 設定、`jwks.keys`、`client_assertion_audience` などを登録します。
+
+`client_id` が token request body にある場合はその値を優先し、ない場合は `client_assertion` JWT の `iss` / `sub` から導出します。どちらもない場合は anonymous client policy を使います。詳細は [シングルサーバー README](../single/README.ja.md#post-token) を参照してください。
 
 | mode | `POST /token` の挙動 |
 |------|----------------------|

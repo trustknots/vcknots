@@ -538,11 +538,22 @@ app.post('/token', async (c) => {
   const request = await c.req.formData()
   const requestData = Object.fromEntries(request.entries())
   const issuer = AuthorizationServerIssuer(baseUrl)
-  const dpopMode = await resolveAuthzPolicyDpopMode(
-    authzFlow,
+
+  const clientResolution = await authzFlow.resolveTokenRequestClientPolicy(
     issuer,
-    resolveTokenRequestPolicyClient(requestData)
+    requestData
   )
+  if (!clientResolution.ok) {
+    return c.json(
+      {
+        error: clientResolution.error,
+        error_description: clientResolution.error_description,
+      },
+      400
+    )
+  }
+
+  const dpopMode = clientResolution.dpopMode
   const dpopProof = parseDpopHeader(c.req.header('DPoP'))
 
   if (
@@ -565,6 +576,7 @@ app.post('/token', async (c) => {
 
   const tokenRequest = AuthzTokenRequest(requestData)
   const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
+    clientId: clientResolution.clientId,
     ...(dpopMode !== 'off' && dpopProof.ok
       ? {
           dpopProof: {
@@ -581,6 +593,24 @@ app.post('/token', async (c) => {
 ```
 
 **リクエストボディは `application/x-www-form-urlencoded` です**（`AuthzTokenRequest` はフォームフィールドから組み立てます）。`INVALID_DPOP_PROOF`（`invalid_dpop_proof`）や `USE_DPOP_NONCE`（`DPoP-Nonce` ヘッダー付き）などの分岐を含む実装は [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts) を参照してください。
+
+#### private_key_jwt による client authentication
+
+Token endpoint では、`server/samples/oauth-clients.json` に登録された OAuth client を参照し、`token_endpoint_auth_method` が `private_key_jwt` の client に対して RFC 7523 の JWT bearer client authentication を検証します。
+
+client の特定は次の順序で行います。
+
+1. token request body に `client_id` がある場合は、その値を優先します。
+2. `client_id` がない場合は、`client_assertion` JWT の `iss` / `sub` から client_id を導出します。
+3. どちらからも client_id を得られない場合は、anonymous client policy を適用します。
+
+`client_id` が特定できたにもかかわらず登録済み client が存在しない場合は `invalid_client` です。登録済み client の `token_endpoint_auth_method` が `private_key_jwt` の場合は、`client_assertion_type` が `urn:ietf:params:oauth:client-assertion-type:jwt-bearer` であること、`client_assertion` が compact JWT であること、`iss` / `sub` が登録済み `client_id` と一致すること、`aud` が登録済み `client_assertion_audience` または Authorization Server の token endpoint / issuer と一致することを確認します。
+
+また、`exp` / `iat` / `jti` を必須として検証し、`nbf` がある場合は許容範囲内か確認します。`iat` / `nbf` は FAPI 2.0 Security Profile の clock skew 要件に合わせ、未来方向の許容範囲を短く制限します。`jti` は client ごとに保存し、同じ `client_assertion` の再利用を拒否します。
+
+JOSE ヘッダーでは `alg` が `none` や `HS*` ではないことを確認します。Authorization Server メタデータの `token_endpoint_auth_signing_alg_values_supported` が設定されている場合は、その一覧に含まれる必要があります。さらに client 登録の `token_endpoint_auth_signing_alg` がある場合は、JWT ヘッダーの `alg` と一致する必要があります。署名検証には、登録済み client の `jwks.keys` に含まれる公開鍵を使用します。
+
+認証済み client の `client_id` は、発行する access token の payload に `client_id` として含まれます。DPoP を併用する場合でも、private_key_jwt の client authentication と DPoP Proof の検証は独立して行います。
 
 **例**:
 
@@ -651,7 +681,7 @@ OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-creden
 
 Issuer メタデータに `nonce_endpoint` を設定すると、Wallet は `/.well-known/openid-credential-issuer` から取得したメタデータ経由で nonce エンドポイントの URL を参照します。
 
-DPoP mode は `server/samples/oauth-server.json` の OAuth policy で設定します。`client_id` / `client_assertion` がない token request は `anonymous_client`、それ以外は現時点では `default_client` の policy を参照します。
+DPoP mode は `server/samples/oauth-server.json` の OAuth policy と、登録済み OAuth client の sender constraint 設定で決まります。`client_id` / `client_assertion` がない token request は `anonymous_client`、登録済み client に sender constraint 設定がない場合は `default_client` の policy を参照します。
 
 OAuth policy の DPoP mode が `off` 以外の場合、`POST /nonce` は JSON ボディの `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返します。`c_nonce` と `DPoP-Nonce` は別の値です。
 
@@ -1356,12 +1386,31 @@ createAccessToken<T extends GrantType>(
   type TokenRequestOptions = {
     [GrantType.AuthorizationCode]: {
       // 認可コードフローは未対応
+      alg?: string
+      clientId?: string
+      dpopProof?: {
+        proofJwt: string
+        htm: string
+        htu: string
+        nonceRequired?: boolean
+      }
     }
     [GrantType.PreAuthorizedCode]: {
       ttlSec?: number
+      alg?: string
+      clientId?: string
+      dpopProof?: {
+        proofJwt: string
+        htm: string
+        htu: string
+        nonceRequired?: boolean
+      }
     }
   }
   ```
+
+  - `clientId`: client authentication 済みの OAuth client id。指定した場合、発行する access token payload に `client_id` として含まれます。
+  - `dpopProof`: DPoP-bound access token を発行するための DPoP Proof 検証情報です。検証に成功した場合、access token payload に `cnf.jkt` が含まれ、レスポンスの `token_type` は `DPoP` になります。
 
 **戻り値**: アクセストークンは下記のような形式で戻されます：
 ```typescript
@@ -1372,6 +1421,8 @@ createAccessToken<T extends GrantType>(
   expires_in: option?.ttlSec ?? 86400
 }
 ```
+
+`clientId` を指定した場合、access token payload には `client_id` が含まれます。DPoP Proof を指定して検証に成功した場合は、payload に `cnf.jkt` が含まれ、`token_type` は `DPoP` になります。
 
 **エラーケース**:
 - `PROVIDER_NOT_FOUND`:  秘密鍵で未対応のアルゴリズムが設定された

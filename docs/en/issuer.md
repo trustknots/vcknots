@@ -539,11 +539,22 @@ app.post('/token', async (c) => {
   const request = await c.req.formData()
   const requestData = Object.fromEntries(request.entries())
   const issuer = AuthorizationServerIssuer(baseUrl)
-  const dpopMode = await resolveAuthzPolicyDpopMode(
-    authzFlow,
+
+  const clientResolution = await authzFlow.resolveTokenRequestClientPolicy(
     issuer,
-    resolveTokenRequestPolicyClient(requestData)
+    requestData
   )
+  if (!clientResolution.ok) {
+    return c.json(
+      {
+        error: clientResolution.error,
+        error_description: clientResolution.error_description,
+      },
+      400
+    )
+  }
+
+  const dpopMode = clientResolution.dpopMode
   const dpopProof = parseDpopHeader(c.req.header('DPoP'))
 
   if (
@@ -566,6 +577,7 @@ app.post('/token', async (c) => {
 
   const tokenRequest = AuthzTokenRequest(requestData)
   const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
+    clientId: clientResolution.clientId,
     ...(dpopMode !== 'off' && dpopProof.ok
       ? {
           dpopProof: {
@@ -582,6 +594,24 @@ app.post('/token', async (c) => {
 ```
 
 The **request body is `application/x-www-form-urlencoded`** (`AuthzTokenRequest` is built from form fields). For the full handler—including branches such as **`INVALID_DPOP_PROOF`** (`invalid_dpop_proof`) and **`USE_DPOP_NONCE`** (with a **`DPoP-Nonce`** header)—see [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts).
+
+#### Client authentication with private_key_jwt
+
+At the token endpoint, registered OAuth clients from `server/samples/oauth-clients.json` are used to verify RFC 7523 JWT bearer client authentication when `token_endpoint_auth_method` is `private_key_jwt`.
+
+The client is resolved in this order:
+
+1. If the token request body contains `client_id`, that value is used first.
+2. If `client_id` is omitted, the client id is derived from the `client_assertion` JWT `iss` / `sub`.
+3. If neither source yields a client id, the anonymous client policy is applied.
+
+If a client id can be resolved but no registered client exists, the request fails with `invalid_client`. For clients registered with `token_endpoint_auth_method: "private_key_jwt"`, the server verifies that `client_assertion_type` is `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`, that `client_assertion` is a compact JWT, that `iss` / `sub` match the registered `client_id`, and that `aud` matches the registered `client_assertion_audience` or the Authorization Server token endpoint / issuer.
+
+The server also requires and validates `exp`, `iat`, and `jti`; if `nbf` is present, it must be within the allowed clock-skew window. `iat` / `nbf` are constrained according to the FAPI 2.0 Security Profile clock-skew requirements. The `jti` is stored per client and reused client assertions are rejected.
+
+The JOSE header `alg` must not be `none` or an `HS*` algorithm. If the Authorization Server metadata has `token_endpoint_auth_signing_alg_values_supported`, the assertion algorithm must be included in that list. If the client registration has `token_endpoint_auth_signing_alg`, the JWT header `alg` must match it. The signature is verified with a public key from the registered client's `jwks.keys`.
+
+The authenticated client id is included in the issued access token payload as `client_id`. When DPoP is also used, private_key_jwt client authentication and DPoP Proof verification are performed independently.
 
 **Example**:
 
@@ -652,7 +682,7 @@ This endpoint corresponds to the OID4VCI [nonce endpoint](https://openid.net/spe
 
 When `nonce_endpoint` is set in the Issuer metadata, the Wallet references the nonce endpoint URL via the metadata obtained from `/.well-known/openid-credential-issuer`.
 
-Configure the DPoP mode in the OAuth policy in `server/samples/oauth-server.json`. Token requests without `client_id` / `client_assertion` use `anonymous_client`; other token requests currently use `default_client`.
+Configure the DPoP mode using both the OAuth policy in `server/samples/oauth-server.json` and sender constraint settings on registered OAuth clients. Token requests without `client_id` / `client_assertion` use `anonymous_client`; registered clients without sender constraint settings use the `default_client` policy.
 
 When the OAuth policy DPoP mode is not `off`, `POST /nonce` returns a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values.
 
@@ -1355,12 +1385,31 @@ createAccessToken<T extends GrantType>(
   type TokenRequestOptions = {
     [GrantType.AuthorizationCode]: {
       // The authorization code flow is not supported yet
+      alg?: string
+      clientId?: string
+      dpopProof?: {
+        proofJwt: string
+        htm: string
+        htu: string
+        nonceRequired?: boolean
+      }
     }
     [GrantType.PreAuthorizedCode]: {
       ttlSec?: number
+      alg?: string
+      clientId?: string
+      dpopProof?: {
+        proofJwt: string
+        htm: string
+        htu: string
+        nonceRequired?: boolean
+      }
     }
   }
   ```
+
+  - `clientId`: Authenticated OAuth client id. When set, it is included in the issued access token payload as `client_id`.
+  - `dpopProof`: DPoP Proof verification data used to issue a DPoP-bound access token. When verification succeeds, the access token payload includes `cnf.jkt` and the response `token_type` is `DPoP`.
 
 **Return value**: The access token is returned in the following format:
 ```typescript
@@ -1371,6 +1420,8 @@ createAccessToken<T extends GrantType>(
   expires_in: option?.ttlSec ?? 86400
 }
 ```
+
+When `clientId` is set, the access token payload includes `client_id`. When `dpopProof` is provided and verification succeeds, the payload includes `cnf.jkt` and `token_type` becomes `DPoP`.
 
 **Error cases**:
 - `PROVIDER_NOT_FOUND`: An unsupported algorithm is configured for the private key

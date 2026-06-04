@@ -79,7 +79,7 @@ To start this server, follow the steps below.
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
 
-   Configure the DPoP mode (`off` / `optional` / `required`) in the OAuth policy in `server/samples/oauth-server.json`. The Google Cloud server uses the same `server-core` implementation as the single server, so see the [single-server README](../single/README.md#post-token) for mode-specific behavior, nonce challenges, and error responses.
+   Configure the DPoP mode (`off` / `optional` / `required`) in the OAuth policy in `server/samples/oauth-server.json`. OAuth clients and public keys for `private_key_jwt` are configured in `server/samples/oauth-clients.json`. The Google Cloud server uses the same `server-core` implementation as the single server, so see the [single-server README](../single/README.md#post-token) for mode-specific behavior, nonce challenges, client authentication, and error responses.
 
 2. **Install Dependencies** (Run from root directory)
 
@@ -173,7 +173,7 @@ The server starts on `http://localhost:8080` by default.
 - [`POST /token`](../single/README.md#post-token) - Token endpoint
 - [`GET /.well-known/oauth-authorization-server`](../single/README.md#get-well-knownoauth-authorization-server) - Get Authorization Server metadata
 
-`POST /token` and `POST /credentials` follow the OAuth policy in `server/samples/oauth-server.json` for DPoP behavior. See the [single-server README](../single/README.md#post-token) for mode-specific behavior, nonce challenges, and error responses.
+`POST /token` and `POST /credentials` follow the OAuth policy in `server/samples/oauth-server.json` for DPoP behavior. In the Google Cloud server, OAuth client lookup, `private_key_jwt` client authentication, and client assertion `jti` replay prevention can use Firestore providers. See the [single-server README](../single/README.md#post-token) for mode-specific behavior, nonce challenges, and error responses.
 
 #### Verifier
 
