@@ -7,10 +7,6 @@ import {
 } from '@trustknots/vcknots/authz'
 import { Context, Hono } from 'hono'
 import { handleError } from '../utils/error-handler.js'
-import {
-  resolveAuthzPolicyDpopMode,
-  resolveTokenRequestPolicyClient,
-} from '../utils/oauth-policy.js'
 
 const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
 
@@ -38,11 +34,25 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
         request.entries()
       )
       const issuer = AuthorizationServerIssuer(baseUrl)
-      const dpopMode = await resolveAuthzPolicyDpopMode(
-        authzFlow,
+      const clientResolution = await authzFlow.resolveTokenRequestClientPolicy(
         issuer,
-        resolveTokenRequestPolicyClient(requestData)
+        requestData
       )
+      if (!clientResolution.ok) {
+        console.warn('[token-route] client authentication rejected', {
+          error: clientResolution.error,
+          error_description: clientResolution.error_description,
+          ...clientResolution.log,
+        })
+        return c.json(
+          {
+            error: clientResolution.error,
+            error_description: clientResolution.error_description,
+          },
+          400
+        )
+      }
+      const dpopMode = clientResolution.dpopMode
       const dpopProof = parseDpopHeader(c.req.header('DPoP'))
       if (
         (dpopMode === 'required' && !dpopProof.ok) ||
@@ -64,6 +74,7 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
 
       const tokenRequest = AuthzTokenRequest(requestData)
       const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
+        clientId: clientResolution.clientId,
         ...(dpopMode !== 'off' && dpopProof.ok
           ? {
               dpopProof: {

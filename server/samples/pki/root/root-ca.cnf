@@ -1,0 +1,11 @@
+[ req ]
+distinguished_name = dn
+
+[ dn ]
+
+[ v3_root_ca ]
+basicConstraints = critical, CA:TRUE, pathlen:1
+keyUsage = critical, keyCertSign, cRLSign
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always
+

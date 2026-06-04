@@ -58,6 +58,37 @@
 			],
 			"comment": "senderConstrainedAccessToken を省略しているため、authorization_server.default_client の設定を利用します。",
 			"enabled": true
+		},
+		{
+			"client_id": "test-client-id",
+			"client_name": "Test Client (pre-authorized_code, private_key_jwt, DPoP required)",
+			"token_endpoint_auth_method": "private_key_jwt",
+			"token_endpoint_auth_signing_alg": "ES256",
+			"client_assertion_audience": "https://authz.example.com",
+			"jwks": {
+				"keys": [
+					{
+						"kty": "EC",
+						"use": "sig",
+						"crv": "P-256",
+						"kid": "client-key-1",
+						"alg": "ES256",
+						"x": "ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ",
+						"y": "Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo"
+					}
+				]
+			},
+			"allowed_grant_types": [
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code"
+			],
+			"senderConstrainedAccessToken": {
+				"method": "dpop",
+				"dpop": {
+					"mode": "required"
+				}
+			},
+			"comment": "jwks は公開鍵のみ。ウォレット側の client_assertion 署名用秘密鍵は別管理してください。",
+			"enabled": true
 		}
 	]
 }

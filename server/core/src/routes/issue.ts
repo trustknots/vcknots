@@ -17,7 +17,6 @@ import {
   buildBearerAuthenticateHeader,
   buildDpopAuthenticateHeader,
 } from '../utils/www-authenticate.js'
-import { resolveAuthzPolicyDpopMode } from '../utils/oauth-policy.js'
 
 const C_NONCE_TTL_MS = 2 * 60 * 1000
 const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
@@ -157,7 +156,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
       const authz = AuthorizationServerIssuer(baseUrl)
-      const dpopMode = await resolveAuthzPolicyDpopMode(authzFlow, authz, 'default_client')
+      const dpopMode = await authzFlow.resolveAuthzPolicyDpopMode(authz, 'default_client')
 
       // Verify AccessToken
       const authorization = parseAuthorizationHeader(c.req.header('Authorization'))
@@ -319,7 +318,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
     try {
       const cnonce = await issuerFlow.createNonce(C_NONCE_TTL_MS)
       const authz = AuthorizationServerIssuer(baseUrl)
-      const dpopMode = await resolveAuthzPolicyDpopMode(authzFlow, authz, 'default_client')
+      const dpopMode = await authzFlow.resolveAuthzPolicyDpopMode(authz, 'default_client')
       const headers: Record<string, string> = {
         'Cache-Control': 'no-store',
       }

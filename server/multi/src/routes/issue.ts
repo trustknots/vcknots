@@ -15,7 +15,6 @@ import {
   buildBearerAuthenticateHeader,
   buildDpopAuthenticateHeader,
 } from '@trustknots/server-core/utils/www-authenticate.js'
-import { resolveAuthzPolicyDpopMode } from '@trustknots/server-core/utils/oauth-policy'
 import { Context, Hono } from 'hono'
 import { handleError } from '../utils/error-handler.js'
 
@@ -124,7 +123,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       const issuer = CredentialIssuer(c.req.param('issuer'))
       const authz = AuthorizationServerIssuer(c.req.param('issuer'))
       const realm = c.req.param('issuer')
-      const dpopMode = await resolveAuthzPolicyDpopMode(authzFlow, authz, 'default_client')
+      const dpopMode = await authzFlow.resolveAuthzPolicyDpopMode(authz, 'default_client')
 
       // Verify AccessToken
       const authorization = parseAuthorizationHeader(c.req.header('Authorization'))
