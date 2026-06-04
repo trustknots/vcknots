@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -1023,8 +1024,7 @@ func (w *Wallet) selectCredentialsForPresentation(req *oid4vp.CredentialPresenta
 		return nil, nil, fmt.Errorf("no credentials available for presentation")
 	}
 
-	// Use the first credential for testing
-	selectedCredentials := entries[:1]
+	selectedCredentials := newestCredentials(entries, 1)
 
 	// Validate that all selected credentials have the same serialization flavor
 	serializationFlavor, err := w.validateSerializationFlavor(selectedCredentials)
@@ -1033,6 +1033,33 @@ func (w *Wallet) selectCredentialsForPresentation(req *oid4vp.CredentialPresenta
 	}
 
 	return selectedCredentials, serializationFlavor, nil
+}
+
+func newestCredentials(entries []*SavedCredential, limit int) []*SavedCredential {
+	if len(entries) == 0 || limit <= 0 {
+		return nil
+	}
+
+	sorted := append([]*SavedCredential(nil), entries...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		left := sorted[i]
+		right := sorted[j]
+
+		if left == nil || left.Entry == nil {
+			return false
+		}
+		if right == nil || right.Entry == nil {
+			return true
+		}
+
+		return left.Entry.ReceivedAt.After(right.Entry.ReceivedAt)
+	})
+
+	if limit > len(sorted) {
+		limit = len(sorted)
+	}
+
+	return sorted[:limit]
 }
 
 // validateSerializationFlavor ensures all credentials have the same serialization flavor.

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/common"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
+	credstoreTypes "github.com/trustknots/vcknots/wallet/credstore/types"
 	"github.com/trustknots/vcknots/wallet/env"
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
@@ -35,8 +37,9 @@ import (
 )
 
 type mockKeyEntry struct {
-	id  string
-	key jose.JSONWebKey
+	id         string
+	key        jose.JSONWebKey
+	privateKey *ecdsa.PrivateKey
 }
 
 func (m *mockKeyEntry) ID() string {
@@ -48,7 +51,23 @@ func (m *mockKeyEntry) PublicKey() jose.JSONWebKey {
 }
 
 func (m *mockKeyEntry) Sign(data []byte) ([]byte, error) {
-	return []byte("mock-signature"), nil
+	if m.privateKey == nil {
+		return nil, fmt.Errorf("mock key is missing private key")
+	}
+
+	hash := sha256.Sum256(data)
+	r, s, err := ecdsa.Sign(rand.Reader, m.privateKey, hash[:])
+	if err != nil {
+		return nil, err
+	}
+
+	signature := make([]byte, 64)
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+	copy(signature[32-len(rBytes):32], rBytes)
+	copy(signature[64-len(sBytes):64], sBytes)
+
+	return signature, nil
 }
 
 func newMockKeyEntry() *mockKeyEntry {
@@ -62,15 +81,13 @@ func newMockKeyEntry() *mockKeyEntry {
 		Algorithm: "ES256",
 		KeyID:     "test-key-id",
 		Use:       "sig",
-		Key:       privateKey,
+		Key:       &privateKey.PublicKey,
 	}
 
-	// Set the public key part
-	jwk.Key = &privateKey.PublicKey
-
 	return &mockKeyEntry{
-		id:  "test-key-id",
-		key: jwk,
+		id:         "test-key-id",
+		key:        jwk,
+		privateKey: privateKey,
 	}
 }
 
@@ -2323,6 +2340,51 @@ func TestBuildDescriptorMap_UsesVPTokenRootPathForALLSdJwtDescriptors(t *testing
 		require.Equalf(t, "dc+sd-jwt", item.Format, "descriptorMap[%d].Format", i)
 		require.Nilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
 	}
+}
+
+func TestNewestCredentials_SelectsMostRecentEntries(t *testing.T) {
+	now := time.Now()
+	entries := []*SavedCredential{
+		{Entry: &credstoreTypes.CredentialEntry{Id: "oldest", ReceivedAt: now.Add(-2 * time.Hour)}},
+		{Entry: &credstoreTypes.CredentialEntry{Id: "newest", ReceivedAt: now}},
+		{Entry: &credstoreTypes.CredentialEntry{Id: "middle", ReceivedAt: now.Add(-time.Hour)}},
+	}
+
+	selected := newestCredentials(entries, 1)
+	require.Len(t, selected, 1)
+	require.NotNil(t, selected[0])
+	require.NotNil(t, selected[0].Entry)
+	assert.Equal(t, "newest", selected[0].Entry.Id)
+}
+
+func TestNewestCredentials_ReturnsEntriesInDescendingReceivedAtOrder(t *testing.T) {
+	now := time.Now()
+	entries := []*SavedCredential{
+		{Entry: &credstoreTypes.CredentialEntry{Id: "first", ReceivedAt: now.Add(-time.Minute)}},
+		{Entry: &credstoreTypes.CredentialEntry{Id: "third", ReceivedAt: now.Add(-3 * time.Minute)}},
+		{Entry: &credstoreTypes.CredentialEntry{Id: "second", ReceivedAt: now.Add(-2 * time.Minute)}},
+	}
+
+	selected := newestCredentials(entries, 2)
+	require.Len(t, selected, 2)
+	assert.Equal(t, "first", selected[0].Entry.Id)
+	assert.Equal(t, "second", selected[1].Entry.Id)
+}
+
+func TestMockKeyEntrySign_ProducesVerifiableES256Signature(t *testing.T) {
+	key := newMockKeyEntry()
+	payload := []byte("test-payload")
+	signature, err := key.Sign(payload)
+	require.NoError(t, err)
+	require.Len(t, signature, 64)
+
+	publicKey, ok := key.PublicKey().Key.(*ecdsa.PublicKey)
+	require.True(t, ok)
+
+	hash := sha256.Sum256(payload)
+	r := new(big.Int).SetBytes(signature[:32])
+	s := new(big.Int).SetBytes(signature[32:])
+	assert.True(t, ecdsa.Verify(publicKey, hash[:], r, s))
 }
 
 func TestWallet_validateCredentialOffer(t *testing.T) {
