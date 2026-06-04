@@ -155,7 +155,6 @@ func (o *Oid4vciReceiver) FetchNonce(receivingTypes types.SupportedReceivingType
 		return nil, fmt.Errorf("failed to create nonce request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := nonceHTTPClient.Do(req)
 	if err != nil {

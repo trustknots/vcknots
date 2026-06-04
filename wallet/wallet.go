@@ -324,9 +324,7 @@ func resolveCredentialRequestProofBindingMethod(
 		if strings.HasPrefix(normalized, "did:") {
 			return credentialRequestProofBindingMethodKID
 		}
-	}
-
-	for _, method := range *credentialConfiguration.CryptographicBindingMethodsSupported {
+	
 		if strings.EqualFold(strings.TrimSpace(method), string(credentialRequestProofBindingMethodJWK)) {
 			return credentialRequestProofBindingMethodJWK
 		}
