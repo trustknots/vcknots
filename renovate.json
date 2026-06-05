@@ -15,7 +15,6 @@
 	"rangeStrategy": "pin",
 	"separateMajorMinor": false,
 	"separateMinorPatch": true,
-
 	"packageRules": [
 		{
 			"groupName": "dependencies",
@@ -31,14 +30,18 @@
 			"enabled": false
 		},
 		{
+			"matchFileNames": ["issuer+verifier/package.json"],
+			"matchDepTypes": ["dependencies"],
+			"rangeStrategy": "bump"
+		},
+		{
 			"matchUpdateTypes": ["pin", "pinDigest", "major", "minor", "patch"],
 			"commitMessagePrefix": "build:",
 			"commitMessageAction": "update"
 		},
 		{
 			"matchUpdateTypes": ["patch"],
-			"groupName": "patch dependencies",
-			"groupSlug": "dependencies",
+			"groupName": "automerge dependencies",
 			"automerge": true
 		}
 	]
