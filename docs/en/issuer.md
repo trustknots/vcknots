@@ -599,6 +599,8 @@ The **request body is `application/x-www-form-urlencoded`** (`AuthzTokenRequest`
 
 At the token endpoint, registered OAuth clients from `server/samples/oauth-clients.json` are used to verify RFC 7523 JWT bearer client authentication when `token_endpoint_auth_method` is `private_key_jwt`.
 
+For field-level documentation of `oauth-server.json` and `oauth-clients.json`, see "OAuth policy / OAuth client configuration files" in [server/single/README.md](https://github.com/trustknots/vcknots/blob/main/server/single/README.md).
+
 The client is resolved in this order:
 
 1. If the token request body contains `client_id`, that value is used first.

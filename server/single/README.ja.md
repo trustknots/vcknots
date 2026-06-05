@@ -378,6 +378,83 @@ client_assertion=<compact JWT>
 
 client ごとの DPoP mode は、client 定義の `senderConstrainedAccessToken` で上書きできます。client 側に指定がない場合は `authorization_server.default_client` の policy を使います。認証済み client の `client_id` は、発行される access token payload に `client_id` として含まれます。
 
+#### OAuth policy / OAuth client 設定ファイル
+
+OAuth policy は `server/samples/oauth-server.json`、登録済み OAuth client は `server/samples/oauth-clients.json` で管理します。シングルサーバー起動時にこれらの JSON を読み込み、in-memory provider に登録します。
+`oauth-server.json` の内容は Authorization Server 全体の OAuth policy として provider に登録されます。
+`oauth-clients.json` の内容は登録済み OAuth client として provider に登録されます。
+
+##### `server/samples/oauth-server.json`
+
+`oauth-server.json` は Authorization Server 全体の既定 policy を定義します。
+
+| 項目 | 説明 |
+|---|---|
+| `authorization_server` | Authorization Server ごとの OAuth policy ルートです。 |
+| `authorization_server.default_client` | 登録済み client に `senderConstrainedAccessToken` がない場合に使う既定 policy です。credential / nonce endpoint の既定 DPoP policy としても使います。 |
+| `authorization_server.anonymous_client` | token request に `client_id` も `client_assertion` もない場合に使う anonymous client 用 policy です。 |
+| `senderConstrainedAccessToken` | access token の sender constraint 方針です。 |
+| `senderConstrainedAccessToken.method` | sender constraint 方式です。`none` / `dpop` / `mtls` を指定できます。現行の DPoP 処理では `dpop` の場合に `dpop.mode` を参照します。`mtls` は予約値で、現時点では DPoP mode 制御には使いません。 |
+| `senderConstrainedAccessToken.dpop.mode` | DPoP mode です。`off` / `optional` / `required` を指定します。現行実装では token endpoint と credential endpoint に同じ値が適用されます。 |
+| `comment` | サンプル説明用のコメントです。制御ロジックには使いません。 |
+
+policy の適用順は次の通りです。
+
+1. token request に `client_id` も `client_assertion` もない場合は、`authorization_server.anonymous_client` を使います。
+2. 登録済み client に `senderConstrainedAccessToken` がある場合は、client 固有の policy を使います。
+3. 登録済み client に `senderConstrainedAccessToken` がない場合は、`authorization_server.default_client` を使います。
+
+##### `server/samples/oauth-clients.json`
+
+`oauth-clients.json` は token endpoint で参照する登録済み OAuth client を定義します。
+
+| 項目 | 説明 |
+|---|---|
+| `clients[]` | 登録済み OAuth client の一覧です。 |
+| `client_id` | client identifier です。token request body の `client_id`、または `client_assertion` JWT の `iss` / `sub` と照合します。 |
+| `client_name` | 表示・説明用の名称です。 |
+| `token_endpoint_auth_method` | token endpoint の client authentication 方式です。未指定時は `none` として扱います。現行実装では `private_key_jwt` と `none` を扱い、それ以外の方式は `invalid_client` として未実装エラーになります。 |
+| `token_endpoint_auth_signing_alg` | `private_key_jwt` の JOSE header `alg` と照合する client 固有の署名アルゴリズムです。 |
+| `client_assertion_audience` | `client_assertion` JWT の `aud` と照合する値です。未指定時は Authorization Server metadata の `token_endpoint` と issuer を期待値として使います。 |
+| `jwks.keys` | `private_key_jwt` の署名検証に使う登録済み公開鍵です。秘密鍵はここに置きません。 |
+| `jwks_uri` | client の JWKS URI です。現行の `private_key_jwt` 検証ではリモート取得せず、`jwks.keys` を使います。鍵ローテーション向けの登録情報として扱います。 |
+| `allowed_grant_types` | client が利用できる grant type の登録情報です。現行実装では token endpoint の grant type 制御としては enforcement していません。 |
+| `senderConstrainedAccessToken` | client 固有の sender constraint policy です。指定した場合は `authorization_server.default_client` より優先します。 |
+| `senderConstrainedAccessToken.method` | client 固有の sender constraint 方式です。`none` / `dpop` / `mtls` を指定できます。 |
+| `senderConstrainedAccessToken.dpop.mode` | client 固有の DPoP mode です。`off` / `optional` / `required` を指定します。現行実装では token endpoint と credential endpoint に同じ値が適用されます。 |
+| `enabled` | `false` の場合、provider から取得されず無効 client として扱われます。未指定または `true` の場合は有効です。 |
+| `comment` | サンプル説明用のコメントです。制御ロジックには使いません。 |
+
+`private_key_jwt` client の最小構成例です。
+
+```json
+{
+  "client_id": "https://wallet.example.com",
+  "token_endpoint_auth_method": "private_key_jwt",
+  "token_endpoint_auth_signing_alg": "ES256",
+  "client_assertion_audience": "https://authz.example.com",
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "crv": "P-256",
+        "kid": "wallet-es256-2026-01",
+        "alg": "ES256",
+        "x": "...",
+        "y": "..."
+      }
+    ]
+  },
+  "senderConstrainedAccessToken": {
+    "method": "dpop",
+    "dpop": {
+      "mode": "required"
+    }
+  },
+  "enabled": true
+}
+```
+
 <a id="get-well-knownoauth-authorization-server"></a>
 #### `GET /.well-known/oauth-authorization-server`
 

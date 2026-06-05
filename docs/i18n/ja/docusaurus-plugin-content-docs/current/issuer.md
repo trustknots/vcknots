@@ -598,6 +598,8 @@ app.post('/token', async (c) => {
 
 Token endpoint では、`server/samples/oauth-clients.json` に登録された OAuth client を参照し、`token_endpoint_auth_method` が `private_key_jwt` の client に対して RFC 7523 の JWT bearer client authentication を検証します。
 
+`oauth-server.json` / `oauth-clients.json` の項目説明は、[server/single/README.ja.md](https://github.com/trustknots/vcknots/blob/main/server/single/README.ja.md) の「OAuth policy / OAuth client 設定ファイル」を参照してください。
+
 client の特定は次の順序で行います。
 
 1. token request body に `client_id` がある場合は、その値を優先します。
