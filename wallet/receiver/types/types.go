@@ -223,7 +223,7 @@ type Receiver interface {
 	FetchAuthorizationServerMetadata(endpoint common.URIField, receivingType SupportedReceivingTypes) (*AuthorizationServerMetadata, error)
 
 	// FetchAccessToken fetches access token through OID4VCI
-	FetchAccessToken(receivingType SupportedReceivingTypes, endpoint common.URIField, authzCode string) (*CredentialIssuanceAccessToken, error)
+	FetchAccessToken(receivingType SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string) (*CredentialIssuanceAccessToken, error)
 
 	// ReceiveCredential receives credential through OID4VCI
 	ReceiveCredential(

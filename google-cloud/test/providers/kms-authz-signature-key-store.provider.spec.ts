@@ -226,7 +226,7 @@ class FakeKmsClient {
   async getPublicKey({ name }: { name: string }) {
     const publicKey = this.publicKeys.get(name)
     if (!publicKey) {
-      throw raise('INTERNAL_SERVER_ERROR', { message: 'not found' })
+      throw raise('internal_server_error', { message: 'not found' })
     }
     return [publicKey]
   }
@@ -238,7 +238,7 @@ class FakeKmsClient {
       throw error
     }
     if (!this.asymmetricSignResponse) {
-      throw raise('INTERNAL_SERVER_ERROR', { message: 'missing response' })
+      throw raise('internal_server_error', { message: 'missing response' })
     }
     return [this.asymmetricSignResponse]
   }
@@ -524,7 +524,7 @@ describe('kmsAuthzSignatureKeyStore', () => {
         privateKey: { kty: 'EC' },
       }),
       (error: Error) => {
-        assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
+        assert.equal(error.name, 'internal_server_error')
         assert.match(error.message, /Unsupported authorization server key algorithm/)
         return true
       }
@@ -550,7 +550,7 @@ describe('kmsAuthzSignatureKeyStore', () => {
         privateKey: privateKeyPem,
       }),
       (error: Error) => {
-        assert.equal(error.name, 'ILLEGAL_ARGUMENT')
+        assert.equal(error.name, 'illegal_argument')
         assert.match(error.message, /does not match the requested key algorithm/)
         return true
       }
@@ -832,7 +832,7 @@ describe('kmsAuthzSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(authz, 'ES256', { iss: authz }, { alg: 'RS256', typ: 'JWT' }),
       (error: Error) => {
-        assert.equal(error.name, 'AUTHZ_ISSUER_KEY_NOT_FOUND')
+        assert.equal(error.name, 'authz_issuer_key_not_found')
         assert.match(error.message, /algorithm mismatch/)
         return true
       }
@@ -857,14 +857,14 @@ describe('kmsAuthzSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(authz, 'ES256', { iss: authz }, { typ: 'JWT' } as never),
       (error: Error) => {
-        assert.equal(error.name, 'AUTHZ_ISSUER_KEY_NOT_FOUND')
+        assert.equal(error.name, 'authz_issuer_key_not_found')
         assert.match(error.message, /algorithm mismatch/)
         return true
       }
     )
   })
 
-  it('should wrap sign failures in an INTERNAL_SERVER_ERROR', async () => {
+  it('should wrap sign failures in an internal_server_error', async () => {
     const kms = new FakeKmsClient()
     const provider = kmsAuthzSignatureKeyStore({
       client: kms as never,
@@ -877,14 +877,14 @@ describe('kmsAuthzSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(authz, 'ES256', { iss: authz }, { alg: 'ES256', typ: 'JWT' }),
       (error: Error) => {
-        assert.equal(error.name, 'AUTHZ_ISSUER_KEY_NOT_FOUND')
+        assert.equal(error.name, 'authz_issuer_key_not_found')
         assert.match(error.message, /Authorization server private key not found/)
         return true
       }
     )
   })
 
-  it('should rethrow non-NOT_FOUND version lookup failures from sign as INTERNAL_SERVER_ERROR', async () => {
+  it('should rethrow non-NOT_FOUND version lookup failures from sign as internal_server_error', async () => {
     const kms = new FakeKmsClient()
     const provider = kmsAuthzSignatureKeyStore({
       client: kms as never,
@@ -897,14 +897,14 @@ describe('kmsAuthzSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(authz, 'ES256', { iss: authz }, { alg: 'ES256', typ: 'JWT' }),
       (error: Error) => {
-        assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
+        assert.equal(error.name, 'internal_server_error')
         assert.match(error.message, /permission denied/)
         return true
       }
     )
   })
 
-  it('should map NOT_FOUND from asymmetricSign to AUTHZ_ISSUER_KEY_NOT_FOUND', async () => {
+  it('should map NOT_FOUND from asymmetricSign to authz_issuer_key_not_found', async () => {
     const kms = new FakeKmsClient()
     const provider = kmsAuthzSignatureKeyStore({
       client: kms as never,
@@ -923,7 +923,7 @@ describe('kmsAuthzSignatureKeyStore', () => {
     await assert.rejects(
       provider.sign(authz, 'ES256', { iss: authz }, { alg: 'ES256', typ: 'JWT' }),
       (error: Error) => {
-        assert.equal(error.name, 'AUTHZ_ISSUER_KEY_NOT_FOUND')
+        assert.equal(error.name, 'authz_issuer_key_not_found')
         assert.match(error.message, /Authorization server private key not found/)
         return true
       }

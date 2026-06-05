@@ -67,7 +67,7 @@ export const createKmsProviderHelpers = ({
       })
       const createdJob = await waitForImportJob(importJobName)
       if (!createdJob) {
-        raise('INTERNAL_SERVER_ERROR', {
+        raise('internal_server_error', {
           message: `Import job expired before becoming ACTIVE: ${importJobName}`,
         })
       }
@@ -90,7 +90,7 @@ export const createKmsProviderHelpers = ({
         }
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
       }
-      raise('INTERNAL_SERVER_ERROR', {
+      raise('internal_server_error', {
         message: `Import job did not become ACTIVE: ${importJobName}`,
       })
     }

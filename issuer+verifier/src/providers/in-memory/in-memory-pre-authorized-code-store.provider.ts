@@ -16,32 +16,39 @@ export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider
     name: 'in-memory-pre-authorized-code-provider',
     single: true,
 
-    async save(code, tx_code, options) {
+    async save(code, credentialConfigurationIds, tx_code, options) {
       const ttlSecRaw = Number(options?.ttlSec ?? 300)
       const ttlSecCandidate = Math.floor(ttlSecRaw)
       const ttlSec = Number.isFinite(ttlSecRaw) && ttlSecCandidate > 0 ? ttlSecCandidate : 300
       const tx_code_input_mode = options?.tx_code_input_mode ?? 'numeric'
       const expiresAt = new Date().getTime() + ttlSec * 1000
-      codes.set(code, { code, tx_code, tx_code_input_mode, expires_at: expiresAt })
+      codes.set(code, {
+        code,
+        credential_configuration_ids: credentialConfigurationIds,
+        tx_code,
+        tx_code_input_mode,
+        expires_at: expiresAt,
+      })
       return
     },
 
-    async validate(code, tx_code) {
+    // validate and fetch credential configuration ids
+    async consume(code, tx_code) {
       const entry = codes.get(code)
       if (!entry) {
-        throw raise('INVALID_GRANT', {
+        throw raise('invalid_grant', {
           message: 'Pre-authorized code not found',
         })
       }
       if (entry.expires_at && entry.expires_at < new Date().getTime()) {
         codes.delete(code)
-        throw raise('INVALID_GRANT', {
+        throw raise('invalid_grant', {
           message: 'Pre-authorized code has expired',
         })
       }
       if (entry.tx_code !== undefined) {
         if (tx_code === undefined) {
-          throw raise('INVALID_REQUEST', {
+          throw raise('invalid_request', {
             message: 'tx_code is required for this pre-authorized code',
           })
         }
@@ -49,29 +56,27 @@ export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider
           const expected = toDigitString(entry.tx_code)
           const actual = toDigitString(tx_code)
           if (expected === null || actual === null || expected !== actual) {
-            throw raise('INVALID_GRANT', {
+            throw raise('invalid_grant', {
               message: 'Invalid tx_code provided',
             })
           }
         } else {
           if (entry.tx_code !== tx_code) {
-            throw raise('INVALID_GRANT', {
+            throw raise('invalid_grant', {
               message: 'Invalid tx_code provided',
             })
           }
         }
-        return true
+        codes.delete(code)
+        return entry.credential_configuration_ids
       }
       if (tx_code !== undefined) {
-        throw raise('INVALID_REQUEST', {
+        throw raise('invalid_request', {
           message: 'tx_code should not be provided for this pre-authorized code',
         })
       }
-      return codes.has(code)
-    },
-
-    async delete(code) {
       codes.delete(code)
+      return entry.credential_configuration_ids
     },
   }
 }

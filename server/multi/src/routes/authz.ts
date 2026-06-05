@@ -84,7 +84,7 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
       })
       return c.json(accessToken)
     } catch (err) {
-      if (err instanceof VcknotsError && err.name === 'INVALID_DPOP_PROOF') {
+      if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
         return c.json(
           {
             error: 'invalid_dpop_proof',
@@ -93,7 +93,7 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
           400
         )
       }
-      if (err instanceof VcknotsError && err.name === 'USE_DPOP_NONCE') {
+      if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
         return dpopNonceResponse(c)
       }
       const errorResponse = handleError(err)

@@ -22,6 +22,7 @@ describe('firestore provider registry', () => {
         'pre-authorized-code-store-provider',
         'request-object-store-provider',
         'dpop-proof-jti-store-provider',
+        'issuance-context-store-provider',
       ]
     )
   })

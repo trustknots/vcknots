@@ -15,6 +15,7 @@ export const accessToken = (): AccessTokenProvider => {
         iat: timeStamp,
         // Preserve the authenticated OAuth client in the token payload for downstream authorization checks.
         ...(options?.clientId ? { client_id: options.clientId } : {}),
+        ...(options?.jti ? { jti: options.jti } : {}),
         ...(options?.cnf ? { cnf: options.cnf } : {}),
       }
       return payload

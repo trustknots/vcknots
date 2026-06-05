@@ -51,7 +51,7 @@ export const secretManagerVerifierCertificateStoreProvider = (
     } catch (error) {
       // Secret Manager surfaces gRPC status codes on API errors: 5 = NOT_FOUND.
       if (isGoogleApiError(error, 5)) return []
-      raise('INTERNAL_SERVER_ERROR', {
+      raise('internal_server_error', {
         message: 'Failed to load verifier certificate from Secret Manager.',
         cause: error instanceof Error ? error : undefined,
       })
@@ -89,7 +89,7 @@ export const secretManagerVerifierCertificateStoreProvider = (
       } catch (error) {
         // 6 = ALREADY_EXISTS, so a concurrent or repeated save can proceed.
         if (!isGoogleApiError(error, 6)) {
-          raise('INTERNAL_SERVER_ERROR', {
+          raise('internal_server_error', {
             message: 'Failed to create verifier certificate secret in Secret Manager.',
             cause: error instanceof Error ? error : undefined,
           })
@@ -104,7 +104,7 @@ export const secretManagerVerifierCertificateStoreProvider = (
           },
         })
       } catch (error) {
-        raise('INTERNAL_SERVER_ERROR', {
+        raise('internal_server_error', {
           message: 'Failed to store verifier certificate in Secret Manager.',
           cause: error instanceof Error ? error : undefined,
         })

@@ -2,12 +2,13 @@ import {
   parseAuthorizationHeader,
   parseDpopHeader,
   VcknotsContext,
+  JwtPayload,
 } from '@trustknots/vcknots'
 import {
-  CredentialConfigurationId,
   CredentialRequest,
   CredentialIssuer,
   initializeIssuerFlow,
+  CredentialConfigurationId,
 } from '@trustknots/vcknots/issuer'
 import { AuthorizationServerIssuer, initializeAuthzFlow } from '@trustknots/vcknots/authz'
 import { VcknotsError } from '@trustknots/vcknots/errors'
@@ -61,6 +62,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       length?: number
       description?: string
     }
+    authorization_server?: string
   }
   const dpopNonceResponse = async (c: Context) => {
     const dpopNonce = await authzFlow.createDpopNonceChallenge(DPOP_NONCE_TTL_MS)
@@ -118,16 +120,41 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   issueApp.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
-      const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
+      const parseResult = CredentialConfigurationId.schema.safeParse(c.req.param('configuration'))
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid credential configuration ID.',
+          },
+          400
+        )
+      }
+      const configurations = [parseResult.data]
+
       const rawBody = await c.req.text()
-      const options: OfferOptions | undefined =
-        rawBody.trim().length > 0 ? (JSON.parse(rawBody) as OfferOptions) : undefined
+
+      let options: OfferOptions | undefined
+      if (rawBody.trim().length > 0) {
+        try {
+          options = JSON.parse(rawBody) as OfferOptions
+        } catch {
+          return c.json(
+            {
+              error: 'invalid_request',
+              error_description: 'Request body must be valid JSON.',
+            },
+            400
+          )
+        }
+      }
 
       // It only accepts a domain as an argument
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
         txCode: options?.tx_code,
         ttlSec: PRE_CODE_TTL_SEC,
+        authorizationServer: options?.authorization_server,
       })
       // TODO: Share tx_code with user (e.g., display on issuance screen or send via email)
       console.log('tx_code:', tx_code)
@@ -176,6 +203,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         })
       }
 
+      let accessTokenPayload: JwtPayload
       try {
         if (authorization.value.scheme === 'dpop') {
           const dpopProof = parseDpopHeader(c.req.header('DPoP'))
@@ -201,14 +229,18 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
               nonceRequired: true,
             },
           })
-          await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
-            dpopProof: {
-              proofJwt: dpopProof.proofJwt,
-              htm: c.req.method,
-              htu: `${baseUrl}/credentials`,
-              nonceRequired: true,
-            },
-          })
+          accessTokenPayload = await authzFlow.verifyDpopBoundAccessToken(
+            authz,
+            authorization.value.token,
+            {
+              dpopProof: {
+                proofJwt: dpopProof.proofJwt,
+                htm: c.req.method,
+                htu: `${baseUrl}/credentials`,
+                nonceRequired: true,
+              },
+            }
+          )
         } else {
           if (dpopMode === 'required') {
             return unauthorized(
@@ -220,7 +252,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
               { error: 'invalid_token' }
             )
           }
-          const accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
+          accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
             authz,
             authorization.value.token
           )
@@ -236,7 +268,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
           }
         }
       } catch (err) {
-        if (err instanceof VcknotsError && err.name === 'INVALID_ACCESS_TOKEN') {
+        if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
           return unauthorized(
             c,
             {
@@ -246,18 +278,52 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
             { error: 'invalid_token' }
           )
         }
-        if (err instanceof VcknotsError && err.name === 'INVALID_DPOP_PROOF') {
+        if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
           return invalidDpopProof(c, err.message)
         }
-        if (err instanceof VcknotsError && err.name === 'USE_DPOP_NONCE') {
+        if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
           return dpopNonceResponse(c)
         }
         throw err
       }
-      const request = await c.req.json()
-      const parse = CredentialRequest(request)
+      const request = await c.req.json().catch(() => null)
+      if (!request) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Request body must be a valid JSON.',
+          },
+          400
+        )
+      }
+      const parseResult = CredentialRequest.schema.safeParse(request)
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Request body does not conform to CredentialRequest schema.',
+          },
+          400
+        )
+      }
+      const parse = parseResult.data
+      const accessTokenJti =
+        typeof accessTokenPayload.jti === 'string' && accessTokenPayload.jti.length > 0
+          ? accessTokenPayload.jti
+          : undefined
+      if (!accessTokenJti) {
+        // jti is used to bind the access token to the credential offer; it is not part of access token validation.
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Access token must contain jti claim.',
+          },
+          400
+        )
+      }
+
       // Issue Credential
-      const credential = await issuerFlow.issueCredential(issuer, parse, {
+      const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenJti, {
         alg: 'ES256',
         cnonce: {
           c_nonce_expires_in: 60 * 5 * 1000,

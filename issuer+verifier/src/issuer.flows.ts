@@ -20,20 +20,23 @@ import { jwkSchema } from './jwk.type'
 
 type OfferOptions =
   | {
-    usePreAuth: false
-    state?: unknown
-  }
-  | {
-    usePreAuth: true
-    txCode?: {
-      input_mode?: 'numeric' | 'text'
-      length?: number
-      description?: string
+      usePreAuth: false
+      state?: unknown
+      authorizationServer?: string
     }
-    ttlSec?: number
-  }
+  | {
+      usePreAuth: true
+      txCode?: {
+        input_mode?: 'numeric' | 'text'
+        length?: number
+        description?: string
+      }
+      ttlSec?: number
+      authorizationServer?: string
+    }
 type IssueOptions = {
   alg: string
+  jti?: string
   cnonce?: {
     c_nonce_expires_in: number
   }
@@ -77,7 +80,7 @@ function getProofType(
       proofValue: proofs.attestation,
     }
   }
-  throw err('INVALID_CREDENTIAL_REQUEST', {
+  throw err('invalid_credential_request', {
     message: 'Unsupported proof type',
   })
 }
@@ -101,6 +104,7 @@ export type IssuerFlow = {
   issueCredential(
     issuer: CredentialIssuer,
     credentialRequest: CredentialRequest,
+    accessTokenJti: string,
     options?: IssueOptions
   ): Promise<CredentialResponse>
 }
@@ -116,10 +120,32 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
   const transactionCode$ = context.providers.get('transaction-code-provider')
+  const issuanceContextStore$ = context.providers.get('issuance-context-store-provider')
+
+  const rejectInsecureIssuerMetadata = (metadata: CredentialIssuerMetadata | null) => {
+    if (metadata) {
+      if (context.options?.debug) {
+        return
+      }
+      const credentialEndpoints = [
+        ['credential_endpoint', metadata.credential_endpoint],
+        ['deferred_credential_endpoint', metadata.deferred_credential_endpoint],
+      ].filter((url): url is [string, string] => !!url[1])
+
+      for (const [field, url] of credentialEndpoints) {
+        if (new URL(url).protocol === 'http:') {
+          throw err('insecure_http_not_allowed', {
+            message: `CredentialIssuerMetadata contains insecure http url in ${field}: ${url}`,
+          })
+        }
+      }
+    }
+  }
 
   return {
     async findIssuerMetadata(id) {
       const metadata = await metadataStore$.fetch(id)
+      rejectInsecureIssuerMetadata(metadata)
       return metadata
     },
     async findJwtVcIssuerMetadata(id) {
@@ -127,6 +153,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       if (!metadata) {
         return null
       }
+      rejectInsecureIssuerMetadata(metadata)
       const jwtVcIssuerMetadata: JwtVcIssuerResponse = {
         issuer: metadata.credential_issuer,
       }
@@ -155,7 +182,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
                   kid,
                 }
               } catch (e) {
-                throw err('INVALID_ISSUER_KEY', {
+                throw err('invalid_issuer_key', {
                   message: `Failed to calculate kid for issuer ${id} key.`,
                 })
               }
@@ -172,9 +199,10 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       return jwtVcIssuerMetadata
     },
     async createIssuerMetadata(issuer) {
+      rejectInsecureIssuerMetadata(issuer)
       const current = await metadataStore$.fetch(issuer.credential_issuer)
       if (current) {
-        throw err('DUPLICATE_ISSUER', {
+        throw err('duplicate_issuer', {
           message: `issuer ${issuer.credential_issuer} is already registered.`,
         })
       }
@@ -196,20 +224,45 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
     },
     async offerCredential(issuer, configurations, options) {
       if (options && !options.usePreAuth) {
-        throw err('FEATURE_NOT_IMPLEMENTED_YET', {
+        throw err('unsupported_grant_type', {
           message: 'Authorization code flow is not supported.',
         })
       }
 
       const metadata =
         (await metadataStore$.fetch(issuer)) ??
-        raise('ISSUER_NOT_FOUND', {
+        raise('issuer_not_found', {
           message: `Issuer metadata for ${issuer} not found.`,
         })
+      rejectInsecureIssuerMetadata(metadata)
+
+      if (new Set(configurations).size !== configurations.length) {
+        throw err('invalid_credential_request', {
+          message: 'credential_configuration_ids must be unique.',
+        })
+      }
+
+      if (options?.authorizationServer) {
+        if (
+          metadata.authorization_servers === undefined ||
+          metadata.authorization_servers.length <= 1
+        ) {
+          throw err('invalid_credential_request', {
+            message:
+              'authorization_server can only be used when authorization_servers has multiple entries.',
+          })
+        }
+
+        if (!metadata.authorization_servers.includes(options.authorizationServer)) {
+          throw err('invalid_credential_request', {
+            message: `Authorization server ${options.authorizationServer} is not supported by issuer ${issuer}.`,
+          })
+        }
+      }
 
       for (const configId of configurations) {
         if (metadata.credential_configurations_supported[configId] === undefined) {
-          throw err('UNKNOWN_CREDENTIAL_CONFIGURATION', {
+          throw err('unknown_credential_configuration', {
             message: `Credential configuration ${configId} is not supported by issuer ${issuer}.`,
           })
         }
@@ -229,7 +282,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       }
 
       const code = await auth$.generate()
-      await codeStore$.save(code, tx_code, preAuthorizedCodeStoreOptions)
+      await codeStore$.save(code, configurations, tx_code, preAuthorizedCodeStoreOptions)
       const offer = await offer$.create(metadata, configurations, {
         usePreAuth: true,
         code,
@@ -240,6 +293,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
             description: options.txCode.description,
           },
         }),
+        ...(options?.authorizationServer && { authorizationServer: options.authorizationServer }),
       })
       return {
         offer,
@@ -259,20 +313,21 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const lookupNonce = Nonce({ nonce })
       return cnonceStore$.revoke(lookupNonce)
     },
-    async issueCredential(issuer, credentialRequest, options) {
+    async issueCredential(issuer, credentialRequest, accessTokenJti, options) {
       if (options?.subject && !isUri(options.subject)) {
-        throw err('INVALID_CREDENTIAL_REQUEST', {
+        throw err('invalid_credential_request', {
           message: 'Invalid options: subject must be a URI.',
         })
       }
       const metadata =
         (await metadataStore$.fetch(issuer)) ??
-        raise('ISSUER_NOT_FOUND', {
+        raise('issuer_not_found', {
           message: `Issuer metadata for ${issuer} not found.`,
         })
+      rejectInsecureIssuerMetadata(metadata)
 
       if (!credentialRequest.credential_configuration_id) {
-        throw err('INVALID_CREDENTIAL_REQUEST', {
+        throw err('invalid_credential_request', {
           message: 'Credential configuration id is not specified.',
         })
       }
@@ -282,10 +337,32 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const configuration =
         credentialConfigurationSupported[credentialRequest.credential_configuration_id]
       if (!configuration) {
-        throw err('UNKNOWN_CREDENTIAL_CONFIGURATION', {
+        throw err('unknown_credential_configuration', {
           message: `Credential configuration ${credentialRequest.credential_configuration_id} is not supported by issuer ${issuer}.`,
         })
       }
+      const jti = accessTokenJti
+      if (!jti) {
+        throw err('invalid_credential_request', {
+          message: 'jti is missing.',
+        })
+      }
+      const allowedCredentialConfigurationIds = await issuanceContextStore$.fetch(jti)
+      if (!allowedCredentialConfigurationIds) {
+        throw err('invalid_credential_request', {
+          message: 'Issuance context for this jti was not found',
+        })
+      }
+      const requestedCredentialConfigurationId = CredentialConfigurationId(
+        credentialRequest.credential_configuration_id
+      )
+
+      if (!allowedCredentialConfigurationIds.includes(requestedCredentialConfigurationId)) {
+        throw err('invalid_credential_request', {
+          message: 'Requested credential_configuration_id is not allowed for this jti.',
+        })
+      }
+
       const issueCredentialProvider = selectProvider(issueCredential$, configuration.format)
 
       const supports = Object.keys(configuration.proof_types_supported ?? {})
@@ -295,7 +372,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       if (credentialRequest.proofs) {
         const proofsObjects = getProofType(credentialRequest.proofs)
         if (!supports.includes(proofsObjects.proofType)) {
-          throw err('INVALID_CREDENTIAL_REQUEST', {
+          throw err('invalid_credential_request', {
             message: 'Request contain no proofs supported by credential configuration.',
           })
         }
@@ -309,14 +386,14 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
               ? options?.proofJwt?.usePreAuth === true
                 ? { usePreAuth: true, credentialIssuer: metadata.credential_issuer }
                 : {
-                  usePreAuth: false,
-                  credentialIssuer: metadata.credential_issuer,
-                  clientId: options?.proofJwt?.clientId,
-                }
+                    usePreAuth: false,
+                    credentialIssuer: metadata.credential_issuer,
+                    clientId: options?.proofJwt?.clientId,
+                  }
               : undefined
           verifyProof = await credentialProofProvider.verifyProof(proof, proofJwtCtx)
           if (!verifyProof) {
-            throw err('INVALID_PROOF', {
+            throw err('invalid_proof', {
               message: 'Failed to verify Proof.',
             })
           }
@@ -326,7 +403,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
             if (typeof verifyProof.payload.nonce === 'string') {
               const code = await cnonceStore$.validate(Nonce({ nonce: verifyProof.payload.nonce }))
               if (!code) {
-                throw err('INVALID_NONCE', {
+                throw err('invalid_nonce', {
                   message: 'Nonce not found.',
                 })
               }
@@ -336,7 +413,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         }
       }
       if (!verifyProof) {
-        throw err('INVALID_CREDENTIAL_REQUEST', {
+        throw err('invalid_credential_request', {
           message: 'Proof is required to issue credential.',
         })
       }

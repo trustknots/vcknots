@@ -47,6 +47,126 @@ const issuerFlow = initializeIssuerFlow(context);
 const authzFlow = initializeAuthzFlow(context);
 ```
 
+## VcknotsContext
+
+`VcknotsContext` is the core runtime context shared across VCKnots features.
+
+It manages the following settings. Each configuration is provided through `VcknotsOptions`.
+
+- providers
+- extensions
+- debug
+- OAuth-related settings
+
+## VcknotsOptions
+
+Configuration options passed to `initializeContext()`.
+
+```typescript
+type VcknotsOptions = {
+  providers?: Providers
+  extensions?: Extensions
+  debug?: boolean
+  oauth?: OAuthOptions
+}
+```
+
+### providers
+
+Adds custom providers.
+
+```typescript
+const context = initializeContext({
+  providers: [
+    myProvider,
+  ],
+})
+```
+
+---
+
+### extensions
+
+Adds VCKnots extensions.
+
+```typescript
+const context = initializeContext({
+  extensions: [
+    myExtension,
+  ],
+})
+```
+
+### debug
+
+Development option.
+
+```typescript
+const context = initializeContext({
+  debug: true,
+})
+```
+
+When `debug: true`:
+
+- insecure `http://` endpoints are allowed
+- localhost development workflows are enabled
+
+When `debug: false` or not set(undefined):
+
+- using `http://` URLs in the following `CredentialIssuerMetadata` endpoints will throw an `insecure_http_not_allowed` error:
+  - `credential_endpoint`
+  - `deferred_credential_endpoint`
+
+```json
+{
+  "error": "insecure_http_not_allowed",
+  "error_description": "CredentialIssuerMetadata contains insecure http url in credential_endpoint: http://localhost:8080/credentials"
+}
+```
+
+Use HTTPS endpoints in production environments.
+
+---
+
+### oauth
+
+Specifies Access Token related settings.
+
+```typescript
+const context = initializeContext({
+  oauth: {
+    senderConstrainedAccessToken: {
+      method: 'dpop',
+      dpop: {
+        mode: 'required',
+      },
+    },
+  },
+})
+```
+
+#### method
+
+Specifies the sender constraint method for Access Tokens.
+
+```typescript
+type SenderConstraintMethod = 'none' | 'dpop' | 'mtls'
+```
+
+| Value | Description |
+|---|---|
+| `none` | Sender-constrained access tokens are not used |
+| `dpop` | Uses DPoP-bound access tokens |
+| `mtls` | Uses mTLS sender-constrained access tokens (planned) |
+
+---
+
+#### dpop.mode
+
+Specifies the DPoP enforcement level.
+For details, see [5. Access Token Issuance](#5-access-token-issuance).
+
 ## 3. Sample Implementation of the Issuer Feature
 
 ### Parameters
@@ -434,14 +554,38 @@ Endpoint to create a credential offer:
 app.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
-      const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
-      const contentLength = c.req.header('content-length')
-      const options: OfferOptions | undefined =
-        contentLength && contentLength !== '0' ? await c.req.json<OfferOptions>() : undefined
+      const parseResult = CredentialConfigurationId.schema.safeParse(c.req.param('configuration'))
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid credential configuration ID.',
+          },
+          400
+        )
+      }
+      const configurations = [parseResult.data]
+      const rawBody = await c.req.text()
+
+      let options: OfferOptions | undefined
+      if (rawBody.trim().length > 0) {
+        try {
+          options = JSON.parse(rawBody) as OfferOptions
+        } catch {
+          return c.json(
+            {
+              error: 'invalid_request',
+              error_description: 'Request body must be valid JSON.',
+            },
+            400
+          )
+        }
+      }
 
       const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
         txCode: options?.tx_code,
+        authorizationServer: options?.authorization_server,
       })
 
       console.log('offer:', offer)
@@ -462,7 +606,10 @@ app.post('/configurations/:configuration/offer', async (c) => {
 
 **Request**
 
-Include a request body (JSON) only when specifying `tx_code`.
+Include a request body (JSON) only when specifying optional parameters.
+
+- `tx_code` can be used to include a transaction code in the Credential Offer.
+- `authorization_server` can be included only when the Issuer Metadata contains multiple entries in `authorization_servers`.
 
 ```bash
 curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer \
@@ -575,7 +722,17 @@ app.post('/token', async (c) => {
     )
   }
 
-  const tokenRequest = AuthzTokenRequest(requestData)
+  const parseResult = AuthzTokenRequest.schema.safeParse(requestData)
+  if (!parseResult.success) {
+    return c.json(
+      {
+        error: 'invalid_request',
+        error_description: 'Invalid token request parameters.',
+      },
+      400
+    )
+  }
+  const tokenRequest = parseResult.data
   const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
     clientId: clientResolution.clientId,
     ...(dpopMode !== 'off' && dpopProof.ok
@@ -593,7 +750,7 @@ app.post('/token', async (c) => {
 })
 ```
 
-The **request body is `application/x-www-form-urlencoded`** (`AuthzTokenRequest` is built from form fields). For the full handler—including branches such as **`INVALID_DPOP_PROOF`** (`invalid_dpop_proof`) and **`USE_DPOP_NONCE`** (with a **`DPoP-Nonce`** header)—see [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts).
+The **request body is `application/x-www-form-urlencoded`** (`AuthzTokenRequest` is built from form fields). For the full handler—including branches such as **`invalid_dpop_proof`** (`invalid_dpop_proof`) and **`use_dpop_nonce`** (with a **`DPoP-Nonce`** header)—see [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts).
 
 #### Client authentication with private_key_jwt
 
@@ -972,6 +1129,7 @@ app.post('/credentials', async (c) => {
       })
     }
 
+    let accessTokenPayload: JwtPayload
     try {
       if (authorization.value.scheme === 'dpop') {
         const dpopProof = parseDpopHeader(c.req.header('DPoP'))
@@ -985,7 +1143,7 @@ app.post('/credentials', async (c) => {
                 : 'DPoP header must contain a compact JWT.'
           )
         }
-        await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
+        accessTokenPayload = await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
           dpopProof: {
             proofJwt: dpopProof.proofJwt,
             htm: c.req.method,
@@ -1004,7 +1162,7 @@ app.post('/credentials', async (c) => {
             { error: 'invalid_token' }
           )
         }
-        const accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
+        accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
           authz,
           authorization.value.token
         )
@@ -1021,25 +1179,58 @@ app.post('/credentials', async (c) => {
         }
       }
     } catch (err) {
-      if (err instanceof VcknotsError && err.name === 'INVALID_ACCESS_TOKEN') {
+      if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
         return unauthorized(
           c,
           { error: 'invalid_token', error_description: err.message },
           { error: 'invalid_token' }
         )
       }
-      if (err instanceof VcknotsError && err.name === 'INVALID_DPOP_PROOF') {
+      if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
         return invalidDpopProof(c, err.message)
       }
-      if (err instanceof VcknotsError && err.name === 'USE_DPOP_NONCE') {
+      if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
         return dpopNonceResponse(c)
       }
       throw err
     }
 
-    const request = await c.req.json()
-    const parse = CredentialRequest(request)
-    const credential = await issuerFlow.issueCredential(issuer, parse, {
+    const request = await c.req.json().catch(() => null)
+    if (!request) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Request body must be a valid JSON.',
+        },
+        400
+      )
+    }
+    const parseResult = CredentialRequest.schema.safeParse(request)
+    if (!parseResult.success) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Request body does not conform to CredentialRequest schema.',
+        },
+        400
+      )
+    }
+    const parse = parseResult.data
+    const accessTokenJti =
+      typeof accessTokenPayload.jti === 'string' && accessTokenPayload.jti.length > 0
+        ? accessTokenPayload.jti
+        : undefined
+    if (!accessTokenJti) {
+      return unauthorized(
+        c,
+        {
+          error: 'invalid_token',
+          error_description: 'Access token must contain a jti claim.',
+        },
+        { error: 'invalid_token' }
+      )
+    }
+    const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenJti, {
       alg: 'ES256',
       cnonce: {
         c_nonce_expires_in: 60 * 5 * 1000,
@@ -1158,7 +1349,7 @@ createIssuerMetadata(issuer: CredentialIssuerMetadata): Promise<void>
 **Return value**: None
 
 **Error cases**:
-- `PROVIDER_NOT_FOUND`: An unsupported `alg` is configured
+- `provider_not_found`: An unsupported `alg` is configured
 
 
 ### createNonce
@@ -1222,8 +1413,8 @@ For the type definition of the credential offer, see [issuer+verifier/src/creden
 
 
 **Error cases**:
-- `FEATURE_NOT_IMPLEMENTED_YET`: An unsupported flow is configured (the authorization code flow is not supported)
-- `ISSUER_NOT_FOUND`: An unregistered Issuer is configured
+- `unsupported_grant_type`: An unsupported flow is configured (the authorization code flow is not supported)
+- `issuer_not_found`: An unregistered Issuer is configured
 
 #### CredentialConfigurationId{#CredentialConfigurationId}
 Defines the type for credential configuration IDs.
@@ -1239,6 +1430,7 @@ type OfferOptions =
   | {
       usePreAuth: false
       state?: unknown
+      authorizationServer?: string
     }
   | {
       usePreAuth: true
@@ -1248,6 +1440,7 @@ type OfferOptions =
         description?: string
       }
       ttlSec?: number
+      authorizationServer?: string
     }
 ```
 
@@ -1258,6 +1451,7 @@ Issues a credential.
 issueCredential(
   issuer: CredentialIssuer,
   credentialRequest: CredentialRequest,
+  accessTokenJti: string,
   options?: IssueOptions
 ): Promise<CredentialResponse>
 ```
@@ -1265,6 +1459,7 @@ issueCredential(
 **Parameters**:
 - `issuer`: Identifier of the Issuer ([CredentialIssuer](#CredentialIssuer))
 - `credentialRequest`: Credential request ([CredentialRequest](#CredentialRequest))
+- `accessTokenJti`: `jti` in the access token
 - `options`: Issuance options ([IssueOptions](#IssueOptions))
 
 **Return value**: Returns a credential response.
@@ -1282,7 +1477,7 @@ For protected-header validation behavior, see [credential-proof-jwt.provider.ts]
 
 - **`typ`**: Must be `openid4vci-proof+jwt` (explicit typing per RFC 8725).
 - **`alg`**: `none` and symmetric signatures (MAC, IANA JWA identifiers starting with `HS*`) are rejected.
-- **`kid` / `jwk` / `x5c`**: **Must not appear more than one at a time.** **At least one** of them is required (if none are present, the result is `INVALID_PROOF`).
+- **`kid` / `jwk` / `x5c`**: **Must not appear more than one at a time.** **At least one** of them is required (if none are present, the result is `invalid_proof`).
 - **`trust_chain`**: Not currently supported.
 
 Per-header behavior:
@@ -1294,22 +1489,21 @@ Per-header behavior:
 | **`x5c`** | The certificate chain is validated with **`certificate-provider`**, then the signature is verified with the public key of the leaf certificate. When using `x5c`, register **`certificate-provider`** in the provider list when initializing Vcknots. |
 
 **Error cases**:
-- `ISSUER_NOT_FOUND`: An unregistered Issuer is configured
-- `PROVIDER_NOT_FOUND`: An unsupported `format` is configured
-- `INVALID_REQUEST`: `format` is not set
-- `UNSUPPORTED_CREDENTIAL_TYPE`: The specified `credential_definition` or `proof_type` is not supported
-- `INVALID_CREDENTIAL_REQUEST`: The `proof` is missing or not supported, or the configuration id is invalid, etc.
-- `INVALID_PROOF`: The `proof` cannot be verified, the header does not conform to OID4VCI JWT proof rules (e.g. `typ` / `alg` / combinations of `kid`, `jwk`, and `x5c`), an unsupported header is set, or a `nonce` is missing
-- `UNSUPPORTED_ISSUER_KEY_ALG`: The Issuer’s signing algorithm is not supported
-- `AUTHZ_ISSUER_KEY_NOT_FOUND`: The Issuer’s key cannot be found
-- `INTERNAL_SERVER_ERROR`: Signing failed
+- `issuer_not_found`: An unregistered Issuer is configured
+- `unknown_credential_configuration`: `credential_configuration_id` is not supported
+- `unsupported_credential_type`: The specified `credential_definition` or `proof_type` is not supported
+- `invalid_credential_request`: The `proof` is missing or not supported, or the configuration id is invalid, etc.
+- `invalid_proof`: The `proof` cannot be verified, the header does not conform to OID4VCI JWT proof rules (e.g. `typ` / `alg` / combinations of `kid`, `jwk`, and `x5c`), an unsupported header is set, or a `nonce` is missing
+- `unsupported_issuer_key_alg`: The Issuer’s signing algorithm is not supported
+- `authz_issuer_key_not_found`: The Issuer’s key cannot be found
+- `internal_server_error`: Signing failed
 
-#### CredentialRequest{#CredentialRequest}
+#### CredentialRequest {#CredentialRequest}
 Defines the type for a credential issuance request. You can configure items such as the credential identifier.
 
 For the definition, see [issuer+verifier/src/credential-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-request.types.ts).
 
-#### IssueOptions{#IssueOptions}
+#### IssueOptions {#IssueOptions}
 Defines the type for credential issuance options. You can configure algorithms, claims, hints for JWT proof verification, and more.
 The definition is as follows (see [issuer.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/issuer.flows.ts) for the implementation).
 
@@ -1426,11 +1620,11 @@ createAccessToken<T extends GrantType>(
 When `clientId` is set, the access token payload includes `client_id`. When `dpopProof` is provided and verification succeeds, the payload includes `cnf.jkt` and `token_type` becomes `DPoP`.
 
 **Error cases**:
-- `PROVIDER_NOT_FOUND`: An unsupported algorithm is configured for the private key
-- `PRE_AUTHORIZED_CODE_NOT_FOUND`: An invalid pre-authorized code is provided
-- `INVALID_REQUEST`: The authorization server key is not registered, the algorithm is not set, or the grant type is not supported
-- `INTERNAL_SERVER_ERROR`: Signing failed
-- `FEATURE_NOT_IMPLEMENTED_YET`: The authorization code flow is configured (currently not supported)
+- `provider_not_found`: An unsupported algorithm is configured for the private key
+- `invalid_grant`: An invalid pre-authorized code is provided
+- `invalid_request`: The authorization server key is not registered, the algorithm is not set, or the grant type is not supported
+- `internal_server_error`: Signing failed
+- `unsupported_grant_type`: The authorization code flow is configured (currently not supported)
 
 #### TokenRequest{#TokenRequest}
 Defines the type for a credential issuance request. You can configure items such as the credential identifier.
@@ -1466,9 +1660,9 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 **Return value**: Returns a boolean indicating whether the access token is valid.
 
 **Error cases**:
-- `INVALID_ACCESS_TOKEN`: The access token is not a valid JWT, or the `authz` claim is not as expected
-- `AUTHZ_ISSUER_KEY_NOT_FOUND`: The authorization server’s key cannot be found
-- `PROVIDER_NOT_FOUND`: The signing algorithm is not supported
+- `invalid_access_token`: The access token is not a valid JWT, or the `authz` claim is not as expected
+- `authz_issuer_key_not_found`: The authorization server’s key cannot be found
+- `provider_not_found`: The signing algorithm is not supported
 
 
 ## 7. Notes
@@ -1486,11 +1680,11 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 
 ### Common issues
 
-- **Q: Metadata validation error**  
+- **Q: Metadata validation error**
   - **A:** Check that the provided metadata conforms to the CredentialIssuerMetadata schema and the AuthorizationServerMetadata schema.
 
-- **Q: Error when creating credential offer**: `FEATURE_NOT_IMPLEMENTED_YET`  
+- **Q: Error when creating credential offer**: `unsupported_grant_type`
   - **A:** Make sure you are not calling an unimplemented flow. Currently, only the pre-authorized code flow is supported.
 
-- **Q: Error when issuing credential**: `INVALID_PROOF`  
+- **Q: Error when issuing credential**: `invalid_proof`
   - **A:** Check that the header of proof.jwt in the credential request includes a kid. Also verify that the `nonce` in the proof is valid.

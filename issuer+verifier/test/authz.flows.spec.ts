@@ -22,6 +22,7 @@ import {
   NonceProvider,
   NonceStoreProvider,
   PreAuthorizedCodeStoreProvider,
+  IssuanceContextStoreProvider,
 } from '../src/providers'
 import { GrantType, TokenRequest, TokenResponse } from '../src/token-request.types'
 import type { VcknotsContext } from '../src/vcknots.context'
@@ -58,10 +59,18 @@ describe('AuthzFlows', () => {
     kind: 'pre-authorized-code-store-provider',
     name: 'mock-pre-authorized-code-store-provider',
     single: true,
-    validate: mock.fn(),
-    delete: mock.fn(),
+    consume: mock.fn(),
     save: mock.fn(),
   } satisfies PreAuthorizedCodeStoreProvider
+
+  const mockIssuanceContextStoreProvider = {
+    kind: 'issuance-context-store-provider',
+    name: 'mock-issuance-context-store-provider',
+    single: true,
+    save: mock.fn(),
+    fetch: mock.fn(),
+    delete: mock.fn(),
+  } satisfies IssuanceContextStoreProvider
 
   const mockAccessTokenProvider = {
     kind: 'access-token-provider',
@@ -159,6 +168,8 @@ describe('AuthzFlows', () => {
               return mockAuthzOAuthClientStoreProvider
             case 'pre-authorized-code-store-provider':
               return mockCodeStoreProvider
+            case 'issuance-context-store-provider':
+              return mockIssuanceContextStoreProvider
             case 'access-token-provider':
               return mockAccessTokenProvider
             case 'authz-signature-key-store-provider':
@@ -233,7 +244,7 @@ describe('AuthzFlows', () => {
       mock.method(mockAuthzMetadataProvider, 'fetch', async () => sampleMetadata)
 
       await assert.rejects(() => flow.createAuthzServerMetadata(sampleMetadata), {
-        name: 'DUPLICATE_AUTHZ_SERVER',
+        name: 'duplicate_authz_server',
       })
     })
   })
@@ -772,7 +783,7 @@ describe('AuthzFlows', () => {
         nonce: 'generated-dpop-nonce',
         nonce_expires_in: 1234,
       }))
-      mock.method(mockNonceStoreProvider, 'save', async () => { })
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
 
       const nonce = await flow.createDpopNonceChallenge(1234)
 
@@ -795,13 +806,13 @@ describe('AuthzFlows', () => {
       grant_type: GrantType.PreAuthorizedCode,
       'pre-authorized_code': preAuthCode,
     }
-    const samplePayload = { iss: sampleIssuer, sub: preAuthCode }
+    const samplePayload = { iss: sampleIssuer, sub: preAuthCode, jti: 'test-jti' }
     const sampleSignature = 'signed-jwt-signature-part'
 
     describe('Pre-Authorized Code Flow', () => {
       beforeEach(() => {
-        mock.method(mockCodeStoreProvider, 'validate', async () => true)
-        mock.method(mockCodeStoreProvider, 'delete', async () => {})
+        mock.method(mockCodeStoreProvider, 'consume', async () => ['test-credential-config-id'])
+        mock.method(mockIssuanceContextStoreProvider, 'save', async () => {})
         mock.method(mockAuthzKeyProvider, 'sign', async () => sampleSignature)
         mock.method(mockAccessTokenProvider, 'createTokenPayload', async () => samplePayload)
         mock.method(mockDpopProofProvider, 'verifyProof', async () => ({
@@ -818,8 +829,8 @@ describe('AuthzFlows', () => {
       it('should successfully create an access token with default expiry', async () => {
         const response = (await flow.createAccessToken(sampleIssuer, tokenRequest)) as TokenResponse
 
-        assert.strictEqual(mockCodeStoreProvider.validate.mock.callCount(), 1)
-        assert.strictEqual(mockCodeStoreProvider.delete.mock.callCount(), 1)
+        assert.strictEqual(mockCodeStoreProvider.consume.mock.callCount(), 1)
+        assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 1)
         assert.strictEqual(mockAuthzKeyProvider.sign.mock.callCount(), 1)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 1)
 
@@ -850,26 +861,72 @@ describe('AuthzFlows', () => {
           clientId: 'wallet-client',
         })
 
-        assert.deepStrictEqual(
-          mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2],
-          {
-            ttlSec: undefined,
-            clientId: 'wallet-client',
-          }
-        )
+        const payloadOptions =
+          mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
+        assert.strictEqual(payloadOptions.ttlSec, undefined)
+        assert.strictEqual(payloadOptions.clientId, 'wallet-client')
+        assert.strictEqual(typeof payloadOptions.jti, 'string')
       })
 
       it('should throw if pre-authorized code is invalid', async () => {
-        mock.method(mockCodeStoreProvider, 'validate', async () => false)
+        mock.method(mockCodeStoreProvider, 'consume', async () => null)
         await assert.rejects(() => flow.createAccessToken(sampleIssuer, tokenRequest), {
-          name: 'PRE_AUTHORIZED_CODE_NOT_FOUND',
+          name: 'invalid_grant',
         })
+      })
+
+      it('should throw invalid_grant when no credential configurations are found for the pre-authorized code', async () => {
+        mock.method(mockCodeStoreProvider, 'consume', async () => null)
+
+        await assert.rejects(() => flow.createAccessToken(sampleIssuer, tokenRequest), {
+          name: 'invalid_grant',
+          message:
+            'The provided pre-authorized code is invalid or no credential configurations were found for the provided pre-authorized code.',
+        })
+
+        assert.strictEqual(mockCodeStoreProvider.consume.mock.callCount(), 1)
+        assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 0)
+        assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 0)
+        assert.strictEqual(mockAuthzKeyProvider.sign.mock.callCount(), 0)
+      })
+
+      it('should use the same generated jti for issuance context and access token payload', async () => {
+        mock.method(
+          mockAccessTokenProvider,
+          'createTokenPayload',
+          async (
+            _authz: AuthorizationServerIssuer,
+            _code: PreAuthorizedCode,
+            options: { jti?: string }
+          ) => ({
+            iss: sampleIssuer,
+            sub: preAuthCode,
+            jti: options?.jti,
+          })
+        )
+
+        const response = (await flow.createAccessToken(sampleIssuer, tokenRequest)) as TokenResponse
+
+        assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 1)
+        assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 1)
+
+        const savedJti = mockIssuanceContextStoreProvider.save.mock.calls[0].arguments[0]
+        const payloadOptions = mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
+
+        assert.strictEqual(typeof savedJti, 'string')
+        assert.ok(savedJti.length > 0)
+        assert.strictEqual(payloadOptions?.jti, savedJti)
+
+        const [, encodedPayload] = response.access_token.split('.')
+        const decodedPayload = JSON.parse(base64url.decode(encodedPayload))
+
+        assert.strictEqual(decodedPayload.jti, savedJti)
       })
 
       it('should throw if signing returns null', async () => {
         mock.method(mockAuthzKeyProvider, 'sign', async () => null)
         await assert.rejects(() => flow.createAccessToken(sampleIssuer, tokenRequest), {
-          name: 'INTERNAL_SERVER_ERROR',
+          name: 'internal_server_error',
         })
       })
 
@@ -888,13 +945,10 @@ describe('AuthzFlows', () => {
           'test-jti',
           { ttlMs: mockDpopProofProvider.proofJtiTtlMs },
         ])
-        assert.deepStrictEqual(
-          mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2],
-          {
-            ttlSec: undefined,
-            cnf: { jkt: 'test-jkt' },
-          }
-        )
+        const payload = mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
+        assert.deepStrictEqual(payload?.cnf, { jkt: 'test-jkt' })
+        assert.strictEqual(payload.ttlSec, undefined)
+        assert.strictEqual(typeof payload?.jti, 'string')
         assert.strictEqual(response.token_type, 'DPoP')
       })
 
@@ -910,7 +964,7 @@ describe('AuthzFlows', () => {
               },
             }),
           {
-            name: 'USE_DPOP_NONCE',
+            name: 'use_dpop_nonce',
             message: 'Authorization server requires nonce in DPoP proof.',
           }
         )
@@ -936,7 +990,7 @@ describe('AuthzFlows', () => {
               },
             }),
           {
-            name: 'USE_DPOP_NONCE',
+            name: 'use_dpop_nonce',
             message: 'Authorization server requires nonce in DPoP proof.',
           }
         )
@@ -980,7 +1034,7 @@ describe('AuthzFlows', () => {
               },
             }),
           {
-            name: 'INVALID_DPOP_PROOF',
+            name: 'invalid_dpop_proof',
             message: 'DPoP proof JWT jti has already been used.',
           }
         )
@@ -993,7 +1047,7 @@ describe('AuthzFlows', () => {
         code: 'some-auth-code',
       }
       await assert.rejects(() => flow.createAccessToken(sampleIssuer, authCodeTokenRequest), {
-        name: 'FEATURE_NOT_IMPLEMENTED_YET',
+        name: 'unsupported_grant_type',
       })
     })
 
@@ -1003,7 +1057,7 @@ describe('AuthzFlows', () => {
         code: 'some-auth-code',
       } as unknown as TokenRequest
       await assert.rejects(() => flow.createAccessToken(sampleIssuer, authCodeTokenRequest), {
-        name: 'INVALID_REQUEST',
+        name: 'invalid_request',
       })
     })
   })
@@ -1036,13 +1090,13 @@ describe('AuthzFlows', () => {
       mock.method(mockAuthzKeyProvider, 'fetch', async () => null)
 
       await assert.rejects(() => flow.verifyAccessToken(sampleIssuer, accessToken), {
-        name: 'AUTHZ_ISSUER_KEY_NOT_FOUND',
+        name: 'authz_issuer_key_not_found',
       })
     })
 
     it('should throw when access token is malformed', async () => {
       await assert.rejects(() => flow.verifyAccessToken(sampleIssuer, 'invalid-token'), {
-        name: 'INVALID_ACCESS_TOKEN',
+        name: 'invalid_access_token',
       })
     })
   })

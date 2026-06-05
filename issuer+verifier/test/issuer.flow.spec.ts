@@ -20,6 +20,7 @@ import {
   PreAuthorizedCodeProvider,
   PreAuthorizedCodeStoreProvider,
   TransactionCodeProvider,
+  IssuanceContextStoreProvider,
 } from '../src/providers'
 import { VcknotsContext, initializeContext } from '../src/vcknots.context'
 import { ProofTypes } from '../src/proofs.types'
@@ -48,9 +49,17 @@ describe('IssuerFlow', () => {
     name: 'mock-pre-authorized-code-store-provider',
     single: true,
     save: mock.fn(),
-    validate: mock.fn(),
-    delete: mock.fn(),
+    consume: mock.fn(),
   } satisfies PreAuthorizedCodeStoreProvider
+
+  const mockIssuanceContextStoreProvider = {
+    kind: 'issuance-context-store-provider',
+    name: 'mock-issuance-context-store-provider',
+    single: true,
+    save: mock.fn(),
+    fetch: mock.fn(),
+    delete: mock.fn(),
+  } satisfies IssuanceContextStoreProvider
 
   const mockIssuerKeyStoreProvider = {
     kind: 'issuer-signature-key-store-provider',
@@ -128,6 +137,7 @@ describe('IssuerFlow', () => {
         mockIssuerMetadataProvider,
         mockPreAuthCodeProvider,
         mockPreAuthCodeStoreProvider,
+        mockIssuanceContextStoreProvider,
         mockIssueCredentialProvider,
         mockIssuerKeyStoreProvider,
         mockCredentialOfferProvider,
@@ -278,12 +288,12 @@ describe('IssuerFlow', () => {
     }
     mock.method(mockIssuerKeyStoreProvider, 'save', async () => {
       throw Object.assign(new Error('No provider found which can handle: RS256'), {
-        name: 'PROVIDER_NOT_FOUND',
+        name: 'provider_not_found',
       })
     })
 
     await assert.rejects(issuerFlow.createIssuerMetadata(metadata), {
-      name: 'PROVIDER_NOT_FOUND',
+      name: 'provider_not_found',
       message: 'No provider found which can handle: RS256',
     })
   })
@@ -291,24 +301,55 @@ describe('IssuerFlow', () => {
   const issuer = CredentialIssuer('did:example:issuer')
   const configurations = [CredentialConfigurationId('VerifiableId')]
 
-  it('should throw "FEATURE_NOT_IMPLEMENTED_YET" if usePreAuth is false', async () => {
+  it('should throw "unsupported_grant_type" if usePreAuth is false', async () => {
     const suspects = async () => {
       return await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: false,
       })
     }
 
-    assert.rejects(suspects, 'FEATURE_NOT_IMPLEMENTED_YET')
+    assert.rejects(suspects, 'unsupported_grant_type')
   })
 
-  it('should throw "ISSUER_NOT_FOUND" if issuer metadata is not found when usePreAuth is true', async () => {
+  it('should throw "invalid_credential_request" if credential_configuration_ids is not an array of unique strings', async () => {
+    const duplicateConfigurations = [
+      CredentialConfigurationId('VerifiableId'),
+      CredentialConfigurationId('VerifiableId'),
+    ]
+    const suspects = async () => {
+      return await issuerFlow.offerCredential(issuer, duplicateConfigurations, {
+        usePreAuth: true,
+      })
+    }
+    const metadata = CredentialIssuerMetadata({
+      credential_issuer: issuer,
+      credential_endpoint: 'https://example.com/credentials',
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    })
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+
+    await assert.rejects(suspects, {
+      name: 'invalid_credential_request',
+      message: 'credential_configuration_ids must be unique.',
+    })
+  })
+
+  it('should throw "issuer_not_found" if issuer metadata is not found when usePreAuth is true', async () => {
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => null)
 
     const suspects = async () => {
       return await issuerFlow.offerCredential(issuer, configurations, { usePreAuth: true })
     }
 
-    assert.rejects(suspects, 'ISSUER_NOT_FOUND')
+    assert.rejects(suspects, 'issuer_not_found')
   })
 
   it('should create a credential offer with pre-authorized code', async () => {
@@ -332,6 +373,7 @@ describe('IssuerFlow', () => {
     const code = 'PREAUTHCODE'
     const offer = CredentialOffer({
       credential_issuer: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('University_Degree')],
     })
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
     mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
@@ -345,6 +387,176 @@ describe('IssuerFlow', () => {
     assert.equal(mockPreAuthCodeProvider.generate.mock.callCount(), 1)
     assert.equal(mockPreAuthCodeStoreProvider.save.mock.callCount(), 1)
     assert.equal(mockCredentialOfferProvider.create.mock.callCount(), 1)
+  })
+
+  it('should create a credential offer with pre-authorized code with authz server', async () => {
+    const metadata = CredentialIssuerMetadata({
+      credential_issuer: issuer,
+      credential_endpoint: 'https://example.com/credentials',
+      authorization_servers: ['https://example.com/auth', 'https://example.com/auth2'],
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+            credentialSubject: {},
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    })
+    const options = {
+      usePreAuth: true,
+      authorizationServer: 'https://example.com/auth',
+    }
+    const code = 'PREAUTHCODE'
+    const offer = CredentialOffer({
+      credential_issuer: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('VerifiableId')],
+      grants: {
+        'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
+          'pre-authorized_code': code,
+          authorization_server: 'https://example.com/auth',
+        },
+      },
+    })
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+    mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
+    mock.method(mockPreAuthCodeStoreProvider, 'save', async () => {})
+    mock.method(mockCredentialOfferProvider, 'create', async () => offer)
+
+    const result = await issuerFlow.offerCredential(issuer, configurations, options)
+
+    assert.ok(result)
+    assert.equal(mockIssuerMetadataProvider.fetch.mock.callCount(), 1)
+    assert.equal(mockPreAuthCodeProvider.generate.mock.callCount(), 1)
+    assert.equal(mockPreAuthCodeStoreProvider.save.mock.callCount(), 1)
+    assert.equal(mockCredentialOfferProvider.create.mock.callCount(), 1)
+  })
+
+  it(`should throw 'invalid_credential_request' when authorization_servers is undefined`, async () => {
+    const metadata = CredentialIssuerMetadata({
+      credential_issuer: issuer,
+      credential_endpoint: 'https://example.com/credentials',
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+            credentialSubject: {},
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    })
+    const options = {
+      usePreAuth: true,
+      authorizationServer: issuer,
+    }
+    const code = 'PREAUTHCODE'
+    const offer = CredentialOffer({
+      credential_issuer: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('VerifiableId')],
+      grants: {
+        'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
+          'pre-authorized_code': code,
+          authorization_server: 'https://example.com/auth',
+        },
+      },
+    })
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+    mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
+    mock.method(mockPreAuthCodeStoreProvider, 'save', async () => {})
+    mock.method(mockCredentialOfferProvider, 'create', async () => offer)
+
+    const suspects = async () => {
+      return await issuerFlow.offerCredential(issuer, configurations, options)
+    }
+
+    await assert.rejects(suspects, {
+      name: 'invalid_credential_request',
+      message:
+        'authorization_server can only be used when authorization_servers has multiple entries.',
+    })
+  })
+
+  it(`should throw 'invalid_credential_request' when authorization_servers is only one entry`, async () => {
+    const metadata = CredentialIssuerMetadata({
+      credential_issuer: issuer,
+      authorization_servers: ['https://example.com/auth'],
+      credential_endpoint: 'https://example.com/credentials',
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+            credentialSubject: {},
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    })
+    const options = {
+      usePreAuth: true,
+      authorizationServer: issuer,
+    }
+    const code = 'PREAUTHCODE'
+    const offer = CredentialOffer({
+      credential_issuer: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('VerifiableId')],
+      grants: {
+        'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
+          'pre-authorized_code': code,
+          authorization_server: 'https://example.com/auth',
+        },
+      },
+    })
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+    mock.method(mockPreAuthCodeProvider, 'generate', async () => code)
+    mock.method(mockPreAuthCodeStoreProvider, 'save', async () => {})
+    mock.method(mockCredentialOfferProvider, 'create', async () => offer)
+
+    const suspects = async () => {
+      return await issuerFlow.offerCredential(issuer, configurations, options)
+    }
+
+    await assert.rejects(suspects, {
+      name: 'invalid_credential_request',
+      message:
+        'authorization_server can only be used when authorization_servers has multiple entries.',
+    })
+  })
+
+  it(`should throw 'invalid_credential_request' error when the provided authorization server is not found in the issuer metadata`, async () => {
+    const metadata = CredentialIssuerMetadata({
+      credential_issuer: issuer,
+      credential_endpoint: 'https://example.com/credentials',
+      authorization_servers: ['https://example.com/auth', 'https://example.com/auth2'],
+      credential_configurations_supported: {
+        VerifiableId: {
+          format: 'jwt_vc_json',
+          credential_definition: {
+            type: ['VCKnots'],
+            credentialSubject: {},
+          },
+          credential_signing_alg_values_supported: ['ES256'],
+        },
+      },
+    })
+
+    mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+
+    const suspects = async () => {
+      return await issuerFlow.offerCredential(issuer, configurations, {
+        usePreAuth: true,
+        authorizationServer: 'https://example.com/failed',
+      })
+    }
+
+    await assert.rejects(suspects, {
+      name: 'invalid_credential_request',
+      message: `Authorization server https://example.com/failed is not supported by issuer ${issuer}.`,
+    })
   })
 
   it('should create a credential offer with txCode when txCode options are provided', async () => {
@@ -375,6 +587,7 @@ describe('IssuerFlow', () => {
     const txCode = 1234
     const offer = CredentialOffer({
       credential_issuer: issuer,
+      credential_configuration_ids: [CredentialConfigurationId('University_Degree')],
     })
 
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
@@ -394,6 +607,7 @@ describe('IssuerFlow', () => {
     ])
     assert.deepStrictEqual(mockPreAuthCodeStoreProvider.save.mock.calls[0].arguments, [
       code,
+      configurations,
       txCode,
       {
         ttlSec: 600,
@@ -545,8 +759,11 @@ describe('IssuerFlow', () => {
         (type) => type === ProofTypes.JWT
       )
 
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
       // 2. Act
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' })
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+        alg: 'ES256',
+      })
 
       // 3. Assert
       assert.ok(response)
@@ -566,6 +783,127 @@ describe('IssuerFlow', () => {
           proofHeader: verifiedProof.header,
         }
       )
+    })
+    it('should throw "invalid_credential_request" if jti is missing', async () => {
+      const issuer = CredentialIssuer('did:example:issuer')
+      const metadata: CredentialIssuerMetadata = {
+        credential_issuer: issuer,
+        credential_endpoint: 'https://example.com/credentials',
+        credential_configurations_supported: {
+          University_Degree: {
+            format: CredentialFormats.JWT_VC_JSON,
+            credential_definition: {
+              type: ['VerifiableCredential', 'UniversityDegreeCredential'],
+            },
+            credential_signing_alg_values_supported: ['ES256'],
+            proof_types_supported: {
+              jwt: {
+                proof_signing_alg_values_supported: ['ES256K'],
+              },
+            },
+          },
+        },
+      }
+      const credentialRequest = createCredentialRequest()
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+
+      await assert.rejects(
+        issuerFlow.issueCredential(issuer, credentialRequest, '', { alg: 'ES256' }),
+        {
+          name: 'invalid_credential_request',
+          message: 'jti is missing.',
+        }
+      )
+
+      assert.strictEqual(mockIssuanceContextStoreProvider.fetch.mock.callCount(), 0)
+      assert.strictEqual(mockCredentialProofProvider.verifyProof.mock.callCount(), 0)
+      assert.strictEqual(mockIssueCredentialProvider.createCredential.mock.callCount(), 0)
+    })
+
+    it('should throw "invalid_credential_request" if issuance context for jti is not found', async () => {
+      const issuer = CredentialIssuer('did:example:issuer')
+      const metadata: CredentialIssuerMetadata = {
+        credential_issuer: issuer,
+        credential_endpoint: 'https://example.com/credentials',
+        credential_configurations_supported: {
+          University_Degree: {
+            format: CredentialFormats.JWT_VC_JSON,
+            credential_definition: {
+              type: ['VerifiableCredential', 'UniversityDegreeCredential'],
+            },
+            credential_signing_alg_values_supported: ['ES256'],
+            proof_types_supported: {
+              jwt: {
+                proof_signing_alg_values_supported: ['ES256K'],
+              },
+            },
+          },
+        },
+      }
+      const credentialRequest = createCredentialRequest()
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => null)
+
+      await assert.rejects(
+        issuerFlow.issueCredential(issuer, credentialRequest, 'missing-jti', {
+          alg: 'ES256',
+        }),
+        {
+          name: 'invalid_credential_request',
+          message: 'Issuance context for this jti was not found',
+        }
+      )
+
+      assert.strictEqual(mockIssuanceContextStoreProvider.fetch.mock.callCount(), 1)
+      assert.deepStrictEqual(mockIssuanceContextStoreProvider.fetch.mock.calls[0].arguments, [
+        'missing-jti',
+      ])
+      assert.strictEqual(mockCredentialProofProvider.verifyProof.mock.callCount(), 0)
+      assert.strictEqual(mockIssueCredentialProvider.createCredential.mock.callCount(), 0)
+    })
+
+    it('should throw "invalid_credential_request" if requested credential configuration is not allowed for the jti', async () => {
+      const issuer = CredentialIssuer('did:example:issuer')
+      const metadata: CredentialIssuerMetadata = {
+        credential_issuer: issuer,
+        credential_endpoint: 'https://example.com/credentials',
+        credential_configurations_supported: {
+          University_Degree: {
+            format: CredentialFormats.JWT_VC_JSON,
+            credential_definition: {
+              type: ['VerifiableCredential', 'UniversityDegreeCredential'],
+            },
+            credential_signing_alg_values_supported: ['ES256'],
+            proof_types_supported: {
+              jwt: {
+                proof_signing_alg_values_supported: ['ES256K'],
+              },
+            },
+          },
+        },
+      }
+      const credentialRequest = createCredentialRequest()
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => [
+        'EmployeeID_JWT' as CredentialConfigurationId,
+      ])
+
+      await assert.rejects(
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+          alg: 'ES256',
+        }),
+        {
+          name: 'invalid_credential_request',
+          message: 'Requested credential_configuration_id is not allowed for this jti.',
+        }
+      )
+
+      assert.strictEqual(mockIssuanceContextStoreProvider.fetch.mock.callCount(), 1)
+      assert.strictEqual(mockCredentialProofProvider.verifyProof.mock.callCount(), 0)
+      assert.strictEqual(mockIssueCredentialProvider.createCredential.mock.callCount(), 0)
     })
 
     it('should pass auth-code JWT verify context to credential proof provider when proofJwt is omitted', async () => {
@@ -602,8 +940,10 @@ describe('IssuerFlow', () => {
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
-
-      await issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' })
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
+      await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+        alg: 'ES256',
+      })
 
       assert.equal(mockCredentialProofProvider.verifyProof.mock.callCount(), 1)
       const verifyArgs = mockCredentialProofProvider.verifyProof.mock.calls[0].arguments
@@ -649,8 +989,9 @@ describe('IssuerFlow', () => {
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
-      await issuerFlow.issueCredential(issuer, credentialRequest, {
+      await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
         alg: 'ES256',
         proofJwt: { usePreAuth: true },
       })
@@ -695,8 +1036,9 @@ describe('IssuerFlow', () => {
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
-      await issuerFlow.issueCredential(issuer, credentialRequest, {
+      await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
         alg: 'ES256',
         proofJwt: { usePreAuth: false, clientId: 'oauth-client-1' },
       })
@@ -759,9 +1101,10 @@ describe('IssuerFlow', () => {
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
       // 2. Act
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
         alg: 'ES256',
         claims,
       })
@@ -779,7 +1122,7 @@ describe('IssuerFlow', () => {
       })
     })
 
-    it('should throw "ISSUER_NOT_FOUND" if issuer metadata is not found', async () => {
+    it('should throw "issuer_not_found" if issuer metadata is not found', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const credentialRequest = createCredentialRequest()
@@ -788,15 +1131,15 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
         {
-          name: 'ISSUER_NOT_FOUND',
+          name: 'issuer_not_found',
         }
       )
       assert.equal(mockIssuerMetadataProvider.fetch.mock.callCount(), 1)
     })
 
-    it('should throw "INVALID_CREDENTIAL_REQUEST" if credential configuration id is not specified', async () => {
+    it('should throw "invalid_credential_request" if credential configuration id is not specified', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
@@ -821,15 +1164,15 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
         {
-          name: 'INVALID_CREDENTIAL_REQUEST',
+          name: 'invalid_credential_request',
           message: 'Credential configuration id is not specified.',
         }
       )
     })
 
-    it('should throw "UNKNOWN_CREDENTIAL_CONFIGURATION" if requested configuration is not supported', async () => {
+    it('should throw "unknown_credential_configuration" if requested configuration is not supported', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
@@ -852,14 +1195,14 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
         {
-          name: 'UNKNOWN_CREDENTIAL_CONFIGURATION',
+          name: 'unknown_credential_configuration',
         }
       )
     })
 
-    it('should throw "UNKNOWN_CREDENTIAL_CONFIGURATION" if requested configuration id is not supported', async () => {
+    it('should throw "unknown_credential_configuration" if requested configuration id is not supported', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
@@ -881,14 +1224,14 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
         {
-          name: 'UNKNOWN_CREDENTIAL_CONFIGURATION',
+          name: 'unknown_credential_configuration',
         }
       )
     })
 
-    it('should throw "INVALID_CREDENTIAL_REQUEST" if proofs are missing', async () => {
+    it('should throw "invalid_credential_request" if proofs are missing', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -906,12 +1249,18 @@ describe('IssuerFlow', () => {
         proofs: undefined,
       })
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
       // 2. Act & 3. Assert
-      await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
-        name: 'INVALID_CREDENTIAL_REQUEST',
-        message: 'Proof is required to issue credential.',
-      })
+      await assert.rejects(
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+          alg: 'ES256',
+        }),
+        {
+          name: 'invalid_credential_request',
+          message: 'Proof is required to issue credential.',
+        }
+      )
     })
 
     it('should throw if proofs object has no supported proof entries', async () => {
@@ -932,14 +1281,18 @@ describe('IssuerFlow', () => {
         proofs: {} as CredentialRequest['proofs'],
       })
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
       // 2. Act & 3. Assert
-      await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
-        message: 'Unsupported proof type',
-      })
+      await assert.rejects(
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
+        {
+          message: 'Unsupported proof type',
+        }
+      )
     })
 
-    it('should throw "INVALID_CREDENTIAL_REQUEST" if proof type is not supported in metadata', async () => {
+    it('should throw "invalid_credential_request" if proof type is not supported in metadata', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -956,15 +1309,19 @@ describe('IssuerFlow', () => {
         proofs: { jwt: ['dummy-jwt'] },
       })
       mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
       // 2. Act & 3. Assert
-      await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
-        name: 'INVALID_CREDENTIAL_REQUEST',
-        message: 'Request contain no proofs supported by credential configuration.',
-      })
+      await assert.rejects(
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
+        {
+          name: 'invalid_credential_request',
+          message: 'Request contain no proofs supported by credential configuration.',
+        }
+      )
     })
 
-    it('should throw "INVALID_PROOF" if proof verification fails', async () => {
+    it('should throw "invalid_proof" if proof verification fails', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -986,12 +1343,16 @@ describe('IssuerFlow', () => {
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
       // 2. Act & 3. Assert
-      await assert.rejects(issuerFlow.issueCredential(issuer, credentialRequest), {
-        name: 'INVALID_PROOF',
-        message: 'Failed to verify Proof.',
-      })
+      await assert.rejects(
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
+        {
+          name: 'invalid_proof',
+          message: 'Failed to verify Proof.',
+        }
+      )
     })
 
     it('should issue a credential when verified proof header has no kid (e.g. jwk/x5c binding)', async () => {
@@ -1024,8 +1385,10 @@ describe('IssuerFlow', () => {
       mockIssueCredentialProvider.canHandle.mock.mockImplementation(
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
-
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' })
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+        alg: 'ES256',
+      })
 
       assert.ok(response)
       assert.equal(response.credentials?.[0]?.credential, signedCredential)
@@ -1070,10 +1433,11 @@ describe('IssuerFlow', () => {
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
       const nonceSaveCallCountBefore = mockNonceStoreProvider.save.mock.callCount()
 
       // 2. Act
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
         alg: 'ES256',
         cnonce: { c_nonce_expires_in: 300 },
       })
@@ -1127,10 +1491,11 @@ describe('IssuerFlow', () => {
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
       const nonceSaveCallCountBefore = mockNonceStoreProvider.save.mock.callCount()
 
       // 2. Act
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
         alg: 'ES256',
         cnonce: { c_nonce_expires_in: 300 },
       })
@@ -1149,7 +1514,7 @@ describe('IssuerFlow', () => {
       assert.equal(mockNonceStoreProvider.save.mock.callCount(), nonceSaveCallCountBefore)
     })
 
-    it('should throw "INVALID_NONCE" if cnonce is invalid', async () => {
+    it('should throw "invalid_nonce" if cnonce is invalid', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -1174,18 +1539,19 @@ describe('IssuerFlow', () => {
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
         (type) => type === ProofTypes.JWT
       )
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, {
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
           alg: 'ES256',
           cnonce: { c_nonce_expires_in: 300 },
         }),
-        { name: 'INVALID_NONCE', message: 'Nonce not found.' }
+        { name: 'invalid_nonce', message: 'Nonce not found.' }
       )
     })
 
-    it('should throw "UNSUPPORTED_ISSUER_KEY_ALG" if signing alg is not supported', async () => {
+    it('should throw "unsupported_issuer_key_alg" if signing alg is not supported', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -1208,7 +1574,7 @@ describe('IssuerFlow', () => {
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(mockIssueCredentialProvider, 'createCredential', async () => {
         throw Object.assign(new Error('Unsupported key algorithm.'), {
-          name: 'UNSUPPORTED_ISSUER_KEY_ALG',
+          name: 'unsupported_issuer_key_alg',
         })
       })
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
@@ -1217,11 +1583,12 @@ describe('IssuerFlow', () => {
       mockIssueCredentialProvider.canHandle.mock.mockImplementation(
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'RS256' }), // Requesting unsupported alg
-        { name: 'UNSUPPORTED_ISSUER_KEY_ALG' }
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'RS256' }), // Requesting unsupported alg
+        { name: 'unsupported_issuer_key_alg' }
       )
     })
 
@@ -1247,7 +1614,7 @@ describe('IssuerFlow', () => {
       mock.method(mockCredentialProofProvider, 'verifyProof', async () => verifiedProof)
       mock.method(mockIssueCredentialProvider, 'createCredential', async () => {
         throw Object.assign(new Error('Issuer key not found.'), {
-          name: 'AUTHZ_ISSUER_KEY_NOT_FOUND',
+          name: 'authz_issuer_key_not_found',
         })
       })
       mockCredentialProofProvider.canHandle.mock.mockImplementation(
@@ -1256,11 +1623,11 @@ describe('IssuerFlow', () => {
       mockIssueCredentialProvider.canHandle.mock.mockImplementation(
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
-
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' }),
-        { name: 'AUTHZ_ISSUER_KEY_NOT_FOUND' }
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
+        { name: 'authz_issuer_key_not_found' }
       )
     })
 
@@ -1294,8 +1661,11 @@ describe('IssuerFlow', () => {
       mockIssueCredentialProvider.canHandle.mock.mockImplementation(
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' })
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+        alg: 'ES256',
+      })
 
       assert.deepStrictEqual(response, {
         credentials: [{ credential: issuedCredential }],
@@ -1334,12 +1704,77 @@ describe('IssuerFlow', () => {
       mockIssueCredentialProvider.canHandle.mock.mockImplementation(
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
+      mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, { alg: 'ES256' })
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+        alg: 'ES256',
+      })
 
       assert.deepStrictEqual(response, {
         credentials: [{ credential: issuedCredential }],
       })
+    })
+  })
+  describe('rejectInsecureIssuerMetadata', () => {
+    const insecureMetadata: CredentialIssuerMetadata = {
+      credential_issuer: CredentialIssuer('did:example:issuer'),
+      credential_endpoint: 'http://example.com/credentials',
+      credential_configurations_supported: {},
+    }
+
+    it('should throw insecure_http_not_allowed for http credential_endpoint', async () => {
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => insecureMetadata)
+
+      await assert.rejects(issuerFlow.findIssuerMetadata(CredentialIssuer('did:example:issuer')), {
+        name: 'insecure_http_not_allowed',
+        message:
+          'CredentialIssuerMetadata contains insecure http url in credential_endpoint: http://example.com/credentials',
+      })
+    })
+
+    it('should throw insecure_http_not_allowed for http deferred_credential_endpoint', async () => {
+      const metadata: CredentialIssuerMetadata = {
+        credential_issuer: CredentialIssuer('did:example:issuer'),
+        credential_endpoint: 'https://example.com/credentials',
+        deferred_credential_endpoint: 'http://example.com/deferred',
+        credential_configurations_supported: {},
+      }
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+
+      await assert.rejects(issuerFlow.findIssuerMetadata(CredentialIssuer('did:example:issuer')), {
+        name: 'insecure_http_not_allowed',
+        message:
+          'CredentialIssuerMetadata contains insecure http url in deferred_credential_endpoint: http://example.com/deferred',
+      })
+    })
+
+    it('should allow insecure http when debug is true', async () => {
+      const debugContext = initializeContext({
+        providers: [
+          mockIssuerMetadataProvider,
+          mockPreAuthCodeProvider,
+          mockPreAuthCodeStoreProvider,
+          mockIssueCredentialProvider,
+          mockIssuerKeyStoreProvider,
+          mockCredentialOfferProvider,
+          mockCredentialProofProvider,
+          mockNonceProvider,
+          mockNonceStoreProvider,
+          mockTransactionCodeProvider,
+        ],
+        debug: true,
+      })
+
+      const debugIssuerFlow = initializeIssuerFlow(debugContext)
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => insecureMetadata)
+
+      const result = await debugIssuerFlow.findIssuerMetadata(
+        CredentialIssuer('did:example:issuer')
+      )
+
+      assert.deepStrictEqual(result, insecureMetadata)
     })
   })
 })
