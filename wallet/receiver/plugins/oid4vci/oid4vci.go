@@ -14,6 +14,7 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/trustknots/vcknots/wallet/common"
+	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
@@ -30,6 +31,19 @@ var nonceHTTPClient = &http.Client{
 }
 
 const maxNonceResponseBodyBytes int64 = 4 << 10
+
+// OID4VCICredentialFormatToSerializationFlavor maps OID4VCI credential format identifiers
+// to wallet serialization flavors.
+func OID4VCICredentialFormatToSerializationFlavor(format string) (credential.SupportedSerializationFlavor, error) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "jwt_vc_json", "jwt_vc", string(credential.JwtVc):
+		return credential.JwtVc, nil
+	case "dc+sd-jwt", string(credential.SDJwtVC):
+		return credential.SDJwtVC, nil
+	default:
+		return "", fmt.Errorf("unsupported credential format: %q", format)
+	}
+}
 
 // doRequest performs an HTTP request and unmarshals the JSON response into target.
 // It handles common patterns: URL construction, status checking, body reading, and JSON parsing.

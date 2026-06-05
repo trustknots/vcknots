@@ -40,6 +40,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
 	presenterTypes "github.com/trustknots/vcknots/wallet/presenter/types"
 	"github.com/trustknots/vcknots/wallet/receiver"
+	receiverOid4vci "github.com/trustknots/vcknots/wallet/receiver/plugins/oid4vci"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer"
 	sdjwtvc "github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
@@ -573,17 +574,6 @@ func (w *Wallet) validateCredentialOffer(offer *CredentialOffer) (string, error)
 	return preAuthCode, nil
 }
 
-func oid4vciCredentialFormatToSerializationFlavor(format string) (credential.SupportedSerializationFlavor, error) {
-	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "jwt_vc_json", "jwt_vc", string(credential.JwtVc):
-		return credential.JwtVc, nil
-	case "dc+sd-jwt", string(credential.SDJwtVC):
-		return credential.SDJwtVC, nil
-	default:
-		return "", fmt.Errorf("unsupported credential format: %q", format)
-	}
-}
-
 func (w *Wallet) selectCredentialConfiguration(
 	req ReceiveCredentialRequest,
 	issuerMetadata *receiverTypes.CredentialIssuerMetadata,
@@ -610,7 +600,7 @@ func (w *Wallet) selectCredentialConfiguration(
 				continue
 			}
 
-			flavor, err := oid4vciCredentialFormatToSerializationFlavor(config.Format)
+			flavor, err := receiverOid4vci.OID4VCICredentialFormatToSerializationFlavor(config.Format)
 			if err != nil {
 				continue
 			}
@@ -633,7 +623,7 @@ func (w *Wallet) selectCredentialConfiguration(
 	}
 
 	configCopy := config
-	flavor, err := oid4vciCredentialFormatToSerializationFlavor(config.Format)
+	flavor, err := receiverOid4vci.OID4VCICredentialFormatToSerializationFlavor(config.Format)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("unsupported credential format for configuration %q: %w", defaultConfigurationID, err)
 	}
