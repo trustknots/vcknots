@@ -336,6 +336,7 @@ const verifyPrivateKeyJwtClientAuthentication = async (
 
   const alg = getStringValue(assertion.header.alg)
   const expectedAlg = getStringValue(client.token_endpoint_auth_signing_alg)
+  const supportedAuthMethods = metadata?.token_endpoint_auth_methods_supported
   const supportedAlgs = metadata?.token_endpoint_auth_signing_alg_values_supported
   // Reject unsigned JWTs and symmetric MAC algorithms; client authentication must use registered public keys.
   if (!alg || alg.toLowerCase() === 'none' || /^hs/i.test(alg)) {
@@ -345,8 +346,26 @@ const verifyPrivateKeyJwtClientAuthentication = async (
       log: { clientId: client.client_id, alg },
     }
   }
-  // If AS metadata advertises accepted client assertion algorithms, the header alg must be allowed.
-  if (supportedAlgs?.length && !supportedAlgs.includes(alg)) {
+  // private_key_jwt is only accepted when the Authorization Server metadata advertises it.
+  if (!supportedAuthMethods?.includes('private_key_jwt')) {
+    return {
+      ok: false,
+      error_description:
+        'authorization server metadata must include private_key_jwt in token_endpoint_auth_methods_supported for private_key_jwt client authentication.',
+      log: { clientId: client.client_id, supportedAuthMethods },
+    }
+  }
+  // private_key_jwt requires the Authorization Server metadata to declare accepted assertion algs.
+  if (!supportedAlgs?.length) {
+    return {
+      ok: false,
+      error_description:
+        'authorization server metadata must include token_endpoint_auth_signing_alg_values_supported for private_key_jwt client authentication.',
+      log: { clientId: client.client_id },
+    }
+  }
+  // The assertion header alg must be one of the algorithms advertised by AS metadata.
+  if (!supportedAlgs.includes(alg)) {
     return {
       ok: false,
       error_description:
