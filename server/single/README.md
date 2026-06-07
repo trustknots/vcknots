@@ -313,7 +313,7 @@ pre-authorized_code={pre_authorized_code}
 }
 ```
 
-The DPoP mode is configured by the OAuth policy in `server/samples/oauth-server.json` and by per-client sender constraint settings in `server/samples/oauth-clients.json`. `anonymous_client` applies to token requests without `client_id` / `client_assertion`; `default_client` applies when a registered client has no sender constraint setting and as the credential / nonce endpoint default.
+The DPoP mode is configured by the OAuth policy in `server/samples/oauth-server.json` and by per-client sender constraint settings in `server/samples/oauth-clients.json`. Pre-Authorized Code token requests without `client_id` / `client_assertion` are treated as anonymous token requests, and the `anonymous_client` policy is applied only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. `default_client` applies when a registered client has no sender constraint setting and as the credential / nonce endpoint default.
 
 | DPoP mode | token endpoint | credential endpoint |
 |-------------|----------------|---------------------|
@@ -366,7 +366,9 @@ When DPoP Proof verification succeeds, `token_type` is `DPoP`. The issued access
 
 #### OAuth clients and private_key_jwt
 
-OAuth clients are configured in `server/samples/oauth-clients.json`. If the token request body contains `client_id`, that value is used first. If it is absent, the client id is derived from the `client_assertion` JWT `iss` / `sub`. If neither source yields a client id, the `anonymous_client` policy is applied.
+OAuth clients are configured in `server/samples/oauth-clients.json`. If the token request body contains `client_id`, that value is used first. If it is absent, the client id is derived from the `client_assertion` JWT `iss` / `sub`. If neither source yields a client id, the request is treated as an anonymous token request.
+
+Anonymous Pre-Authorized Code token requests are allowed only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. If it is omitted or `false`, the request fails with `invalid_client`. For allowed anonymous token requests, the `authorization_server.anonymous_client` policy is applied.
 
 For a registered client with `token_endpoint_auth_method: "private_key_jwt"`, the token request must include these form fields:
 
@@ -393,7 +395,7 @@ The contents of `oauth-clients.json` are registered with the provider as registe
 |---|---|
 | `authorization_server` | Root object for the Authorization Server OAuth policy. |
 | `authorization_server.default_client` | Default policy used when a registered client does not define `senderConstrainedAccessToken`. It is also used as the default DPoP policy for the credential / nonce endpoints. |
-| `authorization_server.anonymous_client` | Policy used for anonymous clients when the token request has neither `client_id` nor `client_assertion`. |
+| `authorization_server.anonymous_client` | Policy used for allowed anonymous token requests. Whether anonymous Pre-Authorized Code token requests are allowed is determined by the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported`. |
 | `senderConstrainedAccessToken` | Sender constraint policy for access tokens. |
 | `senderConstrainedAccessToken.method` | Sender constraint method. Supported values are `none`, `dpop`, and `mtls`. The current DPoP processing reads `dpop.mode` only when this is `dpop`. `mtls` is reserved and is not used for DPoP mode control yet. |
 | `senderConstrainedAccessToken.dpop.mode` | DPoP mode. Supported values are `off`, `optional`, and `required`. In the current implementation, the same value applies to both the token endpoint and the credential endpoint. |
@@ -401,7 +403,7 @@ The contents of `oauth-clients.json` are registered with the provider as registe
 
 Policy selection order:
 
-1. If the token request has neither `client_id` nor `client_assertion`, `authorization_server.anonymous_client` is used.
+1. For Pre-Authorized Code token requests with neither `client_id` nor `client_assertion`, `authorization_server.anonymous_client` is used only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. If it is omitted or `false`, the request fails with `invalid_client`.
 2. If a registered client defines `senderConstrainedAccessToken`, the client-specific policy is used.
 3. If a registered client does not define `senderConstrainedAccessToken`, `authorization_server.default_client` is used.
 

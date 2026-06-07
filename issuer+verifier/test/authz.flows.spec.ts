@@ -383,10 +383,16 @@ describe('AuthzFlows', () => {
       return { assertion, publicJwk }
     }
 
-    it('should use the anonymous client policy when client_id and client_assertion are missing', async () => {
+    it('should use the anonymous client policy when pre-authorized anonymous access is enabled', async () => {
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => ({
+        ...sampleMetadata,
+        'pre-authorized_grant_anonymous_access_supported': true,
+      }))
       mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
 
-      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {})
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        grant_type: GrantType.PreAuthorizedCode,
+      })
 
       assert.deepStrictEqual(result, {
         ok: true,
@@ -394,6 +400,50 @@ describe('AuthzFlows', () => {
         dpopMode: 'required',
       })
       assert.equal(mockAuthzOAuthClientStoreProvider.fetch.mock.callCount(), 0)
+    })
+
+    it('should reject anonymous pre-authorized token requests when anonymous access is disabled', async () => {
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => ({
+        ...sampleMetadata,
+        'pre-authorized_grant_anonymous_access_supported': false,
+      }))
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        grant_type: GrantType.PreAuthorizedCode,
+      })
+
+      assert.deepStrictEqual(result, {
+        ok: false,
+        error: 'invalid_client',
+        error_description:
+          'anonymous pre-authorized code token requests are not supported by this authorization server.',
+        log: {
+          grantType: GrantType.PreAuthorizedCode,
+          preAuthorizedGrantAnonymousAccessSupported: false,
+        },
+      })
+      assert.equal(mockAuthzOAuthClientStoreProvider.fetch.mock.callCount(), 0)
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+    })
+
+    it('should treat omitted anonymous access metadata as disabled for pre-authorized token requests', async () => {
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => sampleMetadata)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        grant_type: GrantType.PreAuthorizedCode,
+      })
+
+      assert.deepStrictEqual(result, {
+        ok: false,
+        error: 'invalid_client',
+        error_description:
+          'anonymous pre-authorized code token requests are not supported by this authorization server.',
+        log: {
+          grantType: GrantType.PreAuthorizedCode,
+          preAuthorizedGrantAnonymousAccessSupported: undefined,
+        },
+      })
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
     })
 
     it('should reject an unknown registered client id', async () => {

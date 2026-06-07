@@ -762,7 +762,9 @@ The client is resolved in this order:
 
 1. If the token request body contains `client_id`, that value is used first.
 2. If `client_id` is omitted, the client id is derived from the `client_assertion` JWT `iss` / `sub`.
-3. If neither source yields a client id, the anonymous client policy is applied.
+3. If neither source yields a client id, the request is treated as an anonymous token request.
+
+For an anonymous Pre-Authorized Code token request, the `anonymous_client` policy is applied only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. If it is omitted or `false`, anonymous access is not allowed and the request fails with `invalid_client`.
 
 If a client id can be resolved but no registered client exists, the request fails with `invalid_client`. For clients registered with `token_endpoint_auth_method: "private_key_jwt"`, the server verifies that `client_assertion_type` is `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`, that `client_assertion` is a compact JWT, that `iss` / `sub` match the registered `client_id`, and that `aud` matches the registered `client_assertion_audience` or the Authorization Server token endpoint / issuer.
 
@@ -841,7 +843,7 @@ This endpoint corresponds to the OID4VCI [nonce endpoint](https://openid.net/spe
 
 When `nonce_endpoint` is set in the Issuer metadata, the Wallet references the nonce endpoint URL via the metadata obtained from `/.well-known/openid-credential-issuer`.
 
-Configure the DPoP mode using both the OAuth policy in `server/samples/oauth-server.json` and sender constraint settings on registered OAuth clients. Token requests without `client_id` / `client_assertion` use `anonymous_client`; registered clients without sender constraint settings use the `default_client` policy.
+Configure the DPoP mode using both the OAuth policy in `server/samples/oauth-server.json` and sender constraint settings on registered OAuth clients. Pre-Authorized Code token requests without `client_id` / `client_assertion` are treated as anonymous token requests and use the `anonymous_client` policy only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. Registered clients without sender constraint settings use the `default_client` policy.
 
 When the OAuth policy DPoP mode is not `off`, `POST /nonce` returns a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values.
 

@@ -52,7 +52,7 @@ The shared `POST /nonce` route can add a `DPoP-Nonce` response header when the O
 
 The shared `POST /token` route also uses the same OAuth policy. It can also verify `private_key_jwt` client authentication using clients registered in the OAuth client store. In the samples, `server/samples/oauth-clients.json` is loaded at startup and registers per-client sender constraint settings, `jwks.keys`, `client_assertion_audience`, and related metadata.
 
-If the token request body contains `client_id`, that value is used first. If it is absent, the client id is derived from the `client_assertion` JWT `iss` / `sub`. If neither source yields a client id, the anonymous client policy is used. See the [single-server README](../single/README.md#post-token) for details.
+If the token request body contains `client_id`, that value is used first. If it is absent, the client id is derived from the `client_assertion` JWT `iss` / `sub`. For Pre-Authorized Code token requests where neither source yields a client id, the request is treated as an anonymous token request and the anonymous client policy is used only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. If it is omitted or `false`, the request fails with `invalid_client`. See the [single-server README](../single/README.md#post-token) for details.
 
 | mode | `POST /token` behavior |
 |------|-------------------------|

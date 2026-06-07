@@ -760,7 +760,9 @@ client の特定は次の順序で行います。
 
 1. token request body に `client_id` がある場合は、その値を優先します。
 2. `client_id` がない場合は、`client_assertion` JWT の `iss` / `sub` から client_id を導出します。
-3. どちらからも client_id を得られない場合は、anonymous client policy を適用します。
+3. どちらからも client_id を得られない場合は anonymous token request として扱います。
+
+Pre-Authorized Code の token request が anonymous token request になる場合、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` のときだけ `anonymous_client` policy を適用します。未設定または `false` の場合は、anonymous access を許可せず `invalid_client` を返します。
 
 `client_id` が特定できたにもかかわらず登録済み client が存在しない場合は `invalid_client` です。登録済み client の `token_endpoint_auth_method` が `private_key_jwt` の場合は、`client_assertion_type` が `urn:ietf:params:oauth:client-assertion-type:jwt-bearer` であること、`client_assertion` が compact JWT であること、`iss` / `sub` が登録済み `client_id` と一致すること、`aud` が登録済み `client_assertion_audience` または Authorization Server の token endpoint / issuer と一致することを確認します。
 
@@ -839,7 +841,7 @@ OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-creden
 
 Issuer メタデータに `nonce_endpoint` を設定すると、Wallet は `/.well-known/openid-credential-issuer` から取得したメタデータ経由で nonce エンドポイントの URL を参照します。
 
-DPoP mode は `server/samples/oauth-server.json` の OAuth policy と、登録済み OAuth client の sender constraint 設定で決まります。`client_id` / `client_assertion` がない token request は `anonymous_client`、登録済み client に sender constraint 設定がない場合は `default_client` の policy を参照します。
+DPoP mode は `server/samples/oauth-server.json` の OAuth policy と、登録済み OAuth client の sender constraint 設定で決まります。Pre-Authorized Code の token request で `client_id` / `client_assertion` がない場合は anonymous token request として扱い、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` のときだけ `anonymous_client` policy を参照します。登録済み client に sender constraint 設定がない場合は `default_client` の policy を参照します。
 
 OAuth policy の DPoP mode が `off` 以外の場合、`POST /nonce` は JSON ボディの `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返します。`c_nonce` と `DPoP-Nonce` は別の値です。
 

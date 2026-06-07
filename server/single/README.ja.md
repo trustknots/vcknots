@@ -312,7 +312,7 @@ pre-authorized_code={pre_authorized_code}
 }
 ```
 
-DPoP mode は `server/samples/oauth-server.json` の OAuth policy と、`server/samples/oauth-clients.json` の client ごとの sender constraint 設定で決まります。`anonymous_client` は `client_id` / `client_assertion` が無い token request に適用され、`default_client` は registered client に sender constraint 設定がない場合、および credential / nonce endpoint の既定値として使われます。
+DPoP mode は `server/samples/oauth-server.json` の OAuth policy と、`server/samples/oauth-clients.json` の client ごとの sender constraint 設定で決まります。Pre-Authorized Code の token request で `client_id` / `client_assertion` が無い場合は anonymous token request として扱い、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` のときだけ `anonymous_client` の policy を適用します。`default_client` は registered client に sender constraint 設定がない場合、および credential / nonce endpoint の既定値として使われます。
 
 | DPoP mode | token endpoint | credential endpoint |
 |-------------|----------------|---------------------|
@@ -365,7 +365,9 @@ DPoP Proof の検証に成功した場合、`token_type` は `DPoP` になりま
 
 #### OAuth client と private_key_jwt
 
-OAuth client は `server/samples/oauth-clients.json` で管理します。token request body に `client_id` がある場合はその値を優先し、ない場合は `client_assertion` JWT の `iss` / `sub` から client_id を導出します。どちらも無い場合は `anonymous_client` の policy を適用します。
+OAuth client は `server/samples/oauth-clients.json` で管理します。token request body に `client_id` がある場合はその値を優先し、ない場合は `client_assertion` JWT の `iss` / `sub` から client_id を導出します。どちらからも client_id を得られない場合は anonymous token request として扱います。
+
+Pre-Authorized Code の anonymous token request は、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` のときだけ許可されます。未設定または `false` の場合は `invalid_client` を返します。許可された anonymous token request には、`authorization_server.anonymous_client` の policy を適用します。
 
 登録済み client の `token_endpoint_auth_method` が `private_key_jwt` の場合、token request には次のフォーム項目が必要です。
 
@@ -392,7 +394,7 @@ OAuth policy は `server/samples/oauth-server.json`、登録済み OAuth client 
 |---|---|
 | `authorization_server` | Authorization Server ごとの OAuth policy ルートです。 |
 | `authorization_server.default_client` | 登録済み client に `senderConstrainedAccessToken` がない場合に使う既定 policy です。credential / nonce endpoint の既定 DPoP policy としても使います。 |
-| `authorization_server.anonymous_client` | token request に `client_id` も `client_assertion` もない場合に使う anonymous client 用 policy です。 |
+| `authorization_server.anonymous_client` | 許可された anonymous token request に使う anonymous client 用 policy です。Pre-Authorized Code の anonymous token request を許可するかどうかは、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` で判定します。 |
 | `senderConstrainedAccessToken` | access token の sender constraint 方針です。 |
 | `senderConstrainedAccessToken.method` | sender constraint 方式です。`none` / `dpop` / `mtls` を指定できます。現行の DPoP 処理では `dpop` の場合に `dpop.mode` を参照します。`mtls` は予約値で、現時点では DPoP mode 制御には使いません。 |
 | `senderConstrainedAccessToken.dpop.mode` | DPoP mode です。`off` / `optional` / `required` を指定します。現行実装では token endpoint と credential endpoint に同じ値が適用されます。 |
@@ -400,7 +402,7 @@ OAuth policy は `server/samples/oauth-server.json`、登録済み OAuth client 
 
 policy の適用順は次の通りです。
 
-1. token request に `client_id` も `client_assertion` もない場合は、`authorization_server.anonymous_client` を使います。
+1. Pre-Authorized Code の token request に `client_id` も `client_assertion` もない場合は、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` のときだけ `authorization_server.anonymous_client` を使います。未設定または `false` の場合は `invalid_client` です。
 2. 登録済み client に `senderConstrainedAccessToken` がある場合は、client 固有の policy を使います。
 3. 登録済み client に `senderConstrainedAccessToken` がない場合は、`authorization_server.default_client` を使います。
 

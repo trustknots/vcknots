@@ -160,6 +160,10 @@ const missingPrivateKeyJwtAssertionDescription = (requestData: Record<string, un
 const getTokenEndpointAuthMethod = (client: OAuthClientConfig): OAuthClientAuthMethod =>
   client.token_endpoint_auth_method ?? 'none'
 
+/** True only for Pre-Authorized Code token requests; other grant types are not anonymous-access gated here. */
+const isPreAuthorizedCodeTokenRequest = (requestData: Record<string, unknown>): boolean =>
+  getStringValue(requestData.grant_type) === GrantType.PreAuthorizedCode
+
 /**
  * Expected `aud` values for private_key_jwt.
  *
@@ -878,8 +882,29 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       if (!clientResolution.ok) {
         return clientResolution
       }
+      const needsMetadata =
+        (clientResolution.clientKind === 'anonymous_client' &&
+          isPreAuthorizedCodeTokenRequest(requestData)) ||
+        (oauthClient && getTokenEndpointAuthMethod(oauthClient) === 'private_key_jwt')
+      const metadata = needsMetadata ? await authz$.fetch(authz) : null
+      if (
+        clientResolution.clientKind === 'anonymous_client' &&
+        isPreAuthorizedCodeTokenRequest(requestData) &&
+        metadata?.['pre-authorized_grant_anonymous_access_supported'] !== true
+      ) {
+        return {
+          ok: false,
+          error: 'invalid_client',
+          error_description:
+            'anonymous pre-authorized code token requests are not supported by this authorization server.',
+          log: {
+            grantType: getStringValue(requestData.grant_type),
+            preAuthorizedGrantAnonymousAccessSupported:
+              metadata?.['pre-authorized_grant_anonymous_access_supported'],
+          },
+        }
+      }
       if (oauthClient && getTokenEndpointAuthMethod(oauthClient) === 'private_key_jwt') {
-        const metadata = await authz$.fetch(authz)
         const verification = await verifyPrivateKeyJwtClientAuthentication(
           authz,
           metadata,

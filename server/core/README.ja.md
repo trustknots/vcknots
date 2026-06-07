@@ -52,7 +52,7 @@ import { createApp, createServer } from '@trustknots/server-core'
 
 共有の `POST /token` ルートも同じ OAuth policy を参照します。また、OAuth client store に登録された client を使って `private_key_jwt` client authentication を検証できます。サンプルでは `server/samples/oauth-clients.json` を起動時に読み込み、client ごとの sender constraint 設定、`jwks.keys`、`client_assertion_audience` などを登録します。
 
-`client_id` が token request body にある場合はその値を優先し、ない場合は `client_assertion` JWT の `iss` / `sub` から導出します。どちらもない場合は anonymous client policy を使います。詳細は [シングルサーバー README](../single/README.ja.md#post-token) を参照してください。
+`client_id` が token request body にある場合はその値を優先し、ない場合は `client_assertion` JWT の `iss` / `sub` から導出します。Pre-Authorized Code の token request でどちらからも client_id を得られない場合は anonymous token request として扱い、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` のときだけ anonymous client policy を使います。未設定または `false` の場合は `invalid_client` です。詳細は [シングルサーバー README](../single/README.ja.md#post-token) を参照してください。
 
 | mode | `POST /token` の挙動 |
 |------|----------------------|
