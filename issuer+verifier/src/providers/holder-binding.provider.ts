@@ -81,4 +81,3 @@ export const holderBinding = (): HolderBindingProvider & WithProviderRegistry =>
     },
   }
 }
-

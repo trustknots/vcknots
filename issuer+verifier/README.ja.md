@@ -104,7 +104,8 @@ const credential = await issuer.issueCredential(
       name: 'Alice',
       from: 'Wonderland'
     },
-    // JWT proof（`proofs.jwt`）検証用。アクセストークンが事前認可コード由来なら true、認可コード由来なら false + clientId
+    // JWT proof（`proofs.jwt`）検証用。usePreAuth は grant type が pre-authorized_code かどうかを表します。
+    // anonymous access token の場合は clientId を省略し、登録済み client の access token の場合は clientId を渡します。
     proofJwt: { usePreAuth: true },
   }
 )
@@ -114,11 +115,14 @@ console.log('Issued Credential:', credential)
 
 **JWT クレデンシャルプルーフ（`proofs.jwt`）と `options.proofJwt`**
 
-OID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一致し、`iss` はフローに応じて扱われます。`issueCredential` は内部で `credential-proof-provider` の `verifyProof` に **検証コンテキスト**（Credential Issuer と事前認可かどうか、必要なら OAuth `client_id`）を渡すため、JWT proof を検証するときは次の `options.proofJwt` を実際のトークン取得フローに合わせて指定してください。
+OID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一致し、`iss` はフローと access token の取得方法に応じて扱われます。`issueCredential` は内部で `credential-proof-provider` の `verifyProof` に **検証コンテキスト**（Credential Issuer、事前認可コードグラントかどうか、必要なら OAuth `client_id`）を渡すため、JWT proof を検証するときは次の `options.proofJwt` を実際のトークン取得フローに合わせて指定してください。
+
+`usePreAuth` は grant type が `pre-authorized_code` かどうかを表します。anonymous access かどうかは `clientId` の有無で表します。
 
 | 状況 | 指定の目安 |
 |------|------------|
-| アクセストークンが **事前認可コード（Pre-Authorized Code）** グラントで得られた場合 | `proofJwt: { usePreAuth: true }`。proof JWT に **`iss` は含めない**（仕様上の扱い）。 |
+| アクセストークンが **事前認可コード（Pre-Authorized Code）** グラント、かつ token endpoint で anonymous access により得られた場合 | `proofJwt: { usePreAuth: true }`。access token に `client_id` がないため、proof JWT に **`iss` は含めません**。 |
+| アクセストークンが **事前認可コード（Pre-Authorized Code）** グラント、かつ登録済み OAuth client として得られた場合 | `proofJwt: { usePreAuth: true, clientId: '<access token の client_id>' }`。proof JWT に `iss` がある場合は、その `clientId` と一致する必要があります。`iss` の省略も許容されます。 |
 | **認可コード** 等、通常の OAuth クライアント文脈の場合 | `proofJwt: { usePreAuth: false, clientId: '<そのリクエストの client_id>' }`。`iss` はその `client_id` または Credential Issuer Identifier と一致する必要があります。 |
 
 `proofJwt` を誤ると `aud` / `iss` の検証が意図とずれ、`invalid_proof` となります。

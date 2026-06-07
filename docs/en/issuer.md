@@ -1013,6 +1013,8 @@ Because the credential endpoint acts as a resource server, when a DPoP-bound acc
 - **`jti`** values are tracked to reject replay of the same DPoP Proof.
 - By default **`iat`** is considered valid within **`maxTokenAge` 300 seconds** and **`clockTolerance` 60 seconds** (issuer+verifier DPoP proof provider; factory options can change this).
 
+For credential proof JWTs, `iss` is not always omitted just because the access token was obtained through the Pre-Authorized Code Flow. When the token endpoint issues an access token through anonymous access, the access token has no `client_id`, so the proof JWT must omit `iss`. When the access token was obtained as a registered OAuth client, the access token carries `client_id`; pass that value as `proofJwt.clientId` to `issueCredential`. If the proof JWT includes `iss` in that case, it must match that `client_id`.
+
 If the DPoP Proof is invalid, the credential endpoint responds with **`401 Unauthorized`** and **`WWW-Authenticate: DPoP`**. For **`invalid_token`** issues (JWT shape/signature/`issuer` mismatch, etc.), the response is also **401**, with **`WWW-Authenticate: Bearer`** (`realm`, `error="invalid_token"`, etc.).
 
 ```http
@@ -1197,6 +1199,12 @@ app.post('/credentials', async (c) => {
       throw err
     }
 
+    const accessTokenClientId =
+      typeof accessTokenPayload.client_id === 'string' &&
+      accessTokenPayload.client_id.trim().length > 0
+        ? accessTokenPayload.client_id.trim()
+        : undefined
+
     const request = await c.req.json().catch(() => null)
     if (!request) {
       return c.json(
@@ -1243,7 +1251,10 @@ app.post('/credentials', async (c) => {
         degree: '5',
         gpa: 'test',
       },
-      proofJwt: { usePreAuth: true },
+      proofJwt: {
+        usePreAuth: true,
+        clientId: accessTokenClientId,
+      },
     })
     return c.json(credential)
   } catch (err) {
@@ -1470,7 +1481,8 @@ For the type definition of the credential response, see [issuer+verifier/src/cre
 
 **JWT credential proofs (`proofs.jwt`)**
 
-- **Pre-authorized code flow**: use `proofJwt: { usePreAuth: true }`. The proof JWT must **not** carry an **`iss`** claim.
+- **Pre-authorized code flow with an anonymous access token**: use `proofJwt: { usePreAuth: true }`. Because the access token has no `client_id`, the proof JWT must **not** carry an **`iss`** claim.
+- **Pre-authorized code flow with an access token obtained as a registered OAuth client**: use `proofJwt: { usePreAuth: true, clientId: '<client_id from the access token>' }`. If the proof JWT includes `iss`, it must match that `clientId`.
 - **Authorization code flow**: Not supported.
 
 #### JWT proof JOSE protected header
@@ -1519,7 +1531,9 @@ type IssueOptions = {
   subject?: string
   /** Used for JWT proof `iss` validation etc., depending on how the access token was obtained */
   proofJwt?: {
+    /** true when the grant type is pre-authorized_code; anonymous access is represented by omitting clientId. */
     usePreAuth: boolean
+    /** client_id from the access token, or the client_id for a normal OAuth client context */
     clientId?: string
   }
 }

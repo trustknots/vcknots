@@ -1011,6 +1011,8 @@ credential endpoint はリソースサーバーとして動作するため、DPo
 - `jti` を保存し、同じ DPoP Proof の再利用（リプレイ）を拒否すること。
 - DPoP Proof の `iat` は、実装既定では `maxTokenAge` 300 秒と `clockTolerance` 60 秒の範囲で有効とみなされます（`issuer+verifier` の DPoP proof プロバイダ。工場オプションで変更可能）。
 
+Credential proof JWT の `iss` は、Pre-Authorized Code Flow であっても常に省略するわけではありません。token endpoint で anonymous access により取得された access token には `client_id` が含まれないため、proof JWT の `iss` は省略する必要があります。一方、登録済み OAuth client として取得された access token には `client_id` が含まれるため、その値を `issueCredential` の `proofJwt.clientId` に渡します。この場合、proof JWT に `iss` があるときは、その `client_id` と一致する必要があります。
+
 DPoP Proof が不正な場合、credential endpoint は `401 Unauthorized` と `WWW-Authenticate: DPoP` を返します。アクセストークン JWT の形式・署名・issuer 不一致など **`invalid_token`** 相当の場合は、同じく **401** と **`WWW-Authenticate: Bearer`**（`realm` および `error="invalid_token"` 等）になります。
 
 ```http
@@ -1195,6 +1197,12 @@ app.post('/credentials', async (c) => {
       throw err
     }
 
+    const accessTokenClientId =
+      typeof accessTokenPayload.client_id === 'string' &&
+      accessTokenPayload.client_id.trim().length > 0
+        ? accessTokenPayload.client_id.trim()
+        : undefined
+
     const request = await c.req.json().catch(() => null)
     if (!request) {
       return c.json(
@@ -1241,7 +1249,10 @@ app.post('/credentials', async (c) => {
         degree: '5',
         gpa: 'test',
       },
-      proofJwt: { usePreAuth: true },
+      proofJwt: {
+        usePreAuth: true,
+        clientId: accessTokenClientId,
+      },
     })
     return c.json(credential)
   } catch (err) {
@@ -1469,7 +1480,8 @@ issueCredential(
 
 **JWT クレデンシャルプルーフ（`proofs.jwt`）について**
 
-- **事前認可コードフロー**でアクセストークンを得ている場合: `proofJwt: { usePreAuth: true }`。プルーフ JWT に **`iss` クレームを付けない**必要があります。
+- **事前認可コードフロー**で anonymous access token を得ている場合: `proofJwt: { usePreAuth: true }`。access token に `client_id` がないため、プルーフ JWT に **`iss` クレームを付けない**必要があります。
+- **事前認可コードフロー**で登録済み OAuth client として access token を得ている場合: `proofJwt: { usePreAuth: true, clientId: '<access token の client_id>' }`。プルーフ JWT に `iss` がある場合は、その `clientId` と一致する必要があります。
 - **認可コードフロー**：未対応
 
 
@@ -1519,7 +1531,9 @@ type IssueOptions = {
   subject?: string
   /** アクセストークン取得フローに応じた JWT proof の iss 検証などに使用 */
   proofJwt?: {
+    /** grant type が pre-authorized_code の場合 true。anonymous access かどうかは clientId の有無で表します。 */
     usePreAuth: boolean
+    /** access token に含まれる client_id、または通常の OAuth client 文脈の client_id */
     clientId?: string
   }
 }

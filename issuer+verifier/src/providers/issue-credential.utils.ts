@@ -51,4 +51,3 @@ export const setClaimValue = (
   }
   current[path[path.length - 1]] = value
 }
-

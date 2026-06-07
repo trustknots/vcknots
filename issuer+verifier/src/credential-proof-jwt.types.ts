@@ -5,6 +5,7 @@ export const credentialProofJwtVerifyContextSchema = z.discriminatedUnion('usePr
   z.object({
     usePreAuth: z.literal(true),
     credentialIssuer: CredentialIssuer.schema,
+    clientId: z.string().optional(),
   }),
   z.object({
     usePreAuth: z.literal(false),

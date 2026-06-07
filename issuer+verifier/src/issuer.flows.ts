@@ -42,7 +42,7 @@ type IssueOptions = {
   }
   claims?: Record<string, unknown>
   subject?: string
-  /** OID4VCI JWT proof iss rules: set usePreAuth true when the access token came from pre-authorized_code (anonymous) grant. */
+  /** OID4VCI JWT proof context: usePreAuth means the grant type is pre-authorized_code. */
   proofJwt?: {
     usePreAuth: boolean
     clientId?: string
@@ -384,7 +384,11 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           const proofJwtCtx: CredentialProofJwtVerifyContext | undefined =
             proofsObjects.proofType === ProofTypes.JWT
               ? options?.proofJwt?.usePreAuth === true
-                ? { usePreAuth: true, credentialIssuer: metadata.credential_issuer }
+                ? {
+                    usePreAuth: true,
+                    credentialIssuer: metadata.credential_issuer,
+                    ...(options.proofJwt.clientId ? { clientId: options.proofJwt.clientId } : {}),
+                  }
                 : {
                     usePreAuth: false,
                     credentialIssuer: metadata.credential_issuer,

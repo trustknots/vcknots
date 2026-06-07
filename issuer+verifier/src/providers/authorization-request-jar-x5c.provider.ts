@@ -56,4 +56,3 @@ export const authzRequestJARX5c = (): AuthzRequestJARProvider & WithProviderRegi
     },
   }
 }
-

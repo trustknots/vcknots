@@ -58,4 +58,3 @@ export const authzRequestJARKid = (): AuthzRequestJARProvider & WithProviderRegi
     },
   }
 }
-

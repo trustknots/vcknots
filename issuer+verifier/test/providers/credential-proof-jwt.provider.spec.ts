@@ -51,6 +51,11 @@ describe('CredentialProofJwtProvider', () => {
     usePreAuth: true,
     credentialIssuer,
   }
+  const preAuthRegisteredClientCtx: CredentialProofJwtVerifyContext = {
+    usePreAuth: true,
+    credentialIssuer,
+    clientId,
+  }
   const authCodeCtx: CredentialProofJwtVerifyContext = {
     usePreAuth: false,
     credentialIssuer,
@@ -499,7 +504,7 @@ describe('CredentialProofJwtProvider', () => {
       })
     })
 
-    it('should throw invalid_proof if iss is present in pre-auth flow', async () => {
+    it('should throw invalid_proof if iss is present in anonymous pre-auth flow', async () => {
       const provider = setupProvider()
       const proof = await createTestProof(
         { iss: clientId, aud: credentialIssuer },
@@ -509,11 +514,37 @@ describe('CredentialProofJwtProvider', () => {
       )
       await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
         name: 'invalid_proof',
-        message: 'iss claim must be omitted when using Pre-Authorized Code Flow.',
+        message:
+          'iss claim must be omitted when using an access token obtained through anonymous access.',
       })
     })
 
-    it('should throw invalid_proof if iss is non-string in pre-auth flow', async () => {
+    it('should verify pre-auth flow when access token client_id matches iss', async () => {
+      const provider = setupProvider()
+      const proof = await createTestProof(
+        { iss: clientId, aud: credentialIssuer, nonce: 'n' },
+        'ES256',
+        testKid
+      )
+      const result = await provider.verifyProof(proof, preAuthRegisteredClientCtx)
+      assert.ok(result)
+      assert.equal(result?.payload.iss, clientId)
+    })
+
+    it('should throw invalid_proof if iss does not match access token client_id in pre-auth flow', async () => {
+      const provider = setupProvider()
+      const proof = await createTestProof(
+        { iss: 'wrong-client', aud: credentialIssuer, nonce: 'n' },
+        'ES256',
+        testKid
+      )
+      await assert.rejects(provider.verifyProof(proof, preAuthRegisteredClientCtx), {
+        name: 'invalid_proof',
+        message: 'iss claim must match the client_id of the Client making the Credential request.',
+      })
+    })
+
+    it('should throw invalid_proof if iss is non-string in anonymous pre-auth flow', async () => {
       const provider = setupProvider()
       const proof = await createTestProof(
         { aud: credentialIssuer, nonce: 'n', iss: 12345 } as unknown as JWTPayload,
@@ -522,7 +553,8 @@ describe('CredentialProofJwtProvider', () => {
       )
       await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
         name: 'invalid_proof',
-        message: 'iss claim must be omitted when using Pre-Authorized Code Flow.',
+        message:
+          'iss claim must be omitted when using an access token obtained through anonymous access.',
       })
     })
 
@@ -538,7 +570,7 @@ describe('CredentialProofJwtProvider', () => {
       assert.equal(result?.payload.iss, credentialIssuer)
     })
 
-    it('should throw invalid_proof if iss is non-string in auth-code flow when iss is present', async () => {
+    it('should throw invalid_proof if iss is non-string in anonymous pre-auth flow when iss is present', async () => {
       const provider = setupProvider()
       const proof = await createTestProof(
         { aud: credentialIssuer, nonce: 'n', iss: 99 } as unknown as JWTPayload,
@@ -547,20 +579,21 @@ describe('CredentialProofJwtProvider', () => {
       )
       await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
         name: 'invalid_proof',
-        message: 'iss claim must be omitted when using Pre-Authorized Code Flow.',
+        message:
+          'iss claim must be omitted when using an access token obtained through anonymous access.',
       })
     })
 
-    it('should throw invalid_proof if iss is non-string in pre-auth flow', async () => {
+    it('should throw invalid_proof if iss is non-string in registered-client pre-auth flow', async () => {
       const provider = setupProvider()
       const proof = await createTestProof(
         { aud: credentialIssuer, nonce: 'n', iss: 12345 } as unknown as JWTPayload,
         'ES256',
         testKid
       )
-      await assert.rejects(provider.verifyProof(proof, preAuthCtx), {
+      await assert.rejects(provider.verifyProof(proof, preAuthRegisteredClientCtx), {
         name: 'invalid_proof',
-        message: 'iss claim must be omitted when using Pre-Authorized Code Flow.',
+        message: 'iss claim must match the client_id of the Client making the Credential request.',
       })
     })
 

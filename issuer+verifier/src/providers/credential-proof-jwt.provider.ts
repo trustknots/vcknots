@@ -282,15 +282,26 @@ export const credentialProofJWT = (
       const issValue = payloadClaims.iss
 
       if (ctx.usePreAuth) {
-        if (hasIss) {
-          throw raise('invalid_proof', {
-            message: 'iss claim must be omitted when using Pre-Authorized Code Flow.',
-          })
+        // OID4VCI separates the pre-authorized_code grant from anonymous access.
+        // Only access tokens obtained via anonymous access must omit `iss`.
+        if (!ctx.clientId) {
+          if (hasIss) {
+            throw raise('invalid_proof', {
+              message:
+                'iss claim must be omitted when using an access token obtained through anonymous access.',
+            })
+          }
+        } else if (hasIss) {
+          if (typeof issValue !== 'string' || issValue !== ctx.clientId) {
+            throw raise('invalid_proof', {
+              message:
+                'iss claim must match the client_id of the Client making the Credential request.',
+            })
+          }
         }
       } else {
-        // OID4VCI JWT proof: iss claim must the client_id of the Client making the Credential request.
-        // OID4VCI JWT proof: iss claim must be omitted using case Pre-Authorized Code Flow.
-        // TODO:check auth-code flow
+        // Non pre-authorized_code flows keep the existing rule: if `iss` is present,
+        // it must identify either the requesting client or the credential issuer.
         if (hasIss) {
           if (typeof issValue !== 'string') {
             throw raise('invalid_proof', {
