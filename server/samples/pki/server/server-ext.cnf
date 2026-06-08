@@ -1,0 +1,12 @@
+[ cert_ext ]
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid,issuer
+
+[ alt_names ]
+DNS.1 = localhost
+DNS.2 = example.internal
+DNS.3 = 9pnzpbbg-8080.asse.devtunnels.ms

@@ -1,0 +1,22 @@
+[ req ]
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = req_ext
+
+[ dn ]
+C  = JP
+O  = Example
+CN = localhost
+
+[ req_ext ]
+basicConstraints = CA:FALSE
+keyUsage = critical, digitalSignature
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = localhost
+DNS.2 = example.internal
+DNS.3 = 9pnzpbbg-8080.asse.devtunnels.ms
+
