@@ -1654,13 +1654,33 @@ The definition is as follows.
 ```typescript
 type TokenRequestOptions = {
   [GrantType.AuthorizationCode]: {
-    //TODO: Implement options for authorization code flow
+    // The authorization code flow is not supported yet
+    alg?: string
+    clientId?: string
+    dpopProof?: {
+      proofJwt: string
+      htm: string
+      htu: string
+      nonceRequired?: boolean
+    }
   }
   [GrantType.PreAuthorizedCode]: {
     ttlSec?: number
+    alg?: string
+    clientId?: string
+    dpopProof?: {
+      proofJwt: string
+      htm: string
+      htu: string
+      nonceRequired?: boolean
+    }
   }
 }
 ```
+
+- `clientId`: Authenticated OAuth client id. When set, it is included in the issued access token payload as `client_id`.
+- `dpopProof`: DPoP Proof verification data used to issue a DPoP-bound access token. When verification succeeds, the access token payload includes `cnf.jkt` and the response `token_type` is `DPoP`.
+- `ttlSec`: Access token lifetime in seconds for the Pre-Authorized Code flow. When omitted, the default value is used.
 
 
 ### verifyAccessToken

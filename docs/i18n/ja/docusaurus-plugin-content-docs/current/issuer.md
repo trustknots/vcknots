@@ -1654,13 +1654,33 @@ createAccessToken<T extends GrantType>(
 ```typescript
 type TokenRequestOptions = {
   [GrantType.AuthorizationCode]: {
-    //TODO: Implement options for authorization code flow
+    // 認可コードフローは未対応
+    alg?: string
+    clientId?: string
+    dpopProof?: {
+      proofJwt: string
+      htm: string
+      htu: string
+      nonceRequired?: boolean
+    }
   }
   [GrantType.PreAuthorizedCode]: {
     ttlSec?: number
+    alg?: string
+    clientId?: string
+    dpopProof?: {
+      proofJwt: string
+      htm: string
+      htu: string
+      nonceRequired?: boolean
+    }
   }
 }
 ```
+
+- `clientId`: client authentication 済みの OAuth client id。指定した場合、発行する access token payload に `client_id` として含まれます。
+- `dpopProof`: DPoP-bound access token を発行するための DPoP Proof 検証情報です。検証に成功した場合、access token payload に `cnf.jkt` が含まれ、レスポンスの `token_type` は `DPoP` になります。
+- `ttlSec`: Pre-Authorized Code フローにおける access token の有効期間（秒）。省略時はデフォルト値が使用されます。
 
 
 ### verifyAccessToken

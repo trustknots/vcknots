@@ -396,7 +396,7 @@ OAuth policy は `server/samples/oauth-server.json`、登録済み OAuth client 
 | `authorization_server.default_client` | 登録済み client に `senderConstrainedAccessToken` がない場合に使う既定 policy です。credential / nonce endpoint の既定 DPoP policy としても使います。 |
 | `authorization_server.anonymous_client` | 許可された anonymous token request に使う anonymous client 用 policy です。Pre-Authorized Code の anonymous token request を許可するかどうかは、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` で判定します。 |
 | `senderConstrainedAccessToken` | access token の sender constraint 方針です。 |
-| `senderConstrainedAccessToken.method` | sender constraint 方式です。`none` / `dpop` / `mtls` を指定できます。現行の DPoP 処理では `dpop` の場合に `dpop.mode` を参照します。`mtls` は予約値で、現時点では DPoP mode 制御には使いません。 |
+| `senderConstrainedAccessToken.method` | sender constraint 方式です。`none` / `dpop` / `mtls` を指定できます。`resolveAuthzPolicyDpopMode` では、`method` が `none` または `mtls` のときは `dpop.mode` に関わらず `off` になります。`dpop` または未指定のときは `dpop.mode`（`off` / `optional` / `required`）を参照します。`mtls` は mTLS 本体は未実装の予約値です。 |
 | `senderConstrainedAccessToken.dpop.mode` | DPoP mode です。`off` / `optional` / `required` を指定します。現行実装では token endpoint と credential endpoint に同じ値が適用されます。 |
 | `comment` | サンプル説明用のコメントです。制御ロジックには使いません。 |
 
@@ -422,7 +422,7 @@ policy の適用順は次の通りです。
 | `jwks_uri` | client の JWKS URI です。現行の `private_key_jwt` 検証ではリモート取得せず、`jwks.keys` を使います。鍵ローテーション向けの登録情報として扱います。 |
 | `allowed_grant_types` | client が利用できる grant type の登録情報です。現行実装では token endpoint の grant type 制御としては enforcement していません。 |
 | `senderConstrainedAccessToken` | client 固有の sender constraint policy です。指定した場合は `authorization_server.default_client` より優先します。 |
-| `senderConstrainedAccessToken.method` | client 固有の sender constraint 方式です。`none` / `dpop` / `mtls` を指定できます。 |
+| `senderConstrainedAccessToken.method` | client 固有の sender constraint 方式です。`none` / `dpop` / `mtls` を指定できます。DPoP mode の解決ルールは `oauth-server.json` の `senderConstrainedAccessToken.method` と同じです。 |
 | `senderConstrainedAccessToken.dpop.mode` | client 固有の DPoP mode です。`off` / `optional` / `required` を指定します。現行実装では token endpoint と credential endpoint に同じ値が適用されます。 |
 | `enabled` | `false` の場合、provider から取得されず無効 client として扱われます。未指定または `true` の場合は有効です。 |
 | `comment` | サンプル説明用のコメントです。制御ロジックには使いません。 |

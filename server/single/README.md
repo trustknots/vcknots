@@ -397,7 +397,7 @@ The contents of `oauth-clients.json` are registered with the provider as registe
 | `authorization_server.default_client` | Default policy used when a registered client does not define `senderConstrainedAccessToken`. It is also used as the default DPoP policy for the credential / nonce endpoints. |
 | `authorization_server.anonymous_client` | Policy used for allowed anonymous token requests. Whether anonymous Pre-Authorized Code token requests are allowed is determined by the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported`. |
 | `senderConstrainedAccessToken` | Sender constraint policy for access tokens. |
-| `senderConstrainedAccessToken.method` | Sender constraint method. Supported values are `none`, `dpop`, and `mtls`. The current DPoP processing reads `dpop.mode` only when this is `dpop`. `mtls` is reserved and is not used for DPoP mode control yet. |
+| `senderConstrainedAccessToken.method` | Sender constraint method. Supported values are `none`, `dpop`, and `mtls`. In `resolveAuthzPolicyDpopMode`, when `method` is `none` or `mtls`, the resolved DPoP mode is always `off` regardless of `dpop.mode`. When `method` is `dpop` or omitted, `dpop.mode` (`off` / `optional` / `required`) is used. `mtls` is reserved; mTLS itself is not implemented yet. |
 | `senderConstrainedAccessToken.dpop.mode` | DPoP mode. Supported values are `off`, `optional`, and `required`. In the current implementation, the same value applies to both the token endpoint and the credential endpoint. |
 | `comment` | Sample-only comment. It is not used by the control logic. |
 
@@ -423,7 +423,7 @@ Policy selection order:
 | `jwks_uri` | Client JWKS URI. The current `private_key_jwt` verification does not fetch this URI and uses `jwks.keys` instead. Treat it as registration metadata for future key rotation support. |
 | `allowed_grant_types` | Registered grant types allowed for the client. The current implementation does not enforce this as token endpoint grant type control. |
 | `senderConstrainedAccessToken` | Client-specific sender constraint policy. If present, it takes precedence over `authorization_server.default_client`. |
-| `senderConstrainedAccessToken.method` | Client-specific sender constraint method. Supported values are `none`, `dpop`, and `mtls`. |
+| `senderConstrainedAccessToken.method` | Client-specific sender constraint method. Supported values are `none`, `dpop`, and `mtls`. DPoP mode resolution follows the same rules as `senderConstrainedAccessToken.method` in `oauth-server.json`. |
 | `senderConstrainedAccessToken.dpop.mode` | Client-specific DPoP mode. Supported values are `off`, `optional`, and `required`. In the current implementation, the same value applies to both the token endpoint and the credential endpoint. |
 | `enabled` | If `false`, the provider does not return the client and it is treated as disabled. Omitted or `true` means enabled. |
 | `comment` | Sample-only comment. It is not used by the control logic. |
