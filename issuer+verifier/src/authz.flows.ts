@@ -400,6 +400,19 @@ const verifyPrivateKeyJwtClientAuthentication = async (
     }
   }
 
+  // JWK alg policy: the assertion header alg is authoritative for importJWK/jwtVerify.
+  // When the registered public key includes alg, it must match the header; otherwise reject
+  // with a deterministic error instead of relying on importJWK's internal failure.
+  const jwkAlg = getStringValue(jwk.alg)
+  if (jwkAlg && jwkAlg !== alg) {
+    return {
+      ok: false,
+      error_description:
+        'Registered client public key alg does not match client_assertion header alg.',
+      log: { clientId: client.client_id, alg, jwkAlg },
+    }
+  }
+
   try {
     const key = await importJWK(jwk, alg)
     const expectedAudiences = getExpectedClientAssertionAudiences(client, metadata, authz)
@@ -924,13 +937,27 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         // registered claims were verified. The TTL follows assertion exp so replay protection
         // lasts for the whole assertion lifetime without retaining entries longer than needed.
         const ttlMs = verification.exp * 1000 - Date.now()
-        const isNewJti =
-          ttlMs >= MIN_CLIENT_ASSERTION_JTI_TTL_MS &&
-          (await oauthClientAssertionJtiStore$.saveIfAbsent(
-            oauthClient.client_id,
-            verification.jti,
-            { ttlMs }
-          ))
+        // jwtVerify may accept exp within clock tolerance while ttlMs is already <= 0; do not
+        // treat that as JTI reuse.
+        if (ttlMs < MIN_CLIENT_ASSERTION_JTI_TTL_MS) {
+          return {
+            ok: false,
+            error: 'invalid_client',
+            error_description: 'client_assertion has expired.',
+            clientId: oauthClient.client_id,
+            log: {
+              clientId: oauthClient.client_id,
+              jti: verification.jti,
+              exp: verification.exp,
+              ttlMs,
+            },
+          }
+        }
+        const isNewJti = await oauthClientAssertionJtiStore$.saveIfAbsent(
+          oauthClient.client_id,
+          verification.jti,
+          { ttlMs }
+        )
         if (!isNewJti) {
           return {
             ok: false,

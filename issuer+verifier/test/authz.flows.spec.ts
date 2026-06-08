@@ -355,7 +355,14 @@ describe('AuthzFlows', () => {
   describe('resolveTokenRequestClientPolicy()', () => {
     const signedPrivateKeyJwt = async (
       clientId: string,
-      options?: { audience?: string; alg?: string; kid?: string; iat?: number | null; nbf?: number }
+      options?: {
+        audience?: string
+        alg?: string
+        kid?: string
+        iat?: number | null
+        nbf?: number
+        exp?: number
+      }
     ) => {
       const alg = options?.alg ?? 'ES256'
       const kid = options?.kid ?? 'client-key-1'
@@ -365,8 +372,13 @@ describe('AuthzFlows', () => {
       let assertionBuilder = new SignJWT({ iss: clientId, sub: clientId })
         .setProtectedHeader({ alg, kid })
         .setAudience(options?.audience ?? sampleMetadata.token_endpoint)
-        .setExpirationTime('5m')
         .setJti('client-assertion-jti')
+
+      if (typeof options?.exp === 'number') {
+        assertionBuilder = assertionBuilder.setExpirationTime(options.exp)
+      } else {
+        assertionBuilder = assertionBuilder.setExpirationTime('5m')
+      }
 
       if (options?.iat !== null) {
         assertionBuilder =
@@ -847,6 +859,40 @@ describe('AuthzFlows', () => {
           jti: 'client-assertion-jti',
         },
       })
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+    })
+
+    it('should reject private_key_jwt clients when assertion exp leaves no jti cache TTL', async () => {
+      const exp = Math.floor(Date.now() / 1000) - 5
+      const { assertion, publicJwk } = await signedPrivateKeyJwt('private-key-client', { exp })
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_signing_alg: 'ES256',
+        jwks: { keys: [publicJwk] },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => sampleMetadata)
+      mock.method(mockOAuthClientAssertionJtiStoreProvider, 'saveIfAbsent', async () => {
+        throw new Error('saveIfAbsent should not be called when assertion exp leaves no jti TTL')
+      })
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_assertion_type:
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion,
+      })
+
+      assert.equal(result.ok, false)
+      if (!result.ok) {
+        assert.equal(result.error, 'invalid_client')
+        assert.equal(result.error_description, 'client_assertion has expired.')
+        assert.equal(result.clientId, sampleClient.client_id)
+        assert.equal(result.log?.jti, 'client-assertion-jti')
+        assert.equal(result.log?.exp, exp)
+        assert.ok(typeof result.log?.ttlMs === 'number' && result.log.ttlMs < 1)
+      }
+      assert.equal(mockOAuthClientAssertionJtiStoreProvider.saveIfAbsent.mock.callCount(), 0)
       assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
     })
 
