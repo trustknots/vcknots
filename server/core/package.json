@@ -44,6 +44,6 @@
 	"dependencies": {
 		"@hono/node-server": "1.19.14",
 		"@trustknots/vcknots": "workspace:*",
-		"hono": "4.12.18"
+		"hono": "4.12.23"
 	}
 }
