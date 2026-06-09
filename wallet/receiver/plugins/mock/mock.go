@@ -82,6 +82,15 @@ func (m *MockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTy
 	return token, nil
 }
 
+// FetchNonce returns an error for mock implementation
+func (m *MockReceiver) FetchNonce(receivingType types.SupportedReceivingTypes, endpoint common.URIField) (*string, error) {
+	if receivingType != types.Mock {
+		return nil, types.NewReceiverError(receivingType, endpoint.String(), "FetchNonce", fmt.Errorf("unsupported receiving type for mock receiver"))
+	}
+
+	return nil, types.NewReceiverError(receivingType, endpoint.String(), "FetchNonce", fmt.Errorf("nonce endpoint is not supported in mock receiver"))
+}
+
 // ReceiveCredential reads a Verifiable Credential from a txt file
 // The endpoint parameter is treated as a filename (without extension) relative to BasePath
 func (m *MockReceiver) ReceiveCredential(

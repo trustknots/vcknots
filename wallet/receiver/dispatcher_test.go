@@ -34,6 +34,14 @@ func (m *mockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTy
 	return &types.CredentialIssuanceAccessToken{}, nil
 }
 
+func (m *mockReceiver) FetchNonce(receivingType types.SupportedReceivingTypes, endpoint common.URIField) (*string, error) {
+	if m.shouldError {
+		return nil, fmt.Errorf("mock error")
+	}
+	nonce := "mock-nonce"
+	return &nonce, nil
+}
+
 func (m *mockReceiver) ReceiveCredential(
 	receivingType types.SupportedReceivingTypes,
 	endpoint common.URIField,

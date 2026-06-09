@@ -8,16 +8,42 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
 	"github.com/trustknots/vcknots/wallet/common"
+	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
 
 type Oid4vciReceiver struct{}
+
+type credentialNonceResponse struct {
+	CNonce *string `json:"c_nonce"`
+	Nonce  *string `json:"nonce"`
+}
+
+var nonceHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
+const maxNonceResponseBodyBytes int64 = 4 << 10
+
+// OID4VCICredentialFormatToSerializationFlavor maps OID4VCI credential format identifiers
+// to wallet serialization flavors.
+func OID4VCICredentialFormatToSerializationFlavor(format string) (credential.SupportedSerializationFlavor, error) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "jwt_vc_json", "jwt_vc", string(credential.JwtVc):
+		return credential.JwtVc, nil
+	case "dc+sd-jwt", string(credential.SDJwtVC):
+		return credential.SDJwtVC, nil
+	default:
+		return "", fmt.Errorf("unsupported credential format: %q", format)
+	}
+}
 
 // doRequest performs an HTTP request and unmarshals the JSON response into target.
 // It handles common patterns: URL construction, status checking, body reading, and JSON parsing.
@@ -126,6 +152,60 @@ func (o *Oid4vciReceiver) FetchAccessToken(receivingTypes types.SupportedReceivi
 	}
 
 	return &accessToken, nil
+}
+
+func (o *Oid4vciReceiver) FetchNonce(receivingTypes types.SupportedReceivingTypes, endpoint common.URIField) (*string, error) {
+	if receivingTypes != types.Oid4vci {
+		return nil, fmt.Errorf("unsupported flavor: %v", receivingTypes)
+	}
+
+	nonceEndpointURL := url.URL(endpoint)
+	if !env.IsHTTPAllowed() && !strings.EqualFold(nonceEndpointURL.Scheme, "https") {
+		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", nonceEndpointURL.Scheme)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, nonceEndpointURL.String(), http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create nonce request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := nonceHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch nonce: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxNonceResponseBodyBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read nonce response: %w", err)
+	}
+
+	if int64(len(bodyBytes)) > maxNonceResponseBodyBytes {
+		return nil, fmt.Errorf("nonce endpoint response exceeds %d bytes", maxNonceResponseBodyBytes)
+	}
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("nonce endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	if len(bodyBytes) == 0 {
+		return nil, fmt.Errorf("nonce endpoint returned empty response")
+	}
+
+	var nonceResponse credentialNonceResponse
+	if err := json.Unmarshal(bodyBytes, &nonceResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse nonce response: %w", err)
+	}
+
+	if nonceResponse.CNonce != nil && *nonceResponse.CNonce != "" {
+		return nonceResponse.CNonce, nil
+	}
+	if nonceResponse.Nonce != nil && *nonceResponse.Nonce != "" {
+		return nonceResponse.Nonce, nil
+	}
+
+	return nil, fmt.Errorf("nonce response does not contain c_nonce or nonce")
 }
 
 func (o *Oid4vciReceiver) ReceiveCredential(

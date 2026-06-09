@@ -16,8 +16,9 @@ package main
 //   - Usage: go run server_integration_sdjwt.go "<OID4VP_URI>"
 //   - Example: go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_uri=..."
 //
-// Both modes follow the same flow: seed credential -> build wallet -> get OID4VP request URI -> present.
-// The only differences are runtime inputs (request URI source, certificate pool, selected claims).
+// Mode 1 flow: receive SD-JWT VC via OID4VCI from local issuer -> present via OID4VP to local verifier.
+// Mode 2 flow: load credential from file -> present via OID4VP to external verifier.
+// The only structural difference is how the credential is acquired.
 //
 // Available Endpoints (for Mode 1):
 // - Offer Endpoint: http://localhost:8080/configurations/:configurationId/offer
@@ -199,6 +200,69 @@ func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger
 	return bodyStr
 }
 
+// fetchCredentialOfferFromServer fetches a Credential Offer URI from the local server.
+func fetchCredentialOfferFromServer(configurationID string, logger *slog.Logger) string {
+	issuerURL := "http://localhost:8080"
+	endpoint := fmt.Sprintf("%s/configurations/%s/offer", issuerURL, configurationID)
+	logger.Info("Fetching credential offer", "endpoint", endpoint)
+
+	resp, err := http.Post(endpoint, "application/json", nil)
+	if err != nil {
+		panic(fmt.Sprintf("failed to fetch credential offer: %v", err))
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+
+	offerURI := strings.TrimSpace(string(body))
+	logger.Info("Received credential offer URI", "uri", offerURI)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		panic(fmt.Sprintf("server error fetching offer: %s - %s", resp.Status, offerURI))
+	}
+	return offerURI
+}
+
+// parseCredentialOffer parses an openid-credential-offer:// URI into a wallet.CredentialOffer.
+func parseCredentialOffer(offerURI string, logger *slog.Logger) *wallet.CredentialOffer {
+	parsed, err := url.Parse(offerURI)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse offer URI: %v", err))
+	}
+
+	credentialOfferParam := parsed.Query().Get("credential_offer")
+	if credentialOfferParam == "" {
+		panic("credential_offer parameter is missing from offer URI")
+	}
+
+	var offerJSON struct {
+		CredentialIssuer           string                                  `json:"credential_issuer"`
+		CredentialConfigurationIDs []string                                `json:"credential_configuration_ids"`
+		Grants                     map[string]*wallet.CredentialOfferGrant `json:"grants"`
+	}
+	if err := json.Unmarshal([]byte(credentialOfferParam), &offerJSON); err != nil {
+		panic(fmt.Sprintf("failed to parse credential offer JSON: %v", err))
+	}
+
+	issuerURL, err := url.Parse(offerJSON.CredentialIssuer)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse credential issuer URL: %v", err))
+	}
+
+	logger.Info("Parsed credential offer",
+		"issuer", offerJSON.CredentialIssuer,
+		"configuration_ids", offerJSON.CredentialConfigurationIDs,
+	)
+	return &wallet.CredentialOffer{
+		CredentialIssuer:           issuerURL,
+		CredentialConfigurationIDs: offerJSON.CredentialConfigurationIDs,
+		Grants:                     offerJSON.Grants,
+	}
+}
+
 // buildCertPool creates the appropriate certificate pool based on the mode.
 // For conformance testing, it uses the system root certificate pool.
 // For server integration, it loads the server's specific certificate.
@@ -260,31 +324,9 @@ func main() {
 		panic(err)
 	}
 
-	sdJwtCredFile, err := os.ReadFile("example_sd_jwt.txt")
-	if err != nil {
-		panic(err)
-	}
-
-	credID := "sample-sdjwt"
-	err = credStore.SaveCredentialEntry(credstore.CredentialEntry{
-		Id:         credID,
-		ReceivedAt: time.Now(),
-		Raw:        sdJwtCredFile,
-		MimeType:   string(credential.SDJwtVC),
-	}, credstore.SupportedCredStoreTypes(0))
-	if err != nil {
-		panic(err)
-	}
-
-	savedSdJwtCredEntry, err := credStore.GetCredentialEntry(credID, credstore.SupportedCredStoreTypes(0))
-	if err != nil {
-		panic(err)
-	}
-	logger.Info("Retrieved credential entry", "mime_type", savedSdJwtCredEntry.MimeType)
-
 	certPool := buildCertPool(isConformanceMode)
 	p := &oid4vp.Oid4vpPresenter{
-		X509TrustChainRoots: certPool,
+		X509TrustChainRoots:    certPool,
 		InsecureSkipX509Verify: isConformanceMode,
 	}
 	presenterDisp, err := presenter.NewPresentationDispatcher(presenter.WithPlugin(presenter.Oid4vp, p))
@@ -328,20 +370,44 @@ func main() {
 
 	mockKey := common.NewMockKeyEntry()
 
-	deserializedCred, err := serializerDisp.DeserializeCredential(credential.SDJwtVC, savedSdJwtCredEntry.Raw)
-	if err != nil {
-		panic(err)
-	}
-	savedCred := &wallet.SavedCredential{
-		Credential: deserializedCred,
-		Entry:      savedSdJwtCredEntry,
-	}
-	logger.Info("Deserialized credential", "issuer", deserializedCred.Issuer, "claims", deserializedCred.Claims)
-
+	var savedCred *wallet.SavedCredential
 	var oid4vpURI string
 	var options *sdjwtvc.SdJwtVcPresentationOptions
 
 	if isConformanceMode {
+		// Load credential from file for OID4VP conformance testing
+		sdJwtCredFile, err := os.ReadFile("example_sd_jwt.txt")
+		if err != nil {
+			panic(err)
+		}
+
+		credID := "sample-sdjwt"
+		err = credStore.SaveCredentialEntry(credstore.CredentialEntry{
+			Id:         credID,
+			ReceivedAt: time.Now(),
+			Raw:        sdJwtCredFile,
+			MimeType:   string(credential.SDJwtVC),
+		}, credstore.SupportedCredStoreTypes(0))
+		if err != nil {
+			panic(err)
+		}
+
+		savedSdJwtCredEntry, err := credStore.GetCredentialEntry(credID, credstore.SupportedCredStoreTypes(0))
+		if err != nil {
+			panic(err)
+		}
+		logger.Info("Retrieved credential entry", "mime_type", savedSdJwtCredEntry.MimeType)
+
+		deserializedCred, err := serializerDisp.DeserializeCredential(credential.SDJwtVC, savedSdJwtCredEntry.Raw)
+		if err != nil {
+			panic(err)
+		}
+		savedCred = &wallet.SavedCredential{
+			Credential: deserializedCred,
+			Entry:      savedSdJwtCredEntry,
+		}
+		logger.Info("Deserialized credential", "issuer", deserializedCred.Issuer, "claims", deserializedCred.Claims)
+
 		oid4vpURI = os.Args[1]
 		logger.Info("Using OID4VP URI from command line", "uri", oid4vpURI)
 
@@ -350,6 +416,25 @@ func main() {
 			RequireKeyBinding: true,
 		}
 	} else {
+		// Receive SD-JWT VC from local server via OID4VCI (exercises branch changes)
+		offerURI := fetchCredentialOfferFromServer("UniversityDegreeCredentialSdJwt", logger)
+		offer := parseCredentialOffer(offerURI, logger)
+
+		savedCred, err = w.ReceiveCredential(wallet.ReceiveCredentialRequest{
+			CredentialOffer: offer,
+			Type:            receiver.Oid4vci,
+			Key:             mockKey,
+			RequestedFormat: credential.SDJwtVC,
+		})
+		if err != nil {
+			logger.Error("Failed to receive SD-JWT credential", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("SD-JWT credential received",
+			"id", savedCred.Entry.Id,
+			"mime_type", savedCred.Entry.MimeType,
+		)
+
 		oid4vpURI = fetchOID4VPURIFromServer(savedCred, logger)
 
 		options = &sdjwtvc.SdJwtVcPresentationOptions{

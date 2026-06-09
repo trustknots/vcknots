@@ -72,11 +72,12 @@ type CredentialIssuerMetadata struct {
 }
 
 type CredentialConfiguration struct {
-	Display                             *[]CredentialConfigurationDisplay `json:"display,omitempty"`
-	ProofTypesSupported                 *map[string]ProofType             `json:"proof_types_supported,omitempty"`
-	Format                              string                            `json:"format"`
-	CredentialDefinition                *CredentialDefinition             `json:"credential_definition,omitempty"`
-	CredentialSigningAlgValuesSupported []jose.SignatureAlgorithm         `json:"credential_signing_alg_values_supported,omitempty"`
+	Display                              *[]CredentialConfigurationDisplay `json:"display,omitempty"`
+	ProofTypesSupported                  *map[string]ProofType             `json:"proof_types_supported,omitempty"`
+	CryptographicBindingMethodsSupported *[]string                         `json:"cryptographic_binding_methods_supported,omitempty"`
+	Format                               string                            `json:"format"`
+	CredentialDefinition                 *CredentialDefinition             `json:"credential_definition,omitempty"`
+	CredentialSigningAlgValuesSupported  []jose.SignatureAlgorithm         `json:"credential_signing_alg_values_supported,omitempty"`
 }
 
 type CredentialIssuerMetadataDisplay struct {
@@ -224,6 +225,9 @@ type Receiver interface {
 
 	// FetchAccessToken fetches access token through OID4VCI
 	FetchAccessToken(receivingType SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string) (*CredentialIssuanceAccessToken, error)
+
+	// FetchNonce fetches nonce from the issuer nonce endpoint
+	FetchNonce(receivingType SupportedReceivingTypes, endpoint common.URIField) (*string, error)
 
 	// ReceiveCredential receives credential through OID4VCI
 	ReceiveCredential(

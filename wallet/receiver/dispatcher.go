@@ -120,6 +120,21 @@ func (d *ReceivingDispatcher) FetchAccessToken(receivingType types.SupportedRece
 	return token, nil
 }
 
+// FetchNonce fetches nonce using the appropriate plugin
+func (d *ReceivingDispatcher) FetchNonce(receivingType types.SupportedReceivingTypes, endpoint common.URIField) (*string, error) {
+	plugin, err := d.getPlugin(receivingType)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce, err := plugin.FetchNonce(receivingType, endpoint)
+	if err != nil {
+		return nil, types.NewReceiverError(receivingType, endpoint.String(), "fetch_nonce", err)
+	}
+
+	return nonce, nil
+}
+
 // ReceiveCredential receives credential using the appropriate plugin
 func (d *ReceivingDispatcher) ReceiveCredential(
 	receivingType types.SupportedReceivingTypes,
