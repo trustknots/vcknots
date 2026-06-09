@@ -6,19 +6,24 @@ This document outlines our guidelines for contributions. Please take a moment to
 
 ## Table of Contents
 
-- [Code of Conduct](#code-of-conduct)
-- [How Can I Contribute?](#how-can-i-contribute)
-  - [Reporting Bugs](#reporting-bugs)
-  - [Suggesting Enhancements](#suggesting-enhancements)
-  - [Pull Requests](#pull-requests)
-- [Development Setup](#development-setup)
-- [Development Workflow](#development-workflow)
-  - [Main Branch](#main-branch)
-  - [Branching Strategy](#branching-strategy)
-  - [Pull Request Process](#pull-request-process)
-- [Coding Standards](#coding-standards)
-- [Automated dependency updates](#automated-dependency-updates)
-- [License](#license)
+- [Contributing to VC Knots](#contributing-to-vc-knots)
+  - [Table of Contents](#table-of-contents)
+  - [Code of Conduct](#code-of-conduct)
+  - [How Can I Contribute?](#how-can-i-contribute)
+    - [Reporting Bugs](#reporting-bugs)
+    - [Suggesting Enhancements](#suggesting-enhancements)
+    - [Pull Requests](#pull-requests)
+  - [Development Setup](#development-setup)
+    - [Repository Setup](#repository-setup)
+    - [Wallet Setup](#wallet-setup)
+    - [Issuer and Verifier Setup](#issuer-and-verifier-setup)
+  - [Development Workflow](#development-workflow)
+    - [Main Branch](#main-branch)
+    - [Branching Strategy](#branching-strategy)
+    - [Pull Request Process](#pull-request-process)
+  - [Coding Standards](#coding-standards)
+  - [Automated dependency updates](#automated-dependency-updates)
+  - [License](#license)
 
 ## Code of Conduct
 
@@ -156,21 +161,16 @@ pnpm run format
 We use Renovate to automate dependency updates and open pull requests based on the configuration in renovate.json.
 
 - Schedule:Sundays 19:00–23:59 JST
-- Release age delay: PRs are created only after a release has been out for 5 day
+- Release age delay: PRs are created only after a release has been out for 5 days
 - Branch: Renovate branches are prefixed with `build/`
 - Auto-merge: Patch updates only are eligible for auto-merge, and only within Sundays 00:00–04:59 JST
+- Range strategy: 
+  - By default, updates use `rangeStrategy: pin`
+  - Exception: `dependencies` in `issuer+verifier/package.json` use `rangeStrategy: bump`
 - Commit messages:
   - the commit type is always `build`
   - Format: build: update `topic`
-    - `topic` rules: If a `groupName` applies, the `topic` is `groupName` (e.g. wallet); otherwise, it uses the dependency name `depName` (e.g. pnpm, dependencies)
-    - Groups: Each group uses `rangeStrategy: pin`
-      - issuer+verifier
-      - server-multi
-      - server-single
-      - wallet
-      - google-cloud
-      - docusaurus
-      - node-version
+    - `topic` rules: The `topic` usually uses `groupName` when a package rule groups updates (e.g. dependencies, automerge dependencies); otherwise, it uses the dependency name `depName` (e.g. pnpm)
 
 ## License
 
