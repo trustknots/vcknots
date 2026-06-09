@@ -281,7 +281,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 	issuer := mockserver.NewOID4VCIIssuerServer(nil)
 	defer issuer.Close()
 
-	serverURL, _ := url.Parse(issuer.URL())
+	serverURL, _ := url.Parse(issuer.URL() + "/token")
 	endpoint := common.URIField(*serverURL)
 
 	t.Run("https is required", func(t *testing.T) {
@@ -292,7 +292,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		env.SetDebugMode(false)
 		env.SetHTTPAllowed(false)
 
-		_, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code", "", nil)
+		_, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code", "")
 		if err == nil {
 			t.Fatal("FetchAccessToken should be error when issuer's schema is http")
 		}
@@ -303,7 +303,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		defer env.SetHTTPAllowed(http_allowed)
 		env.SetHTTPAllowed(true)
 
-		token, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code", "", nil)
+		token, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code", "")
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -357,7 +357,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 				"token_type":   "Bearer",
 			})
 		})
-		captureURL, _ := url.Parse(captureServer.URL())
+		captureURL, _ := url.Parse(captureServer.URL() + "/token")
 		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "test-code", "123456", nil)
 		require.NoError(t, err)
 		require.NotNil(t, token)
@@ -377,10 +377,10 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"tok","token_type":"Bearer","expires_in":3600}`))
 		})
-		captureURL, err := url.Parse(captureServer.URL())
+		captureURL, err := url.Parse(captureServer.URL() + "/token")
 		require.NoError(t, err)
 		proof := "header.payload.signature"
-		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "code", "", &types.TokenRequestOptions{DPoPProofJWT: &proof})
+		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "code", "", types.WithDPoPProof(proof))
 		require.NoError(t, err)
 		require.NotNil(t, token)
 		require.Len(t, capturedDPoPValues, 1)
@@ -400,14 +400,13 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"tok","token_type":"Bearer","expires_in":3600}`))
 		})
-		captureURL, err := url.Parse(captureServer.URL())
+		captureURL, err := url.Parse(captureServer.URL() + "/token")
 		require.NoError(t, err)
 		token, err := receiver.FetchAccessToken(
 			types.Oid4vci,
 			common.URIField(*captureURL),
 			"code",
 			"",
-			nil,
 		)
 		require.NoError(t, err)
 		require.NotNil(t, token)
@@ -427,7 +426,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"tok","token_type":"Bearer","expires_in":3600}`))
 		})
-		captureURL, err := url.Parse(captureServer.URL())
+		captureURL, err := url.Parse(captureServer.URL() + "/token")
 		require.NoError(t, err)
 		empty := ""
 		token, err := receiver.FetchAccessToken(
@@ -435,7 +434,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 			common.URIField(*captureURL),
 			"code",
 			"",
-			&types.TokenRequestOptions{DPoPProofJWT: &empty},
+			types.WithDPoPProof(empty),
 		)
 		require.NoError(t, err)
 		require.NotNil(t, token)
@@ -453,11 +452,34 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 
 		errorServer.SetErrorResponse("/token", http.StatusInternalServerError)
 
-		errorURL, _ := url.Parse(errorServer.URL())
-		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*errorURL), "test-code", "", nil)
+		errorURL, _ := url.Parse(errorServer.URL() + "/token")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*errorURL), "test-code", "")
 		if err == nil {
 			t.Fatal("Expected error for server error")
 		}
+	})
+
+	t.Run("use_dpop_nonce error includes nonce hint", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		nonceServer := mockserver.NewMockServer()
+		defer nonceServer.Close()
+
+		nonceServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("DPoP-Nonce", "token-dpop-nonce")
+			mockserver.JSONResponse(w, http.StatusBadRequest, map[string]string{
+				"error": "use_dpop_nonce",
+			})
+		})
+
+		nonceURL, _ := url.Parse(nonceServer.URL() + "/token")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*nonceURL), "test-code", "")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, types.ErrTokenRequestFailed)
+		assert.Contains(t, err.Error(), "use_dpop_nonce")
+		assert.Contains(t, err.Error(), "token-dpop-nonce")
 	})
 
 	t.Run("Invalid JSON response", func(t *testing.T) {
@@ -470,8 +492,8 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 
 		invalidJSONServer.SetTextResponse("/token", http.StatusOK, "{invalid-json")
 
-		invalidJSONURL, _ := url.Parse(invalidJSONServer.URL())
-		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*invalidJSONURL), "test-code", "", nil)
+		invalidJSONURL, _ := url.Parse(invalidJSONServer.URL() + "/token")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*invalidJSONURL), "test-code", "")
 		if err == nil {
 			t.Fatal("Expected error for invalid JSON response")
 		}
@@ -684,6 +706,42 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, credential)
 		require.NoError(t, <-handlerErrCh)
+	})
+
+	t.Run("use_dpop_nonce error is returned as sentinel error", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		dpopProof := "dpop.proof.jwt"
+		dpopAccessToken := types.CredentialIssuanceAccessToken{
+			Token:     "dpop-access-token",
+			TokenType: "DPoP",
+		}
+		captureServer.HandleFunc("/credential", func(w http.ResponseWriter, r *http.Request) {
+			mockserver.JSONResponse(w, http.StatusBadRequest, map[string]string{
+				"error": "use_dpop_nonce",
+			})
+		})
+
+		captureURL, _ := url.Parse(captureServer.URL() + "/credential")
+		captureEndpoint := common.URIField(*captureURL)
+
+		_, err := receiver.ReceiveCredential(
+			types.Oid4vci,
+			captureEndpoint,
+			"test-config",
+			nil,
+			dpopAccessToken,
+			nil,
+			nil,
+			&types.CredentialRequestOptions{DPoPProofJWT: &dpopProof},
+		)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, types.ErrUseDPoPNonce)
 	})
 
 	t.Run("Request uses credential_identifier when provided", func(t *testing.T) {

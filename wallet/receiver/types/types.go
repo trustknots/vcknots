@@ -4,6 +4,8 @@ package types
 import (
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/trustknots/vcknots/wallet/common"
@@ -220,8 +222,35 @@ type CredentialRequestOptions struct {
 	DPoPProofJWT *string
 }
 
-type TokenRequestOptions struct {
-	DPoPProofJWT *string
+type TokenRequestConfig struct {
+	DPoPProof string
+}
+
+type TokenRequestOption func(*TokenRequestConfig)
+
+func NewTokenRequestConfig(opts ...TokenRequestOption) *TokenRequestConfig {
+	cfg := &TokenRequestConfig{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(cfg)
+		}
+	}
+	return cfg
+}
+
+func WithDPoPProof(proof string) TokenRequestOption {
+	return func(cfg *TokenRequestConfig) {
+		cfg.DPoPProof = proof
+	}
+}
+
+// ResolveTokenEndpointURL returns the canonical token endpoint URL string.
+// Metadata token_endpoint values are complete endpoint URLs, so this only
+// normalizes trailing slashes and does not append "/token".
+func ResolveTokenEndpointURL(endpoint common.URIField) string {
+	endpointURL := url.URL(endpoint)
+	endpointURL.Path = strings.TrimRight(endpointURL.Path, "/")
+	return endpointURL.String()
 }
 
 // Receiver defines the interface for credential receiving components
@@ -233,7 +262,7 @@ type Receiver interface {
 	FetchAuthorizationServerMetadata(endpoint common.URIField, receivingType SupportedReceivingTypes) (*AuthorizationServerMetadata, error)
 
 	// FetchAccessToken fetches access token through OID4VCI
-	FetchAccessToken(receivingType SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, options ...*TokenRequestOptions) (*CredentialIssuanceAccessToken, error)
+	FetchAccessToken(receivingType SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, opts ...TokenRequestOption) (*CredentialIssuanceAccessToken, error)
 
 	// FetchNonce fetches nonce from the issuer nonce endpoint
 	FetchNonce(receivingType SupportedReceivingTypes, endpoint common.URIField) (*string, error)

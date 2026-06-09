@@ -27,7 +27,7 @@ func (m *mockReceiver) FetchAuthorizationServerMetadata(endpoint common.URIField
 	return &types.AuthorizationServerMetadata{}, nil
 }
 
-func (m *mockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, options ...*types.TokenRequestOptions) (*types.CredentialIssuanceAccessToken, error) {
+func (m *mockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, opts ...types.TokenRequestOption) (*types.CredentialIssuanceAccessToken, error) {
 	if m.shouldError {
 		return nil, fmt.Errorf("mock error")
 	}
@@ -146,14 +146,14 @@ func TestReceivingDispatcher_FetchAccessToken(t *testing.T) {
 	dispatcher, _ := NewReceivingDispatcher(WithPlugin(types.Oid4vci, mock))
 
 	t.Run("Happy path", func(t *testing.T) {
-		_, err := dispatcher.FetchAccessToken(types.Oid4vci, common.URIField{}, "test-code", "", nil)
+		_, err := dispatcher.FetchAccessToken(types.Oid4vci, common.URIField{}, "test-code", "")
 		if err != nil {
 			t.Errorf("FetchAccessToken() on happy path should not return error: %v", err)
 		}
 	})
 
 	t.Run("Empty authzCode", func(t *testing.T) {
-		_, err := dispatcher.FetchAccessToken(types.Oid4vci, common.URIField{}, "", "", nil)
+		_, err := dispatcher.FetchAccessToken(types.Oid4vci, common.URIField{}, "", "")
 		if err == nil {
 			t.Fatal("Expected error for empty authzCode")
 		}
@@ -161,7 +161,7 @@ func TestReceivingDispatcher_FetchAccessToken(t *testing.T) {
 
 	t.Run("Unsupported receiving type", func(t *testing.T) {
 		invalidType := types.SupportedReceivingTypes(999)
-		_, err := dispatcher.FetchAccessToken(invalidType, common.URIField{}, "test-code", "", nil)
+		_, err := dispatcher.FetchAccessToken(invalidType, common.URIField{}, "test-code", "")
 		if err == nil {
 			t.Fatal("Expected error for unsupported receiving type")
 		}

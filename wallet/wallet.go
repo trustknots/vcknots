@@ -900,29 +900,21 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 
 	tokenEndpoint := *authMetadata.TokenEndpoint
 
-	var tokenReqOptions *receiverTypes.TokenRequestOptions
+	var tokenReqOptions []receiverTypes.TokenRequestOption
 	if w.dpop.Enabled {
 		proof, err := w.generateDPoPProof(
 			w.dpop.Key,
 			http.MethodPost,
-			tokenEndpoint.String(),
+			receiverTypes.ResolveTokenEndpointURL(tokenEndpoint),
 			"",
 			nil,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate DPoP proof: %w", err)
 		}
-		tokenReqOptions = &receiverTypes.TokenRequestOptions{
-			DPoPProofJWT: &proof,
-		}
+		tokenReqOptions = append(tokenReqOptions, receiverTypes.WithDPoPProof(proof))
 	}
-	var accessToken *receiverTypes.CredentialIssuanceAccessToken
-	var err error
-	if tokenReqOptions != nil {
-		accessToken, err = w.receiver.FetchAccessToken(receivingType, tokenEndpoint, preAuthCode, txCode, tokenReqOptions)
-	} else {
-		accessToken, err = w.receiver.FetchAccessToken(receivingType, tokenEndpoint, preAuthCode, txCode)
-	}
+	accessToken, err := w.receiver.FetchAccessToken(receivingType, tokenEndpoint, preAuthCode, txCode, tokenReqOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch access token: %w", err)
 	}

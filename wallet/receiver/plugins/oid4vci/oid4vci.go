@@ -32,6 +32,8 @@ var nonceHTTPClient = &http.Client{
 
 const maxNonceResponseBodyBytes int64 = 4 << 10
 
+var oid4vciHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 // OID4VCICredentialFormatToSerializationFlavor maps OID4VCI credential format identifiers
 // to wallet serialization flavors.
 func OID4VCICredentialFormatToSerializationFlavor(format string) (credential.SupportedSerializationFlavor, error) {
@@ -67,20 +69,25 @@ func (o *Oid4vciReceiver) doRequest(method string, endpoint common.URIField, pat
 		}
 	}
 
-	var resp *http.Response
-	var err error
-
 	switch method {
 	case "GET":
-		resp, err = http.Get(endpointURL.String())
 	case "POST":
 		if body == nil {
 			return fmt.Errorf("POST request requires a body")
 		}
-		resp, err = http.Post(endpointURL.String(), "application/x-www-form-urlencoded", body)
 	default:
 		return fmt.Errorf("unsupported HTTP method: %s", method)
 	}
+
+	req, err := http.NewRequest(method, endpointURL.String(), body)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	if method == "POST" {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+
+	resp, err := oid4vciHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
@@ -128,21 +135,12 @@ func (o *Oid4vciReceiver) FetchAuthorizationServerMetadata(endpoint common.URIFi
 	return &metadata, nil
 }
 
-func firstTokenRequestOptions(options []*types.TokenRequestOptions) *types.TokenRequestOptions {
-	for _, opt := range options {
-		if opt != nil {
-			return opt
-		}
-	}
-	return nil
-}
-
 func (o *Oid4vciReceiver) FetchAccessToken(
 	receivingTypes types.SupportedReceivingTypes,
 	endpoint common.URIField,
 	authzCode string,
 	txCode string,
-	options ...*types.TokenRequestOptions,
+	opts ...types.TokenRequestOption,
 ) (*types.CredentialIssuanceAccessToken, error) {
 	if receivingTypes != types.Oid4vci {
 		return nil, fmt.Errorf("unsupported flavor: %v", receivingTypes)
@@ -153,17 +151,14 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	if txCode != "" {
 		formData.Set("tx_code", txCode)
 	}
-	endpointURL := url.URL(endpoint)
+	endpointURLString := types.ResolveTokenEndpointURL(endpoint)
+	endpointURL, err := url.Parse(endpointURLString)
+	if err != nil {
+		return nil, fmt.Errorf("invalid token endpoint URL: %w", err)
+	}
 
 	if !env.IsHTTPAllowed() && !strings.EqualFold(endpointURL.Scheme, "https") {
 		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
-	}
-
-	normalizedPath := strings.TrimRight(endpointURL.Path, "/")
-	if !strings.HasSuffix(normalizedPath, "/token") {
-		endpointURL = *endpointURL.JoinPath("token")
-	} else {
-		endpointURL.Path = normalizedPath
 	}
 
 	req, err := http.NewRequest(
@@ -178,12 +173,11 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	requestOptions := firstTokenRequestOptions(options)
-	if requestOptions != nil && requestOptions.DPoPProofJWT != nil && *requestOptions.DPoPProofJWT != "" {
-		req.Header.Set("DPoP", *requestOptions.DPoPProofJWT)
+	requestConfig := types.NewTokenRequestConfig(opts...)
+	if requestConfig.DPoPProof != "" {
+		req.Header.Set("DPoP", requestConfig.DPoPProof)
 	}
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := oid4vciHTTPClient.Do(req)
 
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -197,6 +191,10 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusBadRequest && isUseDPoPNonceError(bodyBytes) {
+			nonce := resp.Header.Get("DPoP-Nonce")
+			return nil, fmt.Errorf("server requires DPoP nonce (use_dpop_nonce), DPoP-Nonce: %q: %w", nonce, types.ErrTokenRequestFailed)
+		}
 		return nil, fmt.Errorf(
 			"unexpected status code: %d response: %s",
 			resp.StatusCode,
@@ -326,7 +324,7 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	req.ContentLength = int64(len(reqBodyBytes))
 
 	// Execute request
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := oid4vciHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

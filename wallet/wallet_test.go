@@ -107,10 +107,12 @@ func (c *captureDpopReceiver) FetchAuthorizationServerMetadata(endpoint common.U
 
 }
 
-func (c *captureDpopReceiver) FetchAccessToken(rt receiverTypes.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, options ...*receiverTypes.TokenRequestOptions) (*receiverTypes.CredentialIssuanceAccessToken, error) {
+func (c *captureDpopReceiver) FetchAccessToken(rt receiverTypes.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, opts ...receiverTypes.TokenRequestOption) (*receiverTypes.CredentialIssuanceAccessToken, error) {
 
-	if len(options) > 0 && options[0] != nil {
-		c.capturedProof = options[0].DPoPProofJWT
+	requestConfig := receiverTypes.NewTokenRequestConfig(opts...)
+	if requestConfig.DPoPProof != "" {
+		proof := requestConfig.DPoPProof
+		c.capturedProof = &proof
 	}
 	return &receiverTypes.CredentialIssuanceAccessToken{
 		Token:     "tok",
@@ -137,6 +139,10 @@ func (c *captureDpopReceiver) ReceiveCredential(
 
 // createTestControllerWithDefaults uses default configurations for integration testing
 func createTestControllerWithDefaults(t *testing.T) *Wallet {
+	tempConfigDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tempConfigDir)
+	t.Setenv("HOME", tempConfigDir)
+
 	controller, err := NewWallet()
 	if err != nil {
 		t.Fatalf("Failed to create controller with defaults: %v", err)
@@ -1533,6 +1539,65 @@ func TestController_requestCredential_DPoPAccessTokenRetriesWithNonceFromHeader(
 	require.NoError(t, err)
 	require.NotNil(t, credential)
 	assert.Equal(t, 2, credentialRequests)
+}
+
+func TestController_requestCredential_DPoPNonceError_NoNonceEndpoint(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	const accessTokenValue = "dpop-access-token"
+
+	var credentialRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/credential" {
+			http.NotFound(w, r)
+			return
+		}
+		credentialRequests++
+		if got := r.Header.Get("Authorization"); got != "DPoP "+accessTokenValue {
+			http.Error(w, "invalid authorization header: "+got, http.StatusBadRequest)
+			return
+		}
+		if got := r.Header.Get("DPoP"); got == "" {
+			http.Error(w, "missing DPoP header", http.StatusBadRequest)
+			return
+		}
+		mockserver.JSONResponse(w, http.StatusBadRequest, map[string]string{
+			"error": "use_dpop_nonce",
+		})
+	}))
+	defer server.Close()
+
+	credentialEndpoint, err := common.ParseURIField(server.URL + "/credential")
+	require.NoError(t, err)
+
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{
+		CredentialIssuer:   server.URL,
+		CredentialEndpoint: *credentialEndpoint,
+	}
+	offerURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           offerURL,
+			CredentialConfigurationIDs: []string{"test-config"},
+		},
+		Type: receiverTypes.Oid4vci,
+		Key:  newMockKeyEntry(),
+	}
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{
+		Token:     accessTokenValue,
+		TokenType: "DPoP",
+	}
+
+	credential, err := controller.requestCredential(req, issuerMetadata, accessToken)
+	require.Error(t, err)
+	require.Nil(t, credential)
+	assert.Contains(t, err.Error(), "failed to fetch DPoP nonce")
+	assert.Contains(t, err.Error(), "nonce endpoint")
+	assert.Equal(t, 1, credentialRequests)
 }
 
 func TestAccessTokenCredentialIdentifier(t *testing.T) {
