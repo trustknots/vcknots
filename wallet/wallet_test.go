@@ -121,6 +121,10 @@ func (c *captureDpopReceiver) FetchAccessToken(rt receiverTypes.SupportedReceivi
 
 }
 
+func (c *captureDpopReceiver) FetchNonce(rt receiverTypes.SupportedReceivingTypes, endpoint common.URIField) (*string, error) {
+	return nil, fmt.Errorf("unexpected call to FetchNonce")
+}
+
 func (c *captureDpopReceiver) ReceiveCredential(
 
 	rt receiverTypes.SupportedReceivingTypes,
@@ -977,6 +981,86 @@ func TestWallet_obtainAccessToken_DPoPEnabledControlsProof(t *testing.T) {
 
 }
 
+func TestWallet_obtainAccessToken_DPoPNonceChallengeRetriesWithNonce(t *testing.T) {
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	const (
+		dpopNonce        = "token-dpop-nonce"
+		accessTokenValue = "dpop-access-token"
+	)
+
+	var tokenRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/token" {
+			http.NotFound(w, r)
+			return
+		}
+		tokenRequests++
+		dpopProof := r.Header.Get("DPoP")
+		if dpopProof == "" {
+			http.Error(w, "missing DPoP header", http.StatusBadRequest)
+			return
+		}
+		payloadBytes, err := base64.RawURLEncoding.DecodeString(strings.Split(dpopProof, ".")[1])
+		if err != nil {
+			http.Error(w, "invalid DPoP payload", http.StatusBadRequest)
+			return
+		}
+		var payload map[string]interface{}
+		if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+			http.Error(w, "invalid DPoP payload json", http.StatusBadRequest)
+			return
+		}
+
+		if tokenRequests == 1 {
+			if _, exists := payload["nonce"]; exists {
+				http.Error(w, "first DPoP proof should not include nonce", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("DPoP-Nonce", dpopNonce)
+			w.Header().Set("WWW-Authenticate", `DPoP error="use_dpop_nonce"`)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if payload["nonce"] != dpopNonce {
+			http.Error(w, "retry DPoP proof missing nonce", http.StatusBadRequest)
+			return
+		}
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"access_token": accessTokenValue,
+			"token_type":   "DPoP",
+			"expires_in":   3600,
+		})
+	}))
+	defer server.Close()
+
+	tokenEndpoint, err := common.ParseURIField(server.URL + "/token")
+	require.NoError(t, err)
+	authMetadata := &receiverTypes.AuthorizationServerMetadata{
+		TokenEndpoint: tokenEndpoint,
+	}
+	dpopKey, err := newInMemoryECKeyEntry()
+	require.NoError(t, err)
+	d, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+	require.NoError(t, err)
+	w := &Wallet{
+		receiver: d,
+		dpop: DPoPConfig{
+			Enabled: true,
+			Key:     dpopKey,
+		},
+	}
+
+	token, err := w.obtainAccessToken(receiverTypes.Oid4vci, authMetadata, "pre-auth-code", "")
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	assert.Equal(t, accessTokenValue, token.Token)
+	assert.Equal(t, 2, tokenRequests)
+}
+
 func extractPayloadField(t *testing.T, compactJWT string, field string) any {
 	t.Helper()
 	parts := strings.Split(compactJWT, ".")
@@ -987,6 +1071,19 @@ func extractPayloadField(t *testing.T, compactJWT string, field string) any {
 	require.NoError(t, json.Unmarshal(b, &payload))
 	value, ok := payload[field]
 	require.True(t, ok, "field %q not found in payload", field)
+	return value
+}
+
+func extractHeaderField(t *testing.T, compactJWT string, field string) any {
+	t.Helper()
+	parts := strings.Split(compactJWT, ".")
+	require.Len(t, parts, 3)
+	b, err := base64.RawURLEncoding.DecodeString(parts[0])
+	require.NoError(t, err)
+	var header map[string]any
+	require.NoError(t, json.Unmarshal(b, &header))
+	value, ok := header[field]
+	require.True(t, ok, "field %q not found in header", field)
 	return value
 }
 
@@ -1431,6 +1528,12 @@ func TestController_requestCredential_DPoPAccessTokenRetriesWithNonceFromHeader(
 	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
 	env.SetHTTPAllowed(true)
+	dpopKey, err := newInMemoryECKeyEntry()
+	require.NoError(t, err)
+	controller.dpop = DPoPConfig{
+		Enabled: true,
+		Key:     dpopKey,
+	}
 
 	const (
 		accessTokenValue = "dpop-access-token"
@@ -1535,7 +1638,170 @@ func TestController_requestCredential_DPoPAccessTokenRetriesWithNonceFromHeader(
 		TokenType: "DPoP",
 	}
 
-	credential, err := controller.requestCredential(req, issuerMetadata, accessToken)
+	credential, err := controller.requestCredential(req, issuerMetadata, accessToken, "test-config", nil)
+	require.NoError(t, err)
+	require.NotNil(t, credential)
+	assert.Equal(t, 2, credentialRequests)
+}
+
+func TestController_requestCredential_DPoPAccessTokenUsesConfiguredDPoPKey(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	dpopKey, err := newInMemoryECKeyEntry()
+	require.NoError(t, err)
+	holderKey := newMockKeyEntry()
+	controller.dpop = DPoPConfig{
+		Enabled: true,
+		Key:     dpopKey,
+	}
+
+	const accessTokenValue = "dpop-access-token"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/credential" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "DPoP "+accessTokenValue {
+			http.Error(w, "invalid authorization header: "+got, http.StatusBadRequest)
+			return
+		}
+		dpopProof := r.Header.Get("DPoP")
+		if dpopProof == "" {
+			http.Error(w, "missing DPoP header", http.StatusBadRequest)
+			return
+		}
+		jwk, ok := extractHeaderField(t, dpopProof, "jwk").(map[string]any)
+		require.True(t, ok)
+		if got := jwk["kid"]; got != dpopKey.ID() {
+			http.Error(w, fmt.Sprintf("DPoP proof kid = %v", got), http.StatusBadRequest)
+			return
+		}
+
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"credentials": []map[string]string{{
+				"credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
+			}},
+		})
+	}))
+	defer server.Close()
+
+	credentialEndpoint, err := common.ParseURIField(server.URL + "/credential")
+	require.NoError(t, err)
+	offerURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           offerURL,
+			CredentialConfigurationIDs: []string{"test-config"},
+		},
+		Type: receiverTypes.Oid4vci,
+		Key:  holderKey,
+	}
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{
+		Token:     accessTokenValue,
+		TokenType: "DPoP",
+	}
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{
+		CredentialIssuer:   server.URL,
+		CredentialEndpoint: *credentialEndpoint,
+	}
+
+	credential, err := controller.requestCredential(req, issuerMetadata, accessToken, "test-config", nil)
+	require.NoError(t, err)
+	require.NotNil(t, credential)
+}
+
+func TestController_requestCredential_DPoPNonceChallengeUsesResponseHeader(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+	dpopKey, err := newInMemoryECKeyEntry()
+	require.NoError(t, err)
+	controller.dpop = DPoPConfig{
+		Enabled: true,
+		Key:     dpopKey,
+	}
+
+	const (
+		accessTokenValue = "dpop-access-token"
+		dpopNonce        = "credential-dpop-nonce"
+	)
+
+	var credentialRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/credential" {
+			http.NotFound(w, r)
+			return
+		}
+		credentialRequests++
+		dpopProof := r.Header.Get("DPoP")
+		if dpopProof == "" {
+			http.Error(w, "missing DPoP header", http.StatusBadRequest)
+			return
+		}
+		payloadBytes, err := base64.RawURLEncoding.DecodeString(strings.Split(dpopProof, ".")[1])
+		if err != nil {
+			http.Error(w, "invalid DPoP payload", http.StatusBadRequest)
+			return
+		}
+		var payload map[string]interface{}
+		if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+			http.Error(w, "invalid DPoP payload json", http.StatusBadRequest)
+			return
+		}
+
+		if credentialRequests == 1 {
+			if _, exists := payload["nonce"]; exists {
+				http.Error(w, "first DPoP proof should not include nonce", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("DPoP-Nonce", dpopNonce)
+			w.Header().Set("WWW-Authenticate", `DPoP error="use_dpop_nonce"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		if payload["nonce"] != dpopNonce {
+			http.Error(w, "retry DPoP proof missing nonce", http.StatusBadRequest)
+			return
+		}
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"credentials": []map[string]string{{
+				"credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
+			}},
+		})
+	}))
+	defer server.Close()
+
+	credentialEndpoint, err := common.ParseURIField(server.URL + "/credential")
+	require.NoError(t, err)
+	offerURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           offerURL,
+			CredentialConfigurationIDs: []string{"test-config"},
+		},
+		Type: receiverTypes.Oid4vci,
+		Key:  newMockKeyEntry(),
+	}
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{
+		Token:     accessTokenValue,
+		TokenType: "DPoP",
+	}
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{
+		CredentialIssuer:   server.URL,
+		CredentialEndpoint: *credentialEndpoint,
+	}
+
+	credential, err := controller.requestCredential(req, issuerMetadata, accessToken, "test-config", nil)
 	require.NoError(t, err)
 	require.NotNil(t, credential)
 	assert.Equal(t, 2, credentialRequests)
@@ -1546,6 +1812,12 @@ func TestController_requestCredential_DPoPNonceError_NoNonceEndpoint(t *testing.
 	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
 	env.SetHTTPAllowed(true)
+	dpopKey, err := newInMemoryECKeyEntry()
+	require.NoError(t, err)
+	controller.dpop = DPoPConfig{
+		Enabled: true,
+		Key:     dpopKey,
+	}
 
 	const accessTokenValue = "dpop-access-token"
 
@@ -1592,7 +1864,7 @@ func TestController_requestCredential_DPoPNonceError_NoNonceEndpoint(t *testing.
 		TokenType: "DPoP",
 	}
 
-	credential, err := controller.requestCredential(req, issuerMetadata, accessToken)
+	credential, err := controller.requestCredential(req, issuerMetadata, accessToken, "test-config", nil)
 	require.Error(t, err)
 	require.Nil(t, credential)
 	assert.Contains(t, err.Error(), "failed to fetch DPoP nonce")

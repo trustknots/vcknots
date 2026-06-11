@@ -191,9 +191,8 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusBadRequest && isUseDPoPNonceError(bodyBytes) {
-			nonce := resp.Header.Get("DPoP-Nonce")
-			return nil, fmt.Errorf("server requires DPoP nonce (use_dpop_nonce), DPoP-Nonce: %q: %w", nonce, types.ErrTokenRequestFailed)
+		if isUseDPoPNonceResponse(resp, bodyBytes) {
+			return nil, types.NewDPoPNonceError(resp.Header.Get("DPoP-Nonce"), types.ErrTokenRequestFailed)
 		}
 		return nil, fmt.Errorf(
 			"unexpected status code: %d response: %s",
@@ -336,8 +335,14 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	}
 
 	if resp.StatusCode != 200 {
-		if isUseDPoPNonceError(bodyBytes) {
-			return nil, fmt.Errorf("%w; status: %d; endpoint: %s; response: %s", types.ErrUseDPoPNonce, resp.StatusCode, endpointURL.String(), string(bodyBytes))
+		if isUseDPoPNonceResponse(resp, bodyBytes) {
+			return nil, fmt.Errorf(
+				"%w; status: %d; endpoint: %s; response: %s",
+				types.NewDPoPNonceError(resp.Header.Get("DPoP-Nonce"), types.ErrUseDPoPNonce),
+				resp.StatusCode,
+				endpointURL.String(),
+				string(bodyBytes),
+			)
 		}
 		return nil, fmt.Errorf("failed to receive credential; status: %d; endpoint: %s; response: %s", resp.StatusCode, endpointURL.String(), string(bodyBytes))
 	}
@@ -419,4 +424,11 @@ func isUseDPoPNonceError(bodyBytes []byte) bool {
 		return false
 	}
 	return errorResponse.Error == "use_dpop_nonce"
+}
+
+func isUseDPoPNonceResponse(resp *http.Response, bodyBytes []byte) bool {
+	if isUseDPoPNonceError(bodyBytes) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(resp.Header.Get("WWW-Authenticate")), "use_dpop_nonce")
 }

@@ -58,6 +58,45 @@ func NewReceiverError(protocol SupportedReceivingTypes, endpoint, op string, err
 	}
 }
 
+type DPoPNonceError struct {
+	Nonce string
+	Err   error
+}
+
+func NewDPoPNonceError(nonce string, err error) *DPoPNonceError {
+	if err == nil {
+		err = ErrUseDPoPNonce
+	}
+	return &DPoPNonceError{
+		Nonce: strings.TrimSpace(nonce),
+		Err:   err,
+	}
+}
+
+func (e *DPoPNonceError) Error() string {
+	message := fmt.Sprintf("%s (use_dpop_nonce)", e.Err)
+	if e.Nonce == "" {
+		return message
+	}
+	return fmt.Sprintf("%s, DPoP-Nonce: %q", message, e.Nonce)
+}
+
+func (e *DPoPNonceError) Unwrap() error {
+	return e.Err
+}
+
+func (e *DPoPNonceError) Is(target error) bool {
+	return target == ErrUseDPoPNonce
+}
+
+func DPoPNonceFromError(err error) (string, bool) {
+	var nonceErr *DPoPNonceError
+	if errors.As(err, &nonceErr) {
+		return nonceErr.Nonce, true
+	}
+	return "", false
+}
+
 type SupportedReceivingTypes int
 
 const (

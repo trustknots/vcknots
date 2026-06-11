@@ -105,6 +105,12 @@ type DPoPConfig struct {
 	Key     IKeyEntry
 }
 
+var dpopNonceHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
+const maxDPoPNonceResponseBodyBytes int64 = 4 << 10
+
 // NewWallet creates a Wallet with default dispatcher configurations.
 //
 // This initializes all dispatcher components with their built-in plugin implementations:
@@ -900,21 +906,31 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 
 	tokenEndpoint := *authMetadata.TokenEndpoint
 
-	var tokenReqOptions []receiverTypes.TokenRequestOption
-	if w.dpop.Enabled {
-		proof, err := w.generateDPoPProof(
-			w.dpop.Key,
-			http.MethodPost,
-			receiverTypes.ResolveTokenEndpointURL(tokenEndpoint),
-			"",
-			nil,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate DPoP proof: %w", err)
+	fetchAccessToken := func(dpopNonce *string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
+		var tokenReqOptions []receiverTypes.TokenRequestOption
+		if w.dpop.Enabled {
+			proof, err := w.generateDPoPProof(
+				w.dpop.Key,
+				http.MethodPost,
+				receiverTypes.ResolveTokenEndpointURL(tokenEndpoint),
+				"",
+				dpopNonce,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate DPoP proof: %w", err)
+			}
+			tokenReqOptions = append(tokenReqOptions, receiverTypes.WithDPoPProof(proof))
 		}
-		tokenReqOptions = append(tokenReqOptions, receiverTypes.WithDPoPProof(proof))
+
+		return w.receiver.FetchAccessToken(receivingType, tokenEndpoint, preAuthCode, txCode, tokenReqOptions...)
 	}
-	accessToken, err := w.receiver.FetchAccessToken(receivingType, tokenEndpoint, preAuthCode, txCode, tokenReqOptions...)
+
+	accessToken, err := fetchAccessToken(nil)
+	if err != nil && w.dpop.Enabled {
+		if dpopNonce, ok := receiverTypes.DPoPNonceFromError(err); ok && dpopNonce != "" {
+			accessToken, err = fetchAccessToken(&dpopNonce)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch access token: %w", err)
 	}
@@ -998,18 +1014,18 @@ func (w *Wallet) fetchDPoPNonce(issuerMetadata *receiverTypes.CredentialIssuerMe
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := nonceHTTPClient.Do(req)
+	resp, err := dpopNonceHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch DPoP nonce: %w", err)
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxNonceResponseBodyBytes+1))
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxDPoPNonceResponseBodyBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read DPoP nonce response: %w", err)
 	}
-	if int64(len(bodyBytes)) > maxNonceResponseBodyBytes {
-		return nil, fmt.Errorf("DPoP nonce endpoint response exceeds %d bytes", maxNonceResponseBodyBytes)
+	if int64(len(bodyBytes)) > maxDPoPNonceResponseBodyBytes {
+		return nil, fmt.Errorf("DPoP nonce endpoint response exceeds %d bytes", maxDPoPNonceResponseBodyBytes)
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
@@ -1090,7 +1106,10 @@ func (w *Wallet) requestCredential(
 	receiveCredential := func(dpopNonce *string) (*string, error) {
 		var options *receiverTypes.CredentialRequestOptions
 		if strings.EqualFold(accessToken.TokenType, "DPoP") {
-			dpopProof, err := w.generateDPoPProof(req.Key, http.MethodPost, issuerMetadata.CredentialEndpoint.String(), accessToken.Token, dpopNonce)
+			if w.dpop.Key == nil {
+				return nil, fmt.Errorf("dpop key is required for DPoP access token")
+			}
+			dpopProof, err := w.generateDPoPProof(w.dpop.Key, http.MethodPost, issuerMetadata.CredentialEndpoint.String(), accessToken.Token, dpopNonce)
 			if err != nil {
 				return nil, fmt.Errorf("failed to generate DPoP proof: %w", err)
 			}
@@ -1113,11 +1132,15 @@ func (w *Wallet) requestCredential(
 
 	credentialJWT, err := receiveCredential(nil)
 	if err != nil && strings.EqualFold(accessToken.TokenType, "DPoP") && errors.Is(err, receiverTypes.ErrUseDPoPNonce) {
-		dpopNonce, nonceErr := w.fetchDPoPNonce(issuerMetadata)
-		if nonceErr != nil {
-			return nil, fmt.Errorf("failed to fetch DPoP nonce: %w", nonceErr)
+		dpopNonce, hasNonce := receiverTypes.DPoPNonceFromError(err)
+		if !hasNonce || dpopNonce == "" {
+			fetchedNonce, nonceErr := w.fetchDPoPNonce(issuerMetadata)
+			if nonceErr != nil {
+				return nil, fmt.Errorf("failed to fetch DPoP nonce: %w", nonceErr)
+			}
+			dpopNonce = *fetchedNonce
 		}
-		credentialJWT, err = receiveCredential(dpopNonce)
+		credentialJWT, err = receiveCredential(&dpopNonce)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive credential: %w", err)
