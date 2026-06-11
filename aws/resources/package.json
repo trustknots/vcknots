@@ -1,0 +1,24 @@
+{
+  "name": "resources",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.161",
+    "@types/node": "^24.12.4",
+    "aws-cdk": "2.1126.0",
+    "esbuild": "^0.27.3",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "@trustknots/server-core": "workspace:*",
+    "@trustknots/vcknots": "workspace:*",
+    "aws-cdk-lib": "^2.258.1",
+    "constructs": "^10.6.0",
+    "hono": "4.11.4"
+  }
+}

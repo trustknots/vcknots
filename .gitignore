@@ -2,6 +2,7 @@
 /dist
 
 node_modules/
+.pnpm-store/
 
 # Logs
 logs
@@ -59,3 +60,4 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 GEMINI.md
+.claude
