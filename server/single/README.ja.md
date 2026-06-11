@@ -53,11 +53,9 @@ single/
    # PORT: サーバーのポート番号（デフォルト: 8080）
    # PRIVATE_KEY_PATH: 秘密鍵ファイルのパス（デフォルト: ../samples/certificate-openid-test/private_key_openid.pem）
    # CERTIFICATE_PATH: 証明書ファイルのパス（デフォルト: ../samples/certificate-openid-test/certificate_openid.pem）
-   # DPOP_MODE: DPoP 設定（off, optional, required）
-   # off: DPoP を利用しない（token / credential とも DPoP を要求しない）
-   # optional: token で DPoP ヘッダーがあるときは proof を検証し DPoP-bound access token を発行。credential は送信者拘束のないトークンは Bearer のみ可。cnf.jkt 付きトークンは Authorization: DPoP + DPoP ヘッダー必須
-   # required: token で DPoP ヘッダー必須。credential は常に Authorization: DPoP + DPoP ヘッダー必須（Bearer のみは不可）
    ```
+
+   DPoP の mode（`off` / `optional` / `required`）は、`server/samples/oauth-server.json` の `authorization_server.default_client` / `authorization_server.anonymous_client` で設定します。
 
 2. **依存関係のインストール**（ルートディレクトリで実行）
 
@@ -196,9 +194,9 @@ Authz metadata initialized
 
 クレデンシャルの発行
 
-**リクエストヘッダー（`DPOP_MODE` とトークンの種類に依存）:**
-- **Bearer:** `Authorization: Bearer {access_token}` — sender binding のないアクセストークン、`DPOP_MODE` が `required` でないときに利用。
-- **DPoP:** `Authorization: DPoP {access_token}` に加え、`DPoP: {compact_jwt}`（RFC 9449 の DPoP Proof）が必要 — `DPOP_MODE` が `required` のとき、またはトークンに `cnf.jkt` が含まれるとき（`optional` であっても Bearer のみでは不可）。
+**リクエストヘッダー（OAuth policy の DPoP mode とトークンの種類に依存）:**
+- **Bearer:** `Authorization: Bearer {access_token}` — sender binding のないアクセストークン、DPoP mode が `required` でないときに利用。
+- **DPoP:** `Authorization: DPoP {access_token}` に加え、`DPoP: {compact_jwt}`（RFC 9449 の DPoP Proof）が必要 — DPoP mode が `required` のとき、またはトークンに `cnf.jkt` が含まれるとき（`optional` であっても Bearer のみでは不可）。
 - エラー応答では `WWW-Authenticate: Bearer` または `WWW-Authenticate: DPoP` が返ることがあります（詳細は [Issuer ドキュメント](https://trustknots.github.io/vcknots/ja/docs/issuer) の credential endpoint / DPoP の節）。
 
 **リクエストボディ (JSON):**
@@ -254,7 +252,7 @@ nonce（c_nonce）の作成。OID4VCI の [nonce endpoint](https://openid.net/sp
 
 **レスポンスヘッダー:**
 - `Cache-Control: no-store` - キャッシュを無効化
-- `DPoP-Nonce: <nonce>` - `DPOP_MODE` が `off` 以外の場合に付与される DPoP 用 nonce
+- `DPoP-Nonce: <nonce>` - OAuth policy の DPoP mode が `off` 以外の場合に付与される DPoP 用 nonce
 
 **レスポンス:**
 - `200 OK` - `{ "c_nonce": string }`（nonce の有効期限は 2 分）
@@ -314,9 +312,9 @@ pre-authorized_code={pre_authorized_code}
 }
 ```
 
-`DPOP_MODE` は `@trustknots/server-core` 経由で、token endpoint と credential endpoint の両方の DPoP 挙動を制御します。
+DPoP mode は `server/samples/oauth-server.json` の OAuth policy と、`server/samples/oauth-clients.json` の client ごとの sender constraint 設定で決まります。Pre-Authorized Code の token request で `client_id` / `client_assertion` が無い場合は anonymous token request として扱い、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` のときだけ `anonymous_client` の policy を適用します。`default_client` は registered client に sender constraint 設定がない場合、および credential / nonce endpoint の既定値として使われます。
 
-| `DPOP_MODE` | token endpoint | credential endpoint |
+| DPoP mode | token endpoint | credential endpoint |
 |-------------|----------------|---------------------|
 | `off` | DPoP を利用せず、Bearer access token を発行します。 | DPoP を利用しません。`Authorization: DPoP` または `DPoP` ヘッダーは拒否します。 |
 | `optional` | `DPoP` ヘッダーがない場合は Bearer access token を発行します。`DPoP` ヘッダーがある場合は proof を検証し、DPoP-bound access token を発行します。 | sender binding のない token は `Authorization: Bearer` で利用できます。`cnf.jkt` 付き token は `Authorization: DPoP` と `DPoP` ヘッダーが必要です。 |
@@ -362,6 +360,100 @@ DPoP Proof の検証に成功した場合、`token_type` は `DPoP` になりま
   "access_token": "eyJ...",
   "token_type": "DPoP",
   "expires_in": 86400
+}
+```
+
+#### OAuth client と private_key_jwt
+
+OAuth client は `server/samples/oauth-clients.json` で管理します。token request body に `client_id` がある場合はその値を優先し、ない場合は `client_assertion` JWT の `iss` / `sub` から client_id を導出します。どちらからも client_id を得られない場合は anonymous token request として扱います。
+
+Pre-Authorized Code の anonymous token request は、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` のときだけ許可されます。未設定または `false` の場合は `invalid_client` を返します。許可された anonymous token request には、`authorization_server.anonymous_client` の policy を適用します。
+
+登録済み client の `token_endpoint_auth_method` が `private_key_jwt` の場合、token request には次のフォーム項目が必要です。
+
+```text
+client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+client_assertion=<compact JWT>
+```
+
+`private_key_jwt` の検証では、`iss` / `sub` が登録済み `client_id` と一致すること、`aud` が登録済み `client_assertion_audience` または Authorization Server の token endpoint / issuer と一致すること、`exp` / `iat` / `jti` が含まれること、`alg` が許可された非対称署名アルゴリズムであること、登録済み `jwks.keys` の公開鍵で署名検証できることを確認します。同じ `jti` の client assertion は再利用できません。
+
+client ごとの DPoP mode は、client 定義の `senderConstrainedAccessToken` で上書きできます。client 側に指定がない場合は `authorization_server.default_client` の policy を使います。認証済み client の `client_id` は、発行される access token payload に `client_id` として含まれます。
+
+#### OAuth policy / OAuth client 設定ファイル
+
+OAuth policy は `server/samples/oauth-server.json`、登録済み OAuth client は `server/samples/oauth-clients.json` で管理します。シングルサーバー起動時にこれらの JSON を読み込み、in-memory provider に登録します。
+`oauth-server.json` の内容は Authorization Server 全体の OAuth policy として provider に登録されます。
+`oauth-clients.json` の内容は登録済み OAuth client として provider に登録されます。
+
+##### `server/samples/oauth-server.json`
+
+`oauth-server.json` は Authorization Server 全体の既定 policy を定義します。
+
+| 項目 | 説明 |
+|---|---|
+| `authorization_server` | Authorization Server ごとの OAuth policy ルートです。 |
+| `authorization_server.default_client` | 登録済み client に `senderConstrainedAccessToken` がない場合に使う既定 policy です。credential / nonce endpoint の既定 DPoP policy としても使います。 |
+| `authorization_server.anonymous_client` | 許可された anonymous token request に使う anonymous client 用 policy です。Pre-Authorized Code の anonymous token request を許可するかどうかは、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` で判定します。 |
+| `senderConstrainedAccessToken` | access token の sender constraint 方針です。 |
+| `senderConstrainedAccessToken.method` | sender constraint 方式です。`none` / `dpop` / `mtls` を指定できます。`resolveAuthzPolicyDpopMode` では、`method` が `none` または `mtls` のときは `dpop.mode` に関わらず `off` になります。`dpop` または未指定のときは `dpop.mode`（`off` / `optional` / `required`）を参照します。`mtls` は mTLS 本体は未実装の予約値です。 |
+| `senderConstrainedAccessToken.dpop.mode` | DPoP mode です。`off` / `optional` / `required` を指定します。現行実装では token endpoint と credential endpoint に同じ値が適用されます。 |
+| `comment` | サンプル説明用のコメントです。制御ロジックには使いません。 |
+
+policy の適用順は次の通りです。
+
+1. Pre-Authorized Code の token request に `client_id` も `client_assertion` もない場合は、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` のときだけ `authorization_server.anonymous_client` を使います。未設定または `false` の場合は `invalid_client` です。
+2. 登録済み client に `senderConstrainedAccessToken` がある場合は、client 固有の policy を使います。
+3. 登録済み client に `senderConstrainedAccessToken` がない場合は、`authorization_server.default_client` を使います。
+
+##### `server/samples/oauth-clients.json`
+
+`oauth-clients.json` は token endpoint で参照する登録済み OAuth client を定義します。
+
+| 項目 | 説明 |
+|---|---|
+| `clients[]` | 登録済み OAuth client の一覧です。 |
+| `client_id` | client identifier です。token request body の `client_id`、または `client_assertion` JWT の `iss` / `sub` と照合します。 |
+| `client_name` | 表示・説明用の名称です。 |
+| `token_endpoint_auth_method` | token endpoint の client authentication 方式です。未指定時は `none` として扱います。現行実装では `private_key_jwt` と `none` を扱い、それ以外の方式は `invalid_client` として未実装エラーになります。 |
+| `token_endpoint_auth_signing_alg` | `private_key_jwt` の JOSE header `alg` と照合する client 固有の署名アルゴリズムです。 |
+| `client_assertion_audience` | `client_assertion` JWT の `aud` と照合する値です。未指定時は Authorization Server metadata の `token_endpoint` と issuer を期待値として使います。 |
+| `jwks.keys` | `private_key_jwt` の署名検証に使う登録済み公開鍵です。秘密鍵はここに置きません。 |
+| `jwks_uri` | client の JWKS URI です。現行の `private_key_jwt` 検証ではリモート取得せず、`jwks.keys` を使います。鍵ローテーション向けの登録情報として扱います。 |
+| `allowed_grant_types` | client が利用できる grant type の登録情報です。現行実装では token endpoint の grant type 制御としては enforcement していません。 |
+| `senderConstrainedAccessToken` | client 固有の sender constraint policy です。指定した場合は `authorization_server.default_client` より優先します。 |
+| `senderConstrainedAccessToken.method` | client 固有の sender constraint 方式です。`none` / `dpop` / `mtls` を指定できます。DPoP mode の解決ルールは `oauth-server.json` の `senderConstrainedAccessToken.method` と同じです。 |
+| `senderConstrainedAccessToken.dpop.mode` | client 固有の DPoP mode です。`off` / `optional` / `required` を指定します。現行実装では token endpoint と credential endpoint に同じ値が適用されます。 |
+| `enabled` | `false` の場合、provider から取得されず無効 client として扱われます。未指定または `true` の場合は有効です。 |
+| `comment` | サンプル説明用のコメントです。制御ロジックには使いません。 |
+
+`private_key_jwt` client の最小構成例です。
+
+```json
+{
+  "client_id": "https://wallet.example.com",
+  "token_endpoint_auth_method": "private_key_jwt",
+  "token_endpoint_auth_signing_alg": "ES256",
+  "client_assertion_audience": "https://authz.example.com",
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "crv": "P-256",
+        "kid": "wallet-es256-2026-01",
+        "alg": "ES256",
+        "x": "...",
+        "y": "..."
+      }
+    ]
+  },
+  "senderConstrainedAccessToken": {
+    "method": "dpop",
+    "dpop": {
+      "mode": "required"
+    }
+  },
+  "enabled": true
 }
 ```
 

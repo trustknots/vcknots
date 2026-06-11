@@ -164,7 +164,7 @@ type SenderConstraintMethod = 'none' | 'dpop' | 'mtls'
 
 #### dpop.mode
 
-Specifies the DPoP enforcement level.  
+Specifies the DPoP enforcement level.
 For details, see [5. Access Token Issuance](#5-access-token-issuance).
 
 ## 3. Sample Implementation of the Issuer Feature
@@ -683,7 +683,25 @@ Endpoint to issue an access token:
 
 ```typescript
 app.post('/token', async (c) => {
-  const dpopMode = resolveDpopMode(context.options)
+  const request = await c.req.formData()
+  const requestData = Object.fromEntries(request.entries())
+  const issuer = AuthorizationServerIssuer(baseUrl)
+
+  const clientResolution = await authzFlow.resolveTokenRequestClientPolicy(
+    issuer,
+    requestData
+  )
+  if (!clientResolution.ok) {
+    return c.json(
+      {
+        error: clientResolution.error,
+        error_description: clientResolution.error_description,
+      },
+      400
+    )
+  }
+
+  const dpopMode = clientResolution.dpopMode
   const dpopProof = parseDpopHeader(c.req.header('DPoP'))
 
   if (
@@ -704,20 +722,6 @@ app.post('/token', async (c) => {
     )
   }
 
-  const request = await c.req.formData().catch(() => null)
-  if (!request) {
-    return c.json(
-      {
-        error: 'invalid_request',
-        error_description: 'Request body must be a valid form data.',
-      },
-      400
-    )
-  }
-  const requestData: Record<string, string | File | number> = Object.fromEntries(
-    request.entries()
-  )
-
   const parseResult = AuthzTokenRequest.schema.safeParse(requestData)
   if (!parseResult.success) {
     return c.json(
@@ -729,9 +733,8 @@ app.post('/token', async (c) => {
     )
   }
   const tokenRequest = parseResult.data
-  const issuer = AuthorizationServerIssuer(baseUrl)
-
   const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
+    clientId: clientResolution.clientId,
     ...(dpopMode !== 'off' && dpopProof.ok
       ? {
           dpopProof: {
@@ -748,6 +751,28 @@ app.post('/token', async (c) => {
 ```
 
 The **request body is `application/x-www-form-urlencoded`** (`AuthzTokenRequest` is built from form fields). For the full handler—including branches such as **`invalid_dpop_proof`** (`invalid_dpop_proof`) and **`use_dpop_nonce`** (with a **`DPoP-Nonce`** header)—see [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts).
+
+#### Client authentication with private_key_jwt
+
+At the token endpoint, registered OAuth clients from `server/samples/oauth-clients.json` are used to verify RFC 7523 JWT bearer client authentication when `token_endpoint_auth_method` is `private_key_jwt`.
+
+For field-level documentation of `oauth-server.json` and `oauth-clients.json`, see "OAuth policy / OAuth client configuration files" in [server/single/README.md](https://github.com/trustknots/vcknots/blob/main/server/single/README.md).
+
+The client is resolved in this order:
+
+1. If the token request body contains `client_id`, that value is used first.
+2. If `client_id` is omitted, the client id is derived from the `client_assertion` JWT `iss` / `sub`.
+3. If neither source yields a client id, the request is treated as an anonymous token request.
+
+For an anonymous Pre-Authorized Code token request, the `anonymous_client` policy is applied only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. If it is omitted or `false`, anonymous access is not allowed and the request fails with `invalid_client`.
+
+If a client id can be resolved but no registered client exists, the request fails with `invalid_client`. For clients registered with `token_endpoint_auth_method: "private_key_jwt"`, the server verifies that `client_assertion_type` is `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`, that `client_assertion` is a compact JWT, that `iss` / `sub` match the registered `client_id`, and that `aud` matches the registered `client_assertion_audience` or the Authorization Server token endpoint / issuer.
+
+The server also requires and validates `exp`, `iat`, and `jti`; if `nbf` is present, it must be within the allowed clock-skew window. `iat` / `nbf` are constrained according to the FAPI 2.0 Security Profile clock-skew requirements. The `jti` is stored per client and reused client assertions are rejected.
+
+The JOSE header `alg` must not be `none` or an `HS*` algorithm. If the Authorization Server metadata has `token_endpoint_auth_signing_alg_values_supported`, the assertion algorithm must be included in that list. If the client registration has `token_endpoint_auth_signing_alg`, the JWT header `alg` must match it. The signature is verified with a public key from the registered client's `jwks.keys`.
+
+The authenticated client id is included in the issued access token payload as `client_id`. When DPoP is also used, private_key_jwt client authentication and DPoP Proof verification are performed independently.
 
 **Example**:
 
@@ -772,7 +797,7 @@ curl -X POST http://localhost:8080/token \
 
 #### Token requests with DPoP Proof
 
-`oauth.senderConstrainedAccessToken.dpop.mode` controls DPoP Proof verification at the token endpoint.
+The Authorization Server OAuth policy controls DPoP Proof verification at the token endpoint.
 
 | mode | Token endpoint behavior |
 |------|--------------------------|
@@ -818,21 +843,9 @@ This endpoint corresponds to the OID4VCI [nonce endpoint](https://openid.net/spe
 
 When `nonce_endpoint` is set in the Issuer metadata, the Wallet references the nonce endpoint URL via the metadata obtained from `/.well-known/openid-credential-issuer`.
 
-If you also want to return a DPoP nonce, configure `oauth.senderConstrainedAccessToken.dpop.mode` in the server settings.
+Configure the DPoP mode using both the OAuth policy in `server/samples/oauth-server.json` and sender constraint settings on registered OAuth clients. Pre-Authorized Code token requests without `client_id` / `client_assertion` are treated as anonymous token requests and use the `anonymous_client` policy only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. Registered clients without sender constraint settings use the `default_client` policy.
 
-```typescript
-const context = initializeContext({
-  oauth: {
-    senderConstrainedAccessToken: {
-      dpop: {
-        mode: 'optional', // 'off' | 'optional' | 'required'
-      },
-    },
-  },
-})
-```
-
-When `mode !== 'off'`, `POST /nonce` returns a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values.
+When the OAuth policy DPoP mode is not `off`, `POST /nonce` returns a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values.
 
 `c_nonce` is used for credential proofs. `DPoP-Nonce` is used for DPoP Proofs presented to the token endpoint. Since they have different purposes, their TTLs can be configured separately.
 
@@ -844,7 +857,11 @@ app.post('/nonce', async (c) => {
     const C_NONCE_TTL_MS = 2 * 60 * 1000  // 2 minutes
     const DPOP_NONCE_TTL_MS = 5 * 60 * 1000  // 5 minutes
     const cnonce = await issuerFlow.createNonce(C_NONCE_TTL_MS)
-    const dpopMode = resolveDpopMode(context.options)
+    const dpopMode = await resolveAuthzPolicyDpopMode(
+      authzFlow,
+      AuthorizationServerIssuer(baseUrl),
+      'default_client'
+    )
     c.header('Cache-Control', 'no-store')
     if (dpopMode !== 'off') {
       const dpopNonce = await issuerFlow.createNonce(DPOP_NONCE_TTL_MS)
@@ -880,7 +897,7 @@ Content-Type: application/json
 }
 ```
 
-If `oauth.senderConstrainedAccessToken.dpop.mode` is `off`, the `DPoP-Nonce` header is not returned.
+If the OAuth policy DPoP mode is `off`, the `DPoP-Nonce` header is not returned.
 
 **Implementation example**:
 
@@ -973,7 +990,7 @@ Endpoint to issue a credential:
 
 #### DPoP-bound access token verification at the credential endpoint
 
-`oauth.senderConstrainedAccessToken.dpop.mode` controls how the access token and DPoP Proof are handled at the credential endpoint.
+The OAuth policy DPoP mode controls how the access token and DPoP Proof are handled at the credential endpoint.
 
 | mode | Credential endpoint behavior |
 |------|------------------------------|
@@ -995,6 +1012,8 @@ Because the credential endpoint acts as a resource server, when a DPoP-bound acc
 - **`cnf.jkt`** on the access token must match the JWK thumbprint from the DPoP Proof **`jwk`**.
 - **`jti`** values are tracked to reject replay of the same DPoP Proof.
 - By default **`iat`** is considered valid within **`maxTokenAge` 300 seconds** and **`clockTolerance` 60 seconds** (issuer+verifier DPoP proof provider; factory options can change this).
+
+For credential proof JWTs, `iss` is not always omitted just because the access token was obtained through the Pre-Authorized Code Flow. When the token endpoint issues an access token through anonymous access, the access token has no `client_id`, so the proof JWT must omit `iss`. When the access token was obtained as a registered OAuth client, the access token carries `client_id`; pass that value as `proofJwt.clientId` to `issueCredential`. If the proof JWT includes `iss` in that case, it must match that `client_id`.
 
 If the DPoP Proof is invalid, the credential endpoint responds with **`401 Unauthorized`** and **`WWW-Authenticate: DPoP`**. For **`invalid_token`** issues (JWT shape/signature/`issuer` mismatch, etc.), the response is also **401**, with **`WWW-Authenticate: Bearer`** (`realm`, `error="invalid_token"`, etc.).
 
@@ -1032,7 +1051,7 @@ app.post('/credentials', async (c) => {
   try {
     const issuer = CredentialIssuer(baseUrl)
     const authz = AuthorizationServerIssuer(baseUrl)
-    const dpopMode = resolveDpopMode(context.options)
+    const dpopMode = await resolveAuthzPolicyDpopMode(authzFlow, authz, 'default_client')
     const realm = baseUrl
 
     const hasCnfJkt = (payload: unknown): boolean => {
@@ -1180,6 +1199,12 @@ app.post('/credentials', async (c) => {
       throw err
     }
 
+    const accessTokenClientId =
+      typeof accessTokenPayload.client_id === 'string' &&
+      accessTokenPayload.client_id.trim().length > 0
+        ? accessTokenPayload.client_id.trim()
+        : undefined
+
     const request = await c.req.json().catch(() => null)
     if (!request) {
       return c.json(
@@ -1226,7 +1251,10 @@ app.post('/credentials', async (c) => {
         degree: '5',
         gpa: 'test',
       },
-      proofJwt: { usePreAuth: true },
+      proofJwt: {
+        usePreAuth: true,
+        clientId: accessTokenClientId,
+      },
     })
     return c.json(credential)
   } catch (err) {
@@ -1453,7 +1481,8 @@ For the type definition of the credential response, see [issuer+verifier/src/cre
 
 **JWT credential proofs (`proofs.jwt`)**
 
-- **Pre-authorized code flow**: use `proofJwt: { usePreAuth: true }`. The proof JWT must **not** carry an **`iss`** claim.
+- **Pre-authorized code flow with an anonymous access token**: use `proofJwt: { usePreAuth: true }`. Because the access token has no `client_id`, the proof JWT must **not** carry an **`iss`** claim.
+- **Pre-authorized code flow with an access token obtained as a registered OAuth client**: use `proofJwt: { usePreAuth: true, clientId: '<client_id from the access token>' }`. If the proof JWT includes `iss`, it must match that `clientId`.
 - **Authorization code flow**: Not supported.
 
 #### JWT proof JOSE protected header
@@ -1502,7 +1531,9 @@ type IssueOptions = {
   subject?: string
   /** Used for JWT proof `iss` validation etc., depending on how the access token was obtained */
   proofJwt?: {
+    /** true when the grant type is pre-authorized_code; anonymous access is represented by omitting clientId. */
     usePreAuth: boolean
+    /** client_id from the access token, or the client_id for a normal OAuth client context */
     clientId?: string
   }
 }
@@ -1566,12 +1597,31 @@ createAccessToken<T extends GrantType>(
   type TokenRequestOptions = {
     [GrantType.AuthorizationCode]: {
       // The authorization code flow is not supported yet
+      alg?: string
+      clientId?: string
+      dpopProof?: {
+        proofJwt: string
+        htm: string
+        htu: string
+        nonceRequired?: boolean
+      }
     }
     [GrantType.PreAuthorizedCode]: {
       ttlSec?: number
+      alg?: string
+      clientId?: string
+      dpopProof?: {
+        proofJwt: string
+        htm: string
+        htu: string
+        nonceRequired?: boolean
+      }
     }
   }
   ```
+
+  - `clientId`: Authenticated OAuth client id. When set, it is included in the issued access token payload as `client_id`.
+  - `dpopProof`: DPoP Proof verification data used to issue a DPoP-bound access token. When verification succeeds, the access token payload includes `cnf.jkt` and the response `token_type` is `DPoP`.
 
 **Return value**: The access token is returned in the following format:
 ```typescript
@@ -1582,6 +1632,8 @@ createAccessToken<T extends GrantType>(
   expires_in: option?.ttlSec ?? 86400
 }
 ```
+
+When `clientId` is set, the access token payload includes `client_id`. When `dpopProof` is provided and verification succeeds, the payload includes `cnf.jkt` and `token_type` becomes `DPoP`.
 
 **Error cases**:
 - `provider_not_found`: An unsupported algorithm is configured for the private key
@@ -1602,13 +1654,33 @@ The definition is as follows.
 ```typescript
 type TokenRequestOptions = {
   [GrantType.AuthorizationCode]: {
-    //TODO: Implement options for authorization code flow
+    // The authorization code flow is not supported yet
+    alg?: string
+    clientId?: string
+    dpopProof?: {
+      proofJwt: string
+      htm: string
+      htu: string
+      nonceRequired?: boolean
+    }
   }
   [GrantType.PreAuthorizedCode]: {
     ttlSec?: number
+    alg?: string
+    clientId?: string
+    dpopProof?: {
+      proofJwt: string
+      htm: string
+      htu: string
+      nonceRequired?: boolean
+    }
   }
 }
 ```
+
+- `clientId`: Authenticated OAuth client id. When set, it is included in the issued access token payload as `client_id`.
+- `dpopProof`: DPoP Proof verification data used to issue a DPoP-bound access token. When verification succeeds, the access token payload includes `cnf.jkt` and the response `token_type` is `DPoP`.
+- `ttlSec`: Access token lifetime in seconds for the Pre-Authorized Code flow. When omitted, the default value is used.
 
 
 ### verifyAccessToken
@@ -1644,11 +1716,11 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 
 ### Common issues
 
-- **Q: Metadata validation error**  
+- **Q: Metadata validation error**
   - **A:** Check that the provided metadata conforms to the CredentialIssuerMetadata schema and the AuthorizationServerMetadata schema.
 
-- **Q: Error when creating credential offer**: `unsupported_grant_type`  
+- **Q: Error when creating credential offer**: `unsupported_grant_type`
   - **A:** Make sure you are not calling an unimplemented flow. Currently, only the pre-authorized code flow is supported.
 
-- **Q: Error when issuing credential**: `invalid_proof`  
+- **Q: Error when issuing credential**: `invalid_proof`
   - **A:** Check that the header of proof.jwt in the credential request includes a kid. Also verify that the `nonce` in the proof is valid.

@@ -1,18 +1,23 @@
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it, mock } from 'node:test'
 import base64url from 'base64url'
-import { generateKeyPair, SignJWT } from 'jose'
+import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
 } from '../src/authorization-server.types'
 import { AuthzFlow, initializeAuthzFlow } from '../src/authz.flows'
+import { AuthzOAuthClient } from '../src/authz-oauth-client.types'
+import { AuthzOAuthPolicy } from '../src/authz-oauth-policy.types'
 import { PreAuthorizedCode } from '../src/pre-authorized-code.types'
 import {
   AccessTokenProvider,
+  AuthzOAuthClientStoreProvider,
+  AuthzOAuthPolicyStoreProvider,
   AuthzServerMetadataStoreProvider,
   DPoPProofJtiStoreProvider,
   DPoPProofProvider,
+  OAuthClientAssertionJtiStoreProvider,
   AuthzSignatureKeyStoreProvider,
   NonceProvider,
   NonceStoreProvider,
@@ -33,6 +38,22 @@ describe('AuthzFlows', () => {
     fetch: mock.fn(),
     save: mock.fn(),
   } satisfies AuthzServerMetadataStoreProvider
+
+  const mockAuthzOAuthPolicyStoreProvider = {
+    kind: 'authz-oauth-policy-store-provider',
+    name: 'mock-authz-oauth-policy-store-provider',
+    single: true,
+    fetch: mock.fn(),
+    save: mock.fn(),
+  } satisfies AuthzOAuthPolicyStoreProvider
+
+  const mockAuthzOAuthClientStoreProvider = {
+    kind: 'authz-oauth-client-store-provider',
+    name: 'mock-authz-oauth-client-store-provider',
+    single: true,
+    fetch: mock.fn(),
+    save: mock.fn(),
+  } satisfies AuthzOAuthClientStoreProvider
 
   const mockCodeStoreProvider = {
     kind: 'pre-authorized-code-store-provider',
@@ -82,6 +103,13 @@ describe('AuthzFlows', () => {
     saveIfAbsent: mock.fn(),
   } satisfies DPoPProofJtiStoreProvider
 
+  const mockOAuthClientAssertionJtiStoreProvider = {
+    kind: 'oauth-client-assertion-jti-store-provider',
+    name: 'mock-oauth-client-assertion-jti-store-provider',
+    single: true,
+    saveIfAbsent: mock.fn(),
+  } satisfies OAuthClientAssertionJtiStoreProvider
+
   const mockNonceProvider = {
     kind: 'nonce-provider',
     name: 'mock-nonce-provider',
@@ -105,7 +133,27 @@ describe('AuthzFlows', () => {
     authorization_endpoint: 'https://auth.example.com/auth',
     token_endpoint: 'https://auth.example.com/token',
     response_types_supported: ['code'],
+    token_endpoint_auth_methods_supported: ['private_key_jwt'],
+    token_endpoint_auth_signing_alg_values_supported: ['ES256'],
   }
+  const sampleOAuthPolicy = AuthzOAuthPolicy({
+    default_client: {
+      senderConstrainedAccessToken: {
+        method: 'dpop',
+        dpop: {
+          mode: 'optional',
+        },
+      },
+    },
+    anonymous_client: {
+      senderConstrainedAccessToken: {
+        method: 'dpop',
+        dpop: {
+          mode: 'required',
+        },
+      },
+    },
+  })
 
   beforeEach(() => {
     mock.reset()
@@ -116,6 +164,10 @@ describe('AuthzFlows', () => {
           switch (kind) {
             case 'authz-server-metadata-store-provider':
               return mockAuthzMetadataProvider
+            case 'authz-oauth-policy-store-provider':
+              return mockAuthzOAuthPolicyStoreProvider
+            case 'authz-oauth-client-store-provider':
+              return mockAuthzOAuthClientStoreProvider
             case 'pre-authorized-code-store-provider':
               return mockCodeStoreProvider
             case 'issuance-context-store-provider':
@@ -128,6 +180,8 @@ describe('AuthzFlows', () => {
               return mockDpopProofProvider
             case 'dpop-proof-jti-store-provider':
               return mockDpopProofJtiStoreProvider
+            case 'oauth-client-assertion-jti-store-provider':
+              return mockOAuthClientAssertionJtiStoreProvider
             case 'nonce-provider':
               return mockNonceProvider
             case 'nonce-store-provider':
@@ -194,6 +248,703 @@ describe('AuthzFlows', () => {
       await assert.rejects(() => flow.createAuthzServerMetadata(sampleMetadata), {
         name: 'duplicate_authz_server',
       })
+    })
+  })
+
+  describe('findAuthzOAuthPolicy()', () => {
+    it('should call the authz-oauth-policy-store-provider to fetch policy', async () => {
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
+
+      const result = await flow.findAuthzOAuthPolicy(sampleIssuer)
+
+      assert.strictEqual(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 1)
+      assert.deepStrictEqual(mockAuthzOAuthPolicyStoreProvider.fetch.mock.calls[0].arguments, [
+        sampleIssuer,
+      ])
+      assert.deepStrictEqual(result, sampleOAuthPolicy)
+    })
+  })
+
+  describe('createAuthzOAuthPolicy()', () => {
+    it('should call the authz-oauth-policy-store-provider to save policy by issuer', async () => {
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'save', async () => {})
+
+      await flow.createAuthzOAuthPolicy(sampleIssuer, sampleOAuthPolicy)
+
+      assert.strictEqual(mockAuthzOAuthPolicyStoreProvider.save.mock.callCount(), 1)
+      assert.deepStrictEqual(mockAuthzOAuthPolicyStoreProvider.save.mock.calls[0].arguments, [
+        sampleIssuer,
+        sampleOAuthPolicy,
+      ])
+    })
+  })
+
+  describe('findAuthzOAuthClient()', () => {
+    it('should call the authz-oauth-client-store-provider to fetch client by issuer and client id', async () => {
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'wallet-client',
+        token_endpoint_auth_method: 'none',
+        enabled: true,
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+
+      const result = await flow.findAuthzOAuthClient(sampleIssuer, sampleClient.client_id)
+
+      assert.strictEqual(mockAuthzOAuthClientStoreProvider.fetch.mock.callCount(), 1)
+      assert.deepStrictEqual(mockAuthzOAuthClientStoreProvider.fetch.mock.calls[0].arguments, [
+        sampleIssuer,
+        sampleClient.client_id,
+      ])
+      assert.deepStrictEqual(result, sampleClient)
+    })
+  })
+
+  describe('createAuthzOAuthClient()', () => {
+    it('should call the authz-oauth-client-store-provider to save client by issuer', async () => {
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'wallet-client',
+        token_endpoint_auth_method: 'none',
+        enabled: true,
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'save', async () => {})
+
+      await flow.createAuthzOAuthClient(sampleIssuer, sampleClient)
+
+      assert.strictEqual(mockAuthzOAuthClientStoreProvider.save.mock.callCount(), 1)
+      assert.deepStrictEqual(mockAuthzOAuthClientStoreProvider.save.mock.calls[0].arguments, [
+        sampleIssuer,
+        sampleClient,
+      ])
+    })
+  })
+
+  describe('resolveAuthzPolicyDpopMode()', () => {
+    it('should resolve DPoP mode from the requested policy client kind', async () => {
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
+
+      const result = await flow.resolveAuthzPolicyDpopMode(sampleIssuer, 'anonymous_client')
+
+      assert.equal(result, 'required')
+      assert.deepStrictEqual(mockAuthzOAuthPolicyStoreProvider.fetch.mock.calls[0].arguments, [
+        sampleIssuer,
+      ])
+    })
+
+    it('should let a client policy override the authorization server default policy', async () => {
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
+
+      const result = await flow.resolveAuthzPolicyDpopMode(sampleIssuer, 'default_client', {
+        senderConstrainedAccessToken: {
+          method: 'dpop',
+          dpop: { mode: 'required' },
+        },
+      })
+
+      assert.equal(result, 'required')
+    })
+
+    it('should default to off when no sender constraint policy exists', async () => {
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => null)
+
+      const result = await flow.resolveAuthzPolicyDpopMode(sampleIssuer, 'default_client')
+
+      assert.equal(result, 'off')
+    })
+  })
+
+  describe('resolveTokenRequestClientPolicy()', () => {
+    const signedPrivateKeyJwt = async (
+      clientId: string,
+      options?: {
+        audience?: string
+        alg?: string
+        kid?: string
+        iat?: number | null
+        nbf?: number
+        exp?: number
+      }
+    ) => {
+      const alg = options?.alg ?? 'ES256'
+      const kid = options?.kid ?? 'client-key-1'
+      const keys = await generateKeyPair(alg, { extractable: true })
+      const jwk = await exportJWK(keys.publicKey)
+      const publicJwk = { ...jwk, kid, alg, use: 'sig' }
+      let assertionBuilder = new SignJWT({ iss: clientId, sub: clientId })
+        .setProtectedHeader({ alg, kid })
+        .setAudience(options?.audience ?? sampleMetadata.token_endpoint)
+        .setJti('client-assertion-jti')
+
+      if (typeof options?.exp === 'number') {
+        assertionBuilder = assertionBuilder.setExpirationTime(options.exp)
+      } else {
+        assertionBuilder = assertionBuilder.setExpirationTime('5m')
+      }
+
+      if (options?.iat !== null) {
+        assertionBuilder =
+          typeof options?.iat === 'number'
+            ? assertionBuilder.setIssuedAt(options.iat)
+            : assertionBuilder.setIssuedAt()
+      }
+      if (typeof options?.nbf === 'number') {
+        assertionBuilder = assertionBuilder.setNotBefore(options.nbf)
+      }
+
+      const assertion = await assertionBuilder.sign(keys.privateKey)
+
+      return { assertion, publicJwk }
+    }
+
+    it('should use the anonymous client policy when pre-authorized anonymous access is enabled', async () => {
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => ({
+        ...sampleMetadata,
+        'pre-authorized_grant_anonymous_access_supported': true,
+      }))
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        grant_type: GrantType.PreAuthorizedCode,
+      })
+
+      assert.deepStrictEqual(result, {
+        ok: true,
+        clientKind: 'anonymous_client',
+        dpopMode: 'required',
+      })
+      assert.equal(mockAuthzOAuthClientStoreProvider.fetch.mock.callCount(), 0)
+    })
+
+    it('should reject anonymous pre-authorized token requests when anonymous access is disabled', async () => {
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => ({
+        ...sampleMetadata,
+        'pre-authorized_grant_anonymous_access_supported': false,
+      }))
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        grant_type: GrantType.PreAuthorizedCode,
+      })
+
+      assert.deepStrictEqual(result, {
+        ok: false,
+        error: 'invalid_client',
+        error_description:
+          'anonymous pre-authorized code token requests are not supported by this authorization server.',
+        log: {
+          grantType: GrantType.PreAuthorizedCode,
+          preAuthorizedGrantAnonymousAccessSupported: false,
+        },
+      })
+      assert.equal(mockAuthzOAuthClientStoreProvider.fetch.mock.callCount(), 0)
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+    })
+
+    it('should treat omitted anonymous access metadata as disabled for pre-authorized token requests', async () => {
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => sampleMetadata)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        grant_type: GrantType.PreAuthorizedCode,
+      })
+
+      assert.deepStrictEqual(result, {
+        ok: false,
+        error: 'invalid_client',
+        error_description:
+          'anonymous pre-authorized code token requests are not supported by this authorization server.',
+        log: {
+          grantType: GrantType.PreAuthorizedCode,
+          preAuthorizedGrantAnonymousAccessSupported: undefined,
+        },
+      })
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+    })
+
+    it('should reject an unknown registered client id', async () => {
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => null)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_id: 'unknown-client',
+      })
+
+      assert.deepStrictEqual(result, {
+        ok: false,
+        error: 'invalid_client',
+        error_description: 'Registered OAuth client was not found.',
+        clientId: 'unknown-client',
+      })
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+    })
+
+    it('should use a registered client sender constraint when configured', async () => {
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'wallet-client',
+        token_endpoint_auth_method: 'none',
+        senderConstrainedAccessToken: {
+          method: 'dpop',
+          dpop: { mode: 'required' },
+        },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_id: sampleClient.client_id,
+      })
+
+      assert.deepStrictEqual(result, {
+        ok: true,
+        clientKind: 'default_client',
+        clientId: sampleClient.client_id,
+        clientPolicy: {
+          senderConstrainedAccessToken: sampleClient.senderConstrainedAccessToken,
+        },
+        dpopMode: 'required',
+      })
+    })
+
+    it('should use the default client policy when the registered client has no sender constraint', async () => {
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'wallet-client',
+        token_endpoint_auth_method: 'none',
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_id: sampleClient.client_id,
+      })
+
+      assert.deepStrictEqual(result, {
+        ok: true,
+        clientKind: 'default_client',
+        clientId: sampleClient.client_id,
+        clientPolicy: undefined,
+        dpopMode: 'optional',
+      })
+    })
+
+    it('should extract client_id from private_key_jwt client_assertion iss/sub', async () => {
+      const { assertion, publicJwk } = await signedPrivateKeyJwt('private-key-client')
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_signing_alg: 'ES256',
+        jwks: { keys: [publicJwk] },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => ({
+        ...sampleMetadata,
+        token_endpoint_auth_signing_alg_values_supported: ['ES256'],
+      }))
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
+      mock.method(mockOAuthClientAssertionJtiStoreProvider, 'saveIfAbsent', async () => true)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_assertion_type:
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion,
+      })
+
+      assert.equal(mockAuthzOAuthClientStoreProvider.fetch.mock.callCount(), 1)
+      assert.deepStrictEqual(mockAuthzOAuthClientStoreProvider.fetch.mock.calls[0].arguments, [
+        sampleIssuer,
+        sampleClient.client_id,
+      ])
+      assert.deepStrictEqual(result, {
+        ok: true,
+        clientKind: 'default_client',
+        clientId: sampleClient.client_id,
+        clientPolicy: undefined,
+        dpopMode: 'optional',
+      })
+      assert.equal(mockOAuthClientAssertionJtiStoreProvider.saveIfAbsent.mock.callCount(), 1)
+      const saveArgs = mockOAuthClientAssertionJtiStoreProvider.saveIfAbsent.mock.calls[0].arguments
+      assert.equal(saveArgs[0], sampleClient.client_id)
+      assert.equal(saveArgs[1], 'client-assertion-jti')
+      assert.ok((saveArgs[2] as { ttlMs: number }).ttlMs > 0)
+    })
+
+    it('should reject private_key_jwt clients when the assertion signature is invalid', async () => {
+      const { assertion } = await signedPrivateKeyJwt('private-key-client')
+      const { publicJwk } = await signedPrivateKeyJwt('private-key-client')
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_signing_alg: 'ES256',
+        jwks: { keys: [publicJwk] },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => sampleMetadata)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_assertion_type:
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion,
+      })
+
+      assert.equal(result.ok, false)
+      if (!result.ok) {
+        assert.equal(result.error, 'invalid_client')
+        assert.equal(result.error_description, 'client_assertion verification failed.')
+        assert.equal(result.clientId, sampleClient.client_id)
+      }
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+      assert.equal(mockOAuthClientAssertionJtiStoreProvider.saveIfAbsent.mock.callCount(), 0)
+    })
+
+    it('should reject private_key_jwt clients when alg is not supported by metadata', async () => {
+      const { assertion, publicJwk } = await signedPrivateKeyJwt('private-key-client')
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_signing_alg: 'ES256',
+        jwks: { keys: [publicJwk] },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => ({
+        ...sampleMetadata,
+        token_endpoint_auth_signing_alg_values_supported: ['RS256'],
+      }))
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_assertion_type:
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion,
+      })
+
+      assert.equal(result.ok, false)
+      if (!result.ok) {
+        assert.equal(result.error, 'invalid_client')
+        assert.equal(
+          result.error_description,
+          'client_assertion alg is not supported by the authorization server metadata.'
+        )
+        assert.equal(result.clientId, sampleClient.client_id)
+        assert.deepStrictEqual(result.log, {
+          clientId: sampleClient.client_id,
+          alg: 'ES256',
+          supportedAlgs: ['RS256'],
+        })
+      }
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+      assert.equal(mockOAuthClientAssertionJtiStoreProvider.saveIfAbsent.mock.callCount(), 0)
+    })
+
+    it('should reject private_key_jwt clients when metadata does not advertise private_key_jwt', async () => {
+      const { assertion, publicJwk } = await signedPrivateKeyJwt('private-key-client')
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_signing_alg: 'ES256',
+        jwks: { keys: [publicJwk] },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => ({
+        ...sampleMetadata,
+        token_endpoint_auth_methods_supported: ['client_secret_post'],
+      }))
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_assertion_type:
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion,
+      })
+
+      assert.equal(result.ok, false)
+      if (!result.ok) {
+        assert.equal(result.error, 'invalid_client')
+        assert.equal(
+          result.error_description,
+          'authorization server metadata must include private_key_jwt in token_endpoint_auth_methods_supported for private_key_jwt client authentication.'
+        )
+        assert.equal(result.clientId, sampleClient.client_id)
+        assert.deepStrictEqual(result.log, {
+          clientId: sampleClient.client_id,
+          supportedAuthMethods: ['client_secret_post'],
+        })
+      }
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+      assert.equal(mockOAuthClientAssertionJtiStoreProvider.saveIfAbsent.mock.callCount(), 0)
+    })
+
+    it('should reject private_key_jwt clients when metadata does not declare signing algs', async () => {
+      const { assertion, publicJwk } = await signedPrivateKeyJwt('private-key-client')
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_signing_alg: 'ES256',
+        jwks: { keys: [publicJwk] },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => ({
+        ...sampleMetadata,
+        token_endpoint_auth_signing_alg_values_supported: undefined,
+      }))
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_assertion_type:
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion,
+      })
+
+      assert.equal(result.ok, false)
+      if (!result.ok) {
+        assert.equal(result.error, 'invalid_client')
+        assert.equal(
+          result.error_description,
+          'authorization server metadata must include token_endpoint_auth_signing_alg_values_supported for private_key_jwt client authentication.'
+        )
+        assert.equal(result.clientId, sampleClient.client_id)
+        assert.deepStrictEqual(result.log, {
+          clientId: sampleClient.client_id,
+        })
+      }
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+      assert.equal(mockOAuthClientAssertionJtiStoreProvider.saveIfAbsent.mock.callCount(), 0)
+    })
+
+    it('should include configured client_assertion_audience when private_key_jwt aud mismatches', async () => {
+      const expectedAudience = 'https://auth.example.com/custom-token-audience'
+      const { assertion, publicJwk } = await signedPrivateKeyJwt('private-key-client', {
+        audience: sampleMetadata.token_endpoint,
+      })
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_signing_alg: 'ES256',
+        client_assertion_audience: expectedAudience,
+        jwks: { keys: [publicJwk] },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => sampleMetadata)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_assertion_type:
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion,
+      })
+
+      assert.equal(result.ok, false)
+      if (!result.ok) {
+        assert.equal(result.error, 'invalid_client')
+        assert.equal(
+          result.error_description,
+          `client_assertion aud claim does not match registered client_assertion_audience setting (${expectedAudience}).`
+        )
+        assert.equal(result.clientId, sampleClient.client_id)
+        assert.deepStrictEqual(result.log?.expectedAudiences, [expectedAudience])
+      }
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+      assert.equal(mockOAuthClientAssertionJtiStoreProvider.saveIfAbsent.mock.callCount(), 0)
+    })
+
+    it('should reject private_key_jwt clients when iat is missing', async () => {
+      const { assertion, publicJwk } = await signedPrivateKeyJwt('private-key-client', {
+        iat: null,
+      })
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_signing_alg: 'ES256',
+        jwks: { keys: [publicJwk] },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_assertion_type:
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion,
+      })
+
+      assert.equal(result.ok, false)
+      if (!result.ok) {
+        assert.equal(result.error, 'invalid_client')
+        assert.equal(result.error_description, 'client_assertion iat claim is required.')
+        assert.equal(result.clientId, sampleClient.client_id)
+      }
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+      assert.equal(mockOAuthClientAssertionJtiStoreProvider.saveIfAbsent.mock.callCount(), 0)
+    })
+
+    it('should reject private_key_jwt clients when iat is too far in the future', async () => {
+      const now = Math.floor(Date.now() / 1000)
+      const { assertion, publicJwk } = await signedPrivateKeyJwt('private-key-client', {
+        iat: now + 60,
+      })
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_signing_alg: 'ES256',
+        jwks: { keys: [publicJwk] },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_assertion_type:
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion,
+      })
+
+      assert.equal(result.ok, false)
+      if (!result.ok) {
+        assert.equal(result.error, 'invalid_client')
+        assert.equal(
+          result.error_description,
+          'client_assertion iat claim is too far in the future.'
+        )
+        assert.equal(result.clientId, sampleClient.client_id)
+        assert.equal(result.log?.clockToleranceSeconds, 10)
+      }
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+      assert.equal(mockOAuthClientAssertionJtiStoreProvider.saveIfAbsent.mock.callCount(), 0)
+    })
+
+    it('should reject private_key_jwt clients when nbf is too far in the future', async () => {
+      const now = Math.floor(Date.now() / 1000)
+      const { assertion, publicJwk } = await signedPrivateKeyJwt('private-key-client', {
+        nbf: now + 60,
+      })
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_signing_alg: 'ES256',
+        jwks: { keys: [publicJwk] },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_assertion_type:
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion,
+      })
+
+      assert.equal(result.ok, false)
+      if (!result.ok) {
+        assert.equal(result.error, 'invalid_client')
+        assert.equal(
+          result.error_description,
+          'client_assertion nbf claim is too far in the future.'
+        )
+        assert.equal(result.clientId, sampleClient.client_id)
+        assert.equal(result.log?.clockToleranceSeconds, 10)
+      }
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+      assert.equal(mockOAuthClientAssertionJtiStoreProvider.saveIfAbsent.mock.callCount(), 0)
+    })
+
+    it('should reject private_key_jwt clients when assertion jti was already used', async () => {
+      const { assertion, publicJwk } = await signedPrivateKeyJwt('private-key-client')
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_signing_alg: 'ES256',
+        jwks: { keys: [publicJwk] },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => sampleMetadata)
+      mock.method(mockOAuthClientAssertionJtiStoreProvider, 'saveIfAbsent', async () => false)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_assertion_type:
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion,
+      })
+
+      assert.deepStrictEqual(result, {
+        ok: false,
+        error: 'invalid_client',
+        error_description: 'client_assertion jti has already been used.',
+        clientId: sampleClient.client_id,
+        log: {
+          clientId: sampleClient.client_id,
+          jti: 'client-assertion-jti',
+        },
+      })
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+    })
+
+    it('should reject private_key_jwt clients when assertion exp leaves no jti cache TTL', async () => {
+      const exp = Math.floor(Date.now() / 1000) - 5
+      const { assertion, publicJwk } = await signedPrivateKeyJwt('private-key-client', { exp })
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_signing_alg: 'ES256',
+        jwks: { keys: [publicJwk] },
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+      mock.method(mockAuthzMetadataProvider, 'fetch', async () => sampleMetadata)
+      mock.method(mockOAuthClientAssertionJtiStoreProvider, 'saveIfAbsent', async () => {
+        throw new Error('saveIfAbsent should not be called when assertion exp leaves no jti TTL')
+      })
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_assertion_type:
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion,
+      })
+
+      assert.equal(result.ok, false)
+      if (!result.ok) {
+        assert.equal(result.error, 'invalid_client')
+        assert.equal(result.error_description, 'client_assertion has expired.')
+        assert.equal(result.clientId, sampleClient.client_id)
+        assert.equal(result.log?.jti, 'client-assertion-jti')
+        assert.equal(result.log?.exp, exp)
+        assert.ok(typeof result.log?.ttlMs === 'number' && result.log.ttlMs < 1)
+      }
+      assert.equal(mockOAuthClientAssertionJtiStoreProvider.saveIfAbsent.mock.callCount(), 0)
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+    })
+
+    it('should reject private_key_jwt clients when assertion parameters are missing', async () => {
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'private-key-client',
+        token_endpoint_auth_method: 'private_key_jwt',
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_id: sampleClient.client_id,
+      })
+
+      assert.deepStrictEqual(result, {
+        ok: false,
+        error: 'invalid_client',
+        error_description:
+          'client_assertion_type must be urn:ietf:params:oauth:client-assertion-type:jwt-bearer for private_key_jwt client authentication.',
+        clientId: sampleClient.client_id,
+        log: {
+          clientId: sampleClient.client_id,
+          tokenEndpointAuthMethod: 'private_key_jwt',
+          hasClientAssertionType: false,
+          hasClientAssertion: false,
+        },
+      })
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
+    })
+
+    it('should reject registered clients with unsupported client authentication methods', async () => {
+      const sampleClient = AuthzOAuthClient({
+        client_id: 'secret-client',
+        token_endpoint_auth_method: 'client_secret_post',
+      })
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
+
+      const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
+        client_id: sampleClient.client_id,
+      })
+
+      assert.deepStrictEqual(result, {
+        ok: false,
+        error: 'invalid_client',
+        error_description: 'client_secret_post client authentication is not implemented yet.',
+        clientId: sampleClient.client_id,
+        log: {
+          clientId: sampleClient.client_id,
+          tokenEndpointAuthMethod: 'client_secret_post',
+        },
+      })
+      assert.equal(mockAuthzOAuthPolicyStoreProvider.fetch.mock.callCount(), 0)
     })
   })
 
@@ -274,6 +1025,18 @@ describe('AuthzFlows', () => {
         )) as TokenResponse
 
         assert.strictEqual(response.expires_in, options.ttlSec)
+      })
+
+      it('should pass verified client_id into access token payload options', async () => {
+        await flow.createAccessToken(sampleIssuer, tokenRequest, {
+          clientId: 'wallet-client',
+        })
+
+        const payloadOptions =
+          mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
+        assert.strictEqual(payloadOptions.ttlSec, undefined)
+        assert.strictEqual(payloadOptions.clientId, 'wallet-client')
+        assert.strictEqual(typeof payloadOptions.jti, 'string')
       })
 
       it('should throw if pre-authorized code is invalid', async () => {

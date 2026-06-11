@@ -1,4 +1,4 @@
-import { parseDpopHeader, resolveDpopMode, VcknotsContext } from '@trustknots/vcknots'
+import { parseDpopHeader, VcknotsContext } from '@trustknots/vcknots'
 import { VcknotsError } from '@trustknots/vcknots/errors'
 import {
   AuthorizationServerIssuer,
@@ -29,7 +29,30 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
 
   authzApp.post('/token', async (c) => {
     try {
-      const dpopMode = resolveDpopMode(context.options)
+      const request = await c.req.formData()
+      const requestData: Record<string, string | File | number> = Object.fromEntries(
+        request.entries()
+      )
+      const issuer = AuthorizationServerIssuer(baseUrl)
+      const clientResolution = await authzFlow.resolveTokenRequestClientPolicy(
+        issuer,
+        requestData
+      )
+      if (!clientResolution.ok) {
+        console.warn('[token-route] client authentication rejected', {
+          error: clientResolution.error,
+          error_description: clientResolution.error_description,
+          ...clientResolution.log,
+        })
+        return c.json(
+          {
+            error: clientResolution.error,
+            error_description: clientResolution.error_description,
+          },
+          400
+        )
+      }
+      const dpopMode = clientResolution.dpopMode
       const dpopProof = parseDpopHeader(c.req.header('DPoP'))
       if (
         (dpopMode === 'required' && !dpopProof.ok) ||
@@ -49,21 +72,6 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
         )
       }
 
-      const request = await c.req.formData().catch(() => null)
-      if (!request) {
-        return c.json(
-          {
-            error: 'invalid_request',
-            error_description: 'Request body must be a valid form data.',
-          },
-          400
-        )
-      }
-
-      const requestData: Record<string, string | File | number> = Object.fromEntries(
-        request.entries()
-      )
-
       const parseResult = AuthzTokenRequest.schema.safeParse(requestData)
       if (!parseResult.success) {
         return c.json(
@@ -75,9 +83,8 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
         )
       }
       const tokenRequest = parseResult.data
-
-      const issuer = AuthorizationServerIssuer(baseUrl)
       const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
+        clientId: clientResolution.clientId,
         ...(dpopMode !== 'off' && dpopProof.ok
           ? {
               dpopProof: {

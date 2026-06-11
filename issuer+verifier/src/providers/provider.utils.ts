@@ -9,4 +9,3 @@ export const selectProvider = <T extends Provider & CanHandle<U>, U>(candidates:
     raise('provider_not_found', { message: `No provider found which can handle: ${u}` })
   return provider
 }
-

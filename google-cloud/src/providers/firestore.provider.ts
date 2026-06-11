@@ -5,7 +5,10 @@ import { firestoreIssuerMetadataStore } from './firestore-issuer-metadata-store.
 import { firestoreVerifierMetadataStore } from './firestore-verifier-metadata-store.provider'
 import { firestoreNonceStore } from './firestore-nonce-store.provider'
 import { firestoreAuthzServerMetadataStore } from './firestore-authz-metadata-store.provider'
+import { firestoreAuthzOAuthClientStore } from './firestore-authz-oauth-client-store.provider'
+import { firestoreAuthzOAuthPolicyStore } from './firestore-authz-oauth-policy-store.provider'
 import { firestoreDpopProofJtiStore } from './firestore-dpop-proof-jti-store.provider'
+import { firestoreOAuthClientAssertionJtiStore } from './firestore-oauth-client-assertion-jti-store.provider'
 import { firestorePreAuthorizedCodeStore } from './firestore-pre-authorized-code-store.provider'
 import { firestoreRequestObjectStore } from './firestore-request-object-store.provider'
 import { firestoreIssuanceContextStore } from './firestore-issuance-context-store.provider'
@@ -61,6 +64,9 @@ export const firestore = (options?: FirestoreProviderOptions): Provider[] => {
     firestoreVerifierMetadataStore(options),
     firestoreNonceStore(options),
     firestoreAuthzServerMetadataStore(options),
+    firestoreAuthzOAuthPolicyStore(options),
+    firestoreAuthzOAuthClientStore(options),
+    firestoreOAuthClientAssertionJtiStore(options),
     firestorePreAuthorizedCodeStore(options),
     firestoreRequestObjectStore(options),
     firestoreDpopProofJtiStore(options),

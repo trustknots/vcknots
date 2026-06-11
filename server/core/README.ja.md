@@ -46,23 +46,13 @@ core/
 import { createApp, createServer } from '@trustknots/server-core'
 ```
 
-`createServer(options?)` では、OAuth 関連の設定も渡せます。例えば DPoP 用 nonce を有効にする場合は次のように指定します。
+`createServer(options?)` では Provider / Extension などの実装依存の設定を渡せます。DPoP mode などの OAuth policy は `server/samples/oauth-server.json` から読み込み、起動時に authorization server ごとの policy store へ登録します。
 
-```ts
-createServer({
-  oauth: {
-    senderConstrainedAccessToken: {
-      dpop: {
-        mode: 'optional',
-      },
-    },
-  },
-})
-```
+共有の `POST /nonce` ルートは、OAuth policy の DPoP mode が `off` 以外の場合に `DPoP-Nonce` レスポンスヘッダーを追加できます。`c_nonce` と `DPoP-Nonce` は別の値として発行され、`DPoP-Nonce` は token endpoint の DPoP Proof 用 nonce として使います。
 
-この設定を使うと、共有の `POST /nonce` ルートは `mode !== 'off'` の場合に `DPoP-Nonce` レスポンスヘッダーを追加できます。`c_nonce` と `DPoP-Nonce` は別の値として発行され、`DPoP-Nonce` は token endpoint の DPoP Proof 用 nonce として使います。
+共有の `POST /token` ルートも同じ OAuth policy を参照します。また、OAuth client store に登録された client を使って `private_key_jwt` client authentication を検証できます。サンプルでは `server/samples/oauth-clients.json` を起動時に読み込み、client ごとの sender constraint 設定、`jwks.keys`、`client_assertion_audience` などを登録します。
 
-共有の `POST /token` ルートも同じ設定を参照します。
+`client_id` が token request body にある場合はその値を優先し、ない場合は `client_assertion` JWT の `iss` / `sub` から導出します。Pre-Authorized Code の token request でどちらからも client_id を得られない場合は anonymous token request として扱い、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` のときだけ anonymous client policy を使います。未設定または `false` の場合は `invalid_client` です。詳細は [シングルサーバー README](../single/README.ja.md#post-token) を参照してください。
 
 | mode | `POST /token` の挙動 |
 |------|----------------------|

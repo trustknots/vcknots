@@ -55,11 +55,9 @@ To start this server, follow the steps below.
    # PORT: Server port number (default: 8080)
    # PRIVATE_KEY_PATH: Path to private key file (default: ../samples/certificate-openid-test/private_key_openid.pem)
    # CERTIFICATE_PATH: Path to certificate file (default: ../samples/certificate-openid-test/certificate_openid.pem)
-   # DPOP_MODE: DPoP configuration (off, optional, required)
-   # off: Do not use DPoP at the token or credential endpoint
-   # optional: At the token endpoint, verify proof and issue a DPoP-bound access token when a DPoP header is present. At the credential endpoint, tokens without sender binding may use Bearer only; tokens with cnf.jkt require Authorization: DPoP and a DPoP header
-   # required: DPoP header is required at the token endpoint. At the credential endpoint, Authorization: DPoP and the DPoP header are always required (Bearer-only is rejected)
    ```
+
+   Configure the DPoP mode (`off` / `optional` / `required`) in `authorization_server.default_client` / `authorization_server.anonymous_client` in `server/samples/oauth-server.json`.
 
 2. **Install Dependencies** (Run from root directory)
 
@@ -198,9 +196,9 @@ Create credential offer
 
 Issue credential
 
-**Request headers (depends on `DPOP_MODE` and token type):**
-- **Bearer:** `Authorization: Bearer {access_token}` — for access tokens without sender binding when `DPOP_MODE` is not `required`.
-- **DPoP:** `Authorization: DPoP {access_token}` and `DPoP: {compact_jwt}` (RFC 9449 DPoP Proof) — required when `DPOP_MODE` is `required`, or when the token contains `cnf.jkt` (even in `optional` mode, Bearer-only is rejected).
+**Request headers (depends on the OAuth policy DPoP mode and token type):**
+- **Bearer:** `Authorization: Bearer {access_token}` — for access tokens without sender binding when the DPoP mode is not `required`.
+- **DPoP:** `Authorization: DPoP {access_token}` and `DPoP: {compact_jwt}` (RFC 9449 DPoP Proof) — required when the DPoP mode is `required`, or when the token contains `cnf.jkt` (even in `optional` mode, Bearer-only is rejected).
 - Error responses may include `WWW-Authenticate: Bearer` or `WWW-Authenticate: DPoP` (see the Issuer docs on the credential endpoint and DPoP: [Issuer Setup and Usage](https://trustknots.github.io/vcknots/docs/issuer)).
 
 **Request Body (JSON):**
@@ -256,7 +254,7 @@ Create a nonce (c_nonce). Corresponds to the OID4VCI [nonce endpoint](https://op
 
 **Response Headers:**
 - `Cache-Control: no-store` - Disable caching
-- `DPoP-Nonce: <nonce>` - A DPoP nonce returned when `DPOP_MODE` is not `off`
+- `DPoP-Nonce: <nonce>` - A DPoP nonce returned when the OAuth policy DPoP mode is not `off`
 
 **Response:**
 - `200 OK` - `{ "c_nonce": string }` (nonce validity is 2 minutes)
@@ -315,9 +313,9 @@ pre-authorized_code={pre_authorized_code}
 }
 ```
 
-`DPOP_MODE` controls DPoP behavior for both the token endpoint and the credential endpoint via `@trustknots/server-core`.
+The DPoP mode is configured by the OAuth policy in `server/samples/oauth-server.json` and by per-client sender constraint settings in `server/samples/oauth-clients.json`. Pre-Authorized Code token requests without `client_id` / `client_assertion` are treated as anonymous token requests, and the `anonymous_client` policy is applied only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. `default_client` applies when a registered client has no sender constraint setting and as the credential / nonce endpoint default.
 
-| `DPOP_MODE` | token endpoint | credential endpoint |
+| DPoP mode | token endpoint | credential endpoint |
 |-------------|----------------|---------------------|
 | `off` | DPoP is not used. The server issues a Bearer access token. | DPoP is not used. `Authorization: DPoP` or a `DPoP` header is rejected. |
 | `optional` | If the `DPoP` header is absent, the server issues a Bearer access token. If the `DPoP` header is present, the server verifies the proof and issues a DPoP-bound access token. | Tokens without sender binding may use `Authorization: Bearer`. Tokens carrying `cnf.jkt` require `Authorization: DPoP` and a `DPoP` header. |
@@ -363,6 +361,100 @@ When DPoP Proof verification succeeds, `token_type` is `DPoP`. The issued access
   "access_token": "eyJ...",
   "token_type": "DPoP",
   "expires_in": 86400
+}
+```
+
+#### OAuth clients and private_key_jwt
+
+OAuth clients are configured in `server/samples/oauth-clients.json`. If the token request body contains `client_id`, that value is used first. If it is absent, the client id is derived from the `client_assertion` JWT `iss` / `sub`. If neither source yields a client id, the request is treated as an anonymous token request.
+
+Anonymous Pre-Authorized Code token requests are allowed only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. If it is omitted or `false`, the request fails with `invalid_client`. For allowed anonymous token requests, the `authorization_server.anonymous_client` policy is applied.
+
+For a registered client with `token_endpoint_auth_method: "private_key_jwt"`, the token request must include these form fields:
+
+```text
+client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+client_assertion=<compact JWT>
+```
+
+The private_key_jwt verifier checks that `iss` / `sub` match the registered `client_id`, that `aud` matches the registered `client_assertion_audience` or the Authorization Server token endpoint / issuer, that `exp` / `iat` / `jti` are present, that `alg` is an allowed asymmetric signing algorithm, and that the signature verifies with a public key from the registered `jwks.keys`. A client assertion with the same `jti` cannot be reused.
+
+Each client may override the DPoP mode with `senderConstrainedAccessToken`. If it is omitted, the `authorization_server.default_client` policy is used. The authenticated client id is included in the issued access token payload as `client_id`.
+
+#### OAuth policy / OAuth client configuration files
+
+OAuth policies are configured in `server/samples/oauth-server.json`, and registered OAuth clients are configured in `server/samples/oauth-clients.json`. The single server reads these JSON files at startup and registers them with the in-memory provider.
+The contents of `oauth-server.json` are registered with the provider as the Authorization Server-wide OAuth policy.
+The contents of `oauth-clients.json` are registered with the provider as registered OAuth clients.
+
+##### `server/samples/oauth-server.json`
+
+`oauth-server.json` defines the default policy for the Authorization Server.
+
+| Field | Description |
+|---|---|
+| `authorization_server` | Root object for the Authorization Server OAuth policy. |
+| `authorization_server.default_client` | Default policy used when a registered client does not define `senderConstrainedAccessToken`. It is also used as the default DPoP policy for the credential / nonce endpoints. |
+| `authorization_server.anonymous_client` | Policy used for allowed anonymous token requests. Whether anonymous Pre-Authorized Code token requests are allowed is determined by the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported`. |
+| `senderConstrainedAccessToken` | Sender constraint policy for access tokens. |
+| `senderConstrainedAccessToken.method` | Sender constraint method. Supported values are `none`, `dpop`, and `mtls`. In `resolveAuthzPolicyDpopMode`, when `method` is `none` or `mtls`, the resolved DPoP mode is always `off` regardless of `dpop.mode`. When `method` is `dpop` or omitted, `dpop.mode` (`off` / `optional` / `required`) is used. `mtls` is reserved; mTLS itself is not implemented yet. |
+| `senderConstrainedAccessToken.dpop.mode` | DPoP mode. Supported values are `off`, `optional`, and `required`. In the current implementation, the same value applies to both the token endpoint and the credential endpoint. |
+| `comment` | Sample-only comment. It is not used by the control logic. |
+
+Policy selection order:
+
+1. For Pre-Authorized Code token requests with neither `client_id` nor `client_assertion`, `authorization_server.anonymous_client` is used only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. If it is omitted or `false`, the request fails with `invalid_client`.
+2. If a registered client defines `senderConstrainedAccessToken`, the client-specific policy is used.
+3. If a registered client does not define `senderConstrainedAccessToken`, `authorization_server.default_client` is used.
+
+##### `server/samples/oauth-clients.json`
+
+`oauth-clients.json` defines registered OAuth clients referenced by the token endpoint.
+
+| Field | Description |
+|---|---|
+| `clients[]` | List of registered OAuth clients. |
+| `client_id` | Client identifier. It is matched against the token request body `client_id`, or against the `iss` / `sub` claims in the `client_assertion` JWT. |
+| `client_name` | Display / descriptive name. |
+| `token_endpoint_auth_method` | Client authentication method for the token endpoint. If omitted, it is treated as `none`. The current implementation supports `private_key_jwt` and `none`; other methods fail with `invalid_client` as not implemented. |
+| `token_endpoint_auth_signing_alg` | Client-specific signing algorithm matched against the `private_key_jwt` JOSE header `alg`. |
+| `client_assertion_audience` | Expected value for the `client_assertion` JWT `aud` claim. If omitted, the Authorization Server metadata `token_endpoint` and issuer are used as expected values. |
+| `jwks.keys` | Registered public keys used to verify `private_key_jwt` signatures. Do not put private keys here. |
+| `jwks_uri` | Client JWKS URI. The current `private_key_jwt` verification does not fetch this URI and uses `jwks.keys` instead. Treat it as registration metadata for future key rotation support. |
+| `allowed_grant_types` | Registered grant types allowed for the client. The current implementation does not enforce this as token endpoint grant type control. |
+| `senderConstrainedAccessToken` | Client-specific sender constraint policy. If present, it takes precedence over `authorization_server.default_client`. |
+| `senderConstrainedAccessToken.method` | Client-specific sender constraint method. Supported values are `none`, `dpop`, and `mtls`. DPoP mode resolution follows the same rules as `senderConstrainedAccessToken.method` in `oauth-server.json`. |
+| `senderConstrainedAccessToken.dpop.mode` | Client-specific DPoP mode. Supported values are `off`, `optional`, and `required`. In the current implementation, the same value applies to both the token endpoint and the credential endpoint. |
+| `enabled` | If `false`, the provider does not return the client and it is treated as disabled. Omitted or `true` means enabled. |
+| `comment` | Sample-only comment. It is not used by the control logic. |
+
+Minimal `private_key_jwt` client example:
+
+```json
+{
+  "client_id": "https://wallet.example.com",
+  "token_endpoint_auth_method": "private_key_jwt",
+  "token_endpoint_auth_signing_alg": "ES256",
+  "client_assertion_audience": "https://authz.example.com",
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "crv": "P-256",
+        "kid": "wallet-es256-2026-01",
+        "alg": "ES256",
+        "x": "...",
+        "y": "..."
+      }
+    ]
+  },
+  "senderConstrainedAccessToken": {
+    "method": "dpop",
+    "dpop": {
+      "mode": "required"
+    }
+  },
+  "enabled": true
 }
 ```
 

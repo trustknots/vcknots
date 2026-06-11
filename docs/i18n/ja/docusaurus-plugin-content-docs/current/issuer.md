@@ -112,7 +112,7 @@ const context = initializeContext({
 - insecure な `http://` endpoint を許可
 - localhost 開発環境向けの動作を有効化
 
-`debug: false` または設定無し(undefined)の場合: 
+`debug: false` または設定無し(undefined)の場合:
 
 - `CredentialIssuerMetadata` の以下の endpoint に `http://` URL を設定すると `insecure_http_not_allowed` エラーになります。
   - `credential_endpoint`
@@ -681,7 +681,25 @@ curl  http://localhost:8080/.well-known/oauth-authorization-server
 
 ```typescript
 app.post('/token', async (c) => {
-  const dpopMode = resolveDpopMode(context.options)
+  const request = await c.req.formData()
+  const requestData = Object.fromEntries(request.entries())
+  const issuer = AuthorizationServerIssuer(baseUrl)
+
+  const clientResolution = await authzFlow.resolveTokenRequestClientPolicy(
+    issuer,
+    requestData
+  )
+  if (!clientResolution.ok) {
+    return c.json(
+      {
+        error: clientResolution.error,
+        error_description: clientResolution.error_description,
+      },
+      400
+    )
+  }
+
+  const dpopMode = clientResolution.dpopMode
   const dpopProof = parseDpopHeader(c.req.header('DPoP'))
 
   if (
@@ -702,20 +720,6 @@ app.post('/token', async (c) => {
     )
   }
 
-  const request = await c.req.formData().catch(() => null)
-  if (!request) {
-    return c.json(
-      {
-        error: 'invalid_request',
-        error_description: 'Request body must be a valid form data.',
-      },
-      400
-    )
-  }
-  const requestData: Record<string, string | File | number> = Object.fromEntries(
-    request.entries()
-  )
-
   const parseResult = AuthzTokenRequest.schema.safeParse(requestData)
   if (!parseResult.success) {
     return c.json(
@@ -727,9 +731,8 @@ app.post('/token', async (c) => {
     )
   }
   const tokenRequest = parseResult.data
-  const issuer = AuthorizationServerIssuer(baseUrl)
-
   const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
+    clientId: clientResolution.clientId,
     ...(dpopMode !== 'off' && dpopProof.ok
       ? {
           dpopProof: {
@@ -746,6 +749,28 @@ app.post('/token', async (c) => {
 ```
 
 **リクエストボディは `application/x-www-form-urlencoded` です**（`AuthzTokenRequest` はフォームフィールドから組み立てます）。`invalid_dpop_proof`（`invalid_dpop_proof`）や `use_dpop_nonce`（`DPoP-Nonce` ヘッダー付き）などの分岐を含む実装は [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts) を参照してください。
+
+#### private_key_jwt による client authentication
+
+Token endpoint では、`server/samples/oauth-clients.json` に登録された OAuth client を参照し、`token_endpoint_auth_method` が `private_key_jwt` の client に対して RFC 7523 の JWT bearer client authentication を検証します。
+
+`oauth-server.json` / `oauth-clients.json` の項目説明は、[server/single/README.ja.md](https://github.com/trustknots/vcknots/blob/main/server/single/README.ja.md) の「OAuth policy / OAuth client 設定ファイル」を参照してください。
+
+client の特定は次の順序で行います。
+
+1. token request body に `client_id` がある場合は、その値を優先します。
+2. `client_id` がない場合は、`client_assertion` JWT の `iss` / `sub` から client_id を導出します。
+3. どちらからも client_id を得られない場合は anonymous token request として扱います。
+
+Pre-Authorized Code の token request が anonymous token request になる場合、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` のときだけ `anonymous_client` policy を適用します。未設定または `false` の場合は、anonymous access を許可せず `invalid_client` を返します。
+
+`client_id` が特定できたにもかかわらず登録済み client が存在しない場合は `invalid_client` です。登録済み client の `token_endpoint_auth_method` が `private_key_jwt` の場合は、`client_assertion_type` が `urn:ietf:params:oauth:client-assertion-type:jwt-bearer` であること、`client_assertion` が compact JWT であること、`iss` / `sub` が登録済み `client_id` と一致すること、`aud` が登録済み `client_assertion_audience` または Authorization Server の token endpoint / issuer と一致することを確認します。
+
+また、`exp` / `iat` / `jti` を必須として検証し、`nbf` がある場合は許容範囲内か確認します。`iat` / `nbf` は FAPI 2.0 Security Profile の clock skew 要件に合わせ、未来方向の許容範囲を短く制限します。`jti` は client ごとに保存し、同じ `client_assertion` の再利用を拒否します。
+
+JOSE ヘッダーでは `alg` が `none` や `HS*` ではないことを確認します。Authorization Server メタデータの `token_endpoint_auth_signing_alg_values_supported` が設定されている場合は、その一覧に含まれる必要があります。さらに client 登録の `token_endpoint_auth_signing_alg` がある場合は、JWT ヘッダーの `alg` と一致する必要があります。署名検証には、登録済み client の `jwks.keys` に含まれる公開鍵を使用します。
+
+認証済み client の `client_id` は、発行する access token の payload に `client_id` として含まれます。DPoP を併用する場合でも、private_key_jwt の client authentication と DPoP Proof の検証は独立して行います。
 
 **例**:
 
@@ -770,7 +795,7 @@ curl -X POST http://localhost:8080/token \
 
 #### DPoP Proof を利用する token request
 
-`oauth.senderConstrainedAccessToken.dpop.mode` により、token endpoint の DPoP Proof 検証を制御できます。
+DPoP mode は Authorization Server の OAuth policy により、token endpoint の DPoP Proof 検証を制御できます。
 
 | mode | token endpoint の挙動 |
 |------|------------------------|
@@ -816,21 +841,9 @@ OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-creden
 
 Issuer メタデータに `nonce_endpoint` を設定すると、Wallet は `/.well-known/openid-credential-issuer` から取得したメタデータ経由で nonce エンドポイントの URL を参照します。
 
-DPoP 用 nonce も返したい場合は、サーバー設定で `oauth.senderConstrainedAccessToken.dpop.mode` を指定します。
+DPoP mode は `server/samples/oauth-server.json` の OAuth policy と、登録済み OAuth client の sender constraint 設定で決まります。Pre-Authorized Code の token request で `client_id` / `client_assertion` がない場合は anonymous token request として扱い、Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` のときだけ `anonymous_client` policy を参照します。登録済み client に sender constraint 設定がない場合は `default_client` の policy を参照します。
 
-```typescript
-const context = initializeContext({
-  oauth: {
-    senderConstrainedAccessToken: {
-      dpop: {
-        mode: 'optional', // 'off' | 'optional' | 'required'
-      },
-    },
-  },
-})
-```
-
-`mode !== 'off'` の場合、`POST /nonce` は JSON ボディの `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返します。`c_nonce` と `DPoP-Nonce` は別の値です。
+OAuth policy の DPoP mode が `off` 以外の場合、`POST /nonce` は JSON ボディの `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返します。`c_nonce` と `DPoP-Nonce` は別の値です。
 
 `c_nonce` は credential proof 用の nonce です。一方、`DPoP-Nonce` は token endpoint で提示する DPoP Proof 用の nonce です。用途が異なるため、TTL も別々に設定できます。
 
@@ -842,7 +855,11 @@ app.post('/nonce', async (c) => {
     const C_NONCE_TTL_MS = 2 * 60 * 1000  // 2分
     const DPOP_NONCE_TTL_MS = 5 * 60 * 1000  // 5分
     const cnonce = await issuerFlow.createNonce(C_NONCE_TTL_MS)
-    const dpopMode = resolveDpopMode(context.options)
+    const dpopMode = await resolveAuthzPolicyDpopMode(
+      authzFlow,
+      AuthorizationServerIssuer(baseUrl),
+      'default_client'
+    )
     c.header('Cache-Control', 'no-store')
     if (dpopMode !== 'off') {
       const dpopNonce = await issuerFlow.createNonce(DPOP_NONCE_TTL_MS)
@@ -878,7 +895,7 @@ Content-Type: application/json
 }
 ```
 
-`oauth.senderConstrainedAccessToken.dpop.mode` が `off` の場合、`DPoP-Nonce` ヘッダは付きません。
+OAuth policy の DPoP mode が `off` の場合、`DPoP-Nonce` ヘッダは付きません。
 
 **実装例**:
 
@@ -971,7 +988,7 @@ curl -X DELETE http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
 
 #### Credential endpoint での DPoP-bound access token 検証
 
-`oauth.senderConstrainedAccessToken.dpop.mode` により、credential endpoint で提示される access token と DPoP Proof の扱いを制御できます。
+OAuth policy の DPoP mode により、credential endpoint で提示される access token と DPoP Proof の扱いを制御できます。
 
 | mode | credential endpoint の挙動 |
 |------|-----------------------------|
@@ -993,6 +1010,8 @@ credential endpoint はリソースサーバーとして動作するため、DPo
 - access token の `cnf.jkt` と DPoP Proof の `jwk` thumbprint が一致すること。
 - `jti` を保存し、同じ DPoP Proof の再利用（リプレイ）を拒否すること。
 - DPoP Proof の `iat` は、実装既定では `maxTokenAge` 300 秒と `clockTolerance` 60 秒の範囲で有効とみなされます（`issuer+verifier` の DPoP proof プロバイダ。工場オプションで変更可能）。
+
+Credential proof JWT の `iss` は、Pre-Authorized Code Flow であっても常に省略するわけではありません。token endpoint で anonymous access により取得された access token には `client_id` が含まれないため、proof JWT の `iss` は省略する必要があります。一方、登録済み OAuth client として取得された access token には `client_id` が含まれるため、その値を `issueCredential` の `proofJwt.clientId` に渡します。この場合、proof JWT に `iss` があるときは、その `client_id` と一致する必要があります。
 
 DPoP Proof が不正な場合、credential endpoint は `401 Unauthorized` と `WWW-Authenticate: DPoP` を返します。アクセストークン JWT の形式・署名・issuer 不一致など **`invalid_token`** 相当の場合は、同じく **401** と **`WWW-Authenticate: Bearer`**（`realm` および `error="invalid_token"` 等）になります。
 
@@ -1030,7 +1049,7 @@ app.post('/credentials', async (c) => {
   try {
     const issuer = CredentialIssuer(baseUrl)
     const authz = AuthorizationServerIssuer(baseUrl)
-    const dpopMode = resolveDpopMode(context.options)
+    const dpopMode = await resolveAuthzPolicyDpopMode(authzFlow, authz, 'default_client')
     const realm = baseUrl
 
     const hasCnfJkt = (payload: unknown): boolean => {
@@ -1178,6 +1197,12 @@ app.post('/credentials', async (c) => {
       throw err
     }
 
+    const accessTokenClientId =
+      typeof accessTokenPayload.client_id === 'string' &&
+      accessTokenPayload.client_id.trim().length > 0
+        ? accessTokenPayload.client_id.trim()
+        : undefined
+
     const request = await c.req.json().catch(() => null)
     if (!request) {
       return c.json(
@@ -1224,7 +1249,10 @@ app.post('/credentials', async (c) => {
         degree: '5',
         gpa: 'test',
       },
-      proofJwt: { usePreAuth: true },
+      proofJwt: {
+        usePreAuth: true,
+        clientId: accessTokenClientId,
+      },
     })
     return c.json(credential)
   } catch (err) {
@@ -1452,7 +1480,8 @@ issueCredential(
 
 **JWT クレデンシャルプルーフ（`proofs.jwt`）について**
 
-- **事前認可コードフロー**でアクセストークンを得ている場合: `proofJwt: { usePreAuth: true }`。プルーフ JWT に **`iss` クレームを付けない**必要があります。
+- **事前認可コードフロー**で anonymous access token を得ている場合: `proofJwt: { usePreAuth: true }`。access token に `client_id` がないため、プルーフ JWT に **`iss` クレームを付けない**必要があります。
+- **事前認可コードフロー**で登録済み OAuth client として access token を得ている場合: `proofJwt: { usePreAuth: true, clientId: '<access token の client_id>' }`。プルーフ JWT に `iss` がある場合は、その `clientId` と一致する必要があります。
 - **認可コードフロー**：未対応
 
 
@@ -1502,7 +1531,9 @@ type IssueOptions = {
   subject?: string
   /** アクセストークン取得フローに応じた JWT proof の iss 検証などに使用 */
   proofJwt?: {
+    /** grant type が pre-authorized_code の場合 true。anonymous access かどうかは clientId の有無で表します。 */
     usePreAuth: boolean
+    /** access token に含まれる client_id、または通常の OAuth client 文脈の client_id */
     clientId?: string
   }
 }
@@ -1566,12 +1597,31 @@ createAccessToken<T extends GrantType>(
   type TokenRequestOptions = {
     [GrantType.AuthorizationCode]: {
       // 認可コードフローは未対応
+      alg?: string
+      clientId?: string
+      dpopProof?: {
+        proofJwt: string
+        htm: string
+        htu: string
+        nonceRequired?: boolean
+      }
     }
     [GrantType.PreAuthorizedCode]: {
       ttlSec?: number
+      alg?: string
+      clientId?: string
+      dpopProof?: {
+        proofJwt: string
+        htm: string
+        htu: string
+        nonceRequired?: boolean
+      }
     }
   }
   ```
+
+  - `clientId`: client authentication 済みの OAuth client id。指定した場合、発行する access token payload に `client_id` として含まれます。
+  - `dpopProof`: DPoP-bound access token を発行するための DPoP Proof 検証情報です。検証に成功した場合、access token payload に `cnf.jkt` が含まれ、レスポンスの `token_type` は `DPoP` になります。
 
 **戻り値**: アクセストークンは下記のような形式で戻されます：
 ```typescript
@@ -1582,6 +1632,8 @@ createAccessToken<T extends GrantType>(
   expires_in: option?.ttlSec ?? 86400
 }
 ```
+
+`clientId` を指定した場合、access token payload には `client_id` が含まれます。DPoP Proof を指定して検証に成功した場合は、payload に `cnf.jkt` が含まれ、`token_type` は `DPoP` になります。
 
 **エラーケース**:
 - `provider_not_found`:  秘密鍵で未対応のアルゴリズムが設定された
@@ -1602,13 +1654,33 @@ createAccessToken<T extends GrantType>(
 ```typescript
 type TokenRequestOptions = {
   [GrantType.AuthorizationCode]: {
-    //TODO: Implement options for authorization code flow
+    // 認可コードフローは未対応
+    alg?: string
+    clientId?: string
+    dpopProof?: {
+      proofJwt: string
+      htm: string
+      htu: string
+      nonceRequired?: boolean
+    }
   }
   [GrantType.PreAuthorizedCode]: {
     ttlSec?: number
+    alg?: string
+    clientId?: string
+    dpopProof?: {
+      proofJwt: string
+      htm: string
+      htu: string
+      nonceRequired?: boolean
+    }
   }
 }
 ```
+
+- `clientId`: client authentication 済みの OAuth client id。指定した場合、発行する access token payload に `client_id` として含まれます。
+- `dpopProof`: DPoP-bound access token を発行するための DPoP Proof 検証情報です。検証に成功した場合、access token payload に `cnf.jkt` が含まれ、レスポンスの `token_type` は `DPoP` になります。
+- `ttlSec`: Pre-Authorized Code フローにおける access token の有効期間（秒）。省略時はデフォルト値が使用されます。
 
 
 ### verifyAccessToken

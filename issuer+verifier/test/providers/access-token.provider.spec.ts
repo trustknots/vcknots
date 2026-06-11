@@ -52,6 +52,14 @@ describe('AccessTokenProvider', () => {
       assert.equal(payload.exp - payload.iat, customTtl, 'exp should reflect custom ttlSec')
     })
 
+    it('should include client_id when provided', async () => {
+      const payload = await provider.createTokenPayload(issuer, code, {
+        clientId: 'wallet-client',
+      })
+
+      assert.equal(payload.client_id, 'wallet-client')
+    })
+
     it('should include jti when provided in options', async () => {
       const payload = await provider.createTokenPayload(issuer, code, {
         jti: 'test-jti',

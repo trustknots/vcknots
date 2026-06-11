@@ -2,6 +2,8 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
 } from '../authorization-server.types'
+import { AuthzOAuthClient } from '../authz-oauth-client.types'
+import { AuthzOAuthPolicy } from '../authz-oauth-policy.types'
 import type { ClientIdentifier } from '../client-id-scheme.types'
 import { ClientId } from '../client-id.types'
 import { Nonce } from '../nonce.types'
@@ -57,6 +59,39 @@ export type AuthzServerMetadataStoreProvider = {
 
   fetch(issuer: AuthorizationServerIssuer): Promise<AuthorizationServerMetadata | null>
   save(metadata: AuthorizationServerMetadata): Promise<void>
+}
+
+export type AuthzOAuthPolicyStoreProvider = {
+  kind: 'authz-oauth-policy-store-provider'
+  name: string
+  single: true
+
+  fetch(issuer: AuthorizationServerIssuer): Promise<AuthzOAuthPolicy | null>
+  save(issuer: AuthorizationServerIssuer, policy: AuthzOAuthPolicy): Promise<void>
+}
+
+export type AuthzOAuthClientStoreProvider = {
+  kind: 'authz-oauth-client-store-provider'
+  name: string
+  single: true
+
+  fetch(
+    issuer: AuthorizationServerIssuer,
+    clientId: AuthzOAuthClient['client_id']
+  ): Promise<AuthzOAuthClient | null>
+  save(issuer: AuthorizationServerIssuer, client: AuthzOAuthClient): Promise<void>
+}
+
+export type OAuthClientAssertionJtiStoreProvider = {
+  kind: 'oauth-client-assertion-jti-store-provider'
+  name: string
+  single: true
+
+  saveIfAbsent(
+    clientId: AuthzOAuthClient['client_id'],
+    jti: string,
+    options?: { ttlMs?: number }
+  ): Promise<boolean>
 }
 
 export type VerifierMetadataStoreProvider = {
@@ -323,7 +358,12 @@ export type AccessTokenProvider = {
   createTokenPayload(
     authz: AuthorizationServerIssuer,
     code: PreAuthorizedCode,
-    options?: { ttlSec?: number; jti?: string; cnf?: { jkt: string } }
+    options?: {
+      ttlSec?: number
+      jti?: string
+      cnf?: { jkt: string }
+      clientId?: AuthzOAuthClient['client_id']
+    }
   ): Promise<JwtPayload>
 }
 
@@ -498,6 +538,9 @@ export type Provider =
   | AccessTokenProvider
   | CredentialOfferProvider
   | AuthzServerMetadataStoreProvider
+  | AuthzOAuthPolicyStoreProvider
+  | AuthzOAuthClientStoreProvider
+  | OAuthClientAssertionJtiStoreProvider
   | NonceProvider
   | NonceStoreProvider
   | AuthzSignatureKeyStoreProvider
