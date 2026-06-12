@@ -761,7 +761,7 @@ describe('IssuerFlow', () => {
 
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
       // 2. Act
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
         alg: 'ES256',
       })
 
@@ -784,7 +784,7 @@ describe('IssuerFlow', () => {
         }
       )
     })
-    it('should throw "invalid_credential_request" if jti is missing', async () => {
+    it('should throw "invalid_credential_request" if access token hash is missing', async () => {
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
         credential_issuer: issuer,
@@ -812,7 +812,7 @@ describe('IssuerFlow', () => {
         issuerFlow.issueCredential(issuer, credentialRequest, '', { alg: 'ES256' }),
         {
           name: 'invalid_credential_request',
-          message: 'jti is missing.',
+          message: 'access token hash is missing.',
         }
       )
 
@@ -821,7 +821,7 @@ describe('IssuerFlow', () => {
       assert.strictEqual(mockIssueCredentialProvider.createCredential.mock.callCount(), 0)
     })
 
-    it('should throw "invalid_credential_request" if issuance context for jti is not found', async () => {
+    it('should throw "invalid_credential_request" if issuance context for access token is not found', async () => {
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
         credential_issuer: issuer,
@@ -847,24 +847,24 @@ describe('IssuerFlow', () => {
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => null)
 
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'missing-jti', {
+        issuerFlow.issueCredential(issuer, credentialRequest, 'missing-access-token-hash', {
           alg: 'ES256',
         }),
         {
           name: 'invalid_credential_request',
-          message: 'Issuance context for this jti was not found',
+          message: 'Issuance context for this access token was not found',
         }
       )
 
       assert.strictEqual(mockIssuanceContextStoreProvider.fetch.mock.callCount(), 1)
       assert.deepStrictEqual(mockIssuanceContextStoreProvider.fetch.mock.calls[0].arguments, [
-        'missing-jti',
+        'missing-access-token-hash',
       ])
       assert.strictEqual(mockCredentialProofProvider.verifyProof.mock.callCount(), 0)
       assert.strictEqual(mockIssueCredentialProvider.createCredential.mock.callCount(), 0)
     })
 
-    it('should throw "invalid_credential_request" if requested credential configuration is not allowed for the jti', async () => {
+    it('should throw "invalid_credential_request" if requested credential configuration is not allowed for the access token', async () => {
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata: CredentialIssuerMetadata = {
         credential_issuer: issuer,
@@ -892,12 +892,12 @@ describe('IssuerFlow', () => {
       ])
 
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
           alg: 'ES256',
         }),
         {
           name: 'invalid_credential_request',
-          message: 'Requested credential_configuration_id is not allowed for this jti.',
+          message: 'Requested credential_configuration_id is not allowed for this access token.',
         }
       )
 
@@ -941,7 +941,7 @@ describe('IssuerFlow', () => {
         (type) => type === ProofTypes.JWT
       )
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
-      await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+      await issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
         alg: 'ES256',
       })
 
@@ -991,7 +991,7 @@ describe('IssuerFlow', () => {
       )
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
-      await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+      await issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
         alg: 'ES256',
         proofJwt: { usePreAuth: true },
       })
@@ -1038,7 +1038,7 @@ describe('IssuerFlow', () => {
       )
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
-      await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+      await issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
         alg: 'ES256',
         proofJwt: { usePreAuth: false, clientId: 'oauth-client-1' },
       })
@@ -1104,7 +1104,7 @@ describe('IssuerFlow', () => {
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
       // 2. Act
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
         alg: 'ES256',
         claims,
       })
@@ -1131,7 +1131,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', { alg: 'ES256' }),
         {
           name: 'issuer_not_found',
         }
@@ -1164,7 +1164,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', { alg: 'ES256' }),
         {
           name: 'invalid_credential_request',
           message: 'Credential configuration id is not specified.',
@@ -1195,7 +1195,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', { alg: 'ES256' }),
         {
           name: 'unknown_credential_configuration',
         }
@@ -1224,7 +1224,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', { alg: 'ES256' }),
         {
           name: 'unknown_credential_configuration',
         }
@@ -1253,7 +1253,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
           alg: 'ES256',
         }),
         {
@@ -1285,7 +1285,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', { alg: 'ES256' }),
         {
           message: 'Unsupported proof type',
         }
@@ -1313,7 +1313,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', { alg: 'ES256' }),
         {
           name: 'invalid_credential_request',
           message: 'Request contain no proofs supported by credential configuration.',
@@ -1347,7 +1347,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', { alg: 'ES256' }),
         {
           name: 'invalid_proof',
           message: 'Failed to verify Proof.',
@@ -1386,7 +1386,7 @@ describe('IssuerFlow', () => {
         (format) => format === CredentialFormats.JWT_VC_JSON
       )
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
         alg: 'ES256',
       })
 
@@ -1437,7 +1437,7 @@ describe('IssuerFlow', () => {
       const nonceSaveCallCountBefore = mockNonceStoreProvider.save.mock.callCount()
 
       // 2. Act
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
         alg: 'ES256',
         cnonce: { c_nonce_expires_in: 300 },
       })
@@ -1495,7 +1495,7 @@ describe('IssuerFlow', () => {
       const nonceSaveCallCountBefore = mockNonceStoreProvider.save.mock.callCount()
 
       // 2. Act
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
         alg: 'ES256',
         cnonce: { c_nonce_expires_in: 300 },
       })
@@ -1543,7 +1543,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
           alg: 'ES256',
           cnonce: { c_nonce_expires_in: 300 },
         }),
@@ -1587,7 +1587,7 @@ describe('IssuerFlow', () => {
 
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'RS256' }), // Requesting unsupported alg
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', { alg: 'RS256' }), // Requesting unsupported alg
         { name: 'unsupported_issuer_key_alg' }
       )
     })
@@ -1626,7 +1626,7 @@ describe('IssuerFlow', () => {
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
       // 2. Act & 3. Assert
       await assert.rejects(
-        issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', { alg: 'ES256' }),
+        issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', { alg: 'ES256' }),
         { name: 'authz_issuer_key_not_found' }
       )
     })
@@ -1663,7 +1663,7 @@ describe('IssuerFlow', () => {
       )
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
         alg: 'ES256',
       })
 
@@ -1706,7 +1706,7 @@ describe('IssuerFlow', () => {
       )
       mock.method(mockIssuanceContextStoreProvider, 'fetch', async () => ['University_Degree'])
 
-      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-jti', {
+      const response = await issuerFlow.issueCredential(issuer, credentialRequest, 'test-access-token-hash', {
         alg: 'ES256',
       })
 

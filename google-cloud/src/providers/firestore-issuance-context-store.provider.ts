@@ -5,7 +5,7 @@ import { FirestoreProviderOptions, resolveFirestore } from './firestore.provider
 
 type FirestoreCredentialIssuanceContextDoc = Omit<
   CredentialIssuanceStoreEntry,
-  'jti' | 'expires_at'
+  'expires_at'
 > & {
   expires_at: Timestamp
 }
@@ -21,13 +21,13 @@ export const firestoreIssuanceContextStore = (
     name: 'firestore-issuance-context-store-provider',
     single: true,
 
-    async save(jti, credential_configuration_ids, ttl) {
+    async save(accessTokenHash, credential_configuration_ids, ttl) {
       const ttlSecRaw = Number(ttl ?? options?.expiresIn ?? 300)
       const ttlSecCandidate = Math.floor(ttlSecRaw)
       const ttlSec = Number.isFinite(ttlSecRaw) && ttlSecCandidate > 0 ? ttlSecCandidate : 300
       const expiresAt = Timestamp.fromMillis(new Date().getTime() + ttlSec * 1000)
 
-      const docRef = firestore.doc(`${ns}/v1/issuanceContexts/${jti}`)
+      const docRef = firestore.doc(`${ns}/v1/issuanceContexts/${accessTokenHash}`)
       const data: FirestoreCredentialIssuanceContextDoc = {
         credential_configuration_ids: credential_configuration_ids,
         expires_at: expiresAt,
@@ -36,23 +36,23 @@ export const firestoreIssuanceContextStore = (
       await docRef.set(data)
     },
 
-    async fetch(jti) {
-      const doc = await firestore.doc(`${ns}/v1/issuanceContexts/${jti}`).get()
+    async fetch(accessTokenHash) {
+      const doc = await firestore.doc(`${ns}/v1/issuanceContexts/${accessTokenHash}`).get()
       if (!doc.exists) {
         return null
       }
 
       const data = doc.data() as FirestoreCredentialIssuanceContextDoc
       if (data.expires_at.toMillis() < Date.now()) {
-        await firestore.doc(`${ns}/v1/issuanceContexts/${jti}`).delete()
+        await firestore.doc(`${ns}/v1/issuanceContexts/${accessTokenHash}`).delete()
         return null
       }
 
       return data.credential_configuration_ids
     },
 
-    async delete(jti) {
-      await firestore.doc(`${ns}/v1/issuanceContexts/${jti}`).delete()
+    async delete(accessTokenHash) {
+      await firestore.doc(`${ns}/v1/issuanceContexts/${accessTokenHash}`).delete()
     },
   }
 }

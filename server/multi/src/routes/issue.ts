@@ -1,4 +1,5 @@
 import {
+  calculateAccessTokenHash,
   parseAuthorizationHeader,
   parseDpopHeader,
   VcknotsContext,
@@ -221,23 +222,9 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       }
       const request = await c.req.json()
       const parse = CredentialRequest(request)
-      const accessTokenJti =
-        typeof accessTokenPayload.jti === 'string' && accessTokenPayload.jti.length > 0
-          ? accessTokenPayload.jti
-          : undefined
-      if (!accessTokenJti) {
-        return unauthorized(
-          c,
-          realm,
-          {
-            error: 'invalid_token',
-            error_description: 'Access token must contain a jti claim.',
-          },
-          { error: 'invalid_token' }
-        )
-      }
+      const accessTokenHash = calculateAccessTokenHash(authorization.value.token)
       // Issue Credential
-      const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenJti, {
+      const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenHash, {
         alg: 'ES256',
         cnonce: {
           c_nonce_expires_in: 60 * 5 * 1000,

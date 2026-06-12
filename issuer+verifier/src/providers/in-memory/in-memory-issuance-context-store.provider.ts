@@ -9,28 +9,28 @@ export const inMemoryIssuanceContextStore = (): IssuanceContextStoreProvider => 
     name: 'in-memory-issuance-context-store-provider',
     single: true,
 
-    async save(jti, credential_configuration_ids, ttl) {
+    async save(accessTokenHash, credential_configuration_ids, ttl) {
       const ttlSecRaw = Number(ttl ?? 300)
       const ttlSecCandidate = Math.floor(ttlSecRaw)
       const ttlSec = Number.isFinite(ttlSecRaw) && ttlSecCandidate > 0 ? ttlSecCandidate : 300
       const expiresAt = new Date().getTime() + ttlSec * 1000
-      contexts.set(jti, { credential_configuration_ids, expires_at: expiresAt })
+      contexts.set(accessTokenHash, { credential_configuration_ids, expires_at: expiresAt })
     },
 
-    async fetch(jti) {
-      const context = contexts.get(jti)
+    async fetch(accessTokenHash) {
+      const context = contexts.get(accessTokenHash)
       if (!context) {
         return null
       }
       if (context.expires_at && context.expires_at < new Date().getTime()) {
-        contexts.delete(jti)
+        contexts.delete(accessTokenHash)
         return null
       }
       return context.credential_configuration_ids
     },
 
-    async delete(jti) {
-      contexts.delete(jti)
+    async delete(accessTokenHash) {
+      contexts.delete(accessTokenHash)
     },
   }
 }

@@ -1,4 +1,5 @@
 import {
+  calculateAccessTokenHash,
   parseAuthorizationHeader,
   parseDpopHeader,
   VcknotsContext,
@@ -324,23 +325,10 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         )
       }
       const parse = parseResult.data
-      const accessTokenJti =
-        typeof accessTokenPayload.jti === 'string' && accessTokenPayload.jti.length > 0
-          ? accessTokenPayload.jti
-          : undefined
-      if (!accessTokenJti) {
-        // jti is used to bind the access token to the credential offer; it is not part of access token validation.
-        return c.json(
-          {
-            error: 'invalid_request',
-            error_description: 'Access token must contain jti claim.',
-          },
-          400
-        )
-      }
+      const accessTokenHash = calculateAccessTokenHash(authorization.value.token)
 
       // Issue Credential
-      const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenJti, {
+      const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenHash, {
         alg: 'ES256',
         cnonce: {
           c_nonce_expires_in: 60 * 5 * 1000,

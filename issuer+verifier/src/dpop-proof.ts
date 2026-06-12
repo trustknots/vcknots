@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import { base64url } from 'jose'
 import type { ParsedDpopHeader } from './dpop-proof.types'
 
 const compactJwtPattern = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/
@@ -28,4 +30,9 @@ export const parseDpopHeader = (headerValue?: string | null): ParsedDpopHeader =
   }
 
   return { ok: true, proofJwt: trimmed }
+}
+
+export function calculateAccessTokenHash(accessToken: string): string {
+  // RFC 9449 `ath`: SHA-256 over the ASCII-encoded access token, then base64url.
+  return base64url.encode(createHash('sha256').update(accessToken, 'ascii').digest())
 }

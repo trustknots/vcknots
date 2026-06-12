@@ -9,6 +9,7 @@ import {
 import { AuthzFlow, initializeAuthzFlow } from '../src/authz.flows'
 import { AuthzOAuthClient } from '../src/authz-oauth-client.types'
 import { AuthzOAuthPolicy } from '../src/authz-oauth-policy.types'
+import { calculateAccessTokenHash } from '../src/dpop-proof'
 import { PreAuthorizedCode } from '../src/pre-authorized-code.types'
 import {
   AccessTokenProvider,
@@ -977,7 +978,7 @@ describe('AuthzFlows', () => {
       grant_type: GrantType.PreAuthorizedCode,
       'pre-authorized_code': preAuthCode,
     }
-    const samplePayload = { iss: sampleIssuer, sub: preAuthCode, jti: 'test-jti' }
+    const samplePayload = { iss: sampleIssuer, sub: preAuthCode }
     const sampleSignature = 'signed-jwt-signature-part'
 
     describe('Pre-Authorized Code Flow', () => {
@@ -1036,7 +1037,7 @@ describe('AuthzFlows', () => {
           mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
         assert.strictEqual(payloadOptions.ttlSec, undefined)
         assert.strictEqual(payloadOptions.clientId, 'wallet-client')
-        assert.strictEqual(typeof payloadOptions.jti, 'string')
+        assert.strictEqual('jti' in payloadOptions, false)
       })
 
       it('should throw if pre-authorized code is invalid', async () => {
@@ -1061,18 +1062,13 @@ describe('AuthzFlows', () => {
         assert.strictEqual(mockAuthzKeyProvider.sign.mock.callCount(), 0)
       })
 
-      it('should use the same generated jti for issuance context and access token payload', async () => {
+      it('should save issuance context by access token hash without adding jti to the payload', async () => {
         mock.method(
           mockAccessTokenProvider,
           'createTokenPayload',
-          async (
-            _authz: AuthorizationServerIssuer,
-            _code: PreAuthorizedCode,
-            options: { jti?: string }
-          ) => ({
+          async (_authz: AuthorizationServerIssuer, _code: PreAuthorizedCode) => ({
             iss: sampleIssuer,
             sub: preAuthCode,
-            jti: options?.jti,
           })
         )
 
@@ -1081,17 +1077,17 @@ describe('AuthzFlows', () => {
         assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 1)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 1)
 
-        const savedJti = mockIssuanceContextStoreProvider.save.mock.calls[0].arguments[0]
+        const savedAccessTokenHash =
+          mockIssuanceContextStoreProvider.save.mock.calls[0].arguments[0]
         const payloadOptions = mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
 
-        assert.strictEqual(typeof savedJti, 'string')
-        assert.ok(savedJti.length > 0)
-        assert.strictEqual(payloadOptions?.jti, savedJti)
+        assert.strictEqual(savedAccessTokenHash, calculateAccessTokenHash(response.access_token))
+        assert.strictEqual('jti' in payloadOptions, false)
 
         const [, encodedPayload] = response.access_token.split('.')
         const decodedPayload = JSON.parse(base64url.decode(encodedPayload))
 
-        assert.strictEqual(decodedPayload.jti, savedJti)
+        assert.strictEqual('jti' in decodedPayload, false)
       })
 
       it('should throw if signing returns null', async () => {
@@ -1119,7 +1115,7 @@ describe('AuthzFlows', () => {
         const payload = mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
         assert.deepStrictEqual(payload?.cnf, { jkt: 'test-jkt' })
         assert.strictEqual(payload.ttlSec, undefined)
-        assert.strictEqual(typeof payload?.jti, 'string')
+        assert.strictEqual('jti' in payload, false)
         assert.strictEqual(response.token_type, 'DPoP')
       })
 

@@ -60,12 +60,5 @@ describe('AccessTokenProvider', () => {
       assert.equal(payload.client_id, 'wallet-client')
     })
 
-    it('should include jti when provided in options', async () => {
-      const payload = await provider.createTokenPayload(issuer, code, {
-        jti: 'test-jti',
-      })
-
-      assert.equal(payload.jti, 'test-jti')
-    })
   })
 })

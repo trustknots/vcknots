@@ -6,13 +6,13 @@ import {
 } from './authorization-server.types'
 import { AuthzOAuthClient } from './authz-oauth-client.types'
 import { AuthzOAuthPolicy, type AuthzClientPolicy, type DPoPMode } from './authz-oauth-policy.types'
+import { calculateAccessTokenHash } from './dpop-proof'
 import type { DPoPProofVerifyContext } from './dpop-proof.types'
 import { err } from './errors/vcknots.error'
 import { GrantType, TokenRequest } from './token-request.types'
 import { VcknotsContext } from './vcknots.context'
 import { JwtPayload } from './jwt.types'
 import { Nonce } from './nonce.types'
-import { randomUUID } from 'node:crypto'
 
 type AuthzKeyAlg = string
 type OAuthClientAuthMethod = string
@@ -1046,9 +1046,6 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             })
           }
           const ttlSec = option?.ttlSec ?? 86400
-          const jti = randomUUID()
-
-          await issuanceContextStore$.save(jti, credentialConfigurationIds, ttlSec)
 
           const keyAlg = options?.alg ?? 'ES256'
           // Authz access token (data)
@@ -1063,7 +1060,6 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             {
               ttlSec: option?.ttlSec,
               ...(option?.clientId ? { clientId: option.clientId } : {}),
-              jti,
               ...(verifiedDpopProof ? { cnf: { jkt: verifiedDpopProof.jwkThumbprint } } : {}),
             }
           )
@@ -1076,10 +1072,14 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           }
           // format JWT components
           const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
+          const accessToken = `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`
+          const accessTokenHash = calculateAccessTokenHash(accessToken)
+
+          await issuanceContextStore$.save(accessTokenHash, credentialConfigurationIds, ttlSec)
 
           // Create Token Response
           return {
-            access_token: `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`, // TODO: Implement access token generation
+            access_token: accessToken,
             token_type: verifiedDpopProof ? 'DPoP' : 'bearer',
             expires_in: option?.ttlSec ?? 86400,
           }

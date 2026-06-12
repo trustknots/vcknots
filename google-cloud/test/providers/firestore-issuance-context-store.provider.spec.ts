@@ -26,10 +26,10 @@ describe('firestoreIssuanceContextStore', () => {
     assert.equal(provider.single, true)
   })
 
-  it('should return null for an unknown jti', async () => {
+  it('should return null for an unknown access token hash', async () => {
     const provider = firestoreIssuanceContextStore({ app: mockApp })
 
-    const fetched = await provider.fetch('unknown-jti')
+    const fetched = await provider.fetch('unknown-access-token-hash')
 
     assert.equal(fetched, null)
   })
@@ -37,9 +37,9 @@ describe('firestoreIssuanceContextStore', () => {
   it('should save credential configuration ids and fetch them back', async () => {
     const provider = firestoreIssuanceContextStore({ app: mockApp })
 
-    await provider.save('test-jti', configurations)
+    await provider.save('test-access-token-hash', configurations)
 
-    const fetched = await provider.fetch('test-jti')
+    const fetched = await provider.fetch('test-access-token-hash')
 
     assert.deepStrictEqual(fetched, configurations)
   })
@@ -47,32 +47,32 @@ describe('firestoreIssuanceContextStore', () => {
   it('should persist credential_configuration_ids in Firestore document', async () => {
     const provider = firestoreIssuanceContextStore({ app: mockApp })
 
-    await provider.save('stored-config-jti', configurations)
+    await provider.save('stored-config-access-token-hash', configurations)
 
-    const doc = store.get('vcknots/v1/issuanceContexts/stored-config-jti')
+    const doc = store.get('vcknots/v1/issuanceContexts/stored-config-access-token-hash')
     assert.ok(doc)
     assert.deepStrictEqual(doc.credential_configuration_ids, configurations)
   })
 
-  it('should overwrite existing context when saving with the same jti', async () => {
+  it('should overwrite existing context when saving with the same access token hash', async () => {
     const provider = firestoreIssuanceContextStore({ app: mockApp })
 
-    await provider.save('same-jti', configurations)
-    await provider.save('same-jti', updatedConfigurations)
+    await provider.save('same-access-token-hash', configurations)
+    await provider.save('same-access-token-hash', updatedConfigurations)
 
-    const fetched = await provider.fetch('same-jti')
+    const fetched = await provider.fetch('same-access-token-hash')
 
     assert.deepStrictEqual(fetched, updatedConfigurations)
   })
 
-  it('should save independently for multiple jtis', async () => {
+  it('should save independently for multiple access token hashes', async () => {
     const provider = firestoreIssuanceContextStore({ app: mockApp })
 
-    await provider.save('jti-1', configurations)
-    await provider.save('jti-2', updatedConfigurations)
+    await provider.save('access-token-hash-1', configurations)
+    await provider.save('access-token-hash-2', updatedConfigurations)
 
-    assert.deepStrictEqual(await provider.fetch('jti-1'), configurations)
-    assert.deepStrictEqual(await provider.fetch('jti-2'), updatedConfigurations)
+    assert.deepStrictEqual(await provider.fetch('access-token-hash-1'), configurations)
+    assert.deepStrictEqual(await provider.fetch('access-token-hash-2'), updatedConfigurations)
   })
 
   it('should store expires_at as Firestore Timestamp', async () => {
@@ -137,25 +137,25 @@ describe('firestoreIssuanceContextStore', () => {
     mock.timers.enable({ apis: ['Date'] })
 
     const provider = firestoreIssuanceContextStore({ app: mockApp })
-    await provider.save('expiring-jti', configurations, 1)
+    await provider.save('expiring-access-token-hash', configurations, 1)
 
     mock.timers.tick(500)
-    assert.deepStrictEqual(await provider.fetch('expiring-jti'), configurations)
+    assert.deepStrictEqual(await provider.fetch('expiring-access-token-hash'), configurations)
 
     mock.timers.tick(600)
-    assert.equal(await provider.fetch('expiring-jti'), null)
+    assert.equal(await provider.fetch('expiring-access-token-hash'), null)
   })
 
   it('should delete expired context on fetch', async () => {
     mock.timers.enable({ apis: ['Date'] })
 
     const provider = firestoreIssuanceContextStore({ app: mockApp })
-    await provider.save('expired-jti', configurations, 1)
+    await provider.save('expired-access-token-hash', configurations, 1)
 
     mock.timers.tick(1001)
 
-    assert.equal(await provider.fetch('expired-jti'), null)
-    assert.ok(!store.has('vcknots/v1/issuanceContexts/expired-jti'))
+    assert.equal(await provider.fetch('expired-access-token-hash'), null)
+    assert.ok(!store.has('vcknots/v1/issuanceContexts/expired-access-token-hash'))
   })
 
   it('should use default ttl when ttl is not specified', async () => {
@@ -181,16 +181,16 @@ describe('firestoreIssuanceContextStore', () => {
     assert.equal(fetched, null)
   })
 
-  it('should only delete the specified jti', async () => {
+  it('should only delete the specified access token hash', async () => {
     const provider = firestoreIssuanceContextStore({ app: mockApp })
 
-    await provider.save('jti-1', configurations)
-    await provider.save('jti-2', updatedConfigurations)
+    await provider.save('access-token-hash-1', configurations)
+    await provider.save('access-token-hash-2', updatedConfigurations)
 
-    await provider.delete('jti-1')
+    await provider.delete('access-token-hash-1')
 
-    assert.equal(await provider.fetch('jti-1'), null)
-    assert.deepStrictEqual(await provider.fetch('jti-2'), updatedConfigurations)
+    assert.equal(await provider.fetch('access-token-hash-1'), null)
+    assert.deepStrictEqual(await provider.fetch('access-token-hash-2'), updatedConfigurations)
   })
 
   it('should use the correct Firestore document path', async () => {
@@ -204,10 +204,10 @@ describe('firestoreIssuanceContextStore', () => {
   it('should use a custom namespace', async () => {
     const provider = firestoreIssuanceContextStore({ app: mockApp, namespace: 'custom' })
 
-    await provider.save('my-jti', configurations)
+    await provider.save('my-access-token-hash', configurations)
 
-    assert.ok(store.has('custom/v1/issuanceContexts/my-jti'))
-    assert.ok(!store.has('vcknots/v1/issuanceContexts/my-jti'))
+    assert.ok(store.has('custom/v1/issuanceContexts/my-access-token-hash'))
+    assert.ok(!store.has('vcknots/v1/issuanceContexts/my-access-token-hash'))
   })
 
   it('should strip all slashes from namespace', async () => {
@@ -216,25 +216,25 @@ describe('firestoreIssuanceContextStore', () => {
       namespace: 'foo/bar/baz',
     })
 
-    await provider.save('my-jti', configurations)
+    await provider.save('my-access-token-hash', configurations)
 
-    assert.ok(store.has('foobarbaz/v1/issuanceContexts/my-jti'))
-    assert.ok(!store.has('foo/bar/baz/v1/issuanceContexts/my-jti'))
+    assert.ok(store.has('foobarbaz/v1/issuanceContexts/my-access-token-hash'))
+    assert.ok(!store.has('foo/bar/baz/v1/issuanceContexts/my-access-token-hash'))
   })
 
   it('should strip leading and trailing slashes from namespace', async () => {
     const provider = firestoreIssuanceContextStore({ app: mockApp, namespace: '/my/ns/' })
 
-    await provider.save('my-jti', configurations)
+    await provider.save('my-access-token-hash', configurations)
 
-    assert.ok(store.has('myns/v1/issuanceContexts/my-jti'))
+    assert.ok(store.has('myns/v1/issuanceContexts/my-access-token-hash'))
   })
 
   it('should fall back to vcknots when namespace is only slashes', async () => {
     const provider = firestoreIssuanceContextStore({ app: mockApp, namespace: '///' })
 
-    await provider.save('my-jti', configurations)
+    await provider.save('my-access-token-hash', configurations)
 
-    assert.ok(store.has('vcknots/v1/issuanceContexts/my-jti'))
+    assert.ok(store.has('vcknots/v1/issuanceContexts/my-access-token-hash'))
   })
 })

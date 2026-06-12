@@ -36,7 +36,6 @@ type OfferOptions =
     }
 type IssueOptions = {
   alg: string
-  jti?: string
   cnonce?: {
     c_nonce_expires_in: number
   }
@@ -104,7 +103,7 @@ export type IssuerFlow = {
   issueCredential(
     issuer: CredentialIssuer,
     credentialRequest: CredentialRequest,
-    accessTokenJti: string,
+    accessTokenHash: string,
     options?: IssueOptions
   ): Promise<CredentialResponse>
 }
@@ -313,7 +312,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const lookupNonce = Nonce({ nonce })
       return cnonceStore$.revoke(lookupNonce)
     },
-    async issueCredential(issuer, credentialRequest, accessTokenJti, options) {
+    async issueCredential(issuer, credentialRequest, accessTokenHash, options) {
       if (options?.subject && !isUri(options.subject)) {
         throw err('invalid_credential_request', {
           message: 'Invalid options: subject must be a URI.',
@@ -341,16 +340,15 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: `Credential configuration ${credentialRequest.credential_configuration_id} is not supported by issuer ${issuer}.`,
         })
       }
-      const jti = accessTokenJti
-      if (!jti) {
+      if (!accessTokenHash) {
         throw err('invalid_credential_request', {
-          message: 'jti is missing.',
+          message: 'access token hash is missing.',
         })
       }
-      const allowedCredentialConfigurationIds = await issuanceContextStore$.fetch(jti)
+      const allowedCredentialConfigurationIds = await issuanceContextStore$.fetch(accessTokenHash)
       if (!allowedCredentialConfigurationIds) {
         throw err('invalid_credential_request', {
-          message: 'Issuance context for this jti was not found',
+          message: 'Issuance context for this access token was not found',
         })
       }
       const requestedCredentialConfigurationId = CredentialConfigurationId(
@@ -359,7 +357,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
 
       if (!allowedCredentialConfigurationIds.includes(requestedCredentialConfigurationId)) {
         throw err('invalid_credential_request', {
-          message: 'Requested credential_configuration_id is not allowed for this jti.',
+          message: 'Requested credential_configuration_id is not allowed for this access token.',
         })
       }
 
