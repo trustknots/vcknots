@@ -111,13 +111,40 @@ Attributes other than `id` (metadata body, `expires_at`, and so on) are written 
 
 ## Prerequisites
 
+### Install on your machine
+
+| Tool | Version | Notes |
+|---|---|---|
+| [Node.js](https://nodejs.org/) | 20+ | Required to run CDK and bundle Lambda handlers |
+| [pnpm](https://pnpm.io/) | 10.11.0 | Monorepo package manager (`packageManager` in root `package.json`) |
+| [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | v2 recommended | Used by `deploy-resources.sh` for identity/region lookup |
+| bash | — | Deploy script (`scripts/deploy-resources.sh`) |
+
+`aws-cdk`, `ts-node`, and `esbuild` are installed as `aws/resources` devDependencies.  
+You do **not** need a global `cdk` install; use `pnpm cdk` or `pnpm deploy` from `aws/resources`.
+
+### AWS account access
+
+- Credentials for the target account/region (`~/.aws/credentials`, `~/.aws/config`, or environment variables).
+- IAM permissions to run CDK bootstrap and deploy (CloudFormation, Lambda, API Gateway, DynamoDB, IAM, S3, ECR, SSM, and related resources).
+- First deploy to an account/region runs `cdk bootstrap` automatically via the deploy script.
+
+Verify access before deploying:
+
+```bash
+aws sts get-caller-identity
+aws configure get region
+```
+
+### Project setup
+
 From the monorepo root:
 
 ```bash
 pnpm install
 ```
 
-AWS CLI credentials for the target account/region. Optional local defaults:
+Optional local deploy defaults:
 
 ```bash
 cp aws/resources/scripts/.env.example aws/resources/scripts/.env
