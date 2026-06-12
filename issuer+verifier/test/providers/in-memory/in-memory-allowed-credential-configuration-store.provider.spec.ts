@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it, mock } from 'node:test'
-import { inMemoryIssuanceContextStore } from '../../../src/providers/in-memory/in-memory-issuance-context-store.provider'
+import { inMemoryAllowedCredentialConfigurationStore } from '../../../src/providers/in-memory/in-memory-allowed-credential-configuration-store.provider'
 import { CredentialConfigurationId } from '../../../src/credential-issuer.types'
 
-describe('inMemoryIssuanceContextStore', () => {
-  let provider: ReturnType<typeof inMemoryIssuanceContextStore>
+describe('inMemoryAllowedCredentialConfigurationStore', () => {
+  let provider: ReturnType<typeof inMemoryAllowedCredentialConfigurationStore>
 
   const configurations: CredentialConfigurationId[] = [
     CredentialConfigurationId('University_Degree'),
@@ -14,15 +14,15 @@ describe('inMemoryIssuanceContextStore', () => {
   ]
 
   beforeEach(() => {
-    provider = inMemoryIssuanceContextStore()
+    provider = inMemoryAllowedCredentialConfigurationStore()
   })
 
   afterEach(() => {
     mock.timers.reset()
   })
   it('should have kind, name, and single properties correctly set', () => {
-    assert.strictEqual(provider.kind, 'issuance-context-store-provider')
-    assert.strictEqual(provider.name, 'in-memory-issuance-context-store-provider')
+    assert.strictEqual(provider.kind, 'allowed-credential-configuration-store-provider')
+    assert.strictEqual(provider.name, 'in-memory-allowed-credential-configuration-store-provider')
     assert.strictEqual(provider.single, true)
   })
   describe('save and fetch', () => {

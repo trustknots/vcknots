@@ -40,7 +40,7 @@ yarn add @trustknots/vcknots
 import { vcknots } from '@trustknots/vcknots'
 
 // デフォルト（インメモリ）プロバイダーで初期化
-const { issuer, verifier } = vcknots()
+const { issuer, verifier, authz } = vcknots()
 ```
 
 ## チュートリアル
@@ -90,40 +90,47 @@ console.log('Credential Offer:', scheme)
 ```
 
 #### 3. クレデンシャルの発行
-Wallet がクレデンシャルリクエストを送信した場合（オファーを処理した後）、クレデンシャルを発行します。
+Wallet がクレデンシャルリクエストを送信した場合（オファーを処理した後）、まず credential endpoint で access token を検証し、クレデンシャルを発行します。
 
 ```typescript
 // `req` は Wallet から送信された HTTP リクエストを表します
-const request = CredentialRequest(req.json() /* ボディを JSON として取得 */)
-const credential = await issuer.issueCredential(
-  issuerId,
-  request, 
-  {
-    alg: 'ES256',
-    claims: {
-      name: 'Alice',
-      from: 'Wonderland'
-    },
-    // JWT proof（`proofs.jwt`）検証用。usePreAuth は grant type が pre-authorized_code かどうかを表します。
-    // anonymous access token の場合は clientId を省略し、登録済み client の access token の場合は clientId を渡します。
-    proofJwt: { usePreAuth: true },
-  }
-)
+const authzIssuer = AuthorizationServerIssuer(base)
+const authorizationContext = await authz.authorizeCredentialEndpointAccess(authzIssuer, {
+  authorizationHeader: req.header('Authorization'),
+  dpopHeader: req.header('DPoP'),
+  htm: req.method,
+  htu: `${base}/credentials`,
+  nonceRequired: true,
+})
+
+const request = CredentialRequest(await req.json())
+const credential = await issuer.issueCredential(issuerId, request, {
+  authorizationContext,
+  alg: 'ES256',
+  claims: {
+    name: 'Alice',
+    from: 'Wonderland',
+  },
+  // JWT proof（`proofs.jwt`）検証用。usePreAuth は grant type が pre-authorized_code かどうかを表します。
+  proofJwt: { usePreAuth: true },
+})
 
 console.log('Issued Credential:', credential)
 ```
 
 **JWT クレデンシャルプルーフ（`proofs.jwt`）と `options.proofJwt`**
 
-OID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一致し、`iss` はフローと access token の取得方法に応じて扱われます。`issueCredential` は内部で `credential-proof-provider` の `verifyProof` に **検証コンテキスト**（Credential Issuer、事前認可コードグラントかどうか、必要なら OAuth `client_id`）を渡すため、JWT proof を検証するときは次の `options.proofJwt` を実際のトークン取得フローに合わせて指定してください。
+OID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一致し、`iss` はフローと access token の取得方法に応じて扱われます。
 
-`usePreAuth` は grant type が `pre-authorized_code` かどうかを表します。anonymous access かどうかは `clientId` の有無で表します。
+上記コードの `authorizationContext` は、credential endpoint で access token（および必要なら DPoP Proof）を検証した結果です。access token の payload に `client_id` がある場合、その値は `authorizationContext` 経由で `issueCredential` 内部の proof 検証に渡されます。**呼び出し側が `proofJwt.clientId` を別途指定する必要はありません。**
 
-| 状況 | 指定の目安 |
-|------|------------|
-| アクセストークンが **事前認可コード（Pre-Authorized Code）** グラント、かつ token endpoint で anonymous access により得られた場合 | `proofJwt: { usePreAuth: true }`。access token に `client_id` がないため、proof JWT に **`iss` は含めません**。 |
-| アクセストークンが **事前認可コード（Pre-Authorized Code）** グラント、かつ登録済み OAuth client として得られた場合 | `proofJwt: { usePreAuth: true, clientId: '<access token の client_id>' }`。proof JWT に `iss` がある場合は、その `clientId` と一致する必要があります。`iss` の省略も許容されます。 |
-| **認可コード** 等、通常の OAuth クライアント文脈の場合 | `proofJwt: { usePreAuth: false, clientId: '<そのリクエストの client_id>' }`。`iss` はその `client_id` または Credential Issuer Identifier と一致する必要があります。 |
+`options.proofJwt.usePreAuth` は grant type が `pre-authorized_code` かどうかだけを表します。anonymous access かどうかは、**access token に `client_id` があるか**で判断してください（表の「状況」列を参照）。
+
+| 状況 | `proofJwt` の指定 | proof JWT の `iss` |
+|------|-------------------|-------------------|
+| **事前認可コード**グラントで、token endpoint を **anonymous access**（`client_id` なし）で呼び出して access token を得た | `{ usePreAuth: true }` | **省略**（access token に `client_id` がないため） |
+| **事前認可コード**グラントで、**登録済み OAuth client** として access token を得た（access token に `client_id` あり） | `{ usePreAuth: true }` | 省略可。付ける場合は access token の `client_id` と一致 |
+| **認可コード** 等、通常の OAuth クライアント文脈（未対応） | `{ usePreAuth: false }` | access token の `client_id` または Credential Issuer Identifier と一致 |
 
 `proofJwt` を誤ると `aud` / `iss` の検証が意図とずれ、`invalid_proof` となります。
 

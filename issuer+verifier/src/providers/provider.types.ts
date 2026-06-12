@@ -336,8 +336,8 @@ export type PreAuthorizedCodeStoreProvider = {
   ): Promise<CredentialConfigurationId[] | null>
 }
 
-export type IssuanceContextStoreProvider = {
-  kind: 'issuance-context-store-provider'
+export type AllowedCredentialConfigurationStoreProvider = {
+  kind: 'allowed-credential-configuration-store-provider'
   name: string
   single: true
 
@@ -533,7 +533,7 @@ export type Provider =
   | SignatureVerificationProvider
   | PreAuthorizedCodeProvider
   | PreAuthorizedCodeStoreProvider
-  | IssuanceContextStoreProvider
+  | AllowedCredentialConfigurationStoreProvider
   | AccessTokenProvider
   | CredentialOfferProvider
   | AuthzServerMetadataStoreProvider

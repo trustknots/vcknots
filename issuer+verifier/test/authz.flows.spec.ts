@@ -23,7 +23,7 @@ import {
   NonceProvider,
   NonceStoreProvider,
   PreAuthorizedCodeStoreProvider,
-  IssuanceContextStoreProvider,
+  AllowedCredentialConfigurationStoreProvider,
 } from '../src/providers'
 import { GrantType, TokenRequest, TokenResponse } from '../src/token-request.types'
 import type { VcknotsContext } from '../src/vcknots.context'
@@ -64,14 +64,14 @@ describe('AuthzFlows', () => {
     save: mock.fn(),
   } satisfies PreAuthorizedCodeStoreProvider
 
-  const mockIssuanceContextStoreProvider = {
-    kind: 'issuance-context-store-provider',
-    name: 'mock-issuance-context-store-provider',
+  const mockAllowedCredentialConfigurationStoreProvider = {
+    kind: 'allowed-credential-configuration-store-provider',
+    name: 'mock-allowed-credential-configuration-store-provider',
     single: true,
     save: mock.fn(),
     fetch: mock.fn(),
     delete: mock.fn(),
-  } satisfies IssuanceContextStoreProvider
+  } satisfies AllowedCredentialConfigurationStoreProvider
 
   const mockAccessTokenProvider = {
     kind: 'access-token-provider',
@@ -171,8 +171,8 @@ describe('AuthzFlows', () => {
               return mockAuthzOAuthClientStoreProvider
             case 'pre-authorized-code-store-provider':
               return mockCodeStoreProvider
-            case 'issuance-context-store-provider':
-              return mockIssuanceContextStoreProvider
+            case 'allowed-credential-configuration-store-provider':
+              return mockAllowedCredentialConfigurationStoreProvider
             case 'access-token-provider':
               return mockAccessTokenProvider
             case 'authz-signature-key-store-provider':
@@ -984,7 +984,7 @@ describe('AuthzFlows', () => {
     describe('Pre-Authorized Code Flow', () => {
       beforeEach(() => {
         mock.method(mockCodeStoreProvider, 'consume', async () => ['test-credential-config-id'])
-        mock.method(mockIssuanceContextStoreProvider, 'save', async () => {})
+        mock.method(mockAllowedCredentialConfigurationStoreProvider, 'save', async () => {})
         mock.method(mockAuthzKeyProvider, 'sign', async () => sampleSignature)
         mock.method(mockAccessTokenProvider, 'createTokenPayload', async () => samplePayload)
         mock.method(mockDpopProofProvider, 'verifyProof', async () => ({
@@ -1002,7 +1002,7 @@ describe('AuthzFlows', () => {
         const response = (await flow.createAccessToken(sampleIssuer, tokenRequest)) as TokenResponse
 
         assert.strictEqual(mockCodeStoreProvider.consume.mock.callCount(), 1)
-        assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 1)
+        assert.strictEqual(mockAllowedCredentialConfigurationStoreProvider.save.mock.callCount(), 1)
         assert.strictEqual(mockAuthzKeyProvider.sign.mock.callCount(), 1)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 1)
 
@@ -1057,12 +1057,12 @@ describe('AuthzFlows', () => {
         })
 
         assert.strictEqual(mockCodeStoreProvider.consume.mock.callCount(), 1)
-        assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 0)
+        assert.strictEqual(mockAllowedCredentialConfigurationStoreProvider.save.mock.callCount(), 0)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 0)
         assert.strictEqual(mockAuthzKeyProvider.sign.mock.callCount(), 0)
       })
 
-      it('should save issuance context by access token hash without adding jti to the payload', async () => {
+      it('should save allowed credential configurations by access token hash without adding jti to the payload', async () => {
         mock.method(
           mockAccessTokenProvider,
           'createTokenPayload',
@@ -1074,11 +1074,11 @@ describe('AuthzFlows', () => {
 
         const response = (await flow.createAccessToken(sampleIssuer, tokenRequest)) as TokenResponse
 
-        assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 1)
+        assert.strictEqual(mockAllowedCredentialConfigurationStoreProvider.save.mock.callCount(), 1)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 1)
 
         const savedAccessTokenHash =
-          mockIssuanceContextStoreProvider.save.mock.calls[0].arguments[0]
+          mockAllowedCredentialConfigurationStoreProvider.save.mock.calls[0].arguments[0]
         const payloadOptions = mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
 
         assert.strictEqual(savedAccessTokenHash, calculateAccessTokenHash(response.access_token))
@@ -1269,7 +1269,7 @@ describe('AuthzFlows', () => {
   })
 
   describe('authorizeCredentialEndpointAccess()', () => {
-    it('should authorize a bearer token and return an opaque issuance context key', async () => {
+    it('should authorize a bearer token and return an opaque allowed credential configuration key', async () => {
       const keys = await generateKeyPair('ES256', { extractable: true })
       const accessToken = await new SignJWT({ iss: sampleIssuer, client_id: 'wallet-client' })
         .setProtectedHeader({ alg: 'ES256', typ: 'JWT' })
@@ -1291,7 +1291,7 @@ describe('AuthzFlows', () => {
       })
 
       assert.deepStrictEqual(result, {
-        issuanceContextKey: calculateAccessTokenHash(accessToken),
+        allowedCredentialConfigurationKey: calculateAccessTokenHash(accessToken),
         clientId: 'wallet-client',
         tokenType: 'bearer',
       })

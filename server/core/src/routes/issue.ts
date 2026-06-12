@@ -227,7 +227,8 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       }
 
       // Issue Credential
-      const credential = await issuerFlow.issueCredential(issuer, parse, authorizationContext, {
+      const credential = await issuerFlow.issueCredential(issuer, parse, {
+        authorizationContext,
         alg: 'ES256',
         cnonce: {
           c_nonce_expires_in: 60 * 5 * 1000,

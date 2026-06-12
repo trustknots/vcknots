@@ -621,10 +621,10 @@ export type CredentialEndpointAuthorizationOptions = AccessTokenVerifyOptions & 
 
 export type CredentialEndpointAuthorizationContext = {
   /**
-   * Opaque key for the issuance context associated with the presented access token.
+   * Opaque key for the allowed credential configuration entry associated with the presented access token.
    * Callers should pass this context to IssuerFlow instead of calculating or inspecting token hashes.
    */
-  issuanceContextKey: string
+  allowedCredentialConfigurationKey: string
   /** OAuth client identified from the access token payload, omitted for anonymous access tokens. */
   clientId?: AuthzOAuthClient['client_id']
   /** Effective access token presentation method accepted by the credential endpoint. */
@@ -709,7 +709,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   const oauthClientAssertionJtiStore$ = context.providers.get(
     'oauth-client-assertion-jti-store-provider'
   )
-  const issuanceContextStore$ = context.providers.get('issuance-context-store-provider')
+  const allowedCredentialConfigurationStore$ = context.providers.get('allowed-credential-configuration-store-provider')
 
   /**
    * Verifies a bearer-style access token JWT: shape, issuer matches `authz`, signature with stored AS key.
@@ -875,6 +875,11 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
     return senderConstraint.dpop?.mode ?? DEFAULT_DPOP_MODE
   }
 
+  /**
+   * Credential endpoint (resource server) authorization: parses `Authorization` / optional `DPoP`,
+   * verifies the access token, applies sender-constrained OAuth policy, and returns the opaque
+   * context required by {@link IssuerFlow.issueCredential}.
+   */
   const authorizeCredentialEndpointAccess = async (
     authz: AuthorizationServerIssuer,
     options: CredentialEndpointAuthorizationOptions
@@ -910,6 +915,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       : undefined
     const dpopMode = await resolveAuthzPolicyDpopModeForIssuer(authz, clientKind, clientPolicy)
 
+    // Policy mode `off`: do not accept DPoP scheme or a standalone `DPoP` header.
     if (
       dpopMode === 'off' &&
       (authorization.value.scheme === 'dpop' || Boolean(options.dpopHeader))
@@ -919,6 +925,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       })
     }
 
+    // DPoP scheme: verify proof JWT and bind it to the presented access token.
     if (authorization.value.scheme === 'dpop') {
       const dpopProof = parseDpopHeader(options.dpopHeader)
       if (!dpopProof.ok) {
@@ -941,12 +948,13 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         },
       })
       return {
-        issuanceContextKey: calculateAccessTokenHash(authorization.value.token),
+        allowedCredentialConfigurationKey: calculateAccessTokenHash(authorization.value.token),
         ...(accessTokenClientId ? { clientId: accessTokenClientId } : {}),
         tokenType: 'dpop',
       }
     }
 
+    // Bearer scheme: reject when policy requires DPoP or the token is DPoP-bound (`cnf.jkt`).
     if (dpopMode === 'required') {
       throw err('invalid_access_token', {
         message: 'DPoP access token is required.',
@@ -958,8 +966,9 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
       })
     }
 
+    // Key matches `allowed-credential-configuration-store` entry saved at token issuance.
     return {
-      issuanceContextKey: calculateAccessTokenHash(authorization.value.token),
+      allowedCredentialConfigurationKey: calculateAccessTokenHash(authorization.value.token),
       ...(accessTokenClientId ? { clientId: accessTokenClientId } : {}),
       tokenType: 'bearer',
     }
@@ -1200,7 +1209,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           const accessToken = `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`
           const accessTokenHash = calculateAccessTokenHash(accessToken)
 
-          await issuanceContextStore$.save(accessTokenHash, credentialConfigurationIds, ttlSec)
+          await allowedCredentialConfigurationStore$.save(accessTokenHash, credentialConfigurationIds, ttlSec)
 
           // Create Token Response
           return {
