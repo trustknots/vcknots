@@ -135,6 +135,19 @@ cd /path/to/vcknots/wallet/examples/server_integration_sdjwt+kbjwt
 go run server_integration_sdjwt_kbjwt.go
 ```
 
+Set `VCKNOTS_SERVER_URL` when the server is not running on `http://localhost:8080`:
+
+```bash
+VCKNOTS_SERVER_URL=http://localhost:18080 go run server_integration_sdjwt.go
+```
+
+To run against an offer URI created separately, pass both the offer URI and its transaction code. `--tx_code` is also accepted.
+
+```bash
+OFFER_URI='openid-credential-offer://?...'
+go run server_integration_sdjwt.go --credential-offer-uri "$OFFER_URI" --tx-code 123456
+```
+
 
 
 ### Step 3: Check the results
@@ -208,10 +221,14 @@ Conformance Test mode automatically applies the following settings:
 ```bash
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go
+VCKNOTS_SERVER_URL=http://localhost:18080 go run server_integration_sdjwt.go
+go run server_integration_sdjwt.go --credential-offer-uri "$OFFER_URI" --tx-code 123456
 ```
 - Tests integration with a local vcknots server
 - Strict certificate verification (uses a specific certificate file)
 - Server must be running on http://localhost:8080
+- `--tx-code` is optional and is forwarded to the OID4VCI token request as `tx_code`
+- `--credential-offer-uri` skips fetching a new offer and uses the provided OID4VCI offer URI
 
 **Mode 2: Conformance Test (with OID4VP URI argument)**
 ```bash

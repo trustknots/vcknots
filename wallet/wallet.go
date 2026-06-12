@@ -669,12 +669,6 @@ func (w *Wallet) ReceiveCredential(req ReceiveCredentialRequest) (*SavedCredenti
 		return nil, err
 	}
 
-	preAuthGrant := req.CredentialOffer.Grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"]
-
-	if preAuthGrant.TxCode != nil && strings.TrimSpace(req.TxCode) == "" {
-		return nil, fmt.Errorf("tx_code is required by credential offer")
-	}
-
 	issuerMetadata, authMetadata, err := w.fetchCredentialMetadata(req)
 	if err != nil {
 		return nil, err
