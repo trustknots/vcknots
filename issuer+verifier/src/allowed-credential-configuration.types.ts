@@ -8,5 +8,5 @@ const allowedCredentialConfigurationStoreEntrySchema = z.object({
 export type AllowedCredentialConfigurationStoreEntry = z.infer<
   typeof allowedCredentialConfigurationStoreEntrySchema
 >
-export const AllowedCredentialConfigurationStoreEntry = (value?: Partial<AllowedCredentialConfigurationStoreEntry>) =>
+export const AllowedCredentialConfigurationStoreEntry = (value?: unknown) =>
   allowedCredentialConfigurationStoreEntrySchema.parse(value)

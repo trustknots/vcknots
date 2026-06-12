@@ -1,9 +1,4 @@
-import {
-  calculateJwkThumbprint,
-  decodeProtectedHeader,
-  importJWK,
-  jwtVerify,
-} from 'jose'
+import { calculateJwkThumbprint, decodeProtectedHeader, importJWK, jwtVerify } from 'jose'
 import { calculateAccessTokenHash } from '../dpop-proof'
 import { DPoPProofPayload, DPoPProofVerifyContext, VerifiedDpopProof } from '../dpop-proof.types'
 import { raise } from '../errors/vcknots.error'

@@ -12,6 +12,7 @@ import {
 } from '@trustknots/vcknots/authz'
 import { VcknotsError } from '@trustknots/vcknots/errors'
 import { Context, Hono } from 'hono'
+import { ZodError } from 'zod'
 import { handleError } from '../utils/error-handler.js'
 import {
   buildBearerAuthenticateHeader,
@@ -214,7 +215,7 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       try {
         parse = CredentialRequest(request)
       } catch (err) {
-        if (err instanceof Error && err.name === 'ZodError') {
+        if (err instanceof ZodError) {
           return c.json(
             {
               error: 'invalid_credential_request',
