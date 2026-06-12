@@ -9,6 +9,8 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Duration } from 'aws-cdk-lib';
 import { handlerEntry } from '../../util/paths';
 
+const apiStage = process.env.API_STAGE ?? 'test';
+
 export interface LambdaApiProps {
   /** Handler file name under lib/handlers/ (e.g. issuer.ts). */
   handlerFile: string;
@@ -61,6 +63,7 @@ export class LambdaApi extends Construct {
       logGroup,
       environment: {
         NODE_ENV: 'production',
+        API_STAGE: apiStage,
         ...props.environment,
       },
     });
@@ -70,7 +73,7 @@ export class LambdaApi extends Construct {
       proxy: true,
       restApiName: props.restApiName,
       deployOptions: {
-        stageName: 'prod',
+        stageName: apiStage,
         throttlingBurstLimit: 100,
         throttlingRateLimit: 50,
       },
@@ -81,6 +84,6 @@ export class LambdaApi extends Construct {
       },
     });
 
-    this.handler.addEnvironment('BASE_URL', this.restApi.url);
+    this.handler.addEnvironment('API_GATEWAY_ID', this.restApi.restApiId);
   }
 }

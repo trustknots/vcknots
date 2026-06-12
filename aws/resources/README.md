@@ -11,6 +11,9 @@ aws/
 ├── provider/          @trustknots/aws (placeholder)
 └── resources/         this package (CDK app)
     ├── bin/resources.ts
+    ├── scripts/
+    │   ├── deploy-resources.sh
+    │   └── .env.example
     └── lib/
         ├── construct/
         │   ├── data/
@@ -58,13 +61,13 @@ Each role uses the shared `LambdaApi` construct (`lib/construct/api/lambda-api.t
 | Resource | Setting |
 |---|---|
 | API type | `LambdaRestApi` with `{proxy+}` |
-| Stage | `prod` |
+| Stage | `test` |
 | CORS | Enabled on all routes via `defaultCorsPreflightOptions` |
 | Lambda runtime | Node.js latest (`NODEJS_LATEST`, ARM64) |
 | Timeout | 29s |
 | Memory | 512 MB |
 | Log retention | 1 week |
-| `BASE_URL` | Set automatically from the API Gateway URL |
+| `API_GATEWAY_ID`, `API_STAGE` | Used to build the API Gateway default URL at runtime |
 
 | Lambda | Log group | Table env vars |
 |---|---|---|
@@ -114,11 +117,11 @@ From the monorepo root:
 pnpm install
 ```
 
-First deploy to an account/region may require CDK bootstrap:
+AWS CLI credentials for the target account/region. Optional local defaults:
 
 ```bash
-cd aws/resources
-pnpm cdk bootstrap
+cp aws/resources/scripts/.env.example aws/resources/scripts/.env
+# edit API_STAGE, AWS_PROFILE, etc.
 ```
 
 ## Build
@@ -130,12 +133,34 @@ cd aws/resources
 pnpm build
 ```
 
-## Synth and deploy
+## Deploy
 
-CDK runs via `ts-node` (`cdk.json`). `pnpm build` is not required for synth/deploy.
+Use the deploy script (runs `cdk bootstrap` then `cdk deploy`). CDK runs via `ts-node` (`cdk.json`); `pnpm build` is not required.
+
+```bash
+cd aws/resources
+
+# default AWS profile, stage: test
+pnpm deploy
+
+# specify profile and/or stage
+pnpm deploy -- --profile vc-knots
+pnpm deploy -- --stage prod
+pnpm deploy -- --profile vc-knots --stage prod
+```
+
+Options:
+
+| Flag | Description |
+|---|---|
+| `--profile` | AWS profile (optional; uses CLI default when omitted) |
+| `--stage` | API Gateway stage name (default: `test`) |
+
+`scripts/.env` is loaded when present. CLI flags override `.env`.
+
+## Synth only
 
 ```bash
 cd aws/resources
 pnpm cdk synth
-pnpm cdk deploy
 ```
