@@ -194,6 +194,17 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 		if isUseDPoPNonceResponse(resp, bodyBytes) {
 			return nil, types.NewDPoPNonceError(resp.Header.Get("DPoP-Nonce"), types.ErrTokenRequestFailed)
 		}
+		if resp.StatusCode == http.StatusBadRequest {
+			if errorCode := tokenErrorCode(bodyBytes); errorCode != "" {
+				return nil, fmt.Errorf(
+					"token request failed: %s; status: %d; response: %s: %w",
+					errorCode,
+					resp.StatusCode,
+					string(bodyBytes),
+					types.ErrTokenRequestFailed,
+				)
+			}
+		}
 		return nil, fmt.Errorf(
 			"unexpected status code: %d response: %s",
 			resp.StatusCode,
@@ -416,14 +427,18 @@ func authorizationScheme(tokenType string) string {
 	}
 }
 
-func isUseDPoPNonceError(bodyBytes []byte) bool {
+func tokenErrorCode(bodyBytes []byte) string {
 	var errorResponse struct {
 		Error string `json:"error"`
 	}
 	if err := json.Unmarshal(bodyBytes, &errorResponse); err != nil {
-		return false
+		return ""
 	}
-	return errorResponse.Error == "use_dpop_nonce"
+	return strings.TrimSpace(errorResponse.Error)
+}
+
+func isUseDPoPNonceError(bodyBytes []byte) bool {
+	return tokenErrorCode(bodyBytes) == "use_dpop_nonce"
 }
 
 func isUseDPoPNonceResponse(resp *http.Response, bodyBytes []byte) bool {

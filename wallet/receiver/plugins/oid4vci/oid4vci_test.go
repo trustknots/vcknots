@@ -482,6 +482,27 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		assert.Contains(t, err.Error(), "token-dpop-nonce")
 	})
 
+	t.Run("bad request error field is surfaced", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		errorServer := mockserver.NewMockServer()
+		defer errorServer.Close()
+
+		errorServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			mockserver.JSONResponse(w, http.StatusBadRequest, map[string]string{
+				"error": "invalid_dpop_proof",
+			})
+		})
+
+		errorURL, _ := url.Parse(errorServer.URL() + "/token")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*errorURL), "test-code", "")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, types.ErrTokenRequestFailed)
+		assert.Contains(t, err.Error(), "invalid_dpop_proof")
+	})
+
 	t.Run("Invalid JSON response", func(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetHTTPAllowed(http_allowed)
