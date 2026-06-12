@@ -17,6 +17,7 @@ import { DiVpProof, Proofs, ProofTypes } from './proofs.types'
 import { ProofJwt } from './credential.types'
 import { calculateJwkThumbprint } from 'jose'
 import { jwkSchema } from './jwk.type'
+import type { CredentialEndpointAuthorizationContext } from './authz.flows'
 
 type OfferOptions =
   | {
@@ -44,7 +45,6 @@ type IssueOptions = {
   /** OID4VCI JWT proof context: usePreAuth means the grant type is pre-authorized_code. */
   proofJwt?: {
     usePreAuth: boolean
-    clientId?: string
   }
 }
 
@@ -103,7 +103,7 @@ export type IssuerFlow = {
   issueCredential(
     issuer: CredentialIssuer,
     credentialRequest: CredentialRequest,
-    accessTokenHash: string,
+    authorizationContext: CredentialEndpointAuthorizationContext,
     options?: IssueOptions
   ): Promise<CredentialResponse>
 }
@@ -312,7 +312,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const lookupNonce = Nonce({ nonce })
       return cnonceStore$.revoke(lookupNonce)
     },
-    async issueCredential(issuer, credentialRequest, accessTokenHash, options) {
+    async issueCredential(issuer, credentialRequest, authorizationContext, options) {
       if (options?.subject && !isUri(options.subject)) {
         throw err('invalid_credential_request', {
           message: 'Invalid options: subject must be a URI.',
@@ -340,12 +340,14 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: `Credential configuration ${credentialRequest.credential_configuration_id} is not supported by issuer ${issuer}.`,
         })
       }
-      if (!accessTokenHash) {
+      if (!authorizationContext.issuanceContextKey) {
         throw err('invalid_credential_request', {
-          message: 'access token hash is missing.',
+          message: 'issuance context key is missing.',
         })
       }
-      const allowedCredentialConfigurationIds = await issuanceContextStore$.fetch(accessTokenHash)
+      const allowedCredentialConfigurationIds = await issuanceContextStore$.fetch(
+        authorizationContext.issuanceContextKey
+      )
       if (!allowedCredentialConfigurationIds) {
         throw err('invalid_credential_request', {
           message: 'Issuance context for this access token was not found',
@@ -385,12 +387,14 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
                 ? {
                     usePreAuth: true,
                     credentialIssuer: metadata.credential_issuer,
-                    ...(options.proofJwt.clientId ? { clientId: options.proofJwt.clientId } : {}),
+                    ...(authorizationContext.clientId
+                      ? { clientId: authorizationContext.clientId }
+                      : {}),
                   }
                 : {
                     usePreAuth: false,
                     credentialIssuer: metadata.credential_issuer,
-                    clientId: options?.proofJwt?.clientId,
+                    clientId: authorizationContext.clientId,
                   }
               : undefined
           verifyProof = await credentialProofProvider.verifyProof(proof, proofJwtCtx)

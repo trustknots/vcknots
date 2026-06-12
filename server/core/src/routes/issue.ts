@@ -1,17 +1,15 @@
-import {
-  calculateAccessTokenHash,
-  parseAuthorizationHeader,
-  parseDpopHeader,
-  VcknotsContext,
-  JwtPayload,
-} from '@trustknots/vcknots'
+import { VcknotsContext } from '@trustknots/vcknots'
 import {
   CredentialRequest,
   CredentialIssuer,
   initializeIssuerFlow,
   CredentialConfigurationId,
 } from '@trustknots/vcknots/issuer'
-import { AuthorizationServerIssuer, initializeAuthzFlow } from '@trustknots/vcknots/authz'
+import {
+  AuthorizationServerIssuer,
+  initializeAuthzFlow,
+  type CredentialEndpointAuthorizationContext,
+} from '@trustknots/vcknots/authz'
 import { VcknotsError } from '@trustknots/vcknots/errors'
 import { Context, Hono } from 'hono'
 import { handleError } from '../utils/error-handler.js'
@@ -30,22 +28,6 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   const issuerFlow = initializeIssuerFlow(context)
   const authzFlow = initializeAuthzFlow(context)
   const realm = baseUrl
-
-  const hasCnfJkt = (payload: unknown) => {
-    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
-      return false
-    }
-    const cnf = (payload as { cnf?: unknown }).cnf
-    if (cnf === null || typeof cnf !== 'object' || Array.isArray(cnf)) {
-      return false
-    }
-    return typeof (cnf as { jkt?: unknown }).jkt === 'string'
-  }
-
-  const getAccessTokenClientId = (payload: JwtPayload): string | undefined => {
-    const clientId = payload.client_id
-    return typeof clientId === 'string' && clientId.trim().length > 0 ? clientId.trim() : undefined
-  }
 
   const unauthorized = (
     c: Context,
@@ -190,101 +172,15 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       const issuer = CredentialIssuer(baseUrl)
       const authz = AuthorizationServerIssuer(baseUrl)
 
-      // Verify AccessToken
-      const authorization = parseAuthorizationHeader(c.req.header('Authorization'))
-      if (!authorization.ok) {
-        return unauthorized(c, {
-          error: 'invalid_token',
-          error_description:
-            authorization.reason === 'missing'
-              ? 'Access token is required.'
-              : 'Authorization header must use Bearer or DPoP scheme.',
-        })
-      }
-
-      let accessTokenPayload: JwtPayload
-      let accessTokenClientId: string | undefined
+      let authorizationContext: CredentialEndpointAuthorizationContext
       try {
-        // Credential endpoint policy depends on the client bound to the already-issued access token.
-        // Verify the token first, then derive anonymous/default-client policy from its client_id claim.
-        accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
-          authz,
-          authorization.value.token
-        )
-        accessTokenClientId = getAccessTokenClientId(accessTokenPayload)
-        const oauthClient = accessTokenClientId
-          ? await authzFlow.findAuthzOAuthClient(authz, accessTokenClientId)
-          : null
-        if (accessTokenClientId && !oauthClient) {
-          return unauthorized(
-            c,
-            {
-              error: 'invalid_token',
-              error_description: 'Access token client_id is not registered.',
-            },
-            { error: 'invalid_token' }
-          )
-        }
-        // A token without client_id came from an anonymous token request; otherwise use the
-        // registered OAuth client's sender constraint override when present.
-        const clientKind = accessTokenClientId ? 'default_client' : 'anonymous_client'
-        const clientPolicy = oauthClient?.senderConstrainedAccessToken
-          ? { senderConstrainedAccessToken: oauthClient.senderConstrainedAccessToken }
-          : undefined
-        const dpopMode = await authzFlow.resolveAuthzPolicyDpopMode(authz, clientKind, clientPolicy)
-        if (dpopMode === 'off' && (authorization.value.scheme === 'dpop' || c.req.header('DPoP'))) {
-          return unauthorized(c, {
-            error: 'invalid_token',
-            error_description: 'DPoP access tokens are not supported by this credential endpoint.',
-          })
-        }
-
-        if (authorization.value.scheme === 'dpop') {
-          const dpopProof = parseDpopHeader(c.req.header('DPoP'))
-          if (!dpopProof.ok) {
-            return invalidDpopProof(
-              c,
-              dpopProof.reason === 'missing'
-                ? 'DPoP proof JWT is required.'
-                : dpopProof.reason === 'duplicate'
-                  ? 'DPoP header must appear exactly once.'
-                  : 'DPoP header must contain a compact JWT.'
-            )
-          }
-          accessTokenPayload = await authzFlow.verifyDpopBoundAccessToken(
-            authz,
-            authorization.value.token,
-            {
-              dpopProof: {
-                proofJwt: dpopProof.proofJwt,
-                htm: c.req.method,
-                htu: `${baseUrl}/credentials`,
-                nonceRequired: true,
-              },
-            }
-          )
-        } else {
-          if (dpopMode === 'required') {
-            return unauthorized(
-              c,
-              {
-                error: 'invalid_token',
-                error_description: 'DPoP access token is required.',
-              },
-              { error: 'invalid_token' }
-            )
-          }
-          if (hasCnfJkt(accessTokenPayload)) {
-            return unauthorized(
-              c,
-              {
-                error: 'invalid_token',
-                error_description: 'DPoP-bound access token must be presented with DPoP scheme.',
-              },
-              { error: 'invalid_token' }
-            )
-          }
-        }
+        authorizationContext = await authzFlow.authorizeCredentialEndpointAccess(authz, {
+          authorizationHeader: c.req.header('Authorization'),
+          dpopHeader: c.req.header('DPoP'),
+          htm: c.req.method,
+          htu: `${baseUrl}/credentials`,
+          nonceRequired: true,
+        })
       } catch (err) {
         if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
           return unauthorized(
@@ -308,27 +204,30 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       if (!request) {
         return c.json(
           {
-            error: 'invalid_request',
+            error: 'invalid_credential_request',
             error_description: 'Request body must be a valid JSON.',
           },
           400
         )
       }
-      const parseResult = CredentialRequest.schema.safeParse(request)
-      if (!parseResult.success) {
-        return c.json(
-          {
-            error: 'invalid_request',
-            error_description: 'Request body does not conform to CredentialRequest schema.',
-          },
-          400
-        )
+      let parse: CredentialRequest
+      try {
+        parse = CredentialRequest(request)
+      } catch (err) {
+        if (err instanceof Error && err.name === 'ZodError') {
+          return c.json(
+            {
+              error: 'invalid_credential_request',
+              error_description: 'Request body does not conform to CredentialRequest schema.',
+            },
+            400
+          )
+        }
+        throw err
       }
-      const parse = parseResult.data
-      const accessTokenHash = calculateAccessTokenHash(authorization.value.token)
 
       // Issue Credential
-      const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenHash, {
+      const credential = await issuerFlow.issueCredential(issuer, parse, authorizationContext, {
         alg: 'ES256',
         cnonce: {
           c_nonce_expires_in: 60 * 5 * 1000,
@@ -336,7 +235,6 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         claims: issueClaimsSample,
         proofJwt: {
           usePreAuth: true,
-          clientId: accessTokenClientId,
         },
       })
       return c.json(credential)

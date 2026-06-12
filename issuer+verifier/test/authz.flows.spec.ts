@@ -1267,4 +1267,62 @@ describe('AuthzFlows', () => {
       })
     })
   })
+
+  describe('authorizeCredentialEndpointAccess()', () => {
+    it('should authorize a bearer token and return an opaque issuance context key', async () => {
+      const keys = await generateKeyPair('ES256', { extractable: true })
+      const accessToken = await new SignJWT({ iss: sampleIssuer, client_id: 'wallet-client' })
+        .setProtectedHeader({ alg: 'ES256', typ: 'JWT' })
+        .sign(keys.privateKey)
+
+      mock.method(mockAuthzKeyProvider, 'fetch', async () => keys.publicKey)
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () =>
+        AuthzOAuthClient({
+          client_id: 'wallet-client',
+          token_endpoint_auth_method: 'none',
+        })
+      )
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
+
+      const result = await flow.authorizeCredentialEndpointAccess(sampleIssuer, {
+        authorizationHeader: `Bearer ${accessToken}`,
+        htm: 'POST',
+        htu: 'https://issuer.example.com/credentials',
+      })
+
+      assert.deepStrictEqual(result, {
+        issuanceContextKey: calculateAccessTokenHash(accessToken),
+        clientId: 'wallet-client',
+        tokenType: 'bearer',
+      })
+      assert.deepStrictEqual(mockAuthzOAuthClientStoreProvider.fetch.mock.calls[0].arguments, [
+        sampleIssuer,
+        'wallet-client',
+      ])
+    })
+
+    it('should reject bearer presentation when anonymous credential policy requires DPoP', async () => {
+      const keys = await generateKeyPair('ES256', { extractable: true })
+      const accessToken = await new SignJWT({ iss: sampleIssuer })
+        .setProtectedHeader({ alg: 'ES256', typ: 'JWT' })
+        .sign(keys.privateKey)
+
+      mock.method(mockAuthzKeyProvider, 'fetch', async () => keys.publicKey)
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
+
+      await assert.rejects(
+        () =>
+          flow.authorizeCredentialEndpointAccess(sampleIssuer, {
+            authorizationHeader: `Bearer ${accessToken}`,
+            htm: 'POST',
+            htu: 'https://issuer.example.com/credentials',
+          }),
+        {
+          name: 'invalid_access_token',
+          message: 'DPoP access token is required.',
+        }
+      )
+      assert.strictEqual(mockAuthzOAuthClientStoreProvider.fetch.mock.callCount(), 0)
+    })
+  })
 })

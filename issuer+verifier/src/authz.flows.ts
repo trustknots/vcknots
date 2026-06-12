@@ -6,13 +6,14 @@ import {
 } from './authorization-server.types'
 import { AuthzOAuthClient } from './authz-oauth-client.types'
 import { AuthzOAuthPolicy, type AuthzClientPolicy, type DPoPMode } from './authz-oauth-policy.types'
-import { calculateAccessTokenHash } from './dpop-proof'
+import { calculateAccessTokenHash, parseDpopHeader } from './dpop-proof'
 import type { DPoPProofVerifyContext } from './dpop-proof.types'
 import { err } from './errors/vcknots.error'
 import { GrantType, TokenRequest } from './token-request.types'
 import { VcknotsContext } from './vcknots.context'
 import { JwtPayload } from './jwt.types'
 import { Nonce } from './nonce.types'
+import { parseAuthorizationHeader } from './authorization-header'
 
 type AuthzKeyAlg = string
 type OAuthClientAuthMethod = string
@@ -610,6 +611,26 @@ type DPoPBoundAccessTokenVerifyOptions = AccessTokenVerifyOptions & {
   dpopProof: DPoPProofContext
 }
 
+export type CredentialEndpointAuthorizationOptions = AccessTokenVerifyOptions & {
+  authorizationHeader?: string | null
+  dpopHeader?: string | null
+  htm: string
+  htu: string
+  nonceRequired?: boolean
+}
+
+export type CredentialEndpointAuthorizationContext = {
+  /**
+   * Opaque key for the issuance context associated with the presented access token.
+   * Callers should pass this context to IssuerFlow instead of calculating or inspecting token hashes.
+   */
+  issuanceContextKey: string
+  /** OAuth client identified from the access token payload, omitted for anonymous access tokens. */
+  clientId?: AuthzOAuthClient['client_id']
+  /** Effective access token presentation method accepted by the credential endpoint. */
+  tokenType: 'bearer' | 'dpop'
+}
+
 /**
  * Authorization-server capabilities: AS metadata, OAuth client/policy stores, DPoP-aware token
  * endpoint helpers, access token creation (pre-authorized code grant), and access token verification.
@@ -662,6 +683,14 @@ export type AuthzFlow = {
     accessToken: string,
     options: DPoPBoundAccessTokenVerifyOptions
   ): Promise<JwtPayload>
+  /**
+   * Credential endpoint authorization: parses Authorization/DPoP headers, verifies the access token,
+   * applies sender-constrained policy, and returns the opaque context required for issuance checks.
+   */
+  authorizeCredentialEndpointAccess(
+    authz: AuthorizationServerIssuer,
+    options: CredentialEndpointAuthorizationOptions
+  ): Promise<CredentialEndpointAuthorizationContext>
 }
 
 /**
@@ -747,6 +776,12 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
     }
     const jkt = (cnf as { jkt?: unknown }).jkt
     return typeof jkt === 'string' && jkt.trim().length > 0 ? jkt : undefined
+  }
+
+  /** Extracts the OAuth client id carried by an access token, if the token was client-bound. */
+  const getAccessTokenClientId = (payload: JwtPayload): AuthzOAuthClient['client_id'] | undefined => {
+    const clientId = payload.client_id
+    return typeof clientId === 'string' && clientId.trim().length > 0 ? clientId.trim() : undefined
   }
 
   /**
@@ -838,6 +873,96 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
     }
 
     return senderConstraint.dpop?.mode ?? DEFAULT_DPOP_MODE
+  }
+
+  const authorizeCredentialEndpointAccess = async (
+    authz: AuthorizationServerIssuer,
+    options: CredentialEndpointAuthorizationOptions
+  ): Promise<CredentialEndpointAuthorizationContext> => {
+    const authorization = parseAuthorizationHeader(options.authorizationHeader)
+    if (!authorization.ok) {
+      throw err('invalid_access_token', {
+        message:
+          authorization.reason === 'missing'
+            ? 'Access token is required.'
+            : 'Authorization header must use Bearer or DPoP scheme.',
+      })
+    }
+
+    // Verify the token first so the credential endpoint policy can be selected from the
+    // authenticated client_id claim, without exposing token payload parsing to server routes.
+    const accessTokenPayload = await verifyAccessTokenPayload(authz, authorization.value.token, {
+      alg: options.alg,
+    })
+    const accessTokenClientId = getAccessTokenClientId(accessTokenPayload)
+    const oauthClient = accessTokenClientId
+      ? await authzOAuthClient$.fetch(authz, accessTokenClientId)
+      : null
+    if (accessTokenClientId && !oauthClient) {
+      throw err('invalid_access_token', {
+        message: 'Access token client_id is not registered.',
+      })
+    }
+
+    const clientKind = accessTokenClientId ? 'default_client' : 'anonymous_client'
+    const clientPolicy = oauthClient?.senderConstrainedAccessToken
+      ? { senderConstrainedAccessToken: oauthClient.senderConstrainedAccessToken }
+      : undefined
+    const dpopMode = await resolveAuthzPolicyDpopModeForIssuer(authz, clientKind, clientPolicy)
+
+    if (
+      dpopMode === 'off' &&
+      (authorization.value.scheme === 'dpop' || Boolean(options.dpopHeader))
+    ) {
+      throw err('invalid_access_token', {
+        message: 'DPoP access tokens are not supported by this credential endpoint.',
+      })
+    }
+
+    if (authorization.value.scheme === 'dpop') {
+      const dpopProof = parseDpopHeader(options.dpopHeader)
+      if (!dpopProof.ok) {
+        throw err('invalid_dpop_proof', {
+          message:
+            dpopProof.reason === 'missing'
+              ? 'DPoP proof JWT is required.'
+              : dpopProof.reason === 'duplicate'
+                ? 'DPoP header must appear exactly once.'
+                : 'DPoP header must contain a compact JWT.',
+        })
+      }
+      await verifyDpopBoundAccessToken(authz, authorization.value.token, {
+        alg: options.alg,
+        dpopProof: {
+          proofJwt: dpopProof.proofJwt,
+          htm: options.htm,
+          htu: options.htu,
+          nonceRequired: options.nonceRequired ?? false,
+        },
+      })
+      return {
+        issuanceContextKey: calculateAccessTokenHash(authorization.value.token),
+        ...(accessTokenClientId ? { clientId: accessTokenClientId } : {}),
+        tokenType: 'dpop',
+      }
+    }
+
+    if (dpopMode === 'required') {
+      throw err('invalid_access_token', {
+        message: 'DPoP access token is required.',
+      })
+    }
+    if (getCnfJkt(accessTokenPayload)) {
+      throw err('invalid_access_token', {
+        message: 'DPoP-bound access token must be presented with DPoP scheme.',
+      })
+    }
+
+    return {
+      issuanceContextKey: calculateAccessTokenHash(authorization.value.token),
+      ...(accessTokenClientId ? { clientId: accessTokenClientId } : {}),
+      tokenType: 'bearer',
+    }
   }
 
   return {
@@ -1108,6 +1233,8 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
     verifyAccessTokenPayload: verifyAccessTokenPayload,
     /** @see {@link AuthzFlow.verifyDpopBoundAccessToken} */
     verifyDpopBoundAccessToken: verifyDpopBoundAccessToken,
+    /** @see {@link AuthzFlow.authorizeCredentialEndpointAccess} */
+    authorizeCredentialEndpointAccess: authorizeCredentialEndpointAccess,
   }
 }
 
