@@ -21,6 +21,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -35,28 +36,62 @@ import (
 	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
 
-func receiveCredential(w *wallet.Wallet, key *common.MockKeyEntry, logger *slog.Logger) *wallet.SavedCredential {
-	logger.Info("Fetching credential offer from server...")
+type runOptions struct {
+	CredentialOfferURI string
+	TxCode             string
+}
 
-	// Fetch credential offer from the server
-	serverURL := "http://localhost:8080"
-	offerEndpoint := serverURL + "/configurations/UniversityDegreeCredential/offer"
+func parseRunOptions(args []string) (runOptions, error) {
+	var opts runOptions
+	fs := flag.NewFlagSet("server_integration_jwtvc", flag.ContinueOnError)
+	fs.StringVar(&opts.CredentialOfferURI, "credential-offer-uri", "", "openid-credential-offer URI to use instead of fetching one from the local server")
+	fs.StringVar(&opts.TxCode, "tx-code", "", "tx_code to send to the token endpoint")
+	fs.StringVar(&opts.TxCode, "tx_code", "", "tx_code to send to the token endpoint")
 
-	resp, err := http.Post(offerEndpoint, "application/json", nil)
-	if err != nil {
-		logger.Error("Failed to fetch credential offer", "error", err)
-		panic(err)
+	if err := fs.Parse(args); err != nil {
+		return opts, err
 	}
-	defer resp.Body.Close()
+	if rest := fs.Args(); len(rest) > 0 {
+		return opts, fmt.Errorf("unexpected positional arguments: %s", strings.Join(rest, ", "))
+	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		logger.Error("Failed to read offer response", "error", err)
-		panic(err)
+	return opts, nil
+}
+
+func serverURLFromEnv() string {
+	if raw := strings.TrimSpace(os.Getenv("VCKNOTS_SERVER_URL")); raw != "" {
+		return strings.TrimRight(raw, "/")
+	}
+	return "http://localhost:8080"
+}
+
+func receiveCredential(w *wallet.Wallet, key *common.MockKeyEntry, logger *slog.Logger, serverURL string, credentialOfferURI string, txCode string) *wallet.SavedCredential {
+	offerURL := credentialOfferURI
+	if offerURL == "" {
+		logger.Info("Fetching credential offer from server...")
+
+		// Fetch credential offer from the server
+		offerEndpoint := serverURL + "/configurations/UniversityDegreeCredential/offer"
+
+		resp, err := http.Post(offerEndpoint, "application/json", nil)
+		if err != nil {
+			logger.Error("Failed to fetch credential offer", "error", err)
+			panic(err)
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			logger.Error("Failed to read offer response", "error", err)
+			panic(err)
+		}
+
+		offerURL = strings.TrimSpace(string(body))
+	} else {
+		logger.Info("Using credential offer URI from command line")
 	}
 
 	// Parse the openid-credential-offer URL
-	offerURL := string(body)
 	logger.Info("Received offer URL", "url", offerURL)
 
 	// Extract the credential_offer parameter from the URL
@@ -135,6 +170,10 @@ func receiveCredential(w *wallet.Wallet, key *common.MockKeyEntry, logger *slog.
 		CredentialOffer: credentialOffer,
 		Type:            types.Oid4vci,
 		Key:             key,
+		TxCode:          txCode,
+	}
+	if txCode != "" {
+		logger.Info("Using tx_code from command line")
 	}
 
 	// Use w.ReceiveCredential with proper parameters
@@ -179,12 +218,9 @@ func receiveCredential(w *wallet.Wallet, key *common.MockKeyEntry, logger *slog.
 	return savedCredential
 }
 
-func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential *wallet.SavedCredential, logger *slog.Logger) {
-	// Example verifier details
-	verifierURL := "http://localhost:8080"
-
+func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential *wallet.SavedCredential, logger *slog.Logger, serverURL string) {
 	// Print the verifier details
-	logger.Info("Verifier Details", "URL", verifierURL)
+	logger.Info("Verifier Details", "URL", serverURL)
 
 	// Verify that the received credential is available in the store
 	logger.Info("Using received credential for presentation", "credential_id", receivedCredential.Entry.Id)
@@ -301,15 +337,15 @@ func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential
 		}
 		},
 		"state": "example-state",
-		"base_url": "http://localhost:8080",
+		"base_url": "` + serverURL + `",
 		"is_request_uri": true,
-		"response_uri": "http://localhost:8080/callback",
+		"response_uri": "` + serverURL + `/callback",
 		"client_id": "x509_san_dns:localhost"
 	}`
 
 	logger.Info("Generated presentation definition", "json", jsonBody)
 	reqBody := io.NopCloser(strings.NewReader(jsonBody))
-	req, err := http.NewRequest("POST", verifierURL+"/request-object", reqBody)
+	req, err := http.NewRequest("POST", serverURL+"/request-object", reqBody)
 	if err != nil {
 		panic(err)
 	}
@@ -354,6 +390,11 @@ func main() {
 	env.SetHTTPAllowed(true)
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	opts, err := parseRunOptions(os.Args[1:])
+	if err != nil {
+		logger.Error("Invalid arguments", "error", err)
+		os.Exit(2)
+	}
 
 	runtime, err := common.NewOID4VPRuntime(os.Getenv("VCKNOTS_CERT_PATH"))
 	if err != nil {
@@ -362,10 +403,11 @@ func main() {
 	w := runtime.Wallet
 
 	logger.Info("Starting server integration check...")
+	serverURL := serverURLFromEnv()
 
 	mockKey := common.NewMockKeyEntry()
-	receivedCredential := receiveCredential(w, mockKey, logger)
+	receivedCredential := receiveCredential(w, mockKey, logger, serverURL, opts.CredentialOfferURI, opts.TxCode)
 
 	// Tests - Use the received credential for presentation
-	presentation(w, mockKey, receivedCredential, logger)
+	presentation(w, mockKey, receivedCredential, logger, serverURL)
 }

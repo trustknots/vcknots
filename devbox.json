@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.14.2/.schema/devbox.schema.json",
+  "packages": [
+    "go@1.26.1",
+    "nodejs@22.22.2",
+    "pnpm@10.11.0"
+  ],
+  "shell": {
+    "init_hook": [
+      "export GOPRIVATE=github.com/trustknots/vcknots/wallet"
+    ],
+    "scripts": {
+      "test-wallet": "cd wallet && go test ./...",
+      "test-examples": "cd wallet/examples/server_integration_jwtvc && go test ./... && cd ../server_integration_sdjwt && go test ./..."
+    }
+  }
+}

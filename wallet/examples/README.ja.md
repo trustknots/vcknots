@@ -135,6 +135,19 @@ cd /path/to/vcknots/wallet/examples/server_integration_sdjwt+kbjwt
 go run server_integration_sdjwt_kbjwt.go
 ```
 
+server が `http://localhost:8080` 以外で動いている場合は、`VCKNOTS_SERVER_URL` を指定します：
+
+```bash
+VCKNOTS_SERVER_URL=http://localhost:18080 go run server_integration_sdjwt.go
+```
+
+別途作成した offer URI を使う場合は、offer URI と transaction code を一緒に指定します。`--tx_code` も利用できます：
+
+```bash
+OFFER_URI='openid-credential-offer://?...'
+go run server_integration_sdjwt.go --credential-offer-uri "$OFFER_URI" --tx-code 123456
+```
+
 
 
 ### ステップ3: 結果の確認
@@ -208,10 +221,14 @@ go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_
 ```bash
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go
+VCKNOTS_SERVER_URL=http://localhost:18080 go run server_integration_sdjwt.go
+go run server_integration_sdjwt.go --credential-offer-uri "$OFFER_URI" --tx-code 123456
 ```
 - ローカルのvcknotsサーバーとの統合をテスト
 - 厳格な証明書検証（特定の証明書ファイルを使用）
 - サーバーは http://localhost:8080 で起動している必要があります
+- `--tx-code` は任意で、OID4VCI の token request に `tx_code` として渡されます
+- `--credential-offer-uri` を指定すると、新しい offer を取得せず、指定した OID4VCI offer URI を使います
 
 **モード2: コンフォーマンステスト（OID4VP URI引数あり）**
 ```bash
@@ -295,4 +312,3 @@ export VCKNOTS_WALLET_DEBUG=true
 - **状況**: サーバー統合テスト（`引数なしモード`）で発生する場合、証明書ファイルが正しく設定されていない可能性があります。
 - **状況**: コンフォーマンステスト（`引数ありモード`）では `InsecureSkipX509Verify: true` が自動設定されるため、通常は発生しません。
 - **解決策（サーバー統合テスト向け）**: 正しい証明書ファイルが `../../../server/samples/certificate-openid-test/certificate_openid.pem` に配置されていることを確認するか、`VCKNOTS_CERT_PATH` で指定してください。
-
