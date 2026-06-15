@@ -1,0 +1,24 @@
+{
+	"name": "@trustknots/server-aws",
+	"version": "0.1.0",
+	"description": "",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"build": "tsc",
+		"typecheck": "tsc --noEmit"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "Apache-2.0",
+	"dependencies": {
+		"@trustknots/server-core": "workspace:*",
+		"@trustknots/vcknots": "workspace:*",
+		"hono": "4.11.4"
+	},
+	"devDependencies": {
+		"@types/aws-lambda": "^8.10.161",
+		"@types/node": "^24.12.4",
+		"typescript": "~5.9.3"
+	}
+}

@@ -16,10 +16,7 @@
     "typescript": "~5.9.3"
   },
   "dependencies": {
-    "@trustknots/server-core": "workspace:*",
-    "@trustknots/vcknots": "workspace:*",
     "aws-cdk-lib": "^2.258.1",
-    "constructs": "^10.6.0",
-    "hono": "4.11.4"
+    "constructs": "^10.6.0"
   }
 }

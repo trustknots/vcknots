@@ -2,14 +2,25 @@
 
 CDK stack for vcknots on AWS.
 
-Related package: [`@trustknots/aws`](../provider) (AWS providers for DynamoDB / KMS / Secrets Manager — placeholder).
+Related packages:
+
+- [`@trustknots/server-aws`](../) — Lambda handlers and vcknots context (`handlers/`, `context/`)
+- [`@trustknots/aws`](../../../aws/provider) — AWS providers for DynamoDB / KMS / Secrets Manager (placeholder)
 
 ## Architecture
 
 ```
 aws/
-├── provider/          @trustknots/aws (placeholder)
-└── resources/         this package (CDK app)
+└── provider/              @trustknots/aws (placeholder)
+
+server/aws/
+├── handlers/              @trustknots/server-aws
+│   ├── issuer.ts          Lambda handler (Issuer)
+│   ├── authz.ts           Lambda handler (Authz)
+│   └── verifier.ts        Lambda handler (Verifier)
+├── context/
+│   └── vcknots-context.ts context / baseUrl helpers
+└── resources/             this package (CDK app)
     ├── bin/resources.ts
     ├── scripts/
     │   ├── deploy-resources.sh
@@ -26,13 +37,8 @@ aws/
         │   └── security/
         │       ├── key-management.ts      (placeholder, not in stack yet)
         │       └── secret-management.ts   (placeholder, not in stack yet)
-        ├── handlers/
-        │   ├── issuer.ts
-        │   ├── authz.ts
-        │   └── verifier.ts
         ├── util/
-        │   ├── paths.ts
-        │   └── vcknots-context.ts
+        │   └── paths.ts
         └── resources-stack.ts
 
 ResourcesStack
@@ -44,9 +50,11 @@ ResourcesStack
 
 ### Lambda handlers
 
+Handler sources live in `@trustknots/server-aws` (`server/aws/handlers/` and `server/aws/context/`).
+
 Each handler mounts a single route from `@trustknots/server-core` on a Hono app and exports `handle(app)` for API Gateway.
 
-| Handler | Route |
+| Handler (`server/aws/handlers/`) | Route |
 |---|---|
 | `issuer.ts` | `@trustknots/server-core/routes/issue` |
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
@@ -120,8 +128,8 @@ Attributes other than `id` (metadata body, `expires_at`, and so on) are written 
 | [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | v2 recommended | Used by `deploy-resources.sh` for identity/region lookup |
 | bash | — | Deploy script (`scripts/deploy-resources.sh`) |
 
-`aws-cdk`, `ts-node`, and `esbuild` are installed as `aws/resources` devDependencies.  
-You do **not** need a global `cdk` install; use `pnpm cdk` or `pnpm deploy` from `aws/resources`.
+`aws-cdk`, `ts-node`, and `esbuild` are installed as `server/aws/resources` devDependencies.  
+You do **not** need a global `cdk` install; use `pnpm cdk` or `pnpm deploy` from `server/aws/resources`.
 
 ### AWS account access
 
@@ -147,7 +155,7 @@ pnpm install
 Optional local deploy defaults:
 
 ```bash
-cp aws/resources/scripts/.env.example aws/resources/scripts/.env
+cp server/aws/resources/scripts/.env.example server/aws/resources/scripts/.env
 # edit API_STAGE, AWS_PROFILE, etc.
 ```
 
@@ -156,7 +164,7 @@ cp aws/resources/scripts/.env.example aws/resources/scripts/.env
 TypeScript compiles to `dist/` (not alongside source files).
 
 ```bash
-cd aws/resources
+cd server/aws/resources
 pnpm build
 ```
 
@@ -165,7 +173,7 @@ pnpm build
 Use the deploy script (runs `cdk bootstrap` then `cdk deploy`). CDK runs via `ts-node` (`cdk.json`); `pnpm build` is not required.
 
 ```bash
-cd aws/resources
+cd server/aws/resources
 
 # default AWS profile, stage: test
 pnpm deploy
@@ -188,6 +196,6 @@ Options:
 ## Synth only
 
 ```bash
-cd aws/resources
+cd server/aws/resources
 pnpm cdk synth
 ```

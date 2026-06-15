@@ -1,7 +1,8 @@
 packages:
   - issuer+verifier
-  - aws/resources
   - aws/provider
+  - server/aws
+  - server/aws/resources
   - google-cloud
   - docusaurus
   - server/multi

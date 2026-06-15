@@ -25,6 +25,11 @@ app/routes/utilの実装は `@trustknots/server-core` を利用します。
 Google Cloud連携のシングルテナント用のサーバー実装です。すべてのエンドポイントがルートパス（`/`）にマウントされます。
 app/routes/utilの実装は `@trustknots/server-core` を利用します。
 
+### `aws/`
+
+AWS Lambda 向けのサーバー実装です。ハンドラは `server/aws/handlers/`、vcknots context は `server/aws/context/`（`@trustknots/server-aws`）にあります。
+CDK インフラは `server/aws/resources/`、AWS provider は `aws/provider/`（`@trustknots/aws`）です。
+
 ### `multi/`
 
 マルチテナント用のサーバー実装です（開発中）。エンドポイントは `/issuers`、`/authorizations`、`/verifiers` などのプレフィックス付きでマウントされます。

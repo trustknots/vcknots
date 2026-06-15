@@ -1,18 +1,18 @@
-import { createVerifierRouter } from '@trustknots/server-core/routes/verify'
+import { createIssueRouter } from '@trustknots/server-core/routes/issue'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { handle } from 'hono/aws-lambda'
-import { createVcknotsContext, getBaseUrl } from '../util/vcknots-context'
+import { createVcknotsContext, getBaseUrl } from '../context/vcknots-context.js'
 
 const options = {
-  // TODO: AWS 用の provider（DynamoDB/KMS/SecretsManager など）が揃ったらここに差し替える
+  // TODO: @trustknots/aws provider（DynamoDB/KMS など）が揃ったらここに差し替える
 }
 
 const context = createVcknotsContext(options)
 const baseUrl = getBaseUrl()
 
 const app = new Hono()
-app.route('/', createVerifierRouter(context, baseUrl))
+app.route('/', createIssueRouter(context, baseUrl))
 app.notFound((c) => c.json({ error: 'Not Found' }, 404))
 app.onError((err, c) => {
   if (err instanceof HTTPException) return err.getResponse()

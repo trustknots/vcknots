@@ -13,7 +13,7 @@ Options:
   -h, --help              Show this help.
 
 Configuration:
-  Loads aws/resources/scripts/.env when present (if it exists).
+  Loads server/aws/resources/scripts/.env when present (if it exists).
   CLI options override .env and existing environment variables.
 
 Environment:
