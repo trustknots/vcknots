@@ -1,11 +1,5 @@
-import { createHash } from 'node:crypto'
-import {
-  base64url,
-  calculateJwkThumbprint,
-  decodeProtectedHeader,
-  importJWK,
-  jwtVerify,
-} from 'jose'
+import { calculateJwkThumbprint, decodeProtectedHeader, importJWK, jwtVerify } from 'jose'
+import { calculateAccessTokenHash } from '../dpop-proof'
 import { DPoPProofPayload, DPoPProofVerifyContext, VerifiedDpopProof } from '../dpop-proof.types'
 import { raise } from '../errors/vcknots.error'
 import type { DPoPProofProvider } from './provider.types'
@@ -56,11 +50,6 @@ function normalizeHtu(value: string): string {
   }
 
   return normalized.toString()
-}
-
-function calculateAccessTokenHash(accessToken: string): string {
-  // RFC 9449 `ath`: SHA-256 over the ASCII-encoded access token, then base64url.
-  return base64url.encode(createHash('sha256').update(accessToken).digest())
 }
 
 /**

@@ -9,6 +9,7 @@ import {
 import { AuthzFlow, initializeAuthzFlow } from '../src/authz.flows'
 import { AuthzOAuthClient } from '../src/authz-oauth-client.types'
 import { AuthzOAuthPolicy } from '../src/authz-oauth-policy.types'
+import { calculateAccessTokenHash } from '../src/dpop-proof'
 import { PreAuthorizedCode } from '../src/pre-authorized-code.types'
 import {
   AccessTokenProvider,
@@ -22,7 +23,7 @@ import {
   NonceProvider,
   NonceStoreProvider,
   PreAuthorizedCodeStoreProvider,
-  IssuanceContextStoreProvider,
+  AllowedCredentialConfigurationStoreProvider,
 } from '../src/providers'
 import { GrantType, TokenRequest, TokenResponse } from '../src/token-request.types'
 import type { VcknotsContext } from '../src/vcknots.context'
@@ -63,14 +64,14 @@ describe('AuthzFlows', () => {
     save: mock.fn(),
   } satisfies PreAuthorizedCodeStoreProvider
 
-  const mockIssuanceContextStoreProvider = {
-    kind: 'issuance-context-store-provider',
-    name: 'mock-issuance-context-store-provider',
+  const mockAllowedCredentialConfigurationStoreProvider = {
+    kind: 'allowed-credential-configuration-store-provider',
+    name: 'mock-allowed-credential-configuration-store-provider',
     single: true,
     save: mock.fn(),
     fetch: mock.fn(),
     delete: mock.fn(),
-  } satisfies IssuanceContextStoreProvider
+  } satisfies AllowedCredentialConfigurationStoreProvider
 
   const mockAccessTokenProvider = {
     kind: 'access-token-provider',
@@ -170,8 +171,8 @@ describe('AuthzFlows', () => {
               return mockAuthzOAuthClientStoreProvider
             case 'pre-authorized-code-store-provider':
               return mockCodeStoreProvider
-            case 'issuance-context-store-provider':
-              return mockIssuanceContextStoreProvider
+            case 'allowed-credential-configuration-store-provider':
+              return mockAllowedCredentialConfigurationStoreProvider
             case 'access-token-provider':
               return mockAccessTokenProvider
             case 'authz-signature-key-store-provider':
@@ -977,13 +978,13 @@ describe('AuthzFlows', () => {
       grant_type: GrantType.PreAuthorizedCode,
       'pre-authorized_code': preAuthCode,
     }
-    const samplePayload = { iss: sampleIssuer, sub: preAuthCode, jti: 'test-jti' }
+    const samplePayload = { iss: sampleIssuer, sub: preAuthCode }
     const sampleSignature = 'signed-jwt-signature-part'
 
     describe('Pre-Authorized Code Flow', () => {
       beforeEach(() => {
         mock.method(mockCodeStoreProvider, 'consume', async () => ['test-credential-config-id'])
-        mock.method(mockIssuanceContextStoreProvider, 'save', async () => {})
+        mock.method(mockAllowedCredentialConfigurationStoreProvider, 'save', async () => {})
         mock.method(mockAuthzKeyProvider, 'sign', async () => sampleSignature)
         mock.method(mockAccessTokenProvider, 'createTokenPayload', async () => samplePayload)
         mock.method(mockDpopProofProvider, 'verifyProof', async () => ({
@@ -1001,7 +1002,7 @@ describe('AuthzFlows', () => {
         const response = (await flow.createAccessToken(sampleIssuer, tokenRequest)) as TokenResponse
 
         assert.strictEqual(mockCodeStoreProvider.consume.mock.callCount(), 1)
-        assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 1)
+        assert.strictEqual(mockAllowedCredentialConfigurationStoreProvider.save.mock.callCount(), 1)
         assert.strictEqual(mockAuthzKeyProvider.sign.mock.callCount(), 1)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 1)
 
@@ -1036,7 +1037,7 @@ describe('AuthzFlows', () => {
           mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
         assert.strictEqual(payloadOptions.ttlSec, undefined)
         assert.strictEqual(payloadOptions.clientId, 'wallet-client')
-        assert.strictEqual(typeof payloadOptions.jti, 'string')
+        assert.strictEqual('jti' in payloadOptions, false)
       })
 
       it('should throw if pre-authorized code is invalid', async () => {
@@ -1056,42 +1057,37 @@ describe('AuthzFlows', () => {
         })
 
         assert.strictEqual(mockCodeStoreProvider.consume.mock.callCount(), 1)
-        assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 0)
+        assert.strictEqual(mockAllowedCredentialConfigurationStoreProvider.save.mock.callCount(), 0)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 0)
         assert.strictEqual(mockAuthzKeyProvider.sign.mock.callCount(), 0)
       })
 
-      it('should use the same generated jti for issuance context and access token payload', async () => {
+      it('should save allowed credential configurations by access token hash without adding jti to the payload', async () => {
         mock.method(
           mockAccessTokenProvider,
           'createTokenPayload',
-          async (
-            _authz: AuthorizationServerIssuer,
-            _code: PreAuthorizedCode,
-            options: { jti?: string }
-          ) => ({
+          async (_authz: AuthorizationServerIssuer, _code: PreAuthorizedCode) => ({
             iss: sampleIssuer,
             sub: preAuthCode,
-            jti: options?.jti,
           })
         )
 
         const response = (await flow.createAccessToken(sampleIssuer, tokenRequest)) as TokenResponse
 
-        assert.strictEqual(mockIssuanceContextStoreProvider.save.mock.callCount(), 1)
+        assert.strictEqual(mockAllowedCredentialConfigurationStoreProvider.save.mock.callCount(), 1)
         assert.strictEqual(mockAccessTokenProvider.createTokenPayload.mock.callCount(), 1)
 
-        const savedJti = mockIssuanceContextStoreProvider.save.mock.calls[0].arguments[0]
+        const savedAccessTokenHash =
+          mockAllowedCredentialConfigurationStoreProvider.save.mock.calls[0].arguments[0]
         const payloadOptions = mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
 
-        assert.strictEqual(typeof savedJti, 'string')
-        assert.ok(savedJti.length > 0)
-        assert.strictEqual(payloadOptions?.jti, savedJti)
+        assert.strictEqual(savedAccessTokenHash, calculateAccessTokenHash(response.access_token))
+        assert.strictEqual('jti' in payloadOptions, false)
 
         const [, encodedPayload] = response.access_token.split('.')
         const decodedPayload = JSON.parse(base64url.decode(encodedPayload))
 
-        assert.strictEqual(decodedPayload.jti, savedJti)
+        assert.strictEqual('jti' in decodedPayload, false)
       })
 
       it('should throw if signing returns null', async () => {
@@ -1119,7 +1115,7 @@ describe('AuthzFlows', () => {
         const payload = mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
         assert.deepStrictEqual(payload?.cnf, { jkt: 'test-jkt' })
         assert.strictEqual(payload.ttlSec, undefined)
-        assert.strictEqual(typeof payload?.jti, 'string')
+        assert.strictEqual('jti' in payload, false)
         assert.strictEqual(response.token_type, 'DPoP')
       })
 
@@ -1269,6 +1265,64 @@ describe('AuthzFlows', () => {
       await assert.rejects(() => flow.verifyAccessToken(sampleIssuer, 'invalid-token'), {
         name: 'invalid_access_token',
       })
+    })
+  })
+
+  describe('authorizeCredentialEndpointAccess()', () => {
+    it('should authorize a bearer token and return an opaque allowed credential configuration key', async () => {
+      const keys = await generateKeyPair('ES256', { extractable: true })
+      const accessToken = await new SignJWT({ iss: sampleIssuer, client_id: 'wallet-client' })
+        .setProtectedHeader({ alg: 'ES256', typ: 'JWT' })
+        .sign(keys.privateKey)
+
+      mock.method(mockAuthzKeyProvider, 'fetch', async () => keys.publicKey)
+      mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () =>
+        AuthzOAuthClient({
+          client_id: 'wallet-client',
+          token_endpoint_auth_method: 'none',
+        })
+      )
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
+
+      const result = await flow.authorizeCredentialEndpointAccess(sampleIssuer, {
+        authorizationHeader: `Bearer ${accessToken}`,
+        htm: 'POST',
+        htu: 'https://issuer.example.com/credentials',
+      })
+
+      assert.deepStrictEqual(result, {
+        allowedCredentialConfigurationKey: calculateAccessTokenHash(accessToken),
+        clientId: 'wallet-client',
+        tokenType: 'bearer',
+      })
+      assert.deepStrictEqual(mockAuthzOAuthClientStoreProvider.fetch.mock.calls[0].arguments, [
+        sampleIssuer,
+        'wallet-client',
+      ])
+    })
+
+    it('should reject bearer presentation when anonymous credential policy requires DPoP', async () => {
+      const keys = await generateKeyPair('ES256', { extractable: true })
+      const accessToken = await new SignJWT({ iss: sampleIssuer })
+        .setProtectedHeader({ alg: 'ES256', typ: 'JWT' })
+        .sign(keys.privateKey)
+
+      mock.method(mockAuthzKeyProvider, 'fetch', async () => keys.publicKey)
+      mock.method(mockAuthzOAuthPolicyStoreProvider, 'fetch', async () => sampleOAuthPolicy)
+
+      await assert.rejects(
+        () =>
+          flow.authorizeCredentialEndpointAccess(sampleIssuer, {
+            authorizationHeader: `Bearer ${accessToken}`,
+            htm: 'POST',
+            htu: 'https://issuer.example.com/credentials',
+          }),
+        {
+          name: 'invalid_access_token',
+          message: 'DPoP access token is required.',
+        }
+      )
+      assert.strictEqual(mockAuthzOAuthClientStoreProvider.fetch.mock.callCount(), 0)
     })
   })
 })

@@ -225,6 +225,7 @@ Authz metadata initialized
 
 **レスポンス:**
 - `200 OK` - 発行されたクレデンシャル（JSON形式）
+- `400 Bad Request` - Credential Request ボディが JSON でない、またはスキーマに合わない（`invalid_credential_request`）
 - `401 Unauthorized` - アクセストークン／DPoP の検証失敗、`invalid_token` / `invalid_dpop_proof` / `use_dpop_nonce`（本文および `WWW-Authenticate` で区別される場合があります）
 
 <a id="get-well-knownopenid-credential-issuer"></a>

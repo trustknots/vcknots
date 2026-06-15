@@ -40,7 +40,7 @@ The easiest way to get started is to use the default configuration, which uses i
 import { vcknots } from '@trustknots/vcknots'
 
 // Initialize with default (in-memory) providers
-const { issuer, verifier } = vcknots()
+const { issuer, verifier, authz } = vcknots()
 ```
 
 ## Tutorial
@@ -90,41 +90,47 @@ console.log('Credential Offer:', scheme)
 ```
 
 #### 3. Issue a Credential
-When the wallet sends a credential request (after processing the offer), issue the credential.
+When the wallet sends a credential request (after processing the offer), verify the access token at the credential endpoint first, then issue the credential.
 
 ```typescript
-// `req` represents the HTTP request sent by wallet 
-const request = CredentialRequest(req.json() /* extract body as json */)
-const credential = await issuer.issueCredential(
-  issuerId,
-  request, 
-  {
-    alg: 'ES256',
-    claims: {
-      name: 'Alice',
-      from: 'Wonderland'
-    },
-    // JWT proof (`proofs.jwt`) verification. usePreAuth indicates whether the grant type is
-    // pre-authorized_code. Omit clientId for anonymous access tokens; pass clientId for access
-    // tokens obtained by a registered OAuth client.
-    proofJwt: { usePreAuth: true },
-  }
-)
+// `req` represents the HTTP request sent by the wallet
+const authzIssuer = AuthorizationServerIssuer(base)
+const authorizationContext = await authz.authorizeCredentialEndpointAccess(authzIssuer, {
+  authorizationHeader: req.header('Authorization'),
+  dpopHeader: req.header('DPoP'),
+  htm: req.method,
+  htu: `${base}/credentials`,
+  nonceRequired: true,
+})
+
+const request = CredentialRequest(await req.json())
+const credential = await issuer.issueCredential(issuerId, request, {
+  authorizationContext,
+  alg: 'ES256',
+  claims: {
+    name: 'Alice',
+    from: 'Wonderland',
+  },
+  // JWT proof (`proofs.jwt`) verification. usePreAuth indicates whether the grant type is pre-authorized_code.
+  proofJwt: { usePreAuth: true },
+})
 
 console.log('Issued Credential:', credential)
 ```
 
 **JWT credential proofs (`proofs.jwt`) and `options.proofJwt`**
 
-For OID4VCI JWT proofs, `aud` must match the Credential Issuer Identifier, and `iss` is validated according to the flow and how the access token was obtained. `issueCredential` builds a **verification context** (credential issuer, whether the grant is pre-authorized, and optionally the OAuth `client_id`) and passes it to the credential-proof provider’s `verifyProof`. When verifying JWT proofs, set `options.proofJwt` to match how the wallet obtained its access token:
+For OID4VCI JWT proofs, `aud` must match the Credential Issuer Identifier, and `iss` is validated according to the flow and how the access token was obtained.
 
-`usePreAuth` indicates whether the grant type is `pre-authorized_code`. Whether the token was obtained through anonymous access is represented by the presence or absence of `clientId`.
+In the code above, `authorizationContext` is the result of verifying the access token (and DPoP Proof when required) at the credential endpoint. When the access token payload includes `client_id`, that value is passed internally to proof verification inside `issueCredential`. **Callers do not need to set `proofJwt.clientId` separately.**
 
-| Situation | What to pass |
-|-----------|----------------|
-| Access token from the **pre-authorized code** grant, obtained through anonymous access at the token endpoint | `proofJwt: { usePreAuth: true }`. Because the access token has no `client_id`, the proof JWT must **not** include an **`iss`** claim. |
-| Access token from the **pre-authorized code** grant, obtained as a registered OAuth client | `proofJwt: { usePreAuth: true, clientId: '<client_id from the access token>' }`. If the proof JWT includes `iss`, it must match that `clientId`. Omitting `iss` is also allowed. |
-| **Authorization code** or other normal OAuth client context | `proofJwt: { usePreAuth: false, clientId: '<client_id for this credential request>' }`. `iss` must equal that `client_id` or the Credential Issuer Identifier. |
+`options.proofJwt.usePreAuth` indicates only whether the grant type is `pre-authorized_code`. Whether the token was obtained through anonymous access is determined by **whether the access token has `client_id`** (see the Situation column in the table).
+
+| Situation | `proofJwt` | proof JWT `iss` |
+|-----------|------------|-----------------|
+| **Pre-authorized code** grant, access token obtained via **anonymous access** at the token endpoint (no `client_id`) | `{ usePreAuth: true }` | **Omit** (access token has no `client_id`) |
+| **Pre-authorized code** grant, access token obtained as a **registered OAuth client** (access token has `client_id`) | `{ usePreAuth: true }` | Optional; if present, must match the access token’s `client_id` |
+| **Authorization code** or other normal OAuth client context (not supported) | `{ usePreAuth: false }` | Must match the access token’s `client_id` or the Credential Issuer Identifier |
 
 If `proofJwt` does not match the real flow, `aud` / `iss` checks may fail with `invalid_proof`.
 

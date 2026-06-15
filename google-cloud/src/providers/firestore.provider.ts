@@ -11,7 +11,7 @@ import { firestoreDpopProofJtiStore } from './firestore-dpop-proof-jti-store.pro
 import { firestoreOAuthClientAssertionJtiStore } from './firestore-oauth-client-assertion-jti-store.provider'
 import { firestorePreAuthorizedCodeStore } from './firestore-pre-authorized-code-store.provider'
 import { firestoreRequestObjectStore } from './firestore-request-object-store.provider'
-import { firestoreIssuanceContextStore } from './firestore-issuance-context-store.provider'
+import { firestoreAllowedCredentialConfigurationStore } from './firestore-allowed-credential-configuration-store.provider'
 
 const configuredInstances = new WeakSet<Firestore>()
 
@@ -70,6 +70,6 @@ export const firestore = (options?: FirestoreProviderOptions): Provider[] => {
     firestorePreAuthorizedCodeStore(options),
     firestoreRequestObjectStore(options),
     firestoreDpopProofJtiStore(options),
-    firestoreIssuanceContextStore(options),
+    firestoreAllowedCredentialConfigurationStore(options),
   ]
 }

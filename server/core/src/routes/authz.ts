@@ -94,7 +94,7 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
                 nonceRequired: true,
               },
             }
-          : {}),
+          : { ttlSec: 60 * 30 }), // 30 minutes default ttl
       })
       return c.json(accessToken)
     } catch (err) {

@@ -52,6 +52,7 @@
 	"dependencies": {
 		"@hono/node-server": "1.19.9",
 		"@trustknots/vcknots": "workspace:*",
-		"hono": "4.11.4"
+		"hono": "4.11.4",
+		"zod": "4.3.6"
 	}
 }

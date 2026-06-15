@@ -6,13 +6,14 @@ import {
 } from './authorization-server.types'
 import { AuthzOAuthClient } from './authz-oauth-client.types'
 import { AuthzOAuthPolicy, type AuthzClientPolicy, type DPoPMode } from './authz-oauth-policy.types'
+import { calculateAccessTokenHash, parseDpopHeader } from './dpop-proof'
 import type { DPoPProofVerifyContext } from './dpop-proof.types'
 import { err } from './errors/vcknots.error'
 import { GrantType, TokenRequest } from './token-request.types'
 import { VcknotsContext } from './vcknots.context'
 import { JwtPayload } from './jwt.types'
 import { Nonce } from './nonce.types'
-import { randomUUID } from 'node:crypto'
+import { parseAuthorizationHeader } from './authorization-header'
 
 type AuthzKeyAlg = string
 type OAuthClientAuthMethod = string
@@ -610,6 +611,26 @@ type DPoPBoundAccessTokenVerifyOptions = AccessTokenVerifyOptions & {
   dpopProof: DPoPProofContext
 }
 
+export type CredentialEndpointAuthorizationOptions = AccessTokenVerifyOptions & {
+  authorizationHeader?: string | null
+  dpopHeader?: string | null
+  htm: string
+  htu: string
+  nonceRequired?: boolean
+}
+
+export type CredentialEndpointAuthorizationContext = {
+  /**
+   * Opaque key for the allowed credential configuration entry associated with the presented access token.
+   * Callers should pass this context to IssuerFlow instead of calculating or inspecting token hashes.
+   */
+  allowedCredentialConfigurationKey: string
+  /** OAuth client identified from the access token payload, omitted for anonymous access tokens. */
+  clientId?: AuthzOAuthClient['client_id']
+  /** Effective access token presentation method accepted by the credential endpoint. */
+  tokenType: 'bearer' | 'dpop'
+}
+
 /**
  * Authorization-server capabilities: AS metadata, OAuth client/policy stores, DPoP-aware token
  * endpoint helpers, access token creation (pre-authorized code grant), and access token verification.
@@ -662,6 +683,14 @@ export type AuthzFlow = {
     accessToken: string,
     options: DPoPBoundAccessTokenVerifyOptions
   ): Promise<JwtPayload>
+  /**
+   * Credential endpoint authorization: parses Authorization/DPoP headers, verifies the access token,
+   * applies sender-constrained policy, and returns the opaque context required for issuance checks.
+   */
+  authorizeCredentialEndpointAccess(
+    authz: AuthorizationServerIssuer,
+    options: CredentialEndpointAuthorizationOptions
+  ): Promise<CredentialEndpointAuthorizationContext>
 }
 
 /**
@@ -680,7 +709,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   const oauthClientAssertionJtiStore$ = context.providers.get(
     'oauth-client-assertion-jti-store-provider'
   )
-  const issuanceContextStore$ = context.providers.get('issuance-context-store-provider')
+  const allowedCredentialConfigurationStore$ = context.providers.get('allowed-credential-configuration-store-provider')
 
   /**
    * Verifies a bearer-style access token JWT: shape, issuer matches `authz`, signature with stored AS key.
@@ -747,6 +776,12 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
     }
     const jkt = (cnf as { jkt?: unknown }).jkt
     return typeof jkt === 'string' && jkt.trim().length > 0 ? jkt : undefined
+  }
+
+  /** Extracts the OAuth client id carried by an access token, if the token was client-bound. */
+  const getAccessTokenClientId = (payload: JwtPayload): AuthzOAuthClient['client_id'] | undefined => {
+    const clientId = payload.client_id
+    return typeof clientId === 'string' && clientId.trim().length > 0 ? clientId.trim() : undefined
   }
 
   /**
@@ -838,6 +873,105 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
     }
 
     return senderConstraint.dpop?.mode ?? DEFAULT_DPOP_MODE
+  }
+
+  /**
+   * Credential endpoint (resource server) authorization: parses `Authorization` / optional `DPoP`,
+   * verifies the access token, applies sender-constrained OAuth policy, and returns the opaque
+   * context required by {@link IssuerFlow.issueCredential}.
+   */
+  const authorizeCredentialEndpointAccess = async (
+    authz: AuthorizationServerIssuer,
+    options: CredentialEndpointAuthorizationOptions
+  ): Promise<CredentialEndpointAuthorizationContext> => {
+    const authorization = parseAuthorizationHeader(options.authorizationHeader)
+    if (!authorization.ok) {
+      throw err('invalid_access_token', {
+        message:
+          authorization.reason === 'missing'
+            ? 'Access token is required.'
+            : 'Authorization header must use Bearer or DPoP scheme.',
+      })
+    }
+
+    // Verify the token first so the credential endpoint policy can be selected from the
+    // authenticated client_id claim, without exposing token payload parsing to server routes.
+    const accessTokenPayload = await verifyAccessTokenPayload(authz, authorization.value.token, {
+      alg: options.alg,
+    })
+    const accessTokenClientId = getAccessTokenClientId(accessTokenPayload)
+    const oauthClient = accessTokenClientId
+      ? await authzOAuthClient$.fetch(authz, accessTokenClientId)
+      : null
+    if (accessTokenClientId && !oauthClient) {
+      throw err('invalid_access_token', {
+        message: 'Access token client_id is not registered.',
+      })
+    }
+
+    const clientKind = accessTokenClientId ? 'default_client' : 'anonymous_client'
+    const clientPolicy = oauthClient?.senderConstrainedAccessToken
+      ? { senderConstrainedAccessToken: oauthClient.senderConstrainedAccessToken }
+      : undefined
+    const dpopMode = await resolveAuthzPolicyDpopModeForIssuer(authz, clientKind, clientPolicy)
+
+    // Policy mode `off`: do not accept DPoP scheme or a standalone `DPoP` header.
+    if (
+      dpopMode === 'off' &&
+      (authorization.value.scheme === 'dpop' || Boolean(options.dpopHeader))
+    ) {
+      throw err('invalid_access_token', {
+        message: 'DPoP access tokens are not supported by this credential endpoint.',
+      })
+    }
+
+    // DPoP scheme: verify proof JWT and bind it to the presented access token.
+    if (authorization.value.scheme === 'dpop') {
+      const dpopProof = parseDpopHeader(options.dpopHeader)
+      if (!dpopProof.ok) {
+        throw err('invalid_dpop_proof', {
+          message:
+            dpopProof.reason === 'missing'
+              ? 'DPoP proof JWT is required.'
+              : dpopProof.reason === 'duplicate'
+                ? 'DPoP header must appear exactly once.'
+                : 'DPoP header must contain a compact JWT.',
+        })
+      }
+      await verifyDpopBoundAccessToken(authz, authorization.value.token, {
+        alg: options.alg,
+        dpopProof: {
+          proofJwt: dpopProof.proofJwt,
+          htm: options.htm,
+          htu: options.htu,
+          nonceRequired: options.nonceRequired ?? false,
+        },
+      })
+      return {
+        allowedCredentialConfigurationKey: calculateAccessTokenHash(authorization.value.token),
+        ...(accessTokenClientId ? { clientId: accessTokenClientId } : {}),
+        tokenType: 'dpop',
+      }
+    }
+
+    // Bearer scheme: reject when policy requires DPoP or the token is DPoP-bound (`cnf.jkt`).
+    if (dpopMode === 'required') {
+      throw err('invalid_access_token', {
+        message: 'DPoP access token is required.',
+      })
+    }
+    if (getCnfJkt(accessTokenPayload)) {
+      throw err('invalid_access_token', {
+        message: 'DPoP-bound access token must be presented with DPoP scheme.',
+      })
+    }
+
+    // Key matches `allowed-credential-configuration-store` entry saved at token issuance.
+    return {
+      allowedCredentialConfigurationKey: calculateAccessTokenHash(authorization.value.token),
+      ...(accessTokenClientId ? { clientId: accessTokenClientId } : {}),
+      tokenType: 'bearer',
+    }
   }
 
   return {
@@ -1046,9 +1180,6 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             })
           }
           const ttlSec = option?.ttlSec ?? 86400
-          const jti = randomUUID()
-
-          await issuanceContextStore$.save(jti, credentialConfigurationIds, ttlSec)
 
           const keyAlg = options?.alg ?? 'ES256'
           // Authz access token (data)
@@ -1063,7 +1194,6 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             {
               ttlSec: option?.ttlSec,
               ...(option?.clientId ? { clientId: option.clientId } : {}),
-              jti,
               ...(verifiedDpopProof ? { cnf: { jkt: verifiedDpopProof.jwkThumbprint } } : {}),
             }
           )
@@ -1076,10 +1206,14 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           }
           // format JWT components
           const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
+          const accessToken = `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`
+          const accessTokenHash = calculateAccessTokenHash(accessToken)
+
+          await allowedCredentialConfigurationStore$.save(accessTokenHash, credentialConfigurationIds, ttlSec)
 
           // Create Token Response
           return {
-            access_token: `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`, // TODO: Implement access token generation
+            access_token: accessToken,
             token_type: verifiedDpopProof ? 'DPoP' : 'bearer',
             expires_in: option?.ttlSec ?? 86400,
           }
@@ -1108,6 +1242,8 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
     verifyAccessTokenPayload: verifyAccessTokenPayload,
     /** @see {@link AuthzFlow.verifyDpopBoundAccessToken} */
     verifyDpopBoundAccessToken: verifyDpopBoundAccessToken,
+    /** @see {@link AuthzFlow.authorizeCredentialEndpointAccess} */
+    authorizeCredentialEndpointAccess: authorizeCredentialEndpointAccess,
   }
 }
 

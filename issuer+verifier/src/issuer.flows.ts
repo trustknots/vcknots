@@ -17,6 +17,7 @@ import { DiVpProof, Proofs, ProofTypes } from './proofs.types'
 import { ProofJwt } from './credential.types'
 import { calculateJwkThumbprint } from 'jose'
 import { jwkSchema } from './jwk.type'
+import type { CredentialEndpointAuthorizationContext } from './authz.flows'
 
 type OfferOptions =
   | {
@@ -34,9 +35,9 @@ type OfferOptions =
       ttlSec?: number
       authorizationServer?: string
     }
-type IssueOptions = {
+export type IssueOptions = {
+  authorizationContext: CredentialEndpointAuthorizationContext
   alg: string
-  jti?: string
   cnonce?: {
     c_nonce_expires_in: number
   }
@@ -45,7 +46,6 @@ type IssueOptions = {
   /** OID4VCI JWT proof context: usePreAuth means the grant type is pre-authorized_code. */
   proofJwt?: {
     usePreAuth: boolean
-    clientId?: string
   }
 }
 
@@ -104,8 +104,7 @@ export type IssuerFlow = {
   issueCredential(
     issuer: CredentialIssuer,
     credentialRequest: CredentialRequest,
-    accessTokenJti: string,
-    options?: IssueOptions
+    options: IssueOptions
   ): Promise<CredentialResponse>
 }
 
@@ -120,7 +119,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
   const transactionCode$ = context.providers.get('transaction-code-provider')
-  const issuanceContextStore$ = context.providers.get('issuance-context-store-provider')
+  const allowedCredentialConfigurationStore$ = context.providers.get('allowed-credential-configuration-store-provider')
 
   const rejectInsecureIssuerMetadata = (metadata: CredentialIssuerMetadata | null) => {
     if (metadata) {
@@ -313,8 +312,9 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       const lookupNonce = Nonce({ nonce })
       return cnonceStore$.revoke(lookupNonce)
     },
-    async issueCredential(issuer, credentialRequest, accessTokenJti, options) {
-      if (options?.subject && !isUri(options.subject)) {
+    async issueCredential(issuer, credentialRequest, options) {
+      const { authorizationContext } = options
+      if (options.subject && !isUri(options.subject)) {
         throw err('invalid_credential_request', {
           message: 'Invalid options: subject must be a URI.',
         })
@@ -341,16 +341,17 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: `Credential configuration ${credentialRequest.credential_configuration_id} is not supported by issuer ${issuer}.`,
         })
       }
-      const jti = accessTokenJti
-      if (!jti) {
+      if (!authorizationContext.allowedCredentialConfigurationKey) {
         throw err('invalid_credential_request', {
-          message: 'jti is missing.',
+          message: 'allowed credential configuration key is missing.',
         })
       }
-      const allowedCredentialConfigurationIds = await issuanceContextStore$.fetch(jti)
+      const allowedCredentialConfigurationIds = await allowedCredentialConfigurationStore$.fetch(
+        authorizationContext.allowedCredentialConfigurationKey
+      )
       if (!allowedCredentialConfigurationIds) {
         throw err('invalid_credential_request', {
-          message: 'Issuance context for this jti was not found',
+          message: 'Allowed credential configurations for this access token were not found',
         })
       }
       const requestedCredentialConfigurationId = CredentialConfigurationId(
@@ -359,7 +360,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
 
       if (!allowedCredentialConfigurationIds.includes(requestedCredentialConfigurationId)) {
         throw err('invalid_credential_request', {
-          message: 'Requested credential_configuration_id is not allowed for this jti.',
+          message: 'Requested credential_configuration_id is not allowed for this access token.',
         })
       }
 
@@ -383,16 +384,18 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         for (const proof of proofsObjects.proofValue) {
           const proofJwtCtx: CredentialProofJwtVerifyContext | undefined =
             proofsObjects.proofType === ProofTypes.JWT
-              ? options?.proofJwt?.usePreAuth === true
+              ? options.proofJwt?.usePreAuth === true
                 ? {
                     usePreAuth: true,
                     credentialIssuer: metadata.credential_issuer,
-                    ...(options.proofJwt.clientId ? { clientId: options.proofJwt.clientId } : {}),
+                    ...(authorizationContext.clientId
+                      ? { clientId: authorizationContext.clientId }
+                      : {}),
                   }
                 : {
                     usePreAuth: false,
                     credentialIssuer: metadata.credential_issuer,
-                    clientId: options?.proofJwt?.clientId,
+                    clientId: authorizationContext.clientId,
                   }
               : undefined
           verifyProof = await credentialProofProvider.verifyProof(proof, proofJwtCtx)
@@ -403,7 +406,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           }
           subject = verifyProof.header.kid
 
-          if (options?.cnonce) {
+          if (options.cnonce) {
             if (typeof verifyProof.payload.nonce === 'string') {
               const code = await cnonceStore$.validate(Nonce({ nonce: verifyProof.payload.nonce }))
               if (!code) {
@@ -426,9 +429,9 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         issuer,
         configuration,
         {
-          subject: options?.subject ?? subject,
-          claims: options?.claims,
-          keyAlg: options?.alg ?? 'ES256',
+          subject: options.subject ?? subject,
+          claims: options.claims,
+          keyAlg: options.alg ?? 'ES256',
           proofHeader: verifyProof.header,
         }
       )

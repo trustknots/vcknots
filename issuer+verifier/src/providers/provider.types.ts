@@ -336,18 +336,18 @@ export type PreAuthorizedCodeStoreProvider = {
   ): Promise<CredentialConfigurationId[] | null>
 }
 
-export type IssuanceContextStoreProvider = {
-  kind: 'issuance-context-store-provider'
+export type AllowedCredentialConfigurationStoreProvider = {
+  kind: 'allowed-credential-configuration-store-provider'
   name: string
   single: true
 
   save(
-    jti: string,
+    accessTokenHash: string,
     credential_configuration_ids: CredentialConfigurationId[],
     ttlSec?: number
   ): Promise<void>
-  fetch(jti: string): Promise<CredentialConfigurationId[] | null>
-  delete(jti: string): Promise<void>
+  fetch(accessTokenHash: string): Promise<CredentialConfigurationId[] | null>
+  delete(accessTokenHash: string): Promise<void>
 }
 
 export type AccessTokenProvider = {
@@ -360,7 +360,6 @@ export type AccessTokenProvider = {
     code: PreAuthorizedCode,
     options?: {
       ttlSec?: number
-      jti?: string
       cnf?: { jkt: string }
       clientId?: AuthzOAuthClient['client_id']
     }
@@ -534,7 +533,7 @@ export type Provider =
   | SignatureVerificationProvider
   | PreAuthorizedCodeProvider
   | PreAuthorizedCodeStoreProvider
-  | IssuanceContextStoreProvider
+  | AllowedCredentialConfigurationStoreProvider
   | AccessTokenProvider
   | CredentialOfferProvider
   | AuthzServerMetadataStoreProvider

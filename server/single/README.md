@@ -227,6 +227,7 @@ Issue credential
 
 **Response:**
 - `200 OK` - Issued credential (JSON)
+- `400 Bad Request` - Credential Request body is not JSON or does not match the schema (`invalid_credential_request`)
 - `401 Unauthorized` - Access token or DPoP verification failed (`invalid_token` / `invalid_dpop_proof` / `use_dpop_nonce`; distinguish via response body and `WWW-Authenticate` when present)
 
 <a id="get-well-knownopenid-credential-issuer"></a>

@@ -833,7 +833,7 @@ DPoP-bound access token を使う後続リクエストでは、同じ公開鍵�
 [server/core](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts) の実装では、役割によって HTTP ステータスとチャレンジの付け方が次のように異なります。
 
 - **`POST /token`（Authorization Server）:** DPoP／リクエスト不正は多く **HTTP 400** と JSON ボディ（`invalid_request` / `invalid_dpop_proof` / `use_dpop_nonce`）で返します。`use_dpop_nonce` のときはレスポンスに **`DPoP-Nonce`** が付きますが、**現行実装では `WWW-Authenticate` は付けません**。
-- **`POST /credentials`（Resource Server）:** アクセストークンや DPoP 検証の失敗は **HTTP 401** が中心です。**`invalid_token`** 相当では **`WWW-Authenticate: Bearer`**（`realm`・`error`・`error_description`）、**`invalid_dpop_proof`** および **`use_dpop_nonce`**（credential 側のメッセージ）では **`WWW-Authenticate: DPoP`** を付けます。後者は **`DPoP-Nonce` ヘッダー**も返る場合があります。
+- **`POST /credentials`（Resource Server）:** アクセストークンや DPoP 検証の失敗は **HTTP 401** が中心です。**`invalid_token`** 相当では **`WWW-Authenticate: Bearer`**（`realm`・`error`・`error_description`）、**`invalid_dpop_proof`** および **`use_dpop_nonce`**（credential 側のメッセージ）では **`WWW-Authenticate: DPoP`** を付けます。後者は **`DPoP-Nonce` ヘッダー**も返る場合があります。Credential Request ボディが JSON でない、またはスキーマに合わない場合は **HTTP 400** と **`invalid_credential_request`** です。
 
 ### 6. Nonceエンドポイント
 
@@ -1011,7 +1011,7 @@ credential endpoint はリソースサーバーとして動作するため、DPo
 - `jti` を保存し、同じ DPoP Proof の再利用（リプレイ）を拒否すること。
 - DPoP Proof の `iat` は、実装既定では `maxTokenAge` 300 秒と `clockTolerance` 60 秒の範囲で有効とみなされます（`issuer+verifier` の DPoP proof プロバイダ。工場オプションで変更可能）。
 
-Credential proof JWT の `iss` は、Pre-Authorized Code Flow であっても常に省略するわけではありません。token endpoint で anonymous access により取得された access token には `client_id` が含まれないため、proof JWT の `iss` は省略する必要があります。一方、登録済み OAuth client として取得された access token には `client_id` が含まれるため、その値を `issueCredential` の `proofJwt.clientId` に渡します。この場合、proof JWT に `iss` があるときは、その `client_id` と一致する必要があります。
+Credential proof JWT の `iss` は、Pre-Authorized Code Flow であっても常に省略するわけではありません。token endpoint で anonymous access により取得された access token には `client_id` が含まれないため、proof JWT の `iss` は省略する必要があります。一方、登録済み OAuth client として取得された access token には `client_id` が含まれます。`issueCredential` 呼び出し時に `authorizeCredentialEndpointAccess` の結果を `options.authorizationContext` として渡すと、ライブラリが access token から得た `client_id` を内部で proof 検証に使います。proof JWT に `iss` があるときは、その `client_id` と一致する必要があります。`proofJwt.clientId` を個別に指定する必要はありません。
 
 DPoP Proof が不正な場合、credential endpoint は `401 Unauthorized` と `WWW-Authenticate: DPoP` を返します。アクセストークン JWT の形式・署名・issuer 不一致など **`invalid_token`** 相当の場合は、同じく **401** と **`WWW-Authenticate: Bearer`**（`realm` および `error="invalid_token"` 等）になります。
 
@@ -1040,7 +1040,7 @@ Content-Type: application/json
 }
 ```
 
-次のコードは処理の順序（**先にアクセストークンと DPoP を検証し、その後 JSON ボディを読む**）、`nonceRequired: true`、`Bearer` で提示されるトークンに `cnf.jkt` が含まれる場合の拒否、および **401 と `WWW-Authenticate`** を [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts) に合わせた抜粋です。`Context`（Hono）、`VcknotsError`、`buildBearerAuthenticateHeader` / `buildDpopAuthenticateHeader` などのインポート・本番向けのログは省略しています。
+次のコードは処理の順序（**先に `authorizeCredentialEndpointAccess` でアクセストークンと DPoP を検証し、その後 JSON ボディを読む**）、`nonceRequired: true`、Credential Request ボディ不正時の **`invalid_credential_request`**、および **401 と `WWW-Authenticate`** を [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts) に合わせた抜粋です。`Context`（Hono）、`VcknotsError`、`buildBearerAuthenticateHeader` / `buildDpopAuthenticateHeader` などのインポート・本番向けのログは省略しています。
 
 ```typescript
 const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
@@ -1049,137 +1049,16 @@ app.post('/credentials', async (c) => {
   try {
     const issuer = CredentialIssuer(baseUrl)
     const authz = AuthorizationServerIssuer(baseUrl)
-    const dpopMode = await resolveAuthzPolicyDpopMode(authzFlow, authz, 'default_client')
-    const realm = baseUrl
 
-    const hasCnfJkt = (payload: unknown): boolean => {
-      if (payload === null || typeof payload !== 'object' || Array.isArray(payload))
-        return false
-      const cnf = (payload as { cnf?: unknown }).cnf
-      if (cnf === null || typeof cnf !== 'object' || Array.isArray(cnf)) return false
-      return typeof (cnf as { jkt?: unknown }).jkt === 'string'
-    }
-
-    const unauthorized = (
-      c: Context,
-      body: { error: string; error_description: string },
-      challenge: { error?: 'invalid_request' | 'invalid_token' | 'insufficient_scope' } = {}
-    ) => {
-      c.header(
-        'WWW-Authenticate',
-        buildBearerAuthenticateHeader({
-          realm,
-          error: challenge.error,
-          errorDescription: challenge.error ? body.error_description : undefined,
-        })
-      )
-      return c.json(body, 401)
-    }
-
-    const invalidDpopProof = (c: Context, errorDescription: string) => {
-      c.header(
-        'WWW-Authenticate',
-        buildDpopAuthenticateHeader({
-          realm,
-          error: 'invalid_dpop_proof',
-          errorDescription,
-        })
-      )
-      return c.json(
-        { error: 'invalid_dpop_proof', error_description: errorDescription },
-        401
-      )
-    }
-
-    const dpopNonceResponse = async (c: Context) => {
-      const dpopNonce = await authzFlow.createDpopNonceChallenge(DPOP_NONCE_TTL_MS)
-      const errorDescription = 'Credential issuer requires nonce in DPoP proof.'
-      c.header('DPoP-Nonce', dpopNonce)
-      c.header(
-        'WWW-Authenticate',
-        buildDpopAuthenticateHeader({
-          realm,
-          error: 'use_dpop_nonce',
-          errorDescription,
-        })
-      )
-      return c.json(
-        {
-          error: 'use_dpop_nonce',
-          error_description: errorDescription,
-        },
-        401
-      )
-    }
-
-    const authorization = parseAuthorizationHeader(c.req.header('Authorization'))
-    if (!authorization.ok) {
-      return unauthorized(c, {
-        error: 'invalid_token',
-        error_description:
-          authorization.reason === 'missing'
-            ? 'Access token is required.'
-            : 'Authorization header must use Bearer or DPoP scheme.',
-      })
-    }
-
-    if (dpopMode === 'off' && (authorization.value.scheme === 'dpop' || c.req.header('DPoP'))) {
-      return unauthorized(c, {
-        error: 'invalid_token',
-        error_description:
-          'DPoP access tokens are not supported by this credential endpoint.',
-      })
-    }
-
-    let accessTokenPayload: JwtPayload
+    let authorizationContext: CredentialEndpointAuthorizationContext
     try {
-      if (authorization.value.scheme === 'dpop') {
-        const dpopProof = parseDpopHeader(c.req.header('DPoP'))
-        if (!dpopProof.ok) {
-          return invalidDpopProof(
-            c,
-            dpopProof.reason === 'missing'
-              ? 'DPoP proof JWT is required.'
-              : dpopProof.reason === 'duplicate'
-                ? 'DPoP header must appear exactly once.'
-                : 'DPoP header must contain a compact JWT.'
-          )
-        }
-        accessTokenPayload = await authzFlow.verifyDpopBoundAccessToken(authz, authorization.value.token, {
-          dpopProof: {
-            proofJwt: dpopProof.proofJwt,
-            htm: c.req.method,
-            htu: `${baseUrl}/credentials`,
-            nonceRequired: true,
-          },
-        })
-      } else {
-        if (dpopMode === 'required') {
-          return unauthorized(
-            c,
-            {
-              error: 'invalid_token',
-              error_description: 'DPoP access token is required.',
-            },
-            { error: 'invalid_token' }
-          )
-        }
-        accessTokenPayload = await authzFlow.verifyAccessTokenPayload(
-          authz,
-          authorization.value.token
-        )
-        if (hasCnfJkt(accessTokenPayload)) {
-          return unauthorized(
-            c,
-            {
-              error: 'invalid_token',
-              error_description:
-                'DPoP-bound access token must be presented with DPoP scheme.',
-            },
-            { error: 'invalid_token' }
-          )
-        }
-      }
+      authorizationContext = await authzFlow.authorizeCredentialEndpointAccess(authz, {
+        authorizationHeader: c.req.header('Authorization'),
+        dpopHeader: c.req.header('DPoP'),
+        htm: c.req.method,
+        htu: `${baseUrl}/credentials`,
+        nonceRequired: true,
+      })
     } catch (err) {
       if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
         return unauthorized(
@@ -1197,48 +1076,34 @@ app.post('/credentials', async (c) => {
       throw err
     }
 
-    const accessTokenClientId =
-      typeof accessTokenPayload.client_id === 'string' &&
-      accessTokenPayload.client_id.trim().length > 0
-        ? accessTokenPayload.client_id.trim()
-        : undefined
-
     const request = await c.req.json().catch(() => null)
     if (!request) {
       return c.json(
         {
-          error: 'invalid_request',
+          error: 'invalid_credential_request',
           error_description: 'Request body must be a valid JSON.',
         },
         400
       )
     }
-    const parseResult = CredentialRequest.schema.safeParse(request)
-    if (!parseResult.success) {
-      return c.json(
-        {
-          error: 'invalid_request',
-          error_description: 'Request body does not conform to CredentialRequest schema.',
-        },
-        400
-      )
+    let parse: CredentialRequest
+    try {
+      parse = CredentialRequest(request)
+    } catch (err) {
+      if (err instanceof Error && err.name === 'ZodError') {
+        return c.json(
+          {
+            error: 'invalid_credential_request',
+            error_description: 'Request body does not conform to CredentialRequest schema.',
+          },
+          400
+        )
+      }
+      throw err
     }
-    const parse = parseResult.data
-    const accessTokenJti =
-      typeof accessTokenPayload.jti === 'string' && accessTokenPayload.jti.length > 0
-        ? accessTokenPayload.jti
-        : undefined
-    if (!accessTokenJti) {
-      return unauthorized(
-        c,
-        {
-          error: 'invalid_token',
-          error_description: 'Access token must contain a jti claim.',
-        },
-        { error: 'invalid_token' }
-      )
-    }
-    const credential = await issuerFlow.issueCredential(issuer, parse, accessTokenJti, {
+
+    const credential = await issuerFlow.issueCredential(issuer, parse, {
+      authorizationContext,
       alg: 'ES256',
       cnonce: {
         c_nonce_expires_in: 60 * 5 * 1000,
@@ -1251,7 +1116,6 @@ app.post('/credentials', async (c) => {
       },
       proofJwt: {
         usePreAuth: true,
-        clientId: accessTokenClientId,
       },
     })
     return c.json(credential)
@@ -1463,16 +1327,14 @@ type OfferOptions =
 issueCredential(
   issuer: CredentialIssuer,
   credentialRequest: CredentialRequest,
-  accessTokenJti: string,
-  options?: IssueOptions
+  options: IssueOptions
 ): Promise<CredentialResponse>
 ```
 
 **パラメータ**:
 - `issuer`: Issuerの識別子（[CredentialIssuer](#CredentialIssuer)）
 - `credentialRequest`: クレデンシャルリクエスト（[CredentialRequest](#CredentialRequest)）
-- `accessTokenJti`: アクセストークンのjti
-- `options`: 発行オプション（[IssueOptions](#IssueOptions)）
+- `options`: 発行オプション（[IssueOptions](#IssueOptions)）。credential endpoint で検証済みの `authorizationContext` を含めます。
 
 **戻り値**: クレデンシャルレスポンスを返します。
 
@@ -1480,8 +1342,8 @@ issueCredential(
 
 **JWT クレデンシャルプルーフ（`proofs.jwt`）について**
 
-- **事前認可コードフロー**で anonymous access token を得ている場合: `proofJwt: { usePreAuth: true }`。access token に `client_id` がないため、プルーフ JWT に **`iss` クレームを付けない**必要があります。
-- **事前認可コードフロー**で登録済み OAuth client として access token を得ている場合: `proofJwt: { usePreAuth: true, clientId: '<access token の client_id>' }`。プルーフ JWT に `iss` がある場合は、その `clientId` と一致する必要があります。
+- **事前認可コードフロー**で anonymous access token を得ている場合（access token に `client_id` なし）: `proofJwt: { usePreAuth: true }`。プルーフ JWT に **`iss` クレームを付けない**必要があります。
+- **事前認可コードフロー**で登録済み OAuth client として access token を得ている場合（access token に `client_id` あり）: `proofJwt: { usePreAuth: true }`。プルーフ JWT に `iss` がある場合は、access token の `client_id` と一致する必要があります（`iss` の省略も可）。`client_id` は `options.authorizationContext` 経由で内部参照され、呼び出し側で `proofJwt` に渡す必要はありません。
 - **認可コードフロー**：未対応
 
 
@@ -1506,7 +1368,7 @@ keyごとの動き:
 - `issuer_not_found`: 未登録のIssuerが設定された
 - `unknown_credential_configuration`: `credential_configuration_id`がサポートされていない
 - `unsupported_credential_type`: 指定された`credential_definition`もしくは`proof_type`がサポートされていない
-- `invalid_credential_request`: `proof`が見つからないかサポートされていない、設定 ID 不備など
+- `invalid_credential_request`: Credential Request ボディ不正、許可されていない `credential_configuration_id`、`proof` が見つからないかサポートされていない、設定 ID 不備など
 - `invalid_proof`: `proof`が検証できない、OID4VCI の JWT proof に合わないヘッダ（`typ` / `alg` / `kid`・`jwk`・`x5c` の組み合わせなど）、未サポートの header、`nonce`が見つからない
 - `unsupported_issuer_key_alg`: Issuerの署名アルゴリズムがサポートされていない
 - `authz_issuer_key_not_found`: Issuerの鍵が見つからない
@@ -1523,21 +1385,37 @@ keyごとの動き:
 
 ```typescript
 type IssueOptions = {
+  /** credential endpoint で `authorizeCredentialEndpointAccess` が返した検証済みコンテキスト */
+  authorizationContext: CredentialEndpointAuthorizationContext
   alg: string
   cnonce?: {
     c_nonce_expires_in: number
   }
   claims?: Record<string, unknown>
   subject?: string
-  /** アクセストークン取得フローに応じた JWT proof の iss 検証などに使用 */
+  /** grant type が pre-authorized_code かどうか。access token に client_id があるかは authorizationContext 側で表し、proof 検証に内部利用されます。 */
   proofJwt?: {
-    /** grant type が pre-authorized_code の場合 true。anonymous access かどうかは clientId の有無で表します。 */
     usePreAuth: boolean
-    /** access token に含まれる client_id、または通常の OAuth client 文脈の client_id */
-    clientId?: string
   }
 }
 ```
+
+#### CredentialEndpointAuthorizationContext {#CredentialEndpointAuthorizationContext}
+
+credential endpoint で access token（および必要なら DPoP Proof）を検証した結果です。`authorizeCredentialEndpointAccess` が返し、`issueCredential` の `options.authorizationContext` に渡します。
+
+```typescript
+type CredentialEndpointAuthorizationContext = {
+  /** 提示された access token に紐づく allowed credential configuration の不透明キー */
+  allowedCredentialConfigurationKey: string
+  /** access token payload から得た OAuth client id。anonymous access token では省略 */
+  clientId?: string
+  /** credential endpoint が受理した access token の提示方法 */
+  tokenType: 'bearer' | 'dpop'
+}
+```
+
+`allowedCredentialConfigurationKey` は access token 文字列の SHA-256 hash（RFC 9449 `ath` と同じ計算法）です。呼び出し側で hash を計算したり access token payload を解析する必要はありません。
 
 ## 6. AuthzFlowの各メソッド
 
@@ -1635,6 +1513,8 @@ createAccessToken<T extends GrantType>(
 
 `clientId` を指定した場合、access token payload には `client_id` が含まれます。DPoP Proof を指定して検証に成功した場合は、payload に `cnf.jkt` が含まれ、`token_type` は `DPoP` になります。
 
+Pre-Authorized Code フローでは、token 発行時に pre-authorized code に紐づく `credential_configuration_ids` を **`allowed-credential-configuration-store-provider`** に保存します。キーは compact access token の SHA-256 hash（base64url、`calculateAccessTokenHash` と同じ）で、TTL は `ttlSec`（access token の `expires_in` と同じ秒数）です。credential endpoint では `issueCredential` がこの store を参照し、リクエストされた `credential_configuration_id` が token 発行時に許可された ID かを確認します。
+
 **エラーケース**:
 - `provider_not_found`:  秘密鍵で未対応のアルゴリズムが設定された
 - `invalid_grant`: 有効でない事前認可コードが設定された
@@ -1683,6 +1563,40 @@ type TokenRequestOptions = {
 - `ttlSec`: Pre-Authorized Code フローにおける access token の有効期間（秒）。省略時はデフォルト値が使用されます。
 
 
+### authorizeCredentialEndpointAccess
+credential endpoint 向けの access token 検証を行い、クレデンシャル発行に必要なコンテキストを返します。`Authorization` / `DPoP` ヘッダーの解析、OAuth policy に基づく sender-constrained access token の扱い、DPoP Proof 検証（DPoP scheme の場合）を内部で行います。
+
+```typescript
+authorizeCredentialEndpointAccess(
+  authz: AuthorizationServerIssuer,
+  options: CredentialEndpointAuthorizationOptions
+): Promise<CredentialEndpointAuthorizationContext>
+```
+
+**パラメータ**:
+- `authz`: 認可サーバーの識別子（[AuthorizationServerIssuer](#AuthorizationServerIssuer)）
+- `options`: リクエストヘッダーと HTTP コンテキスト
+
+```typescript
+type CredentialEndpointAuthorizationOptions = {
+  authorizationHeader?: string | null
+  dpopHeader?: string | null
+  htm: string
+  htu: string
+  nonceRequired?: boolean
+  alg?: string
+}
+```
+
+**戻り値**: [CredentialEndpointAuthorizationContext](#CredentialEndpointAuthorizationContext)
+
+**エラーケース**（主なもの）:
+- `invalid_access_token`: Authorization ヘッダー不正、JWT 検証失敗、policy 不一致など
+- `invalid_dpop_proof`: DPoP Proof 検証失敗
+- `use_dpop_nonce`: DPoP Proof に nonce が必要
+
+server 実装では、このメソッドを credential リクエストボディを読む**前**に呼び出してください。
+
 ### verifyAccessToken
 アクセストークンを検証します。
 
@@ -1703,7 +1617,7 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 
 ## 7. 注意事項
 
-1. **アクセストークンの検証**: クレデンシャル発行時には必ずアクセストークンを検証してください。
+1. **アクセストークンの検証**: クレデンシャル発行時には `AuthzFlow.authorizeCredentialEndpointAccess` で access token（および必要なら DPoP Proof）を検証し、返却された `authorizationContext` を `issueCredential` の `options.authorizationContext` に渡してください。
 
 2. **セキュリティ**: 本番環境では、適切な認証・認可の仕組みを実装してください。
    - 秘密鍵の管理には特に注意を払ってください
