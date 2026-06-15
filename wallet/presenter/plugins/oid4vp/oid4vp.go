@@ -718,19 +718,49 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 // WithRequestObjectURI constructs the CredentialPresentationRequest
 // with fetching the request object from the given URI using the specified method,
 // and validates its claims and signature as per OID4VP and RFC9101.
+//
+// Per OID4VP draft 24 §5.11, when method is POST the request MUST use the
+// https scheme, set Content-Type: application/x-www-form-urlencoded and
+// Accept: application/oauth-authz-req+jwt. The https requirement is also
+// applied to the GET method for project-wide consistency with the same
+// guard in wallet/receiver/plugins/oid4vci/oid4vci.go (Issue #29).
+// It can be relaxed by setting the VCKNOTS_WALLET_HTTP_ALLOWED environment
+// variable for testing.
 func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMethod) *requestBuilder {
 	if b.errValidation != nil {
 		return b
 	}
 
+	parsedURI, err := url.Parse(uri)
+	if err != nil {
+		b.errValidation = fmt.Errorf("failed to parse request_uri %q: %w", uri, err)
+		return b
+	}
+	scheme := parsedURI.Scheme
+	if strings.EqualFold(scheme, "https") {
+		// HTTPS is always allowed
+	} else if strings.EqualFold(scheme, "http") {
+		if !env.IsHTTPAllowed() {
+			b.errValidation = fmt.Errorf("unsupported URL scheme for request_uri: %q (https required; set VCKNOTS_WALLET_HTTP_ALLOWED=true to allow http for testing)", parsedURI.Scheme)
+			return b
+		}
+	} else {
+		b.errValidation = fmt.Errorf("unsupported URL scheme for request_uri: %q (https required; set VCKNOTS_WALLET_HTTP_ALLOWED=true to allow http for testing)", parsedURI.Scheme)
+		return b
+	}
+
 	var req *http.Request
-	var err error
 
 	switch method {
 	case RequestURIMethodGET:
-		req, err = http.NewRequest(http.MethodGet, uri, nil)
+		req, err = http.NewRequest(http.MethodGet, parsedURI.String(), nil)
 	case RequestURIMethodPOST:
-		req, err = http.NewRequest(http.MethodPost, uri, nil)
+		req, err = http.NewRequest(http.MethodPost, parsedURI.String(), nil)
+		if err == nil {
+			// OID4VP draft 24 §5.11: Request URI Method post
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Accept", "application/oauth-authz-req+jwt")
+		}
 	default:
 		b.errValidation = fmt.Errorf("unsupported request_uri_method: %s", method)
 		return b
