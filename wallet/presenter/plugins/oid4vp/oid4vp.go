@@ -722,9 +722,15 @@ func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMetho
 		b.errValidation = fmt.Errorf("failed to parse request_uri %q: %w", uri, err)
 		return b
 	}
-	schemeOK := strings.EqualFold(parsedURI.Scheme, "https") ||
-		(env.IsHTTPAllowed() && strings.EqualFold(parsedURI.Scheme, "http"))
-	if !schemeOK {
+	scheme := parsedURI.Scheme
+	if strings.EqualFold(scheme, "https") {
+		// HTTPS is always allowed
+	} else if strings.EqualFold(scheme, "http") {
+		if !env.IsHTTPAllowed() {
+			b.errValidation = fmt.Errorf("unsupported URL scheme for request_uri: %q (https required; set VCKNOTS_WALLET_HTTP_ALLOWED=true to allow http for testing)", parsedURI.Scheme)
+			return b
+		}
+	} else {
 		b.errValidation = fmt.Errorf("unsupported URL scheme for request_uri: %q (https required; set VCKNOTS_WALLET_HTTP_ALLOWED=true to allow http for testing)", parsedURI.Scheme)
 		return b
 	}
