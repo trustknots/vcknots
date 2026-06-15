@@ -12,7 +12,7 @@ import { handlerEntry } from '../../util/paths';
 const apiStage = process.env.API_STAGE ?? 'test';
 
 export interface LambdaApiProps {
-  /** Handler file name under server/aws/handlers/ (e.g. issuer.ts). */
+  /** Handler file name under server/aws/lambda/handlers/ (e.g. issuer.ts). */
   handlerFile: string;
   restApiName: string;
   logGroupName: string;

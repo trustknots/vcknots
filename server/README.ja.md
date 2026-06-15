@@ -27,7 +27,7 @@ app/routes/utilの実装は `@trustknots/server-core` を利用します。
 
 ### `aws/`
 
-AWS Lambda 向けのサーバー実装です。ハンドラは `server/aws/handlers/`、vcknots context は `server/aws/context/`（`@trustknots/server-aws`）にあります。
+AWS Lambda 向けのサーバー実装です。ハンドラは `server/aws/lambda/handlers/`、vcknots context は `server/aws/lambda/context/`（`@trustknots/server-aws`）にあります。
 CDK インフラは `server/aws/resources/`、AWS provider は `aws/provider/`（`@trustknots/aws`）です。
 
 ### `multi/`

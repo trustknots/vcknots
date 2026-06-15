@@ -5,11 +5,11 @@ export function getResourcesRoot(): string {
   return process.cwd();
 }
 
-/** Absolute path to server/aws (Lambda handler sources). */
-export function getServerAwsRoot(): string {
-  return path.join(getResourcesRoot(), '..');
+/** Absolute path to server/aws/lambda (@trustknots/server-aws). */
+export function getLambdaRoot(): string {
+  return path.join(getResourcesRoot(), '..', 'lambda');
 }
 
 export function handlerEntry(handlerFile: string): string {
-  return path.join(getServerAwsRoot(), 'handlers', handlerFile);
+  return path.join(getLambdaRoot(), 'handlers', handlerFile);
 }

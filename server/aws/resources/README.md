@@ -4,7 +4,7 @@ CDK stack for vcknots on AWS.
 
 Related packages:
 
-- [`@trustknots/server-aws`](../) — Lambda handlers and vcknots context (`handlers/`, `context/`)
+- [`@trustknots/server-aws`](../lambda) — Lambda handlers and vcknots context (`handlers/`, `context/`)
 - [`@trustknots/aws`](../../../aws/provider) — AWS providers for DynamoDB / KMS / Secrets Manager (placeholder)
 
 ## Architecture
@@ -14,12 +14,14 @@ aws/
 └── provider/              @trustknots/aws (placeholder)
 
 server/aws/
-├── handlers/              @trustknots/server-aws
-│   ├── issuer.ts          Lambda handler (Issuer)
-│   ├── authz.ts           Lambda handler (Authz)
-│   └── verifier.ts        Lambda handler (Verifier)
-├── context/
-│   └── vcknots-context.ts context / baseUrl helpers
+├── lambda/                @trustknots/server-aws
+│   ├── package.json
+│   ├── handlers/
+│   │   ├── issuer.ts      Lambda handler (Issuer)
+│   │   ├── authz.ts       Lambda handler (Authz)
+│   │   └── verifier.ts    Lambda handler (Verifier)
+│   └── context/
+│       └── vcknots-context.ts context / baseUrl helpers
 └── resources/             this package (CDK app)
     ├── bin/resources.ts
     ├── scripts/
@@ -50,11 +52,11 @@ ResourcesStack
 
 ### Lambda handlers
 
-Handler sources live in `@trustknots/server-aws` (`server/aws/handlers/` and `server/aws/context/`).
+Handler sources live in `@trustknots/server-aws` (`server/aws/lambda/handlers/` and `server/aws/lambda/context/`).
 
 Each handler mounts a single route from `@trustknots/server-core` on a Hono app and exports `handle(app)` for API Gateway.
 
-| Handler (`server/aws/handlers/`) | Route |
+| Handler (`server/aws/lambda/handlers/`) | Route |
 |---|---|
 | `issuer.ts` | `@trustknots/server-core/routes/issue` |
 | `authz.ts` | `@trustknots/server-core/routes/authz` |

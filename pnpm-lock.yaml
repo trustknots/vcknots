@@ -143,14 +143,14 @@ importers:
         specifier: 9.0.10
         version: 9.0.10
 
-  server/aws:
+  server/aws/lambda:
     dependencies:
       '@trustknots/server-core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../../core
       '@trustknots/vcknots':
         specifier: workspace:*
-        version: link:../../issuer+verifier
+        version: link:../../../issuer+verifier
       hono:
         specifier: 4.11.4
         version: 4.11.4
