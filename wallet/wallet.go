@@ -24,7 +24,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -378,6 +377,16 @@ type inMemoryECKeyEntry struct {
 	pubJWK  jose.JSONWebKey
 }
 
+type keyEntryWithoutPublicKeyID struct {
+	IKeyEntry
+}
+
+func (k keyEntryWithoutPublicKeyID) PublicKey() jose.JSONWebKey {
+	jwk := k.IKeyEntry.PublicKey()
+	jwk.KeyID = ""
+	return jwk
+}
+
 func newInMemoryECKeyEntry() (*inMemoryECKeyEntry, error) {
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -440,14 +449,12 @@ func (w *Wallet) generateJWTProof(
 	clientID *string,
 	proofBindingMethod credentialRequestProofBindingMethod,
 ) (string, error) {
-	header := map[string]interface{}{
-		"alg": "ES256",
-		"typ": "openid4vci-proof+jwt",
-	}
-
+	signerOpts := (&jose.SignerOptions{}).WithType("openid4vci-proof+jwt")
+	signingKeyEntry := key
 	if proofBindingMethod == credentialRequestProofBindingMethodJWK {
 		publicJWK := key.PublicKey()
-		header["jwk"] = publicJWK.Public()
+		signerOpts = signerOpts.WithHeader("jwk", publicJWK.Public())
+		signingKeyEntry = keyEntryWithoutPublicKeyID{IKeyEntry: key}
 	} else {
 		if did == nil {
 			return "", fmt.Errorf("did is required for kid proof binding")
@@ -455,10 +462,15 @@ func (w *Wallet) generateJWTProof(
 		if strings.TrimSpace(did.ID) == "" {
 			return "", fmt.Errorf("did.ID is required for kid proof binding")
 		}
-		header["kid"] = did.ID
+		signerOpts = signerOpts.WithHeader("kid", did.ID)
 	}
 
-	payload := map[string]interface{}{
+	signerAdapter, err := joseutil.NewJWKSigner(signingKeyEntry, jose.ES256)
+	if err != nil {
+		return "", fmt.Errorf("failed to create JWT proof signer adapter: %w", err)
+	}
+
+	claims := map[string]interface{}{
 		"iat": time.Now().Unix(),
 		"aud": aud,
 	}
@@ -467,34 +479,29 @@ func (w *Wallet) generateJWTProof(
 		if strings.TrimSpace(*clientID) == "" {
 			return "", fmt.Errorf("clientID must be non-empty when provided")
 		}
-		payload["iss"] = *clientID
+		claims["iss"] = *clientID
 	}
 
 	if nonce != nil && *nonce != "" {
-		payload["nonce"] = *nonce
+		claims["nonce"] = *nonce
 	}
 
-	headerJSON, err := json.Marshal(header)
+	signingKey := jose.SigningKey{
+		Algorithm: jose.ES256,
+		Key:       signerAdapter,
+	}
+
+	signer, err := jose.NewSigner(signingKey, signerOpts)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal header: %w", err)
+		return "", fmt.Errorf("failed to create JWT proof signer: %w", err)
 	}
 
-	payloadJSON, err := json.Marshal(payload)
+	proof, err := jwt.Signed(signer).Claims(claims).Serialize()
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal payload: %w", err)
+		return "", fmt.Errorf("failed to serialize JWT proof: %w", err)
 	}
 
-	b64Header := base64.RawURLEncoding.EncodeToString(headerJSON)
-	b64Payload := base64.RawURLEncoding.EncodeToString(payloadJSON)
-
-	signingInput := b64Header + "." + b64Payload
-	signature, err := key.Sign([]byte(signingInput))
-	if err != nil {
-		return "", fmt.Errorf("failed to sign JWT: %w", err)
-	}
-
-	b64Signature := base64.RawURLEncoding.EncodeToString(signature)
-	return signingInput + "." + b64Signature, nil
+	return proof, nil
 }
 
 func (w *Wallet) generateDPoPProof(key IKeyEntry, method, targetURL, accessToken string, nonce *string) (string, error) {
@@ -1132,15 +1139,11 @@ func (w *Wallet) requestCredential(
 
 	credentialJWT, err := receiveCredential(nil)
 	if err != nil && strings.EqualFold(accessToken.TokenType, "DPoP") && errors.Is(err, receiverTypes.ErrUseDPoPNonce) {
-		dpopNonce, hasNonce := receiverTypes.DPoPNonceFromError(err)
-		if !hasNonce || dpopNonce == "" {
-			fetchedNonce, nonceErr := w.fetchDPoPNonce(issuerMetadata)
-			if nonceErr != nil {
-				return nil, fmt.Errorf("failed to fetch DPoP nonce: %w", nonceErr)
-			}
-			dpopNonce = *fetchedNonce
+		dpopNonce, nonceErr := w.fetchDPoPNonce(issuerMetadata)
+		if nonceErr != nil {
+			return nil, fmt.Errorf("failed to fetch DPoP nonce: %w", nonceErr)
 		}
-		credentialJWT, err = receiveCredential(&dpopNonce)
+		credentialJWT, err = receiveCredential(dpopNonce)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive credential: %w", err)

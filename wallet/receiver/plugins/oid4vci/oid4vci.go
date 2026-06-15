@@ -410,10 +410,12 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 }
 
 func firstCredentialRequestOptions(options []*types.CredentialRequestOptions) *types.CredentialRequestOptions {
-	if len(options) == 0 {
-		return nil
+	for _, option := range options {
+		if option != nil {
+			return option
+		}
 	}
-	return options[0]
+	return nil
 }
 
 func authorizationScheme(tokenType string) string {
