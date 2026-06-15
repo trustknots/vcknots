@@ -37,7 +37,8 @@ func TestOid4vciReceiver_FetchIssuerMetadata(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetDebugMode(dbg_mode)
 		defer env.SetHTTPAllowed(http_allowed)
-		env.SetDebugMode(false); env.SetHTTPAllowed(false)
+		env.SetDebugMode(false)
+		env.SetHTTPAllowed(false)
 
 		_, err := receiver.FetchIssuerMetadata(endpoint, types.Oid4vci)
 		if err == nil {
@@ -202,7 +203,8 @@ func TestOid4vciReceiver_FetchAuthorizationServerMetadata(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetDebugMode(dbg_mode)
 		defer env.SetHTTPAllowed(http_allowed)
-		env.SetDebugMode(false); env.SetHTTPAllowed(false)
+		env.SetDebugMode(false)
+		env.SetHTTPAllowed(false)
 
 		_, err := receiver.FetchAuthorizationServerMetadata(endpoint, types.Oid4vci)
 		if err == nil {
@@ -283,7 +285,8 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetDebugMode(dbg_mode)
 		defer env.SetHTTPAllowed(http_allowed)
-		env.SetDebugMode(false); env.SetHTTPAllowed(false)
+		env.SetDebugMode(false)
+		env.SetHTTPAllowed(false)
 
 		_, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code")
 		if err == nil {
@@ -365,7 +368,8 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetDebugMode(dbg_mode)
 		defer env.SetHTTPAllowed(http_allowed)
-		env.SetDebugMode(false); env.SetHTTPAllowed(false)
+		env.SetDebugMode(false)
+		env.SetHTTPAllowed(false)
 
 		_, err := receiver.ReceiveCredential(types.Oid4vci, endpoint, "jwt_vc_json", accessToken, nil, nil)
 		if err == nil {
@@ -444,6 +448,81 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 			t.Fatal("Expected error when no credential is in the response")
 		}
 	})
+
+	t.Run("New credentials array format", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		server := mockserver.NewMockServer()
+		defer server.Close()
+
+		// OID4VCI current format: credential nested under a "credentials" array.
+		server.SetJSONResponse("/credential", http.StatusOK, map[string]interface{}{
+			"credentials": []map[string]string{
+				{"credential": "new-format-credential"},
+			},
+		})
+
+		serverURL, _ := url.Parse(server.URL() + "/credential")
+		credential, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*serverURL), "jwt_vc_json", accessToken, nil, nil)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if credential == nil || *credential != "new-format-credential" {
+			t.Fatalf("Expected 'new-format-credential', got %v", credential)
+		}
+	})
+
+	t.Run("Prefers credentials array over legacy flat field", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		server := mockserver.NewMockServer()
+		defer server.Close()
+
+		// When both forms are present, the new array form wins.
+		server.SetJSONResponse("/credential", http.StatusOK, map[string]interface{}{
+			"credentials": []map[string]string{
+				{"credential": "from-array"},
+			},
+			"credential": "from-flat",
+		})
+
+		serverURL, _ := url.Parse(server.URL() + "/credential")
+		credential, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*serverURL), "jwt_vc_json", accessToken, nil, nil)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if credential == nil || *credential != "from-array" {
+			t.Fatalf("Expected 'from-array', got %v", credential)
+		}
+	})
+
+	t.Run("Empty credentials array falls back to legacy flat field", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		server := mockserver.NewMockServer()
+		defer server.Close()
+
+		// An empty array carries no credential, so the legacy field is used.
+		server.SetJSONResponse("/credential", http.StatusOK, map[string]interface{}{
+			"credentials": []map[string]string{},
+			"credential":  "from-flat",
+		})
+
+		serverURL, _ := url.Parse(server.URL() + "/credential")
+		credential, err := receiver.ReceiveCredential(types.Oid4vci, common.URIField(*serverURL), "jwt_vc_json", accessToken, nil, nil)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if credential == nil || *credential != "from-flat" {
+			t.Fatalf("Expected 'from-flat', got %v", credential)
+		}
+	})
 }
 
 func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
@@ -514,7 +593,7 @@ func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
 	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 	defer env.SetHTTPAllowed(http_allowed)
 	env.SetHTTPAllowed(true)
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

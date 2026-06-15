@@ -197,26 +197,56 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 		return nil, fmt.Errorf("credential response is empty")
 	}
 
-	// Extract credential from response
-	var credentialResponse map[string]interface{}
+	// Extract credential from response.
+	//
+	// OID4VCI (the current draft, see issuer #394) returns the credential nested
+	// under a "credentials" array, where each entry carries a "credential" field:
+	//
+	//	{ "credentials": [ { "credential": "<credential>" } ] }
+	//
+	// Earlier drafts returned it as a flat top-level "credential" field:
+	//
+	//	{ "credential": "<credential>" }
+	//
+	// We prefer the new array form and fall back to the legacy flat form so that
+	// issuers that have not migrated yet keep working.
+	var credentialResponse struct {
+		Credentials []struct {
+			Credential json.RawMessage `json:"credential"`
+		} `json:"credentials"`
+		Credential json.RawMessage `json:"credential"`
+	}
 	if err := json.Unmarshal(bodyBytes, &credentialResponse); err != nil {
 		return nil, err
 	}
 
-	credential, ok := credentialResponse["credential"]
-	if !ok {
+	var rawCredential json.RawMessage
+	switch {
+	case len(credentialResponse.Credentials) > 0 && len(credentialResponse.Credentials[0].Credential) > 0:
+		// New format: take the first credential in the array.
+		rawCredential = credentialResponse.Credentials[0].Credential
+	case len(credentialResponse.Credential) > 0:
+		// Legacy format: flat top-level credential.
+		rawCredential = credentialResponse.Credential
+	default:
 		return nil, fmt.Errorf("no credential found in response")
 	}
 
-	credentialStr, ok := credential.(string)
-	if !ok {
-		// If credential is not a string, marshal it back to JSON
-		credentialBytes, err := json.Marshal(credential)
-		if err != nil {
-			return nil, err
-		}
-		credentialStr = string(credentialBytes)
+	credentialStr, err := credentialRawToString(rawCredential)
+	if err != nil {
+		return nil, err
 	}
 
 	return &credentialStr, nil
+}
+
+// credentialRawToString converts a raw JSON credential value into a string.
+// When the credential is a JSON string (e.g. a compact JWT or SD-JWT) it is
+// unquoted; otherwise (e.g. a JSON-LD object) the raw JSON is returned as-is.
+func credentialRawToString(raw json.RawMessage) (string, error) {
+	var credentialStr string
+	if err := json.Unmarshal(raw, &credentialStr); err == nil {
+		return credentialStr, nil
+	}
+	return string(raw), nil
 }
