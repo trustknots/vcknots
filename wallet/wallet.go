@@ -326,7 +326,7 @@ func resolveCredentialRequestProofBindingMethod(
 		if strings.HasPrefix(normalized, "did:") {
 			return credentialRequestProofBindingMethodKID
 		}
-	
+
 		if strings.EqualFold(strings.TrimSpace(method), string(credentialRequestProofBindingMethodJWK)) {
 			return credentialRequestProofBindingMethodJWK
 		}
@@ -527,7 +527,6 @@ func (w *Wallet) ReceiveCredential(req ReceiveCredentialRequest) (*SavedCredenti
 		return nil, err
 	}
 
-
 	credentialConfigurationID, credentialConfiguration, serializationFlavor, err := w.selectCredentialConfiguration(req, issuerMetadata)
 	if err != nil {
 		return nil, err
@@ -564,6 +563,13 @@ func (w *Wallet) validateCredentialOffer(offer *CredentialOffer) (string, error)
 
 	if len(offer.CredentialConfigurationIDs) == 0 {
 		return "", fmt.Errorf("credential configuration IDs are empty")
+	}
+	seen := make(map[string]struct{}, len(offer.CredentialConfigurationIDs))
+	for _, id := range offer.CredentialConfigurationIDs {
+		if _, dup := seen[id]; dup {
+			return "", fmt.Errorf("credential configuration IDs must be unique: %q is duplicated", id)
+		}
+		seen[id] = struct{}{}
 	}
 
 	preAuthCode := preAuthGrant.PreAuthorizedCode
@@ -664,7 +670,7 @@ func ensureJWTProofSupported(credentialConfiguration *receiverTypes.CredentialCo
 
 	return fmt.Errorf("unsupported proof type: jwt proof is required")
 }
-  
+
 func (w *Wallet) validateCredentialConfigurationIDs(offer *CredentialOffer, issuerMetadata *receiverTypes.CredentialIssuerMetadata) error {
 	if offer == nil {
 		return fmt.Errorf("credential offer is required")
