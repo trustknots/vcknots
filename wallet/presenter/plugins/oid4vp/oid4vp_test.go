@@ -174,6 +174,9 @@ func mustParseURL(t *testing.T, rawURL string) *url.URL {
 }
 
 func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
+	// mockserver / httptest.NewServer use http; allow it for these tests.
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
 	// Setup mock verifier server with proper JWT signing
 	verifierServer := mockserver.NewOID4VPVerifierServer(nil)
 	defer verifierServer.Close()
@@ -928,6 +931,9 @@ func TestOid4vpPresenter_RequestObject_WithX5C_X509SanDNS_SuccessAndFailures(t *
 }
 
 func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
+	// mockserver is HTTP-only; allow http scheme for these tests.
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
 	t.Run("Delete default User-Agent header (GET)", func(t *testing.T) {
 		m := mockserver.NewMockServer()
 		defer m.Close()
@@ -971,6 +977,73 @@ func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
 		rb.WithRequestObjectURI(requestObjectURI.String(), RequestURIMethodPOST)
 		if !called {
 			t.Fatal("handler was not invoked")
+		}
+	})
+
+	// OID4VP draft 24 §5.11: POST request must set the prescribed
+	// Content-Type and Accept headers.
+	t.Run("POST sets Content-Type and Accept headers", func(t *testing.T) {
+		m := mockserver.NewMockServer()
+		defer m.Close()
+
+		var gotContentType, gotAccept string
+		m.HandleFunc("/request-object", func(w http.ResponseWriter, r *http.Request) {
+			gotContentType = r.Header.Get("Content-Type")
+			gotAccept = r.Header.Get("Accept")
+			w.WriteHeader(http.StatusOK)
+		})
+
+		requestObjectURI, _ := url.Parse(m.URL() + "/request-object")
+
+		rb := requestBuilder{}
+		rb.WithRequestObjectURI(requestObjectURI.String(), RequestURIMethodPOST)
+
+		if gotContentType != "application/x-www-form-urlencoded" {
+			t.Errorf("Content-Type = %q, want application/x-www-form-urlencoded", gotContentType)
+		}
+		if gotAccept != "application/oauth-authz-req+jwt" {
+			t.Errorf("Accept = %q, want application/oauth-authz-req+jwt", gotAccept)
+		}
+	})
+
+	// OID4VP draft 24 §5.11: request_uri must use the https scheme.
+	// IsHTTPAllowed() short-circuits on DEBUG, so clear both env vars.
+	t.Run("rejects http scheme when HTTP_ALLOWED is false (GET)", func(t *testing.T) {
+		t.Setenv(env.HTTP_ALLOWED.String(), "")
+		t.Setenv(env.DEBUG.String(), "")
+
+		rb := requestBuilder{}
+		rb.WithRequestObjectURI("http://example.com/request-object", RequestURIMethodGET)
+		if rb.errValidation == nil || !strings.Contains(rb.errValidation.Error(), "https required") {
+			t.Fatalf("expected https-required error, got: %v", rb.errValidation)
+		}
+	})
+
+	t.Run("rejects http scheme when HTTP_ALLOWED is false (POST)", func(t *testing.T) {
+		t.Setenv(env.HTTP_ALLOWED.String(), "")
+		t.Setenv(env.DEBUG.String(), "")
+
+		rb := requestBuilder{}
+		rb.WithRequestObjectURI("http://example.com/request-object", RequestURIMethodPOST)
+		if rb.errValidation == nil || !strings.Contains(rb.errValidation.Error(), "https required") {
+			t.Fatalf("expected https-required error, got: %v", rb.errValidation)
+		}
+	})
+
+	// Non-http(s) schemes must be rejected regardless of HTTP_ALLOWED.
+	t.Run("rejects non-http(s) scheme even when HTTP_ALLOWED is true", func(t *testing.T) {
+		t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+		for _, badURI := range []string{
+			"ftp://example.com/request-object",
+			"file:///etc/passwd",
+			"data:text/plain,foo",
+		} {
+			rb := requestBuilder{}
+			rb.WithRequestObjectURI(badURI, RequestURIMethodGET)
+			if rb.errValidation == nil || !strings.Contains(rb.errValidation.Error(), "https required") {
+				t.Errorf("uri=%q: expected https-required error, got: %v", badURI, rb.errValidation)
+			}
 		}
 	})
 }
