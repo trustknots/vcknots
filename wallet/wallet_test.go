@@ -365,8 +365,8 @@ func TestController_ReceiveCredential_TxCodeProvided_Integration(t *testing.T) {
 
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
 		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
-			"issuer":                                          server.URL,
-			"token_endpoint":                                  server.URL + "/token",
+			"issuer":         server.URL,
+			"token_endpoint": server.URL + "/token",
 			"pre-authorized_grant_anonymous_access_supported": true,
 			"response_types_supported":                        []string{"code"},
 		})
@@ -1446,9 +1446,9 @@ func newCredentialIssuanceMockServer(t *testing.T, opts credentialIssuanceMockSe
 		switch r.URL.Path {
 		case "/.well-known/openid-credential-issuer":
 			issuerResponse := map[string]interface{}{
-				"credential_issuer":                    baseURL,
-				"credential_endpoint":                  baseURL + "/credential",
-				"authorization_servers":                []string{baseURL},
+				"credential_issuer":                   baseURL,
+				"credential_endpoint":                 baseURL + "/credential",
+				"authorization_servers":               []string{baseURL},
 				"credential_configurations_supported": opts.credentialConfigurationsSupported,
 			}
 			if opts.includeNonceEndpoint {
@@ -2499,6 +2499,18 @@ func TestWallet_validateCredentialOffer(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "duplicated credential configuration IDs",
+			offer: &CredentialOffer{
+				CredentialIssuer:           issuerURL,
+				CredentialConfigurationIDs: []string{"Degree", "VerifiableCredential", "Degree"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			wantErr:         true,
+			wantErrContains: "credential configuration IDs must be unique",
+		},
+		{
 			name: "empty pre-authorization code",
 			offer: &CredentialOffer{
 				CredentialIssuer:           issuerURL,
@@ -2514,6 +2526,17 @@ func TestWallet_validateCredentialOffer(t *testing.T) {
 			offer: &CredentialOffer{
 				CredentialIssuer:           issuerURL,
 				CredentialConfigurationIDs: []string{"test-credential"},
+				Grants: map[string]*CredentialOfferGrant{
+					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
+				},
+			},
+			want: "pre-auth-code",
+		},
+		{
+			name: "valid offer with multiple unique credential configuration IDs",
+			offer: &CredentialOffer{
+				CredentialIssuer:           issuerURL,
+				CredentialConfigurationIDs: []string{"Degree", "VerifiableCredential"},
 				Grants: map[string]*CredentialOfferGrant{
 					preAuthGrantType: {PreAuthorizedCode: "pre-auth-code"},
 				},
