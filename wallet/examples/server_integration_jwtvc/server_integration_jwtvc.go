@@ -29,12 +29,19 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/trustknots/vcknots/wallet"
 	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/examples/common"
 	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
+
+const requestTimeout = 10 * time.Second
+
+var httpClient = &http.Client{
+	Timeout: requestTimeout,
+}
 
 type runOptions struct {
 	CredentialOfferURI string
@@ -73,7 +80,7 @@ func receiveCredential(w *wallet.Wallet, key *common.MockKeyEntry, logger *slog.
 		// Fetch credential offer from the server
 		offerEndpoint := serverURL + "/configurations/UniversityDegreeCredential/offer"
 
-		resp, err := http.Post(offerEndpoint, "application/json", nil)
+		resp, err := httpClient.Post(offerEndpoint, "application/json", nil)
 		if err != nil {
 			logger.Error("Failed to fetch credential offer", "error", err)
 			panic(err)
@@ -350,7 +357,7 @@ func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential
 		panic(err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		panic(err)
 	}
