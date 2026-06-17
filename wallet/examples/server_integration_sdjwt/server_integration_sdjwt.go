@@ -58,6 +58,12 @@ import (
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
+const requestTimeout = 10 * time.Second
+
+var httpClient = &http.Client{
+	Timeout: requestTimeout,
+}
+
 type runOptions struct {
 	OID4VPURI          string
 	CredentialOfferURI string
@@ -81,6 +87,9 @@ func parseRunOptions(args []string) (runOptions, error) {
 	}
 	if len(positionals) == 1 {
 		opts.OID4VPURI = positionals[0]
+	}
+	if opts.OID4VPURI != "" && opts.CredentialOfferURI != "" {
+		return opts, fmt.Errorf("--credential-offer-uri cannot be used with positional OID4VP URI")
 	}
 
 	return opts, nil
@@ -201,7 +210,7 @@ func fetchOID4VPURIFromServer(serverURL string, receivedCredential *wallet.Saved
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		panic(err)
 	}
@@ -239,7 +248,7 @@ func fetchCredentialOfferFromServer(serverURL string, configurationID string, lo
 	endpoint := fmt.Sprintf("%s/configurations/%s/offer", serverURL, configurationID)
 	logger.Info("Fetching credential offer", "endpoint", endpoint)
 
-	resp, err := http.Post(endpoint, "application/json", nil)
+	resp, err := httpClient.Post(endpoint, "application/json", nil)
 	if err != nil {
 		panic(fmt.Sprintf("failed to fetch credential offer: %v", err))
 	}
