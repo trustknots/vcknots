@@ -19,17 +19,25 @@
 package wallet
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/google/uuid"
 	"github.com/trustknots/vcknots/wallet/common"
+	joseutil "github.com/trustknots/vcknots/wallet/common/jose"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
 	"github.com/trustknots/vcknots/wallet/credstore/types"
@@ -67,6 +75,8 @@ type Wallet struct {
 	serializer *serializer.SerializationDispatcher
 	verifier   *verifier.VerificationDispatcher
 	presenter  *presenter.PresentationDispatcher
+
+	dpop DPoPConfig
 }
 
 // Config specifies the dispatcher components used by a Wallet.
@@ -84,7 +94,21 @@ type Config struct {
 	Serializer *serializer.SerializationDispatcher
 	Verifier   *verifier.VerificationDispatcher
 	Presenter  *presenter.PresentationDispatcher
+
+	DPoP DPoPConfig
 }
+
+// DPoPConfig holds configuration for DPoP proof generation.
+type DPoPConfig struct {
+	Enabled bool
+	Key     IKeyEntry
+}
+
+var dpopNonceHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
+const maxDPoPNonceResponseBodyBytes int64 = 4 << 10
 
 // NewWallet creates a Wallet with default dispatcher configurations.
 //
@@ -201,6 +225,13 @@ func NewWalletWithConfig(config Config) (*Wallet, error) {
 		config.Presenter = presenter
 	}
 
+	if config.DPoP.Enabled && config.DPoP.Key == nil {
+		key, err := newInMemoryECKeyEntry()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate DPoP key: %w", err)
+		}
+		config.DPoP.Key = key
+	}
 	return &Wallet{
 		credStore:  config.CredStore,
 		idProf:     config.IDProfiler,
@@ -208,6 +239,7 @@ func NewWalletWithConfig(config Config) (*Wallet, error) {
 		serializer: config.Serializer,
 		verifier:   config.Verifier,
 		presenter:  config.Presenter,
+		dpop:       config.DPoP,
 	}, nil
 }
 
@@ -292,6 +324,10 @@ type SavedCredential struct {
 }
 
 // IKeyEntry represents a key entry interface for signing operations.
+// Sign signs the input bytes. ECDSA implementations may return either
+// DER-encoded ASN.1 signatures or raw IEEE P1363 (R || S) signatures.
+// Callers that require JWS-compatible ES256 signatures should prefer
+// using JWKSigner, which normalizes DER-encoded signatures to IEEE P1363.
 type IKeyEntry interface {
 	ID() string
 	PublicKey() jose.JSONWebKey
@@ -335,6 +371,54 @@ func resolveCredentialRequestProofBindingMethod(
 	return credentialRequestProofBindingMethodKID
 }
 
+type inMemoryECKeyEntry struct {
+	id      string
+	privKey *ecdsa.PrivateKey
+	pubJWK  jose.JSONWebKey
+}
+
+type keyEntryWithoutPublicKeyID struct {
+	IKeyEntry
+}
+
+func (k keyEntryWithoutPublicKeyID) PublicKey() jose.JSONWebKey {
+	jwk := k.IKeyEntry.PublicKey()
+	jwk.KeyID = ""
+	return jwk
+}
+
+func newInMemoryECKeyEntry() (*inMemoryECKeyEntry, error) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate ECDSA key: %w", err)
+	}
+	id := uuid.NewString()
+	pubJWK := jose.JSONWebKey{
+		Key:       &privKey.PublicKey,
+		KeyID:     id,
+		Algorithm: string(jose.ES256),
+		Use:       "sig",
+	}
+	return &inMemoryECKeyEntry{
+		id:      id,
+		privKey: privKey,
+		pubJWK:  pubJWK,
+	}, nil
+}
+
+func (k *inMemoryECKeyEntry) ID() string {
+	return k.id
+}
+
+func (k *inMemoryECKeyEntry) PublicKey() jose.JSONWebKey {
+	return k.pubJWK
+}
+
+func (k *inMemoryECKeyEntry) Sign(data []byte) ([]byte, error) {
+	digest := sha256.Sum256(data)
+	return ecdsa.SignASN1(rand.Reader, k.privKey, digest[:])
+}
+
 // convertEntryToSavedCredential converts a CredentialEntry to SavedCredential.
 // Returns error if conversion fails (invalid flavor or deserialization error).
 func (w *Wallet) convertEntryToSavedCredential(entry types.CredentialEntry) (*SavedCredential, error) {
@@ -365,14 +449,12 @@ func (w *Wallet) generateJWTProof(
 	clientID *string,
 	proofBindingMethod credentialRequestProofBindingMethod,
 ) (string, error) {
-	header := map[string]interface{}{
-		"alg": "ES256",
-		"typ": "openid4vci-proof+jwt",
-	}
-
+	signerOpts := (&jose.SignerOptions{}).WithType("openid4vci-proof+jwt")
+	signingKeyEntry := key
 	if proofBindingMethod == credentialRequestProofBindingMethodJWK {
 		publicJWK := key.PublicKey()
-		header["jwk"] = publicJWK.Public()
+		signerOpts = signerOpts.WithHeader("jwk", publicJWK.Public())
+		signingKeyEntry = keyEntryWithoutPublicKeyID{IKeyEntry: key}
 	} else {
 		if did == nil {
 			return "", fmt.Errorf("did is required for kid proof binding")
@@ -380,10 +462,15 @@ func (w *Wallet) generateJWTProof(
 		if strings.TrimSpace(did.ID) == "" {
 			return "", fmt.Errorf("did.ID is required for kid proof binding")
 		}
-		header["kid"] = did.ID
+		signerOpts = signerOpts.WithHeader("kid", did.ID)
 	}
 
-	payload := map[string]interface{}{
+	signerAdapter, err := joseutil.NewJWKSigner(signingKeyEntry, jose.ES256)
+	if err != nil {
+		return "", fmt.Errorf("failed to create JWT proof signer adapter: %w", err)
+	}
+
+	claims := map[string]interface{}{
 		"iat": time.Now().Unix(),
 		"aud": aud,
 	}
@@ -392,34 +479,100 @@ func (w *Wallet) generateJWTProof(
 		if strings.TrimSpace(*clientID) == "" {
 			return "", fmt.Errorf("clientID must be non-empty when provided")
 		}
-		payload["iss"] = *clientID
+		claims["iss"] = *clientID
 	}
 
 	if nonce != nil && *nonce != "" {
-		payload["nonce"] = *nonce
+		claims["nonce"] = *nonce
 	}
 
-	headerJSON, err := json.Marshal(header)
+	signingKey := jose.SigningKey{
+		Algorithm: jose.ES256,
+		Key:       signerAdapter,
+	}
+
+	signer, err := jose.NewSigner(signingKey, signerOpts)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal header: %w", err)
+		return "", fmt.Errorf("failed to create JWT proof signer: %w", err)
 	}
 
-	payloadJSON, err := json.Marshal(payload)
+	proof, err := jwt.Signed(signer).Claims(claims).Serialize()
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal payload: %w", err)
+		return "", fmt.Errorf("failed to serialize JWT proof: %w", err)
 	}
 
-	b64Header := base64.RawURLEncoding.EncodeToString(headerJSON)
-	b64Payload := base64.RawURLEncoding.EncodeToString(payloadJSON)
+	return proof, nil
+}
 
-	signingInput := b64Header + "." + b64Payload
-	signature, err := key.Sign([]byte(signingInput))
+func (w *Wallet) generateDPoPProof(key IKeyEntry, method, targetURL, accessToken string, nonce *string) (string, error) {
+	if key == nil {
+		return "", fmt.Errorf("dpop key is required")
+	}
+
+	publicJWK := key.PublicKey()
+
+	var pub *ecdsa.PublicKey
+
+	switch k := publicJWK.Key.(type) {
+	case *ecdsa.PublicKey:
+		pub = k
+	case ecdsa.PublicKey:
+		pub = &k
+	default:
+		return "", fmt.Errorf("dpop key must be ECDSA public key")
+	}
+
+	if pub.Curve != elliptic.P256() {
+		return "", fmt.Errorf("dpop key must use P-256 curve")
+	}
+
+	signerAdapter, err := joseutil.NewJWKSigner(key, jose.ES256)
 	if err != nil {
-		return "", fmt.Errorf("failed to sign JWT: %w", err)
+		return "", fmt.Errorf("failed to create dpop signer adapter: %w", err)
 	}
 
-	b64Signature := base64.RawURLEncoding.EncodeToString(signature)
-	return signingInput + "." + b64Signature, nil
+	signingKey := jose.SigningKey{
+		Algorithm: jose.ES256,
+		Key:       signerAdapter,
+	}
+
+	signerOpts := (&jose.SignerOptions{}).WithType("dpop+jwt")
+
+	publicOnlyJWK := jose.JSONWebKey{
+		Key:       pub,
+		KeyID:     publicJWK.KeyID,
+		Algorithm: string(jose.ES256),
+		Use:       publicJWK.Use,
+	}
+
+	signerOpts = signerOpts.WithHeader("jwk", publicOnlyJWK)
+
+	signer, err := jose.NewSigner(signingKey, signerOpts)
+	if err != nil {
+		return "", fmt.Errorf("failed to create dpop signer: %w", err)
+	}
+
+	claims := map[string]any{
+		"jti": uuid.NewString(),
+		"htm": strings.ToUpper(method),
+		"htu": targetURL,
+		"iat": time.Now().Unix(),
+	}
+
+	if accessToken != "" {
+		accessTokenHash := sha256.Sum256([]byte(accessToken))
+		claims["ath"] = base64.RawURLEncoding.EncodeToString(accessTokenHash[:])
+	}
+	if nonce != nil && *nonce != "" {
+		claims["nonce"] = *nonce
+	}
+
+	proof, err := jwt.Signed(signer).Claims(claims).Serialize()
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize dpop proof: %w", err)
+	}
+
+	return proof, nil
 }
 
 // GetCredentialEntries retrieves credential entries with optional filtering.
@@ -761,7 +914,37 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 
 // obtainAccessToken obtains an access token using pre-authorization code.
 func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivingTypes, authMetadata *receiverTypes.AuthorizationServerMetadata, preAuthCode string, txCode string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
-	accessToken, err := w.receiver.FetchAccessToken(receivingType, *authMetadata.TokenEndpoint, preAuthCode, txCode)
+	if authMetadata == nil || authMetadata.TokenEndpoint == nil {
+		return nil, fmt.Errorf("token endpoint is missing on authorization server")
+	}
+
+	tokenEndpoint := *authMetadata.TokenEndpoint
+
+	fetchAccessToken := func(dpopNonce *string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
+		var tokenReqOptions []receiverTypes.TokenRequestOption
+		if w.dpop.Enabled {
+			proof, err := w.generateDPoPProof(
+				w.dpop.Key,
+				http.MethodPost,
+				receiverTypes.ResolveTokenEndpointURL(tokenEndpoint),
+				"",
+				dpopNonce,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate DPoP proof: %w", err)
+			}
+			tokenReqOptions = append(tokenReqOptions, receiverTypes.WithDPoPProof(proof))
+		}
+
+		return w.receiver.FetchAccessToken(receivingType, tokenEndpoint, preAuthCode, txCode, tokenReqOptions...)
+	}
+
+	accessToken, err := fetchAccessToken(nil)
+	if err != nil && w.dpop.Enabled {
+		if dpopNonce, ok := receiverTypes.DPoPNonceFromError(err); ok && dpopNonce != "" {
+			accessToken, err = fetchAccessToken(&dpopNonce)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch access token: %w", err)
 	}
@@ -828,6 +1011,49 @@ func (w *Wallet) fetchCredentialNonce(
 	return nil, fmt.Errorf("nonce response does not contain c_nonce or nonce")
 }
 
+func (w *Wallet) fetchDPoPNonce(issuerMetadata *receiverTypes.CredentialIssuerMetadata) (*string, error) {
+	if issuerMetadata == nil || issuerMetadata.NonceEndpoint == nil {
+		return nil, fmt.Errorf("issuer metadata does not contain nonce endpoint")
+	}
+
+	nonceEndpointURL := url.URL(*issuerMetadata.NonceEndpoint)
+	if !env.IsHTTPAllowed() && !strings.EqualFold(nonceEndpointURL.Scheme, "https") {
+		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", nonceEndpointURL.Scheme)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, nonceEndpointURL.String(), http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DPoP nonce request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := dpopNonceHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch DPoP nonce: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxDPoPNonceResponseBodyBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read DPoP nonce response: %w", err)
+	}
+	if int64(len(bodyBytes)) > maxDPoPNonceResponseBodyBytes {
+		return nil, fmt.Errorf("DPoP nonce endpoint response exceeds %d bytes", maxDPoPNonceResponseBodyBytes)
+	}
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("DPoP nonce endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	nonce := strings.TrimSpace(resp.Header.Get("DPoP-Nonce"))
+	if nonce == "" {
+		return nil, fmt.Errorf("DPoP nonce endpoint response does not contain DPoP-Nonce header")
+	}
+
+	return &nonce, nil
+}
+
 // requestCredential requests the credential from the issuer with JWT proof.
 func (w *Wallet) requestCredential(
 	req ReceiveCredentialRequest,
@@ -891,15 +1117,41 @@ func (w *Wallet) requestCredential(
 		credentialDefinition = credentialConfiguration.CredentialDefinition
 	}
 
-	credentialJWT, err := w.receiver.ReceiveCredential(
-		req.Type,
-		issuerMetadata.CredentialEndpoint,
-		credentialConfigurationID,
-		credentialIdentifier,
-		*accessToken,
-		credentialDefinition,
-		proof,
-	)
+	receiveCredential := func(dpopNonce *string) (*string, error) {
+		var options *receiverTypes.CredentialRequestOptions
+		if strings.EqualFold(accessToken.TokenType, "DPoP") {
+			if w.dpop.Key == nil {
+				return nil, fmt.Errorf("dpop key is required for DPoP access token")
+			}
+			dpopProof, err := w.generateDPoPProof(w.dpop.Key, http.MethodPost, issuerMetadata.CredentialEndpoint.String(), accessToken.Token, dpopNonce)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate DPoP proof: %w", err)
+			}
+			options = &receiverTypes.CredentialRequestOptions{
+				DPoPProofJWT: &dpopProof,
+			}
+		}
+
+		return w.receiver.ReceiveCredential(
+			req.Type,
+			issuerMetadata.CredentialEndpoint,
+			credentialConfigurationID,
+			credentialIdentifier,
+			*accessToken,
+			credentialDefinition,
+			proof,
+			options,
+		)
+	}
+
+	credentialJWT, err := receiveCredential(nil)
+	if err != nil && strings.EqualFold(accessToken.TokenType, "DPoP") && errors.Is(err, receiverTypes.ErrUseDPoPNonce) {
+		dpopNonce, nonceErr := w.fetchDPoPNonce(issuerMetadata)
+		if nonceErr != nil {
+			return nil, fmt.Errorf("failed to fetch DPoP nonce: %w", nonceErr)
+		}
+		credentialJWT, err = receiveCredential(dpopNonce)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive credential: %w", err)
 	}

@@ -67,7 +67,7 @@ func (m *MockReceiver) FetchAuthorizationServerMetadata(endpoint common.URIField
 
 // FetchAccessToken returns a mock access token
 // For mock implementation, this returns a static mock token
-func (m *MockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string) (*types.CredentialIssuanceAccessToken, error) {
+func (m *MockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, opts ...types.TokenRequestOption) (*types.CredentialIssuanceAccessToken, error) {
 	if receivingType != types.Mock {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "FetchAccessToken", fmt.Errorf("unsupported receiving type for mock receiver"))
 	}
@@ -101,6 +101,7 @@ func (m *MockReceiver) ReceiveCredential(
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
+	options ...*types.CredentialRequestOptions,
 ) (*string, error) {
 	if receivingType != types.Mock {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "ReceiveCredential", fmt.Errorf("unsupported receiving type for mock receiver"))

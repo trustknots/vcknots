@@ -27,7 +27,7 @@ func (m *mockReceiver) FetchAuthorizationServerMetadata(endpoint common.URIField
 	return &types.AuthorizationServerMetadata{}, nil
 }
 
-func (m *mockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string) (*types.CredentialIssuanceAccessToken, error) {
+func (m *mockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, opts ...types.TokenRequestOption) (*types.CredentialIssuanceAccessToken, error) {
 	if m.shouldError {
 		return nil, fmt.Errorf("mock error")
 	}
@@ -50,6 +50,7 @@ func (m *mockReceiver) ReceiveCredential(
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
+	options ...*types.CredentialRequestOptions,
 ) (*string, error) {
 	if m.shouldError {
 		return nil, fmt.Errorf("mock error")

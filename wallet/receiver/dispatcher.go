@@ -102,7 +102,7 @@ func (d *ReceivingDispatcher) FetchAuthorizationServerMetadata(endpoint common.U
 }
 
 // FetchAccessToken fetches access token using the appropriate plugin
-func (d *ReceivingDispatcher) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string) (*types.CredentialIssuanceAccessToken, error) {
+func (d *ReceivingDispatcher) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, opts ...types.TokenRequestOption) (*types.CredentialIssuanceAccessToken, error) {
 	if authzCode == "" {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "fetch_access_token", types.ErrAuthorizationFailed)
 	}
@@ -112,7 +112,7 @@ func (d *ReceivingDispatcher) FetchAccessToken(receivingType types.SupportedRece
 		return nil, err
 	}
 
-	token, err := plugin.FetchAccessToken(receivingType, endpoint, authzCode, txCode)
+	token, err := plugin.FetchAccessToken(receivingType, endpoint, authzCode, txCode, opts...)
 	if err != nil {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "fetch_access_token", err)
 	}
@@ -144,6 +144,7 @@ func (d *ReceivingDispatcher) ReceiveCredential(
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
+	options ...*types.CredentialRequestOptions,
 ) (*string, error) {
 	hasCredentialIdentifier := credentialIdentifier != nil && *credentialIdentifier != ""
 	if credentialConfigurationID == "" && !hasCredentialIdentifier {
@@ -155,7 +156,7 @@ func (d *ReceivingDispatcher) ReceiveCredential(
 		return nil, err
 	}
 
-	credential, err := plugin.ReceiveCredential(receivingType, endpoint, credentialConfigurationID, credentialIdentifier, accessToken, credentialDefinition, jwtProof)
+	credential, err := plugin.ReceiveCredential(receivingType, endpoint, credentialConfigurationID, credentialIdentifier, accessToken, credentialDefinition, jwtProof, options...)
 	if err != nil {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "receive_credential", err)
 	}
