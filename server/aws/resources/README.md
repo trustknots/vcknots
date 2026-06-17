@@ -128,7 +128,7 @@ Attributes other than `id` (metadata body, `expires_at`, and so on) are written 
 | [Node.js](https://nodejs.org/) | 20+ | Required to run CDK and bundle Lambda handlers |
 | [pnpm](https://pnpm.io/) | 10.11.0 | Monorepo package manager (`packageManager` in root `package.json`) |
 | [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | v2 recommended | Used by `deploy-resources.sh` for identity/region lookup |
-| bash | — | Deploy script (`scripts/deploy-resources.sh`) |
+| POSIX `sh` | — | Deploy script (`scripts/deploy-resources.sh`; `/bin/sh` on macOS/Linux) |
 
 `aws-cdk`, `ts-node`, and `esbuild` are installed as `server/aws/resources` devDependencies.  
 You do **not** need a global `cdk` install; use `pnpm cdk` or `pnpm deploy` from `server/aws/resources`.

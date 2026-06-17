@@ -5,7 +5,7 @@
     "build": "tsc",
     "watch": "tsc -w",
     "cdk": "cdk",
-    "deploy": "bash scripts/deploy-resources.sh"
+    "deploy": "sh scripts/deploy-resources.sh"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.161",

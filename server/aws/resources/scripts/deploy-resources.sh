@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 usage() {
   cat <<EOF
@@ -23,24 +23,24 @@ Environment:
 EOF
 }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RESOURCES_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-if [[ -f "${SCRIPT_DIR}/.env" ]]; then
+if [ -f "${SCRIPT_DIR}/.env" ]; then
   set -a
   # shellcheck source=/dev/null
-  source "${SCRIPT_DIR}/.env"
+  . "${SCRIPT_DIR}/.env"
   set +a
 fi
 
-while [[ $# -gt 0 ]]; do
+while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help)
       usage
       exit 0
       ;;
     -p|--profile)
-      if [[ $# -lt 2 ]]; then
+      if [ $# -lt 2 ]; then
         echo "Error: --profile requires a value" >&2
         exit 1
       fi
@@ -48,7 +48,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -s|--stage)
-      if [[ $# -lt 2 ]]; then
+      if [ $# -lt 2 ]; then
         echo "Error: --stage requires a value" >&2
         exit 1
       fi
@@ -63,7 +63,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -n "${AWS_PROFILE:-}" ]]; then
+if [ -n "${AWS_PROFILE:-}" ]; then
   export AWS_PROFILE
 fi
 
@@ -79,7 +79,7 @@ echo "==> Working directory: ${RESOURCES_DIR}"
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 REGION="$(aws configure get region || true)"
-if [[ -z "${REGION}" ]]; then
+if [ -z "${REGION}" ]; then
   REGION="${AWS_DEFAULT_REGION:-ap-northeast-1}"
 fi
 
