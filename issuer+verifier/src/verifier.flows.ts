@@ -383,7 +383,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       // TODO: Implement
       if (!response.presentation_submission) {
         throw err('ILLEGAL_ARGUMENT', {
-          message: 'DQCL is not supported yet',
+          message: 'DCQL is not supported yet',
         })
       }
       if (Array.isArray(response.vp_token) && response.vp_token.length !== 1) {
