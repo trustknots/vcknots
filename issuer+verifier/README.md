@@ -153,7 +153,7 @@ const request = await verifier.createAuthzRequest(
       }]
     }
   },
-  false, // use request_uri (JAR)
+  true, // use request_uri (JAR)
   { base_url: base }
 )
 

@@ -87,7 +87,7 @@ app.post('/verify/request', async (c) => {
             id: credentialId,
             format: 'jwt_vc_json',
             meta: {
-              type_values: [credentialId],
+              type_values: [[credentialId]],
             },
             claims: [
               {

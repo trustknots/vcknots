@@ -89,7 +89,7 @@ app.post('/verify/request', async (c) => {
             id: credentialId,
             format: 'jwt_vc_json',
             meta: {
-              type_values: [credentialId],
+              type_values: [[credentialId]],
             },
             claims: [
               {
@@ -511,7 +511,7 @@ createAuthzRequest(
 **パラメータ**:
 - `verifierId`: Verifierの識別子（[VerifierClientId](#VerifierClientId)）
 - `response_type`: レスポンスタイプ（'vp_token'）
-- `client_id`: クライアントID（[OpenID for Verifiable Presentations 5.2 Existing Parameters の client_id 参照](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.2)）
+- `client_id`: クライアントID（[OpenID for Verifiable Presentations 5.2 Existing Parameters の client_id 参照](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.2)）
 - `response_mode`: レスポンスモード('direct_post' | 'query' | 'fragment' | 'dc_api.jwt' | 'dc_api')
 - `query`: DCQLクエリ（[6. Digital Credentials Query Language (DCQL)](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l)）
 - `isRequestUri`: リクエストURIを使用するかどうかのフラグ

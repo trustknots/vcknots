@@ -327,6 +327,7 @@ describe('VerifierFlow', () => {
       )
 
       AuthorizationRequest(req)
+      if ('request_uri' in req) throw new Error('unexpected request_uri flow')
       assert.equal(req.response_type, 'vp_token')
       assert.equal(req.response_mode, 'direct_post')
       assert.equal(req.nonce, 'nonce-123')
@@ -373,7 +374,14 @@ describe('VerifierFlow', () => {
         'direct_post',
         {
           dcql_query: {
-            credentials: [{ id: 'test_credential', format: 'jwt_vc_json' }],
+            credentials: [
+              {
+                id: 'test_credential',
+                format: 'jwt_vc_json',
+                meta: { type_values: [['VerifiableCredential']] },
+                claims: [{ path: ['vc', 'credentialSubject', 'id'] }],
+              },
+            ],
           },
         },
         true,
@@ -381,6 +389,7 @@ describe('VerifierFlow', () => {
       )
 
       AuthorizationRequest(req)
+      if (!('request_uri' in req)) throw new Error('expected request_uri flow')
       assert.equal(typeof req.request_uri, 'string')
       assert.equal(
         req.request_uri,
@@ -413,7 +422,14 @@ describe('VerifierFlow', () => {
           'direct_post',
           {
             dcql_query: {
-              credentials: [{ id: 'test_credential', format: 'jwt_vc_json' }],
+              credentials: [
+                {
+                  id: 'test_credential',
+                  format: 'jwt_vc_json',
+                  meta: { type_values: [['VerifiableCredential']] },
+                  claims: [{ path: ['vc', 'credentialSubject', 'id'] }],
+                },
+              ],
             },
           },
           true,
@@ -463,6 +479,7 @@ describe('VerifierFlow', () => {
       )
 
       AuthorizationRequest(req)
+      if ('request_uri' in req) throw new Error('unexpected request_uri flow')
       assert.equal(req.response_type, 'vp_token')
       assert.equal(req.response_mode, 'direct_post')
       assert.equal(req.nonce, 'nonce-123')
