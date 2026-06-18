@@ -6,3 +6,9 @@ packages:
   - server/single
   - server/core
   - server/google-cloud
+allowBuilds:
+  '@firebase/util': true
+  core-js: true
+  core-js-pure: true
+  esbuild: true
+  protobufjs: true
