@@ -2,7 +2,6 @@ packages:
   - issuer+verifier
   - google-cloud
   - docusaurus
-  - server/multi
   - server/single
   - server/core
   - server/google-cloud

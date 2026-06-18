@@ -1,4 +1,4 @@
----
+﻿---
 sidebar_position: 3
 ---
 
@@ -9,10 +9,9 @@ sidebar_position: 3
 
 ## 1. 前提条件
 
-- OpenID for Verifiable Presentations - draft 24 に対応（[OpenID for Verifiable Presentations - draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html)）　　
+- OpenID for Verifiable Presentations 1.0 に対応（[OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)）　　
 以下は現時点では未実装ですが、今後対応予定です。
   - `response_mode`は`direct_post`は対応していますが、`direct_post.jwt`は未対応です（現時点では未実装／今後対応予定）。
-  - `presentation_definition_uri`に未対応（今後対応予定）
   - vp_token は単一の String 型のみ対応（JSON VP 形式は未対応／今後対応予定）
 - クロスデバイスフローを前提としています
 - Node.js v14以降がインストールされていること
@@ -84,31 +83,19 @@ app.post('/verify/request', async (c) => {
     const client_id = 'x509_san_dns:localhost'
 
     const query = {
-      presentation_definition: {
-        id: randomUUID(),
-        name: 'Test Name',
-        purpose: 'Test Purpose',
-        input_descriptors: [
+      dcql_query: {
+        credentials: [
           {
             id: credentialId,
-            format: {
-              jwt_vc_json: {
-                proof_type: ['ES256'],
+            format: 'jwt_vc_json',
+            meta: {
+              type_values: [credentialId],
+            },
+            claims: [
+              {
+                path: ['vc', 'credentialSubject', 'name'],
               },
-            },
-            constraints: {
-              fields: [
-                {
-                  path: ['$.vc.type'],
-                  filter: {
-                    type: 'array',
-                    contains: {
-                      const: 'VerifiableCredential',
-                    },
-                  },
-                },
-              ],
-            },
+            ],
           },
         ],
       },
@@ -156,7 +143,7 @@ curl --location 'http://localhost:8080/verify/request' \
 **レスポンス**
 
 ```
-openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&client_metadata=%7B%22client_name%22%3A%22Sample%20Verifier%20App%22%2C%22client_uri%22%3A%22http%3A%2F%2Flocalhost%3A8080%22%2C%22jwks%22%3A%7B%22keys%22%3A%5B%7B%22kty%22%3A%22EC%22%2C%22x%22%3A%220_3S7HedSywaxlekdt6Or8pkcR13hQaCPMqt9cuZBVc%22%2C%22y%22%3A%22ZVXSCL3HlnMQWKrwMyIAe5wsAIWd3Eu1misKFr3POdA%22%2C%22crv%22%3A%22P-256%22%7D%5D%7D%2C%22vp_formats%22%3A%7B%22jwt_vp_json%22%3A%7B%22alg%22%3A%5B%22ES256%22%5D%7D%7D%2C%22client_id_scheme%22%3A%22redirect_uri%22%2C%22authorization_signed_response_alg%22%3A%22ES256%22%7D&nonce=5cf220cd62d3453192b1af4f6ba88b87&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fverifiers%2Fhttp%253A%252F%252Flocalhost%253A8080%2Fcallback&client_id_scheme=x509_san_dns&presentation_definition=%7B%22id%22%3A%2243bff439-6929-4843-931f-5b7530ed8010%22%2C%22name%22%3A%22Test%20Name%22%2C%22purpose%22%3A%22Test%20Purpose%22%2C%22input_descriptors%22%3A%5B%7B%22id%22%3A%22UniversityDegreeCredential%22%2C%22format%22%3A%7B%22jwt_vc_json%22%3A%7B%22proof_type%22%3A%5B%22ES256%22%5D%7D%7D%2C%22constraints%22%3A%7B%22fields%22%3A%5B%7B%22path%22%3A%5B%22%24.vc.type%22%5D%2C%22filter%22%3A%7B%22type%22%3A%22array%22%2C%22contains%22%3A%7B%22const%22%3A%22VerifiableCredential%22%7D%7D%7D%5D%7D%7D%5D%7D
+openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&client_metadata=...&nonce=5cf220cd62d3453192b1af4f6ba88b87&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fverifiers%2Fhttp%253A%252F%252Flocalhost%253A8080%2Fcallback&client_id_scheme=x509_san_dns&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%22UniversityDegreeCredential%22%2C%22format%22%3A%22jwt_vc_json%22%2C%22meta%22%3A%7B%22type_values%22%3A%5B%22UniversityDegreeCredential%22%5D%7D%2C%22claims%22%3A%5B%7B%22path%22%3A%5B%22vc%22%2C%22credentialSubject%22%2C%22name%22%5D%7D%5D%7D%5D%7D
 ```
 
 
@@ -167,7 +154,7 @@ openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&
 - **エンドポイント**: `POST /verify/request-object`
 - **リクエストボディ (JSON)**
   - 以下のフィールドを含めます。
-      - `query.presentation_definition`
+      - `query.dcql_query`
       - `state`
       - `response_uri`
       - `client_id`：`redirect_uri:<URL>` または `x509_san_dns:<ホスト名>` を指定
@@ -187,14 +174,14 @@ openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&
         client_id: clientId,
         state,
         response_uri: responseUri,
-        query: presentationDefinition,
+        query,
       } = body
       const request = await verifierFlow.createAuthzRequest(
         verifierId,
         'vp_token',
         clientId,
         'direct_post',
-        presentationDefinition,
+        query,
         true,
         {
           state: state,
@@ -225,66 +212,28 @@ openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&
 curl --location 'http://localhost:8080/verify/request-object' \
 --header 'Content-Type: application/json' \
 --data '{
- "query": {
-  "presentation_definition": {
-    "id": "example",
-    "name": "",
-    "purpose": "",
-    "submission_requirements": [],
-    "input_descriptors": [
-      {
-        "id": "University Degree Credentials",
-        "name": "Example",
-        "purpose": "to verify your UniversityDegree Credential",
-        "format": {
-          "dc+sd-jwt": {
-            "sd-jwt_alg_values": [
-              "ES256"
-            ],
-            "kb-jwt_alg_values": [
-              "ES256"
-            ]
-          }
-        },
-        "constraints": {
-						"fields": [
-							{
-								"path": [
-									"$.vct"
-								],
-								"filter": {
-									"type": "string",
-									"const": "urn:eudi:pid:1"
-								}
-							},
-							{
-								"path": [
-									"$.family_name"
-								],
-								"intent_to_retain": false
-							},
-							{
-								"path": [
-									"$.given_name"
-								],
-								"intent_to_retain": false
-							},
-							{
-								"path": [
-									"$.age_equal_or_over.18"
-								],
-								"intent_to_retain": false
-							}
-						]
+  "query": {
+    "dcql_query": {
+      "credentials": [
+        {
+          "id": "University Degree Credentials",
+          "format": "dc+sd-jwt",
+          "meta": {
+            "vct_values": ["urn:eudi:pid:1"]
+          },
+          "claims": [
+            { "path": ["family_name"] },
+            { "path": ["given_name"] },
+            { "path": ["age_equal_or_over", "18"] }
+          ]
         }
-      }
-    ]
-  }
+      ]
+    }
   },
   "state": "example-state",
   "client_id": "x509_san_dns:localhost",
-  "is_transaction_data":false,
-  "response_uri":"http://localhost:8080/callback-kbjwt"}'
+  "is_transaction_data": false,
+  "response_uri": "http://localhost:8080/callback-kbjwt"'
 ```
 
 **レスポンス**
@@ -552,7 +501,7 @@ createAuthzRequest(
   response_type: 'vp_token',
   client_id: `${ClientIdScheme}:${string}`,
   response_mode: 'direct_post' | 'query' | 'fragment' | 'dc_api.jwt' | 'dc_api',
-  query: DeepPartialUnknown<PresentationExchange> | DeepPartialUnknown<Dcql>,
+  query: DeepPartialUnknown<Dcql>,
   isRequestUri: boolean,
   options: CreateAuthzRequestOptions
 ): Promise<AuthorizationRequest>
@@ -564,7 +513,7 @@ createAuthzRequest(
 - `response_type`: レスポンスタイプ（'vp_token'）
 - `client_id`: クライアントID（[OpenID for Verifiable Presentations 5.2 Existing Parameters の client_id 参照](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.2)）
 - `response_mode`: レスポンスモード('direct_post' | 'query' | 'fragment' | 'dc_api.jwt' | 'dc_api')
-- `query`: presentaion_definition（[ 5.4. presentation_definition Parameter ](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.4)） または DCQLクエリ （[  6. Digital Credentials Query Language (DCQL)  ](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#name-digital-credentials-query-l)）
+- `query`: DCQLクエリ（[6. Digital Credentials Query Language (DCQL)](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l)）
 - `isRequestUri`: リクエストURIを使用するかどうかのフラグ
   - `isRequestUri = true` → request_uri形式（Request Objectを外部に保存）
   - `isRequestUri = false` → 直接形式（認可リクエストに直接パラメータを含める）
@@ -591,7 +540,7 @@ createAuthzRequest(
     client_id_scheme: string,
     client_metadata: VerifierMetadata,
     nonce: string,
-    // presentaion_defition または dcql_query
+    // dcql_query
   }
   ```
 
@@ -615,7 +564,7 @@ createAuthzRequest(
 
 #### AuthorizationRequest（createAuthzRequest のレスポンス型）{#AuthorizationRequest}
 
-`createAuthzRequest` が返すレスポンス型です。`request_uri` を用いる「Request URI 形式」か、パラメータを直接含める「直接形式」のいずれかで、PE（Presentation Exchange）または DCQL のスキーマと結合されます。
+`createAuthzRequest` が返すレスポンス型です。`request_uri` を用いる「Request URI 形式」か、パラメータを直接含める「直接形式」のいずれかで、DCQL のスキーマと結合されます。
 
 詳細な型定義については、[authorization-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/authorization-request.types.ts)を参照してください。
 

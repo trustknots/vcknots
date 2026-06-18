@@ -4,11 +4,7 @@ import { AuthorizationResponse } from './authorization-response.types'
 import { ClientId } from './client-id.types'
 import { Dcql } from './dcql.type'
 import { err, raise } from './errors/vcknots.error'
-import { PresentationExchange } from './presentation-exchange.types'
-import {
-  CredentialQueryGenerationOptions,
-  VerifyVerifiablePresentationVerifyOptions,
-} from './providers'
+import { VerifyVerifiablePresentationVerifyOptions } from './providers'
 import { selectProvider } from './providers/provider.utils'
 import { RequestObject } from './request-object.types'
 import { DeepPartialUnknown } from './type.utils'
@@ -74,7 +70,7 @@ export type VerifierFlow = {
     response_type: 'vp_token',
     client_id: ClientIdentifier,
     response_mode: 'direct_post' | 'query' | 'fragment' | 'dc_api.jwt' | 'dc_api',
-    query: DeepPartialUnknown<PresentationExchange> | DeepPartialUnknown<Dcql>,
+    query: DeepPartialUnknown<Dcql>,
     isRequestUri: boolean,
     options: CreateAuthzRequestOptions
   ): Promise<AuthorizationRequest>
@@ -89,11 +85,6 @@ export type VerifierFlow = {
     options: VerifyPresentationOptions
   ) => Promise<VpTokenPayload>
 }
-
-const isPresentationExchange = (query: unknown): query is PresentationExchange =>
-  typeof query === 'object' &&
-  query !== null &&
-  ('presentation_definition' in query || 'presentation_definition_uri' in query)
 
 export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow => {
   const cnonce$ = context.providers.get('cnonce-provider')
@@ -246,68 +237,29 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       const metadata = (await verifierMetadata$.fetch(verifierId)) ?? raise('VERIFIER_NOT_FOUND')
 
-      const args: CredentialQueryGenerationOptions = isPresentationExchange(query)
-        ? {
-            kind: 'presentation-exchange',
-            query: query as PresentationExchange,
-          }
-        : { kind: 'dcql', query: query as Dcql }
-
-      const parsedQuery = await selectProvider(query$, args.kind).generate(args)
+      const parsedQuery = await query$.generate(query)
 
       const transaction_data: string[] = []
       const credentialIds: string[] = []
       let isDcSDJwtRequested = false
       // Validate: Metadata supports format
       const vpFormats = Object.keys(metadata.vp_formats)
-      if (isPresentationExchange(parsedQuery)) {
-        if (parsedQuery.presentation_definition) {
-          const input_descriptors = parsedQuery.presentation_definition.input_descriptors
-          if (input_descriptors) {
-            for (const descriptor of input_descriptors) {
-              if (descriptor.format) {
-                for (const format of Object.keys(descriptor.format)) {
-                  if (!vpFormats.includes(format)) {
-                    throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
-                      message: `The vp_format ${format} is not supported by the verifier.`,
-                    })
-                  }
-                  if (format === 'dc+sd-jwt') {
-                    credentialIds.push(descriptor.id)
-                    isDcSDJwtRequested = true
-                  }
-                }
-              }
-            }
-            if (isDcSDJwtRequested && options.transaction_data) {
-              transaction_data.push(
-                transactionData$.generate(options.transaction_data.type, credentialIds)
-              )
-            }
+      if (parsedQuery.dcql_query) {
+        for (const credential of parsedQuery.dcql_query.credentials) {
+          if (!vpFormats.includes(credential.format)) {
+            throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
+              message: `The vp_format ${credential.format} is not supported by the verifier.`,
+            })
+          }
+          if (credential.format === 'dc+sd-jwt') {
+            isDcSDJwtRequested = true
+            credentialIds.push(credential.id)
           }
         }
-      } else if (parsedQuery.dcql_query) {
-        const credentials = parsedQuery.dcql_query.credentials
-        console.log('credentials:', credentials)
-        if (credentials) {
-          for (const credential of credentials) {
-            if (credential.format) {
-              if (!vpFormats.includes(credential.format)) {
-                throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
-                  message: `The vp_format ${credential.format} is not supported by the verifier.`,
-                })
-              }
-              if (credential.format === 'dc+sd-jwt') {
-                isDcSDJwtRequested = true
-                credentialIds.push(credential.id)
-              }
-            }
-          }
-          if (isDcSDJwtRequested && options.transaction_data) {
-            transaction_data.push(
-              transactionData$.generate(options.transaction_data.type, credentialIds)
-            )
-          }
+        if (isDcSDJwtRequested && options.transaction_data) {
+          transaction_data.push(
+            transactionData$.generate(options.transaction_data.type, credentialIds)
+          )
         }
       }
 

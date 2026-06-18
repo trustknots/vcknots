@@ -308,32 +308,6 @@ describe('Vcknots', () => {
       })
     })
 
-    it('should create authorization request with presentation exchange', async () => {
-      const authzRequest = await vk.verifier.createAuthzRequest(
-        verifierId,
-        'vp_token',
-        `redirect_uri:${verifierId}`,
-        'direct_post',
-        {
-          presentation_definition: presentationDefinition,
-        },
-        false,
-        {}
-      )
-
-      assert.ok(authzRequest)
-      assert.equal(authzRequest.client_id, `redirect_uri:${verifierId}`)
-      assert.equal(authzRequest.response_type, 'vp_token')
-      assert.equal(authzRequest.response_mode, 'direct_post')
-      assert.equal(authzRequest.client_metadata?.client_name, metadata.client_name)
-      assert.deepEqual(authzRequest.client_metadata?.vp_formats, metadata.vp_formats)
-      assert.ok(authzRequest.client_metadata.jwks)
-      assert.ok(authzRequest.client_metadata.jwks.keys)
-      assert.ok(authzRequest.nonce)
-      assert.ok('presentation_definition' in authzRequest && authzRequest.presentation_definition)
-      assert.deepEqual(authzRequest.presentation_definition, presentationDefinition)
-    })
-
     it('should create authorization request with dcql', async () => {
       const authzRequest = await vk.verifier.createAuthzRequest(
         verifierId,
@@ -357,7 +331,8 @@ describe('Vcknots', () => {
       assert.ok(authzRequest.client_metadata.jwks.keys)
       assert.ok(authzRequest.nonce)
       assert.ok('dcql_query' in authzRequest && authzRequest.dcql_query)
-      assert.deepEqual(authzRequest.dcql_query, dcqlQuery)
+      assert.equal(authzRequest.dcql_query.credentials[0].id, dcqlQuery.credentials[0].id)
+      assert.equal(authzRequest.dcql_query.credentials[0].format, dcqlQuery.credentials[0].format)
     })
 
     it('should create authorization request with request_uri', async () => {
@@ -367,7 +342,7 @@ describe('Vcknots', () => {
         `redirect_uri:${verifierId}`,
         'direct_post',
         {
-          presentation_definition: presentationDefinition,
+          dcql_query: dcqlQuery,
         },
         true,
         { base_url: 'https://example.com' }
@@ -385,7 +360,7 @@ describe('Vcknots', () => {
         `redirect_uri:${verifierId}`,
         'direct_post',
         {
-          presentation_definition: presentationDefinition,
+          dcql_query: dcqlQuery,
         },
         false,
         {}
@@ -451,7 +426,7 @@ describe('Vcknots', () => {
         `redirect_uri:${verifierId}`,
         'direct_post',
         {
-          presentation_definition: presentationDefinition,
+          dcql_query: dcqlQuery,
         },
         false,
         {}
