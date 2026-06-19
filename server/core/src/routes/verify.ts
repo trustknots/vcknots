@@ -96,7 +96,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         dcql_query: {
           credentials: [
             {
-              id: credentialId,
+              id: randomUUID(),
               format: 'jwt_vc_json',
               meta: {
                 type_values: [['VerifiableCredential']],
@@ -257,7 +257,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
             id: randomUUID(),
             format: 'jwt_vc_json',
             meta: {
-              type_values: [['https://www.w3.org/2018/credentials#VerifiableCredential']],
+              type_values: [['VerifiableCredential']],
             },
           },
         ],

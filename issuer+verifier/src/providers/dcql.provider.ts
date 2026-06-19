@@ -6,7 +6,6 @@ import { DcqlQuery } from 'dcql'
 const META_KEYS_BY_FORMAT: Record<string, string[]> = {
   mso_mdoc: ['doctype_value'],
   'dc+sd-jwt': ['vct_values'],
-
   ldp_vc: ['type_values'],
   jwt_vc_json: ['type_values'],
 }
