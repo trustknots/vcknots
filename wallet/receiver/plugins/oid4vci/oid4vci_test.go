@@ -281,7 +281,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 	issuer := mockserver.NewOID4VCIIssuerServer(nil)
 	defer issuer.Close()
 
-	serverURL, _ := url.Parse(issuer.URL())
+	serverURL, _ := url.Parse(issuer.URL() + "/token")
 	endpoint := common.URIField(*serverURL)
 
 	t.Run("https is required", func(t *testing.T) {
@@ -292,7 +292,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		env.SetDebugMode(false)
 		env.SetHTTPAllowed(false)
 
-		_, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code", "")
 		if err == nil {
 			t.Fatal("FetchAccessToken should be error when issuer's schema is http")
 		}
@@ -303,7 +303,7 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 		defer env.SetHTTPAllowed(http_allowed)
 		env.SetHTTPAllowed(true)
 
-		token, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code")
+		token, err := receiver.FetchAccessToken(types.Oid4vci, endpoint, "test-code", "")
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -319,6 +319,127 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 			t.Errorf("Expected TokenType 'Bearer', got %s", token.TokenType)
 		}
 	})
+	t.Run("Request includes tx_code when provided", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to parse request form: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("grant_type"); got != "urn:ietf:params:oauth:grant-type:pre-authorized_code" {
+				handlerErrCh <- fmt.Errorf("expected grant_type to be urn:ietf:params:oauth:grant-type:pre-authorized_code, got %s", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("pre-authorized_code"); got != "test-code" {
+
+				handlerErrCh <- fmt.Errorf("expected pre-authorized_code to be test-code, got %s", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("tx_code"); got != "123456" {
+				handlerErrCh <- fmt.Errorf("expected tx_code to be 123456, got %s", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]string{
+				"access_token": "mock-access-token",
+				"token_type":   "Bearer",
+			})
+		})
+		captureURL, _ := url.Parse(captureServer.URL() + "/token")
+		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "test-code", "123456", nil)
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		require.NoError(t, <-handlerErrCh)
+	})
+
+	t.Run("DPoP header is set when proof is provided", func(t *testing.T) {
+
+		httpAllowed := env.IsHTTPAllowed()
+		defer env.SetHTTPAllowed(httpAllowed)
+		env.SetHTTPAllowed(true)
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+		var capturedDPoPValues []string
+		captureServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			capturedDPoPValues = r.Header.Values("DPoP")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"tok","token_type":"Bearer","expires_in":3600}`))
+		})
+		captureURL, err := url.Parse(captureServer.URL() + "/token")
+		require.NoError(t, err)
+		proof := "header.payload.signature"
+		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "code", "", types.WithDPoPProof(proof))
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		require.Len(t, capturedDPoPValues, 1)
+		assert.Equal(t, proof, capturedDPoPValues[0])
+	})
+
+	t.Run("DPoP header is absent when proof is nil", func(t *testing.T) {
+
+		httpAllowed := env.IsHTTPAllowed()
+		defer env.SetHTTPAllowed(httpAllowed)
+		env.SetHTTPAllowed(true)
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+		var capturedDPoPValues []string
+		captureServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			capturedDPoPValues = r.Header.Values("DPoP")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"tok","token_type":"Bearer","expires_in":3600}`))
+		})
+		captureURL, err := url.Parse(captureServer.URL() + "/token")
+		require.NoError(t, err)
+		token, err := receiver.FetchAccessToken(
+			types.Oid4vci,
+			common.URIField(*captureURL),
+			"code",
+			"",
+		)
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		assert.Len(t, capturedDPoPValues, 0)
+	})
+
+	t.Run("DPoP header is absent when proof is empty string", func(t *testing.T) {
+
+		httpAllowed := env.IsHTTPAllowed()
+		defer env.SetHTTPAllowed(httpAllowed)
+		env.SetHTTPAllowed(true)
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+		var capturedDPoPValues []string
+		captureServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			capturedDPoPValues = r.Header.Values("DPoP")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"tok","token_type":"Bearer","expires_in":3600}`))
+		})
+		captureURL, err := url.Parse(captureServer.URL() + "/token")
+		require.NoError(t, err)
+		empty := ""
+		token, err := receiver.FetchAccessToken(
+			types.Oid4vci,
+			common.URIField(*captureURL),
+			"code",
+			"",
+			types.WithDPoPProof(empty),
+		)
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		assert.Len(t, capturedDPoPValues, 0)
+	})
 
 	t.Run("Server error", func(t *testing.T) {
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
@@ -331,11 +452,55 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 
 		errorServer.SetErrorResponse("/token", http.StatusInternalServerError)
 
-		errorURL, _ := url.Parse(errorServer.URL())
-		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*errorURL), "test-code")
+		errorURL, _ := url.Parse(errorServer.URL() + "/token")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*errorURL), "test-code", "")
 		if err == nil {
 			t.Fatal("Expected error for server error")
 		}
+	})
+
+	t.Run("use_dpop_nonce error includes nonce hint", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		nonceServer := mockserver.NewMockServer()
+		defer nonceServer.Close()
+
+		nonceServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("DPoP-Nonce", "token-dpop-nonce")
+			mockserver.JSONResponse(w, http.StatusBadRequest, map[string]string{
+				"error": "use_dpop_nonce",
+			})
+		})
+
+		nonceURL, _ := url.Parse(nonceServer.URL() + "/token")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*nonceURL), "test-code", "")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, types.ErrTokenRequestFailed)
+		assert.Contains(t, err.Error(), "use_dpop_nonce")
+		assert.Contains(t, err.Error(), "token-dpop-nonce")
+	})
+
+	t.Run("bad request error field is surfaced", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		errorServer := mockserver.NewMockServer()
+		defer errorServer.Close()
+
+		errorServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			mockserver.JSONResponse(w, http.StatusBadRequest, map[string]string{
+				"error": "invalid_dpop_proof",
+			})
+		})
+
+		errorURL, _ := url.Parse(errorServer.URL() + "/token")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*errorURL), "test-code", "")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, types.ErrTokenRequestFailed)
+		assert.Contains(t, err.Error(), "invalid_dpop_proof")
 	})
 
 	t.Run("Invalid JSON response", func(t *testing.T) {
@@ -348,8 +513,8 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 
 		invalidJSONServer.SetTextResponse("/token", http.StatusOK, "{invalid-json")
 
-		invalidJSONURL, _ := url.Parse(invalidJSONServer.URL())
-		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*invalidJSONURL), "test-code")
+		invalidJSONURL, _ := url.Parse(invalidJSONServer.URL() + "/token")
+		_, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*invalidJSONURL), "test-code", "")
 		if err == nil {
 			t.Fatal("Expected error for invalid JSON response")
 		}
@@ -457,6 +622,195 @@ func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 		require.True(t, ok, "proofs.jwt must be present as array")
 		require.Len(t, jwtProofs, 1, "proofs.jwt must contain one JWT value")
 		assert.Equal(t, proof, jwtProofs[0])
+	})
+
+	t.Run("Request omits proof fields when jwt proof is not provided", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		var capturedBody map[string]interface{}
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/credential", func(w http.ResponseWriter, r *http.Request) {
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				handlerErrCh <- fmt.Errorf("failed to read request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			if err := json.Unmarshal(bodyBytes, &capturedBody); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to parse request body: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credentials": []map[string]string{{
+					"credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
+				}},
+			})
+		})
+
+		captureURL, _ := url.Parse(captureServer.URL() + "/credential")
+		captureEndpoint := common.URIField(*captureURL)
+
+		credential, err := receiver.ReceiveCredential(types.Oid4vci, captureEndpoint, "test-config", nil, accessToken, nil, nil)
+		require.NoError(t, err)
+		require.NotNil(t, credential)
+		require.NotEmpty(t, *credential)
+		require.NoError(t, <-handlerErrCh)
+
+		credentialConfigurationID, ok := capturedBody["credential_configuration_id"].(string)
+		require.True(t, ok, "credential_configuration_id must be present as string")
+		assert.Equal(t, "test-config", credentialConfigurationID)
+
+		_, exists := capturedBody["proof"]
+		assert.False(t, exists, "proof should not be present in credential request body")
+		_, exists = capturedBody["proofs"]
+		assert.False(t, exists, "proofs should not be present when proof is not provided")
+		_, exists = capturedBody["format"]
+		assert.False(t, exists, "format should not be present in credential request body")
+	})
+
+	t.Run("DPoP access token sends DPoP authorization and proof headers", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		dpopProof := "dpop.proof.jwt"
+		dpopAccessToken := types.CredentialIssuanceAccessToken{
+			Token:     "dpop-access-token",
+			TokenType: "DPoP",
+		}
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/credential", func(w http.ResponseWriter, r *http.Request) {
+			if got := r.Header.Get("Authorization"); got != "DPoP dpop-access-token" {
+				handlerErrCh <- fmt.Errorf("Authorization header = %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Header.Get("DPoP"); got != dpopProof {
+				handlerErrCh <- fmt.Errorf("DPoP header = %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credentials": []map[string]string{{
+					"credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
+				}},
+			})
+		})
+
+		captureURL, _ := url.Parse(captureServer.URL() + "/credential")
+		captureEndpoint := common.URIField(*captureURL)
+
+		credential, err := receiver.ReceiveCredential(
+			types.Oid4vci,
+			captureEndpoint,
+			"test-config",
+			nil,
+			dpopAccessToken,
+			nil,
+			nil,
+			&types.CredentialRequestOptions{DPoPProofJWT: &dpopProof},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, credential)
+		require.NoError(t, <-handlerErrCh)
+	})
+
+	t.Run("use_dpop_nonce error is returned as sentinel error", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		dpopProof := "dpop.proof.jwt"
+		dpopAccessToken := types.CredentialIssuanceAccessToken{
+			Token:     "dpop-access-token",
+			TokenType: "DPoP",
+		}
+		captureServer.HandleFunc("/credential", func(w http.ResponseWriter, r *http.Request) {
+			mockserver.JSONResponse(w, http.StatusBadRequest, map[string]string{
+				"error": "use_dpop_nonce",
+			})
+		})
+
+		captureURL, _ := url.Parse(captureServer.URL() + "/credential")
+		captureEndpoint := common.URIField(*captureURL)
+
+		_, err := receiver.ReceiveCredential(
+			types.Oid4vci,
+			captureEndpoint,
+			"test-config",
+			nil,
+			dpopAccessToken,
+			nil,
+			nil,
+			&types.CredentialRequestOptions{DPoPProofJWT: &dpopProof},
+		)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, types.ErrUseDPoPNonce)
+	})
+
+	t.Run("DPoP access token skips nil request options", func(t *testing.T) {
+		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+		defer env.SetHTTPAllowed(http_allowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		dpopProof := "dpop.proof.jwt"
+		dpopAccessToken := types.CredentialIssuanceAccessToken{
+			Token:     "dpop-access-token",
+			TokenType: "DPoP",
+		}
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/credential", func(w http.ResponseWriter, r *http.Request) {
+			if got := r.Header.Get("DPoP"); got != dpopProof {
+				handlerErrCh <- fmt.Errorf("DPoP header = %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+
+			mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+				"credentials": []map[string]string{{
+					"credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
+				}},
+			})
+		})
+
+		captureURL, _ := url.Parse(captureServer.URL() + "/credential")
+		captureEndpoint := common.URIField(*captureURL)
+
+		credential, err := receiver.ReceiveCredential(
+			types.Oid4vci,
+			captureEndpoint,
+			"test-config",
+			nil,
+			dpopAccessToken,
+			nil,
+			nil,
+			nil,
+			&types.CredentialRequestOptions{DPoPProofJWT: &dpopProof},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, credential)
+		require.NoError(t, <-handlerErrCh)
 	})
 
 	t.Run("Request uses credential_identifier when provided", func(t *testing.T) {

@@ -63,6 +63,13 @@ google-cloud/
    - `FIREBASE_CLIENT_EMAIL`
    - `SECRET_MANAGER_PRIVATE_KEY`
    - `SECRET_MANAGER_CLIENT_EMAIL`
+   - `TX_CODE_PEPPER`
+
+   `TX_CODE_PEPPER` は、`tx_code` を Firestore に保存する前に HMAC-SHA256 でハッシュ化するための
+   秘密値（pepper）です。Google Cloud 用 Provider では必須で、未設定の場合は起動時に
+   `TX_CODE_PEPPER environment variable is required` でエラーになります。
+   十分に長いランダム文字列を設定し、環境ごとに固定して運用してください（安易に変更すると、
+   既存データの `tx_code` 検証に失敗するようになります）。
 
    任意の環境変数:
 
@@ -71,6 +78,8 @@ google-cloud/
    - `PORT`（既定値: `8080`）
    - `PRIVATE_KEY_PATH`
    - `CERTIFICATE_PATH`
+
+   DPoP の mode（`off` / `optional` / `required`）は、`server/samples/oauth-server.json` の OAuth policy で設定します。OAuth client と `private_key_jwt` 用の公開鍵などは `server/samples/oauth-clients.json` で管理します。Google Cloud 版も single server と同じ `server-core` 実装を利用するため、mode 別の挙動、nonce challenge、client authentication、エラー応答の詳細は [シングルサーバー README](../single/README.ja.md#post-token) を参照してください。
 
 2. **依存関係をインストール（ルートで実行）**
 
@@ -161,8 +170,10 @@ Authz metadata initialized
 
 #### Authorization Server
 
-- [`POST /token`](../single/README.md#post-token) - トークンエンドポイント
-- [`GET /.well-known/oauth-authorization-server`](../single/README.md#get-well-knownoauth-authorization-server) - Authorization Server メタデータを取得
+- [`POST /token`](../single/README.ja.md#post-token) - トークンエンドポイント
+- [`GET /.well-known/oauth-authorization-server`](../single/README.ja.md#get-well-knownoauth-authorization-server) - Authorization Server メタデータを取得
+
+`POST /token` と `POST /credentials` の DPoP 挙動は `server/samples/oauth-server.json` の OAuth policy に従います。`POST /token` の OAuth client lookup、`private_key_jwt` client authentication、client assertion `jti` の再利用防止は Google Cloud 版では Firestore provider を利用できます。mode 別の挙動、nonce challenge、エラー応答の詳細は [シングルサーバー README](../single/README.ja.md#post-token) を参照してください。
 
 #### Verifier
 

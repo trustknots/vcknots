@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, it, mock } from 'node:test'
-import { PreAuthorizedCode } from '@trustknots/vcknots'
+import { CredentialConfigurationId, PreAuthorizedCode } from '@trustknots/vcknots'
 import { firestorePreAuthorizedCodeStore } from '../../src/providers/firestore-pre-authorized-code-store.provider'
 import { createFirestoreTestMock } from './firestore-test-mock'
 
@@ -11,6 +11,9 @@ describe('firestorePreAuthorizedCodeStore', () => {
     store.clear()
     mock.timers.reset()
   })
+  const configurations: CredentialConfigurationId[] = [
+    CredentialConfigurationId('University_Degree'),
+  ]
 
   it('should have correct provider metadata', () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
@@ -19,37 +22,196 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.equal(provider.single, true)
   })
 
-  it('should save and validate a code', async () => {
+  it('should save and consume a code', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-    await provider.save(PreAuthorizedCode('test-code-123'))
-    const valid = await provider.validate(PreAuthorizedCode('test-code-123'))
-    assert.equal(valid, true)
+    await provider.save(PreAuthorizedCode('test-code-123'), configurations)
+    const valid = await provider.consume(PreAuthorizedCode('test-code-123'))
+    assert.deepStrictEqual(valid, configurations)
   })
 
-  it('should return false for an unknown code', async () => {
+  it('should save and validate a code with tx_code (numeric)', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-    const valid = await provider.validate(PreAuthorizedCode('unknown-code'))
-    assert.equal(valid, false)
+    await provider.save(PreAuthorizedCode('test-code-numeric'), configurations, 123, {
+      tx_code_input_mode: 'numeric',
+    })
+    const valid = await provider.consume(PreAuthorizedCode('test-code-numeric'), 123)
+    assert.deepStrictEqual(valid, configurations)
   })
 
-  it('should delete a code', async () => {
+  it('should save and validate a code with tx_code (text)', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-    await provider.save(PreAuthorizedCode('delete-me'))
-    await provider.delete(PreAuthorizedCode('delete-me'))
-    const valid = await provider.validate(PreAuthorizedCode('delete-me'))
-    assert.equal(valid, false)
+    await provider.save(PreAuthorizedCode('test-code-text'), configurations, 'abc123', {
+      tx_code_input_mode: 'text',
+    })
+    const valid = await provider.consume(PreAuthorizedCode('test-code-text'), 'abc123')
+    assert.deepStrictEqual(valid, configurations)
   })
 
-  it('should return false and delete an expired code', async () => {
+  it('should throw invalid_grant for incorrect tx_code', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('test-code-wrong'), configurations, 123, {
+      tx_code_input_mode: 'numeric',
+    })
+    await assert.rejects(provider.consume(PreAuthorizedCode('test-code-wrong'), 456), {
+      name: 'invalid_grant',
+    })
+  })
+
+  it('should allow string numeric tx_code in numeric mode', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('test-code-type'), configurations, 123, {
+      tx_code_input_mode: 'numeric',
+    })
+    const valid = await provider.consume(PreAuthorizedCode('test-code-type'), '123')
+    assert.deepStrictEqual(valid, configurations)
+  })
+
+  it('should throw invalid_grant for non-numeric string tx_code in numeric mode', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(
+      PreAuthorizedCode('test-code-invalid-numeric-string'),
+      configurations,
+      123,
+      {
+        tx_code_input_mode: 'numeric',
+      }
+    )
+    await assert.rejects(
+      provider.consume(PreAuthorizedCode('test-code-invalid-numeric-string'), '12a3'),
+      { name: 'invalid_grant' }
+    )
+  })
+
+  it('should preserve leading zeros in numeric mode', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('test-code-leading-zero'), configurations, '0123', {
+      tx_code_input_mode: 'numeric',
+    })
+    const valid = await provider.consume(PreAuthorizedCode('test-code-leading-zero'), '0123')
+    assert.deepStrictEqual(valid, configurations)
+  })
+
+  it('should throw invalid_grant when leading-zero digit-string is validated as number', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(
+      PreAuthorizedCode('test-code-leading-zero-mismatch'),
+      configurations,
+      '0123',
+      {
+        tx_code_input_mode: 'numeric',
+      }
+    )
+    await assert.rejects(
+      provider.consume(PreAuthorizedCode('test-code-leading-zero-mismatch'), 123),
+      { name: 'invalid_grant' }
+    )
+  })
+
+  it('should store hashed tx_code in Firestore', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('hashed-code'), configurations, 123, {
+      tx_code_input_mode: 'numeric',
+    })
+
+    const doc = store.get('vcknots/v1/preCodes/hashed-code')
+    assert.ok(doc)
+    assert.ok(doc.tx_code_hash)
+    assert.equal(doc.tx_code_input_mode, 'numeric')
+    assert.equal(typeof doc.tx_code_hash, 'string')
+    assert.equal(doc.tx_code_hash.length, 64) // SHA-256 hex length
+  })
+
+  it('should use default numeric mode when not specified', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('default-mode'), configurations, 456)
+
+    const doc = store.get('vcknots/v1/preCodes/default-mode')
+    assert.ok(doc)
+    assert.equal(doc.tx_code_input_mode, 'numeric')
+  })
+
+  it('should store expires_at as Firestore Timestamp', async () => {
     mock.timers.enable({ apis: ['Date'] })
 
-    const provider = firestorePreAuthorizedCodeStore({ app: mockApp, expiresIn: 1000 })
-    await provider.save(PreAuthorizedCode('expiring-code'))
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('timestamp-check'), configurations, undefined, {
+      ttlSec: 1,
+    })
+
+    const doc = store.get('vcknots/v1/preCodes/timestamp-check') as {
+      expires_at?: { toMillis: () => number }
+    }
+    assert.ok(doc)
+    assert.ok(doc.expires_at)
+    assert.equal(typeof doc.expires_at?.toMillis, 'function')
+    assert.equal(doc.expires_at?.toMillis(), 1000)
+  })
+
+  it('should fall back to default ttlSec when saveOptions.ttlSec is invalid', async () => {
+    mock.timers.enable({ apis: ['Date'] })
+
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('invalid-ttl-fallback'), configurations, undefined, {
+      ttlSec: NaN,
+    })
+
+    const doc = store.get('vcknots/v1/preCodes/invalid-ttl-fallback') as {
+      expires_at?: { toMillis: () => number }
+    }
+    assert.ok(doc?.expires_at)
+    assert.equal(doc.expires_at?.toMillis(), 300 * 1000)
+  })
+
+  it('should floor fractional ttlSec values', async () => {
+    mock.timers.enable({ apis: ['Date'] })
+
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('fractional-ttl'), configurations, undefined, {
+      ttlSec: 1.9,
+    })
+
+    const doc = store.get('vcknots/v1/preCodes/fractional-ttl') as {
+      expires_at?: { toMillis: () => number }
+    }
+    assert.ok(doc?.expires_at)
+    assert.equal(doc.expires_at?.toMillis(), 1000)
+  })
+
+  it('should fall back to default ttlSec when fractional ttlSec floors to zero', async () => {
+    mock.timers.enable({ apis: ['Date'] })
+
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('fractional-ttl-zero'), configurations, undefined, {
+      ttlSec: 0.1,
+    })
+
+    const doc = store.get('vcknots/v1/preCodes/fractional-ttl-zero') as {
+      expires_at?: { toMillis: () => number }
+    }
+    assert.ok(doc?.expires_at)
+    assert.equal(doc.expires_at?.toMillis(), 300 * 1000)
+  })
+
+  it('should throw invalid_grant for an unknown code', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await assert.rejects(provider.consume(PreAuthorizedCode('unknown-code'), undefined), {
+      name: 'invalid_grant',
+    })
+  })
+
+  it('should throw invalid_grant and delete an expired code', async () => {
+    mock.timers.enable({ apis: ['Date'] })
+
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('expiring-code'), configurations, undefined, {
+      ttlSec: 1,
+    })
 
     mock.timers.tick(1001)
 
-    const valid = await provider.validate(PreAuthorizedCode('expiring-code'))
-    assert.equal(valid, false)
+    await assert.rejects(provider.consume(PreAuthorizedCode('expiring-code'), undefined), {
+      name: 'invalid_grant',
+    })
     assert.ok(!store.has('vcknots/v1/preCodes/expiring-code'))
   })
 
@@ -57,48 +219,60 @@ describe('firestorePreAuthorizedCodeStore', () => {
     mock.timers.enable({ apis: ['Date'] })
 
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-    await provider.save(PreAuthorizedCode('default-expiry'))
+    await provider.save(PreAuthorizedCode('default-expiry'), configurations)
 
     // Still valid before 5 minutes
     mock.timers.tick(4 * 60 * 1000)
-    const validBefore = await provider.validate(PreAuthorizedCode('default-expiry'))
-    assert.equal(validBefore, true)
+    const validBefore = await provider.consume(PreAuthorizedCode('default-expiry'), undefined)
+    assert.equal(validBefore, configurations)
 
     // Expired after 5 minutes
     mock.timers.tick(2 * 60 * 1000)
-    const validAfter = await provider.validate(PreAuthorizedCode('default-expiry'))
-    assert.equal(validAfter, false)
+    await assert.rejects(provider.consume(PreAuthorizedCode('default-expiry'), undefined), {
+      name: 'invalid_grant',
+    })
   })
 
   it('should use the correct Firestore document path', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
-    await provider.save(PreAuthorizedCode('my-code'))
+    await provider.save(PreAuthorizedCode('my-code'), configurations)
     assert.ok(store.has('vcknots/v1/preCodes/my-code'))
   })
 
   it('should use a custom namespace', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp, namespace: 'custom' })
-    await provider.save(PreAuthorizedCode('my-code'))
+    await provider.save(PreAuthorizedCode('my-code'), configurations)
     assert.ok(store.has('custom/v1/preCodes/my-code'))
     assert.ok(!store.has('vcknots/v1/preCodes/my-code'))
   })
 
   it('should strip all slashes from namespace', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp, namespace: 'foo/bar/baz' })
-    await provider.save(PreAuthorizedCode('my-code'))
+    await provider.save(PreAuthorizedCode('my-code'), configurations)
     assert.ok(store.has('foobarbaz/v1/preCodes/my-code'))
     assert.ok(!store.has('foo/bar/baz/v1/preCodes/my-code'))
   })
 
   it('should strip leading and trailing slashes from namespace', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp, namespace: '/my/ns/' })
-    await provider.save(PreAuthorizedCode('my-code'))
+    await provider.save(PreAuthorizedCode('my-code'), configurations)
     assert.ok(store.has('myns/v1/preCodes/my-code'))
   })
 
   it('should fall back to vcknots when namespace is only slashes', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp, namespace: '///' })
-    await provider.save(PreAuthorizedCode('my-code'))
+    await provider.save(PreAuthorizedCode('my-code'), configurations)
     assert.ok(store.has('vcknots/v1/preCodes/my-code'))
+  })
+
+  it('should persist credential_configuration_ids in Firestore document', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    const code = PreAuthorizedCode('stored-config-code')
+
+    await provider.save(code, configurations)
+
+    const doc = store.get('vcknots/v1/preCodes/stored-config-code')
+    assert.ok(doc)
+    assert.deepStrictEqual(doc.credential_configuration_ids, configurations)
   })
 })

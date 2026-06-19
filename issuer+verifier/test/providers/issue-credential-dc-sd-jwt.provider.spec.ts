@@ -166,7 +166,7 @@ describe('issueCredentialSDJWT', () => {
         format: 'jwt_vc_json',
       } as CredentialConfigurationSupported),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_CONFIGURATION')
+        assert.equal(err.name, 'invalid_configuration')
         return true
       }
     )
@@ -180,7 +180,7 @@ describe('issueCredentialSDJWT', () => {
         claims: { given_name: 'Alice' },
       }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_OPTIONS')
+        assert.equal(err.name, 'invalid_options')
         return true
       }
     )
@@ -197,7 +197,7 @@ describe('issueCredentialSDJWT', () => {
         },
       }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_CLAIMS')
+        assert.equal(err.name, 'invalid_claims')
         return true
       }
     )
@@ -211,7 +211,7 @@ describe('issueCredentialSDJWT', () => {
         proofHeader,
       }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_CLAIMS')
+        assert.equal(err.name, 'invalid_claims')
         return true
       }
     )
@@ -240,7 +240,7 @@ describe('issueCredentialSDJWT', () => {
         },
       }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_CLAIMS')
+        assert.equal(err.name, 'invalid_claims')
         assert.match(err.message, /Unsupported claim path segment/)
         return true
       }
@@ -262,7 +262,7 @@ describe('issueCredentialSDJWT', () => {
         },
       }),
       {
-        name: 'AUTHZ_ISSUER_KEY_NOT_FOUND',
+        name: 'authz_issuer_key_not_found',
       }
     )
   })
@@ -283,7 +283,7 @@ describe('issueCredentialSDJWT', () => {
         },
       }),
       {
-        name: 'INTERNAL_SERVER_ERROR',
+        name: 'internal_server_error',
       }
     )
   })
@@ -295,9 +295,10 @@ describe('issueCredentialSDJWT', () => {
           identifier: () => 'not-a-url',
         }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_OPTIONS')
+        assert.equal(err.name, 'invalid_options')
         return true
       }
     )
   })
 })
+

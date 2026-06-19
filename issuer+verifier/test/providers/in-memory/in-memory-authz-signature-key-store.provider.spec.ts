@@ -107,7 +107,8 @@ describe('InMemoryAuthzKeyProvider', () => {
     }
 
     await assert.rejects(() => provider.save(issuer1, 'ES384', entry), {
-      name: 'ILLEGAL_ARGUMENT',
+      name: 'illegal_argument',
     })
   })
 })
+

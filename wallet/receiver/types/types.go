@@ -4,6 +4,8 @@ package types
 import (
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/trustknots/vcknots/wallet/common"
@@ -19,6 +21,7 @@ var (
 	ErrTokenRequestFailed        = errors.New("token request failed")
 	ErrInvalidTokenResponse      = errors.New("invalid token response")
 	ErrProofGenerationFailed     = errors.New("proof generation failed")
+	ErrUseDPoPNonce              = errors.New("use DPoP nonce")
 	ErrInvalidProofType          = errors.New("invalid or unsupported proof type")
 	ErrNetworkFailed             = errors.New("network request failed")
 	ErrTimeoutExpired            = errors.New("request timeout expired")
@@ -55,6 +58,45 @@ func NewReceiverError(protocol SupportedReceivingTypes, endpoint, op string, err
 	}
 }
 
+type DPoPNonceError struct {
+	Nonce string
+	Err   error
+}
+
+func NewDPoPNonceError(nonce string, err error) *DPoPNonceError {
+	if err == nil {
+		err = ErrUseDPoPNonce
+	}
+	return &DPoPNonceError{
+		Nonce: strings.TrimSpace(nonce),
+		Err:   err,
+	}
+}
+
+func (e *DPoPNonceError) Error() string {
+	message := fmt.Sprintf("%s (use_dpop_nonce)", e.Err)
+	if e.Nonce == "" {
+		return message
+	}
+	return fmt.Sprintf("%s, DPoP-Nonce: %q", message, e.Nonce)
+}
+
+func (e *DPoPNonceError) Unwrap() error {
+	return e.Err
+}
+
+func (e *DPoPNonceError) Is(target error) bool {
+	return target == ErrUseDPoPNonce
+}
+
+func DPoPNonceFromError(err error) (string, bool) {
+	var nonceErr *DPoPNonceError
+	if errors.As(err, &nonceErr) {
+		return nonceErr.Nonce, true
+	}
+	return "", false
+}
+
 type SupportedReceivingTypes int
 
 const (
@@ -72,11 +114,12 @@ type CredentialIssuerMetadata struct {
 }
 
 type CredentialConfiguration struct {
-	Display                             *[]CredentialConfigurationDisplay `json:"display,omitempty"`
-	ProofTypesSupported                 *map[string]ProofType             `json:"proof_types_supported,omitempty"`
-	Format                              string                            `json:"format"`
-	CredentialDefinition                *CredentialDefinition             `json:"credential_definition,omitempty"`
-	CredentialSigningAlgValuesSupported []jose.SignatureAlgorithm         `json:"credential_signing_alg_values_supported,omitempty"`
+	Display                              *[]CredentialConfigurationDisplay `json:"display,omitempty"`
+	ProofTypesSupported                  *map[string]ProofType             `json:"proof_types_supported,omitempty"`
+	CryptographicBindingMethodsSupported *[]string                         `json:"cryptographic_binding_methods_supported,omitempty"`
+	Format                               string                            `json:"format"`
+	CredentialDefinition                 *CredentialDefinition             `json:"credential_definition,omitempty"`
+	CredentialSigningAlgValuesSupported  []jose.SignatureAlgorithm         `json:"credential_signing_alg_values_supported,omitempty"`
 }
 
 type CredentialIssuerMetadataDisplay struct {
@@ -214,6 +257,41 @@ type CredentialIssuanceAccessToken struct {
 	AuthorizationDetails []CredentialIssuanceAuthorizationDetail `json:"authorization_details,omitempty"`
 }
 
+type CredentialRequestOptions struct {
+	DPoPProofJWT *string
+}
+
+type TokenRequestConfig struct {
+	DPoPProof string
+}
+
+type TokenRequestOption func(*TokenRequestConfig)
+
+func NewTokenRequestConfig(opts ...TokenRequestOption) *TokenRequestConfig {
+	cfg := &TokenRequestConfig{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(cfg)
+		}
+	}
+	return cfg
+}
+
+func WithDPoPProof(proof string) TokenRequestOption {
+	return func(cfg *TokenRequestConfig) {
+		cfg.DPoPProof = proof
+	}
+}
+
+// ResolveTokenEndpointURL returns the canonical token endpoint URL string.
+// Metadata token_endpoint values are complete endpoint URLs, so this only
+// normalizes trailing slashes and does not append "/token".
+func ResolveTokenEndpointURL(endpoint common.URIField) string {
+	endpointURL := url.URL(endpoint)
+	endpointURL.Path = strings.TrimRight(endpointURL.Path, "/")
+	return endpointURL.String()
+}
+
 // Receiver defines the interface for credential receiving components
 type Receiver interface {
 	// FetchIssuerMetadata fetches OID4VCI Credential Issuer Metadata
@@ -223,7 +301,10 @@ type Receiver interface {
 	FetchAuthorizationServerMetadata(endpoint common.URIField, receivingType SupportedReceivingTypes) (*AuthorizationServerMetadata, error)
 
 	// FetchAccessToken fetches access token through OID4VCI
-	FetchAccessToken(receivingType SupportedReceivingTypes, endpoint common.URIField, authzCode string) (*CredentialIssuanceAccessToken, error)
+	FetchAccessToken(receivingType SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, opts ...TokenRequestOption) (*CredentialIssuanceAccessToken, error)
+
+	// FetchNonce fetches nonce from the issuer nonce endpoint
+	FetchNonce(receivingType SupportedReceivingTypes, endpoint common.URIField) (*string, error)
 
 	// ReceiveCredential receives credential through OID4VCI
 	ReceiveCredential(
@@ -234,5 +315,6 @@ type Receiver interface {
 		accessToken CredentialIssuanceAccessToken,
 		credentialDefinition *CredentialDefinition,
 		jwtProof *string,
+		options ...*CredentialRequestOptions,
 	) (*string, error)
 }

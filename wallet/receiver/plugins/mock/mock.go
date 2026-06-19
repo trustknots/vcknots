@@ -67,7 +67,7 @@ func (m *MockReceiver) FetchAuthorizationServerMetadata(endpoint common.URIField
 
 // FetchAccessToken returns a mock access token
 // For mock implementation, this returns a static mock token
-func (m *MockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string) (*types.CredentialIssuanceAccessToken, error) {
+func (m *MockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, opts ...types.TokenRequestOption) (*types.CredentialIssuanceAccessToken, error) {
 	if receivingType != types.Mock {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "FetchAccessToken", fmt.Errorf("unsupported receiving type for mock receiver"))
 	}
@@ -82,6 +82,15 @@ func (m *MockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTy
 	return token, nil
 }
 
+// FetchNonce returns an error for mock implementation
+func (m *MockReceiver) FetchNonce(receivingType types.SupportedReceivingTypes, endpoint common.URIField) (*string, error) {
+	if receivingType != types.Mock {
+		return nil, types.NewReceiverError(receivingType, endpoint.String(), "FetchNonce", fmt.Errorf("unsupported receiving type for mock receiver"))
+	}
+
+	return nil, types.NewReceiverError(receivingType, endpoint.String(), "FetchNonce", fmt.Errorf("nonce endpoint is not supported in mock receiver"))
+}
+
 // ReceiveCredential reads a Verifiable Credential from a txt file
 // The endpoint parameter is treated as a filename (without extension) relative to BasePath
 func (m *MockReceiver) ReceiveCredential(
@@ -92,6 +101,7 @@ func (m *MockReceiver) ReceiveCredential(
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
+	options ...*types.CredentialRequestOptions,
 ) (*string, error) {
 	if receivingType != types.Mock {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "ReceiveCredential", fmt.Errorf("unsupported receiving type for mock receiver"))

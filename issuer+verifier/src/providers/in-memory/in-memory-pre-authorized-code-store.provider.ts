@@ -1,25 +1,82 @@
-import { PreAuthorizedCode } from '../../pre-authorized-code.types'
+import { raise } from '../../errors'
+import { PreAuthorizedCode, PreAuthorizedCodeStoreEntry } from '../../pre-authorized-code.types'
 import { PreAuthorizedCodeStoreProvider } from '../provider.types'
 
 export const inMemoryPreAuthorizedCodeStore = (): PreAuthorizedCodeStoreProvider => {
-  const codes = new Set<PreAuthorizedCode>()
+  const codes = new Map<PreAuthorizedCode, PreAuthorizedCodeStoreEntry>()
+  const toDigitString = (value: string | number): string | null => {
+    if (typeof value === 'number') {
+      return Number.isSafeInteger(value) && value >= 0 ? value.toString() : null
+    }
+    return /^\d+$/.test(value) ? value : null
+  }
 
   return {
     kind: 'pre-authorized-code-store-provider',
     name: 'in-memory-pre-authorized-code-provider',
     single: true,
 
-    async save(code) {
-      codes.add(code)
+    async save(code, credentialConfigurationIds, tx_code, options) {
+      const ttlSecRaw = Number(options?.ttlSec ?? 300)
+      const ttlSecCandidate = Math.floor(ttlSecRaw)
+      const ttlSec = Number.isFinite(ttlSecRaw) && ttlSecCandidate > 0 ? ttlSecCandidate : 300
+      const tx_code_input_mode = options?.tx_code_input_mode ?? 'numeric'
+      const expiresAt = new Date().getTime() + ttlSec * 1000
+      codes.set(code, {
+        code,
+        credential_configuration_ids: credentialConfigurationIds,
+        tx_code,
+        tx_code_input_mode,
+        expires_at: expiresAt,
+      })
       return
     },
 
-    async validate(code) {
-      return codes.has(code)
-    },
-
-    async delete(code) {
+    // validate and fetch credential configuration ids
+    async consume(code, tx_code) {
+      const entry = codes.get(code)
+      if (!entry) {
+        throw raise('invalid_grant', {
+          message: 'Pre-authorized code not found',
+        })
+      }
+      if (entry.expires_at && entry.expires_at < new Date().getTime()) {
+        codes.delete(code)
+        throw raise('invalid_grant', {
+          message: 'Pre-authorized code has expired',
+        })
+      }
+      if (entry.tx_code !== undefined) {
+        if (tx_code === undefined) {
+          throw raise('invalid_request', {
+            message: 'tx_code is required for this pre-authorized code',
+          })
+        }
+        if (entry.tx_code_input_mode !== 'text') {
+          const expected = toDigitString(entry.tx_code)
+          const actual = toDigitString(tx_code)
+          if (expected === null || actual === null || expected !== actual) {
+            throw raise('invalid_grant', {
+              message: 'Invalid tx_code provided',
+            })
+          }
+        } else {
+          if (entry.tx_code !== tx_code) {
+            throw raise('invalid_grant', {
+              message: 'Invalid tx_code provided',
+            })
+          }
+        }
+        codes.delete(code)
+        return entry.credential_configuration_ids
+      }
+      if (tx_code !== undefined) {
+        throw raise('invalid_request', {
+          message: 'tx_code should not be provided for this pre-authorized code',
+        })
+      }
       codes.delete(code)
+      return entry.credential_configuration_ids
     },
   }
 }

@@ -41,12 +41,12 @@ function resolveProofBindingMethod(header: JWSHeaderParameters): 'kid' | 'jwk' |
   const present = [hasKid, hasJwk, hasX5c].filter(Boolean).length
 
   if (present === 0) {
-    throw raise('INVALID_PROOF', {
+    throw raise('invalid_proof', {
       message: PROOF_JWT_MISSING_KEY_REFERENCE_MESSAGE,
     })
   }
   if (present > 1) {
-    throw raise('INVALID_PROOF', {
+    throw raise('invalid_proof', {
       message: PROOF_JWT_MUTUALLY_EXCLUSIVE_HEADER_MESSAGE,
     })
   }
@@ -70,14 +70,14 @@ async function resolveDidPublicKeyJwk(
 ): Promise<JsonWebKey> {
   const didSplit = kid.split(':')
   if (didSplit.length < 3 || didSplit[0] !== 'did') {
-    throw raise('INVALID_PROOF', {
+    throw raise('invalid_proof', {
       message: `Invalid DID format: ${kid}`,
     })
   }
 
   const didProvider$ = providers.get('did-provider')
   if (!didProvider$ || didProvider$.length === 0) {
-    throw raise('INVALID_PROOF', {
+    throw raise('invalid_proof', {
       message: 'No kid or unsupported did type detected.',
     })
   }
@@ -94,7 +94,7 @@ async function resolveDidPublicKeyJwk(
     didDoc?.verificationMethod?.find((it) => it.publicKeyJwk !== undefined)
 
   if (!verificationMethod?.publicKeyJwk) {
-    throw raise('INVALID_PROOF', {
+    throw raise('invalid_proof', {
       message: 'Unsupported did type detected.',
     })
   }
@@ -117,19 +117,19 @@ async function resolveHeaderPublicKey(
   if (bindingMethod === 'jwk') {
     const jwk = proofJwtHeader.jwk
     if (jwk === null || typeof jwk !== 'object' || Array.isArray(jwk)) {
-      throw raise('INVALID_PROOF', {
+      throw raise('invalid_proof', {
         message: 'Proof JWT header jwk must be a JSON object.',
       })
     }
     if ('d' in jwk && jwk.d !== undefined) {
-      throw raise('INVALID_PROOF', {
+      throw raise('invalid_proof', {
         message: 'Proof JWT header jwk must contain a public key only.',
       })
     }
     try {
       return await importJWK(jwk as JsonWebKey, proofAlg)
     } catch (e) {
-      throw raise('INVALID_PROOF', {
+      throw raise('invalid_proof', {
         message: `Failed to import proof JWT jwk: ${e instanceof Error ? e.message : String(e)}`,
         cause: e,
       })
@@ -139,7 +139,7 @@ async function resolveHeaderPublicKey(
   if (bindingMethod === 'x5c') {
     const x5c = proofJwtHeader.x5c
     if (!Array.isArray(x5c) || x5c.length === 0) {
-      throw raise('INVALID_PROOF', {
+      throw raise('invalid_proof', {
         message: 'Proof JWT header x5c must contain at least one certificate.',
       })
     }
@@ -148,14 +148,14 @@ async function resolveHeaderPublicKey(
     const certificateChain = x5c.map(derBase64ToPem)
     const certValid = await certificate$.validate(certificateChain)
     if (!certValid) {
-      throw raise('INVALID_PROOF', {
+      throw raise('invalid_proof', {
         message: 'x5c certificate chain is invalid.',
       })
     }
 
     const publicKeyPem = certificate$.getPublicKey(certificateChain[0])
     if (!publicKeyPem) {
-      throw raise('INVALID_PROOF', {
+      throw raise('invalid_proof', {
         message: 'Unable to extract public key from x5c certificate chain.',
       })
     }
@@ -163,14 +163,14 @@ async function resolveHeaderPublicKey(
     try {
       return await importSPKI(publicKeyPem, proofAlg)
     } catch (e) {
-      throw raise('INVALID_PROOF', {
+      throw raise('invalid_proof', {
         message: `Failed to import proof JWT x5c public key: ${e instanceof Error ? e.message : String(e)}`,
         cause: e,
       })
     }
   }
 
-  throw raise('INVALID_PROOF', {
+  throw raise('invalid_proof', {
     message: `Unsupported proof binding method: ${bindingMethod satisfies never}`,
   })
 }
@@ -202,7 +202,7 @@ export const credentialProofJWT = (
       verificationContext?: CredentialProofJwtVerifyContext
     ): Promise<ProofJwt | null> {
       if (typeof proof !== 'string') {
-        throw raise('INVALID_PROOF', {
+        throw raise('invalid_proof', {
           message: 'Unsupported proof type.',
         })
       }
@@ -210,30 +210,30 @@ export const credentialProofJWT = (
       try {
         decoded = decodeJwt(proof)
       } catch (e) {
-        throw raise('INVALID_PROOF', {
+        throw raise('invalid_proof', {
           message: `Failed to decode proof JWT: ${e instanceof Error ? e.message : String(e)}`,
           cause: e,
         })
       }
       if (typeof decoded.payload === 'string') {
-        throw raise('INVALID_PROOF', {
+        throw raise('invalid_proof', {
           message: 'Unsupported jwt payload type.',
         })
       }
       const proofJwtHeader = decodeProtectedHeader(proof)
       const proofAlg = proofJwtHeader.alg
       if (typeof proofAlg !== 'string') {
-        throw raise('INVALID_PROOF', {
+        throw raise('invalid_proof', {
           message: 'Unsupported Proof Header alg value.',
         })
       }
       if (isProhibitedProofJwtAlg(proofAlg)) {
-        throw raise('INVALID_PROOF', {
+        throw raise('invalid_proof', {
           message: 'Proof JWT alg must not be "none" or a symmetric (MAC) algorithm.',
         })
       }
       if (proofJwtHeader.typ !== OID4VCI_JWT_PROOF_TYP) {
-        throw raise('INVALID_PROOF', {
+        throw raise('invalid_proof', {
           message: `Proof JWT header typ must be "${OID4VCI_JWT_PROOF_TYP}".`,
         })
       }
@@ -248,12 +248,12 @@ export const credentialProofJWT = (
             ? String((e as { code: unknown }).code)
             : undefined
         if (code === 'ERR_JWT_EXPIRED' || code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') {
-          throw raise('INVALID_PROOF', {
+          throw raise('invalid_proof', {
             message: 'Proof JWT is outside the allowed issuance time window.',
             cause: e,
           })
         }
-        throw raise('INVALID_PROOF', {
+        throw raise('invalid_proof', {
           message: `Proof JWT verification failed: ${e instanceof Error ? e.message : String(e)}`,
           cause: e,
         })
@@ -263,13 +263,13 @@ export const credentialProofJWT = (
         typeof protectedProof.payload.aud !== 'string' ||
         typeof protectedProof.payload.iat !== 'number'
       ) {
-        throw raise('INVALID_PROOF', {
+        throw raise('invalid_proof', {
           message: 'Unsupported Proof Payload.',
         })
       }
 
       if (!verificationContext) {
-        throw raise('INVALID_PROOF', {
+        throw raise('invalid_proof', {
           message:
             'Credential proof verification requires credentialIssuer and usePreAuth (OID4VCI). Pass CredentialProofJwtVerifyContext as the second argument to verifyProof().',
         })
@@ -282,24 +282,35 @@ export const credentialProofJWT = (
       const issValue = payloadClaims.iss
 
       if (ctx.usePreAuth) {
-        if (hasIss) {
-          throw raise('INVALID_PROOF', {
-            message: 'iss claim must be omitted when using Pre-Authorized Code Flow.',
-          })
+        // OID4VCI separates the pre-authorized_code grant from anonymous access.
+        // Only access tokens obtained via anonymous access must omit `iss`.
+        if (!ctx.clientId) {
+          if (hasIss) {
+            throw raise('invalid_proof', {
+              message:
+                'iss claim must be omitted when using an access token obtained through anonymous access.',
+            })
+          }
+        } else if (hasIss) {
+          if (typeof issValue !== 'string' || issValue !== ctx.clientId) {
+            throw raise('invalid_proof', {
+              message:
+                'iss claim must match the client_id of the Client making the Credential request.',
+            })
+          }
         }
       } else {
-        // OID4VCI JWT proof: iss claim must the client_id of the Client making the Credential request.
-        // OID4VCI JWT proof: iss claim must be omitted using case Pre-Authorized Code Flow.
-        // TODO:check auth-code flow
+        // Non pre-authorized_code flows keep the existing rule: if `iss` is present,
+        // it must identify either the requesting client or the credential issuer.
         if (hasIss) {
           if (typeof issValue !== 'string') {
-            throw raise('INVALID_PROOF', {
+            throw raise('invalid_proof', {
               message:
                 'iss claim must be the client_id of the Client making the Credential request or the Credential Issuer Identifier.',
             })
           }
           if (issValue !== ctx.clientId && issValue !== ctx.credentialIssuer) {
-            throw raise('INVALID_PROOF', {
+            throw raise('invalid_proof', {
               message:
                 'iss claim must be the client_id of the Client making the Credential request or the Credential Issuer Identifier.',
             })
@@ -307,7 +318,7 @@ export const credentialProofJWT = (
         }
       }
       if (protectedProof.payload.aud !== ctx.credentialIssuer) {
-        throw raise('INVALID_PROOF', {
+        throw raise('invalid_proof', {
           message: 'aud claim must be the Credential Issuer Identifier.',
         })
       }

@@ -57,7 +57,7 @@ export const issueCredentialSDJWT = (
   if (providerOptions?.identifier) {
     const id = providerOptions.identifier()
     if (!z.string().url().safeParse(id).success) {
-      throw raise('INVALID_OPTIONS', {
+      throw raise('invalid_options', {
         message: 'Identifier must be a valid URL.',
       })
     }
@@ -75,7 +75,7 @@ export const issueCredentialSDJWT = (
       options?: IssueCredentialCreateCredentialOptions
     ): Promise<string> {
       if (!configuration.vct || configuration.format !== 'dc+sd-jwt') {
-        throw raise('INVALID_CONFIGURATION', {
+        throw raise('invalid_configuration', {
           message: 'Invalid credential configuration.',
         })
       }
@@ -85,14 +85,14 @@ export const issueCredentialSDJWT = (
       let holderJwk = {}
       if (configuration.cryptographic_binding_methods_supported) {
         if (!options?.proofHeader) {
-          throw raise('INVALID_OPTIONS', {
+          throw raise('invalid_options', {
             message:
               'holderJwk must be provided in options when cryptographic binding is supported.',
           })
         }
         if (options.proofHeader.jwk) {
           if (!configuration.cryptographic_binding_methods_supported.includes('jwk')) {
-            throw raise('UNSUPPORTED_CRYPTOGRAPHIC_BINDING_METHOD', {
+            throw raise('unsupported_cryptographic_binding_method', {
               message: 'Unsupported cryptographic binding method detected.',
             })
           }
@@ -100,14 +100,14 @@ export const issueCredentialSDJWT = (
         } else if (options.proofHeader.kid) {
           const didSplit = options.proofHeader.kid.split(':')
           if (didSplit.length < 3 || didSplit[0] !== 'did') {
-            throw raise('INVALID_PROOF', {
+            throw raise('invalid_proof', {
               message: `Invalid DID format: ${options.proofHeader.kid}`,
             })
           }
           if (
             !configuration.cryptographic_binding_methods_supported.includes(`did:${didSplit[1]}`)
           ) {
-            throw raise('UNSUPPORTED_CRYPTOGRAPHIC_BINDING_METHOD', {
+            throw raise('unsupported_cryptographic_binding_method', {
               message: 'Unsupported cryptographic binding method detected.',
             })
           }
@@ -120,13 +120,13 @@ export const issueCredentialSDJWT = (
             didDoc.verificationMethod.length === 0 ||
             !didDoc.verificationMethod[0].publicKeyJwk
           ) {
-            throw raise('INVALID_PROOF', {
+            throw raise('invalid_proof', {
               message: 'Unsupported did type detected.',
             })
           }
           holderJwk = didDoc.verificationMethod[0].publicKeyJwk
         } else {
-          throw raise('INVALID_PROOF', {
+          throw raise('invalid_proof', {
             message: 'Invalid proof header: either jwk or kid must be provided.',
           })
         }
@@ -140,7 +140,7 @@ export const issueCredentialSDJWT = (
         for (const claim of defCredentialMetadataClaims) {
           const value = getClaimValue(claimsSource, claim.path)
           if (claim.mandatory === true && value === undefined) {
-            throw raise('INVALID_CLAIMS', {
+            throw raise('invalid_claims', {
               message: `Mandatory claim ${claim.path.join('.')} is missing.`,
             })
           }
@@ -167,14 +167,14 @@ export const issueCredentialSDJWT = (
         configuration.credential_signing_alg_values_supported &&
         !configuration.credential_signing_alg_values_supported.includes(keyAlg)
       ) {
-        throw raise('UNSUPPORTED_ISSUER_KEY_ALG', {
+        throw raise('unsupported_issuer_key_alg', {
           message: 'Unsupported key algorithm.',
         })
       }
       const keyStore$ = this.providers.get('issuer-signature-key-store-provider')
       const issuerKey = await keyStore$.fetch(credentialIssuer, keyAlg)
       if (!issuerKey) {
-        throw raise('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+        throw raise('authz_issuer_key_not_found', {
           message: 'Issuer key not found.',
         })
       }
@@ -207,7 +207,7 @@ export const issueCredentialSDJWT = (
 
       const signature = await keyStore$.sign(credentialIssuer, keyAlg, jwtPayload, jwtHeader)
       if (!signature) {
-        throw raise('INTERNAL_SERVER_ERROR', {
+        throw raise('internal_server_error', {
           message: 'Cannot sign credentials.',
         })
       }

@@ -53,6 +53,23 @@ describe('CredentialOfferProvider', () => {
     })
   })
 
+  it('should create a credential offer using pre-authorized code with authorization server', async () => {
+    const offer = await provider.create(issuer, configurations, {
+      usePreAuth: true,
+      code: PreAuthorizedCode('pre-auth-code-123'),
+      authorizationServer: 'https://example.com/auth',
+    })
+
+    assert.equal(offer.credential_issuer, issuer.credential_issuer)
+    assert.deepEqual(offer.credential_configuration_ids, configurations)
+    assert.deepEqual(offer.grants, {
+      'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
+        'pre-authorized_code': 'pre-auth-code-123',
+        authorization_server: 'https://example.com/auth',
+      },
+    })
+  })
+
   it('should create a credential offer using pre-authorized code with txCode', async () => {
     const txCodeInput = {
       inputMode: 'numeric' as const,

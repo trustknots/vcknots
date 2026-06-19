@@ -11,6 +11,7 @@ OpenID for Verifiable Credential Issuance (OID4VCI) 1.0 および OpenID for Ver
     *   クレデンシャルオファーの作成（事前認可コードフロー）
     *   検証可能クレデンシャルの発行（JWT-VC 形式）
     *   c_nonce 管理のための nonce エンドポイントのサポート
+    *   DPoP Proof 検証、DPoP nonce、DPoP-bound access token のサポート
     *   リゾルバーによる `did:key` およびその他の DID メソッドのサポート
 *   **OID4VP (Verifier):**
     *   Verifier メタデータの管理
@@ -39,7 +40,7 @@ yarn add @trustknots/vcknots
 import { vcknots } from '@trustknots/vcknots'
 
 // デフォルト（インメモリ）プロバイダーで初期化
-const { issuer, verifier } = vcknots()
+const { issuer, verifier, authz } = vcknots()
 ```
 
 ## チュートリアル
@@ -89,42 +90,55 @@ console.log('Credential Offer:', scheme)
 ```
 
 #### 3. クレデンシャルの発行
-Wallet がクレデンシャルリクエストを送信した場合（オファーを処理した後）、クレデンシャルを発行します。
+Wallet がクレデンシャルリクエストを送信した場合（オファーを処理した後）、まず credential endpoint で access token を検証し、クレデンシャルを発行します。
 
 ```typescript
 // `req` は Wallet から送信された HTTP リクエストを表します
-const request = CredentialRequest(req.json() /* ボディを JSON として取得 */)
-const credential = await issuer.issueCredential(
-  issuerId,
-  request, 
-  {
-    alg: 'ES256',
-    claims: {
-      name: 'Alice',
-      from: 'Wonderland'
-    },
-    // JWT proof（`proofs.jwt`）検証用。アクセストークンが事前認可コード由来なら true、認可コード由来なら false + clientId
-    proofJwt: { usePreAuth: true },
-  }
-)
+const authzIssuer = AuthorizationServerIssuer(base)
+const authorizationContext = await authz.authorizeCredentialEndpointAccess(authzIssuer, {
+  authorizationHeader: req.header('Authorization'),
+  dpopHeader: req.header('DPoP'),
+  htm: req.method,
+  htu: `${base}/credentials`,
+  nonceRequired: true,
+})
+
+const request = CredentialRequest(await req.json())
+const credential = await issuer.issueCredential(issuerId, request, {
+  authorizationContext,
+  alg: 'ES256',
+  claims: {
+    name: 'Alice',
+    from: 'Wonderland',
+  },
+  // JWT proof（`proofs.jwt`）検証用。usePreAuth は grant type が pre-authorized_code かどうかを表します。
+  proofJwt: { usePreAuth: true },
+})
 
 console.log('Issued Credential:', credential)
 ```
 
 **JWT クレデンシャルプルーフ（`proofs.jwt`）と `options.proofJwt`**
 
-OID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一致し、`iss` はフローに応じて扱われます。`issueCredential` は内部で `credential-proof-provider` の `verifyProof` に **検証コンテキスト**（Credential Issuer と事前認可かどうか、必要なら OAuth `client_id`）を渡すため、JWT proof を検証するときは次の `options.proofJwt` を実際のトークン取得フローに合わせて指定してください。
+OID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一致し、`iss` はフローと access token の取得方法に応じて扱われます。
 
-| 状況 | 指定の目安 |
-|------|------------|
-| アクセストークンが **事前認可コード（Pre-Authorized Code）** グラントで得られた場合 | `proofJwt: { usePreAuth: true }`。proof JWT に **`iss` は含めない**（仕様上の扱い）。 |
-| **認可コード** 等、通常の OAuth クライアント文脈の場合 | `proofJwt: { usePreAuth: false, clientId: '<そのリクエストの client_id>' }`。`iss` はその `client_id` または Credential Issuer Identifier と一致する必要があります。 |
+上記コードの `authorizationContext` は、credential endpoint で access token（および必要なら DPoP Proof）を検証した結果です。access token の payload に `client_id` がある場合、その値は `authorizationContext` 経由で `issueCredential` 内部の proof 検証に渡されます。**呼び出し側が `proofJwt.clientId` を別途指定する必要はありません。**
 
-`proofJwt` を誤ると `aud` / `iss` の検証が意図とずれ、`INVALID_PROOF` となります。
+`options.proofJwt.usePreAuth` は grant type が `pre-authorized_code` かどうかだけを表します。anonymous access かどうかは、**access token に `client_id` があるか**で判断してください（表の「状況」列を参照）。
+
+| 状況 | `proofJwt` の指定 | proof JWT の `iss` |
+|------|-------------------|-------------------|
+| **事前認可コード**グラントで、token endpoint を **anonymous access**（`client_id` なし）で呼び出して access token を得た | `{ usePreAuth: true }` | **省略**（access token に `client_id` がないため） |
+| **事前認可コード**グラントで、**登録済み OAuth client** として access token を得た（access token に `client_id` あり） | `{ usePreAuth: true }` | 省略可。付ける場合は access token の `client_id` と一致 |
+| **認可コード** 等、通常の OAuth クライアント文脈（未対応） | `{ usePreAuth: false }` | access token の `client_id` または Credential Issuer Identifier と一致 |
+
+`proofJwt` を誤ると `aud` / `iss` の検証が意図とずれ、`invalid_proof` となります。
 
 #### 4. Nonce 管理（オプション）
 
 OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) を使用する場合、Wallet はクレデンシャルリクエストを送信する前に `c_nonce` を取得できます。複数のクレデンシャルをリクエストする際に便利です。同一の nonce を有効期限内で再利用できます。
+
+HTTP サーバー実装で DPoP 用 nonce を返したい場合は、Authorization Server の OAuth policy store で DPoP mode を管理します。サーバー実装側でこの policy を参照すると、`POST /nonce` の JSON ボディ `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返すかどうかを制御できます。`c_nonce` と `DPoP-Nonce` は別の値です。実装例は [server/core/src/routes/issue.ts](../server/core/src/routes/issue.ts) を参照してください。
 
 Issuer メタデータに `nonce_endpoint` を設定してください:
 
@@ -157,6 +171,42 @@ const valid = await issuer.validateNonce(nonce)
 ```typescript
 const deleted = await issuer.revokeNonce(nonce)
 // 戻り値: boolean（取り消し成功時 true、nonce が見つからない場合 false）
+```
+
+**DPoP nonce の消費**（例: token endpoint の DPoP Proof 検証時）:
+
+```typescript
+const consumed = await nonceStore.consume(nonce)
+// 戻り値: boolean（存在し、有効期限内で、消費に成功した場合 true）
+```
+
+DPoP Proof の `nonce` は replay を避けるため、検証時に一度だけ消費します。Credential proof 用の `c_nonce` は複数 credential 取得で再利用できる一方、DPoP Proof 用 nonce は token request の Proof に紐づく値として扱います。
+
+#### 5. DPoP Proof と DPoP-bound access token
+
+token endpoint 実装では、HTTP リクエストの `DPoP` ヘッダーから取得した Proof JWT を `createAccessToken` に渡すことで、DPoP Proof の検証と DPoP-bound access token の発行を行えます。
+
+```typescript
+const accessToken = await authz.createAccessToken(issuer, tokenRequest, {
+  dpopProof: {
+    proofJwt,
+    htm: 'POST',
+    htu: `${base}/token`,
+    nonceRequired: true,
+  },
+})
+```
+
+DPoP Proof の検証では、`typ: dpop+jwt`、非対称署名アルゴリズム、JOSE ヘッダーの公開鍵 `jwk`、署名、`jti` / `iat` / `htm` / `htu`、nonce を確認します。`jti` は `dpop-proof-jti-store-provider` に保存し、同じ公開鍵 thumbprint と `jti` の組み合わせが再利用された場合は拒否します。
+
+検証に成功した場合、レスポンスの `token_type` は `DPoP` になり、access token の payload には DPoP Proof の公開鍵に対応する JWK Thumbprint が `cnf.jkt` として含まれます。
+
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "DPoP",
+  "expires_in": 86400
+}
 ```
 
 ### Verifier フロー

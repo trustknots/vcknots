@@ -64,3 +64,7 @@ GEMINI.md
 
 # Cursor - commit project rules only
 .cursor/*
+
+/server/samples/pki/
+/server/core/test/
+/server/multi/test/
