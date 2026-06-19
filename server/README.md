@@ -30,6 +30,8 @@ This package also uses `@trustknots/server-core` for shared app/routes/util logi
 AWS Lambda server implementation. Handler sources live in `server/aws/lambda/handlers/` and vcknots context in `server/aws/lambda/context/` (`@trustknots/server-aws`).
 CDK infrastructure is under `server/aws/resources/`. AWS providers are in `aws/provider/` (`@trustknots/aws`).
 
+For deploy and architecture details, see [aws/resources/README.md](./aws/resources/README.md).
+
 ### `multi/`
 
 Multi-tenant server implementation (work in progress). Endpoints are mounted with prefixes such as `/issuers`, `/authorizations`, `/verifiers`, etc.

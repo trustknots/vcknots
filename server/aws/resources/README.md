@@ -4,7 +4,7 @@ CDK stack for vcknots on AWS.
 
 Related packages:
 
-- [`@trustknots/server-aws`](../lambda) — Lambda handlers and vcknots context (`handlers/`, `context/`)
+- [`@trustknots/server-aws`](../lambda) — Lambda handlers, vcknots context, and utilities (`handlers/`, `context/`, `utils/`)
 - [`@trustknots/aws`](../../../aws/provider) — AWS providers for DynamoDB / KMS / Secrets Manager (placeholder)
 
 ## Architecture
@@ -20,8 +20,10 @@ server/aws/
 │   │   ├── issuer.ts      Lambda handler (Issuer)
 │   │   ├── authz.ts       Lambda handler (Authz)
 │   │   └── verifier.ts    Lambda handler (Verifier)
-│   └── context/
-│       └── vcknots-context.ts context / baseUrl helpers
+│   ├── context/
+│   │   └── vcknots-context.ts context / baseUrl helpers
+│   └── utils/
+│       └── error-logger.ts  sanitized CloudWatch error logging
 └── resources/             this package (CDK app)
     ├── bin/resources.ts
     ├── scripts/
@@ -45,9 +47,9 @@ server/aws/
 
 ResourcesStack
 ├── DataStores (construct/data)
-├── IssuerApi  (construct/api) → Lambda + REST API (vcknots-issuer)
-├── AuthzApi   (construct/api) → Lambda + REST API (vcknots-authz)
-└── VerifierApi (construct/api) → Lambda + REST API (vcknots-verifier)
+├── IssuerApi  (construct/api) → Lambda + REST API (vcknots-issuer-{stage})
+├── AuthzApi   (construct/api) → Lambda + REST API (vcknots-authz-{stage})
+└── VerifierApi (construct/api) → Lambda + REST API (vcknots-verifier-{stage})
 ```
 
 ### Lambda handlers
@@ -64,26 +66,30 @@ Each handler mounts a single route from `@trustknots/server-core` on a Hono app 
 
 Handlers currently use the default in-memory vcknots providers. Wire `@trustknots/aws` providers once implemented.
 
+Unhandled errors are logged via `utils/error-logger.ts` (`sanitizeError`) so only safe fields reach CloudWatch.
+
 ### API Gateway + Lambda
 
-Each role uses the shared `LambdaApi` construct (`lib/construct/api/lambda-api.ts`):
+Each role uses the shared `LambdaApi` construct (`lib/construct/api/lambda-api.ts`).
+
+Physical names (log groups, REST API names) include the deployment stage from `API_STAGE` (default: `test`) so multiple stages can coexist in the same account/region.
 
 | Resource | Setting |
 |---|---|
 | API type | `LambdaRestApi` with `{proxy+}` |
-| Stage | `test` |
-| CORS | Enabled on all routes via `defaultCorsPreflightOptions` |
-| Lambda runtime | Node.js latest (`NODEJS_LATEST`, ARM64) |
+| Stage | `API_STAGE` env var (default: `test`; set via deploy `--stage` or `scripts/.env`) |
+| CORS | `defaultCorsPreflightOptions`: non-`prod` stages allow all origins; `prod` requires `CORS_ALLOWED_ORIGINS` (comma-separated HTTPS origins). Methods: GET, POST, DELETE, OPTIONS |
+| Lambda runtime | Node.js 24 (`NODEJS_24_X`, ARM64) |
 | Timeout | 29s |
 | Memory | 512 MB |
 | Log retention | 1 week |
 | `API_GATEWAY_ID`, `API_STAGE` | Used to build the API Gateway default URL at runtime |
 
-| Lambda | Log group | Table env vars |
-|---|---|---|
-| Issuer | `/vcknots/issuer` | `ISSUERS_TABLE_NAME`, `NONCES_TABLE_NAME`, `PRE_CODES_TABLE_NAME` |
-| Authz | `/vcknots/authz` | `AUTH_SERVERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME` |
-| Verifier | `/vcknots/verifier` | `VERIFIERS_TABLE_NAME`, `REQUEST_OBJECTS_TABLE_NAME`, `NONCES_TABLE_NAME` |
+| Lambda | Log group (`{stage}` = `API_STAGE`) | REST API name | Table env vars |
+|---|---|---|---|
+| Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`, `NONCES_TABLE_NAME`, `PRE_CODES_TABLE_NAME` |
+| Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME` |
+| Verifier | `/vcknots/{stage}/verifier` | `vcknots-verifier-{stage}` | `VERIFIERS_TABLE_NAME`, `REQUEST_OBJECTS_TABLE_NAME`, `NONCES_TABLE_NAME` |
 
 Role-specific constructs in `lib/construct/api/` wire DynamoDB tables, IAM, and environment variables.
 
@@ -93,7 +99,7 @@ Custom domains (ACM / Route 53) are not configured yet.
 
 There is one table per data type.  
 Each table uses a single partition key, `id`, to identify one item (no sort key).  
-Billing is on-demand (`PAY_PER_REQUEST`). Tables use `RETAIN` on stack deletion.
+Billing is on-demand (`PAY_PER_REQUEST`). Tables use `RETAIN` on stack deletion and **Point-in-Time Recovery (PITR)** is enabled.
 
 | Table | Example `id` value | TTL | Stored data |
 |---|---|---|---|
@@ -125,7 +131,7 @@ Attributes other than `id` (metadata body, `expires_at`, and so on) are written 
 
 | Tool | Version | Notes |
 |---|---|---|
-| [Node.js](https://nodejs.org/) | 20+ | Required to run CDK and bundle Lambda handlers |
+| [Node.js](https://nodejs.org/) | 20+ | Required to run CDK and bundle Lambda handlers (Lambda runtime: Node.js 24) |
 | [pnpm](https://pnpm.io/) | 10.11.0 | Monorepo package manager (`packageManager` in root `package.json`) |
 | [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | v2 recommended | Used by `deploy-resources.sh` for identity/region lookup |
 | POSIX `sh` | — | Deploy script (`scripts/deploy-resources.sh`; `/bin/sh` on macOS/Linux) |
@@ -158,7 +164,7 @@ Optional local deploy defaults:
 
 ```bash
 cp server/aws/resources/scripts/.env.example server/aws/resources/scripts/.env
-# edit API_STAGE, AWS_PROFILE, etc.
+# edit API_STAGE, AWS_PROFILE, CORS_ALLOWED_ORIGINS (required for API_STAGE=prod), etc.
 ```
 
 ## Build
@@ -182,16 +188,19 @@ pnpm deploy
 
 # specify profile and/or stage
 pnpm deploy -- --profile vc-knots
-pnpm deploy -- --stage prod
-pnpm deploy -- --profile vc-knots --stage prod
+pnpm deploy -- --stage prod --profile vc-knots
+# prod requires CORS_ALLOWED_ORIGINS (env or scripts/.env)
+CORS_ALLOWED_ORIGINS=https://app.example.com pnpm deploy -- --stage prod
 ```
 
 Options:
 
-| Flag | Description |
+| Flag / env | Description |
 |---|---|
 | `--profile` | AWS profile (optional; uses CLI default when omitted) |
-| `--stage` | API Gateway stage name (default: `test`) |
+| `--stage` | API Gateway stage name (default: `test`). Also sets `API_STAGE` for CDK synth |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated HTTPS origins for API Gateway CORS (**required when `API_STAGE=prod`**) |
+| `STACK_NAME` | CloudFormation stack name (default: `ResourcesStack`) |
 
 `scripts/.env` is loaded when present. CLI flags override `.env`.
 
