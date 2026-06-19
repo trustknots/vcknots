@@ -6,7 +6,10 @@
 	"private": true,
 	"scripts": {
 		"build": "tsc",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"test": "node --import tsx --test test/**/*.spec.ts",
+		"lint": "biome lint ./handlers ./context ./utils",
+		"format": "biome format --write ./handlers ./context ./utils"
 	},
 	"keywords": [],
 	"author": "",

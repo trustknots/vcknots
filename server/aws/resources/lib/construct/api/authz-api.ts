@@ -10,8 +10,7 @@ export class AuthzApi extends Construct {
 
     this.lambdaApi = new LambdaApi(this, 'Api', {
       handlerFile: 'authz.ts',
-      restApiName: 'vcknots-authz',
-      logGroupName: '/vcknots/authz',
+      serviceName: 'authz',
       readWriteTables: [dataStores.authServersTable, dataStores.preCodesTable],
       environment: {
         AUTH_SERVERS_TABLE_NAME: dataStores.authServersTable.tableName,

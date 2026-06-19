@@ -6,6 +6,8 @@ const baseTableProps = {
   partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
   billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
   removalPolicy: cdk.RemovalPolicy.RETAIN,
+  // Enable continuous backups so accidental writes/deletes can be restored.
+  pointInTimeRecovery: true,
 } as const;
 
 export class DataStores extends Construct {

@@ -9,7 +9,7 @@ Related packages:
 
 ## Architecture
 
-```
+```text
 aws/
 └── provider/              @trustknots/aws (placeholder)
 

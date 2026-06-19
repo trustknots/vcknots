@@ -10,8 +10,7 @@ export class VerifierApi extends Construct {
 
     this.lambdaApi = new LambdaApi(this, 'Api', {
       handlerFile: 'verifier.ts',
-      restApiName: 'vcknots-verifier',
-      logGroupName: '/vcknots/verifier',
+      serviceName: 'verifier',
       readWriteTables: [
         dataStores.verifiersTable,
         dataStores.requestObjectsTable,

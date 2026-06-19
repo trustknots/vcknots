@@ -11,11 +11,38 @@ import { handlerEntry } from '../../util/paths';
 
 const apiStage = process.env.API_STAGE ?? 'test';
 
+/** GET/POST/DELETE cover server-core routes; OPTIONS is added for preflight. */
+const corsAllowMethods = ['GET', 'POST', 'DELETE', 'OPTIONS'];
+
+function corsAllowOrigins(): string[] {
+  const configured = process.env.CORS_ALLOWED_ORIGINS?.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (configured && configured.length > 0) {
+    return configured;
+  }
+  // test/dev: permissive CORS for local wallets and conformance tools.
+  if (apiStage !== 'prod') {
+    return apigateway.Cors.ALL_ORIGINS;
+  }
+  throw new Error(
+    'CORS_ALLOWED_ORIGINS must be set when API_STAGE=prod (comma-separated HTTPS origins)',
+  );
+}
+
+function stageScopedLogGroupName(serviceName: string): string {
+  return `/vcknots/${apiStage}/${serviceName}`;
+}
+
+function stageScopedRestApiName(serviceName: string): string {
+  return `vcknots-${serviceName}-${apiStage}`;
+}
+
 export interface LambdaApiProps {
   /** Handler file name under server/aws/lambda/handlers/ (e.g. issuer.ts). */
   handlerFile: string;
-  restApiName: string;
-  logGroupName: string;
+  /** Short service id used in stage-scoped physical names (e.g. issuer → /vcknots/{stage}/issuer). */
+  serviceName: string;
   readWriteTables?: dynamodb.ITable[];
   writeOnlyTables?: dynamodb.ITable[];
   environment?: Record<string, string>;
@@ -31,7 +58,7 @@ export class LambdaApi extends Construct {
     super(scope, id);
 
     const logGroup = new logs.LogGroup(this, 'LogGroup', {
-      logGroupName: props.logGroupName,
+      logGroupName: stageScopedLogGroupName(props.serviceName),
       retention: logs.RetentionDays.ONE_WEEK,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
@@ -55,7 +82,7 @@ export class LambdaApi extends Construct {
     this.handler = new lambdaNode.NodejsFunction(this, 'Handler', {
       entry: handlerEntry(props.handlerFile),
       handler: 'handler',
-      runtime: lambda.Runtime.NODEJS_LATEST,
+      runtime: lambda.Runtime.NODEJS_24_X,
       architecture: lambda.Architecture.ARM_64,
       timeout: Duration.seconds(29),
       memorySize: 512,
@@ -71,15 +98,15 @@ export class LambdaApi extends Construct {
     this.restApi = new apigateway.LambdaRestApi(this, 'RestApi', {
       handler: this.handler,
       proxy: true,
-      restApiName: props.restApiName,
+      restApiName: stageScopedRestApiName(props.serviceName),
       deployOptions: {
         stageName: apiStage,
         throttlingBurstLimit: 100,
         throttlingRateLimit: 50,
       },
       defaultCorsPreflightOptions: {
-        allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: apigateway.Cors.ALL_METHODS,
+        allowOrigins: corsAllowOrigins(),
+        allowMethods: corsAllowMethods,
         allowHeaders: apigateway.Cors.DEFAULT_HEADERS,
       },
     });

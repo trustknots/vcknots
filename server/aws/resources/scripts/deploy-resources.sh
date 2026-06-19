@@ -20,6 +20,7 @@ Environment:
   AWS_PROFILE   AWS profile (used when --profile is omitted).
   API_STAGE     API Gateway stage (default: test).
   STACK_NAME    CloudFormation stack name (default: ResourcesStack).
+  CORS_ALLOWED_ORIGINS  Comma-separated CORS origins (required when API_STAGE=prod).
 EOF
 }
 

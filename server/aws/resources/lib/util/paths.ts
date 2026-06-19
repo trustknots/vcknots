@@ -1,8 +1,13 @@
 import * as path from 'path';
 
-/** Absolute path to server/aws/resources (CDK is run from this directory). */
+/**
+ * Absolute path to the server/aws/resources package root.
+ *
+ * Derived from this file's location (lib/util → up two levels), not process.cwd(),
+ * so CDK synth works even when invoked from another working directory.
+ */
 export function getResourcesRoot(): string {
-  return process.cwd();
+  return path.resolve(__dirname, '..', '..');
 }
 
 /** Absolute path to server/aws/lambda (@trustknots/server-aws). */

@@ -10,8 +10,7 @@ export class IssuerApi extends Construct {
 
     this.lambdaApi = new LambdaApi(this, 'Api', {
       handlerFile: 'issuer.ts',
-      restApiName: 'vcknots-issuer',
-      logGroupName: '/vcknots/issuer',
+      serviceName: 'issuer',
       readWriteTables: [dataStores.issuersTable, dataStores.noncesTable],
       writeOnlyTables: [dataStores.preCodesTable],
       environment: {
