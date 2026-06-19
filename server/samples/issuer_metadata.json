@@ -73,6 +73,46 @@
 					"text_color": "#FFFFFF"
 				}
 			]
+		},
+		"IdentityCredential": {
+			"format": "dc+sd-jwt",
+			"scope": "Identity",
+			"cryptographic_binding_methods_supported": ["jwk"],
+			"credential_signing_alg_values_supported": ["ES256"],
+			"credential_definition": {
+				"type": ["VerifiableCredential", "IdentityCredential"],
+				"credentialSubject": {
+					"given_name": {
+						"display": [
+							{
+								"name": "Given Name",
+								"locale": "en-US"
+							}
+						],
+						"value_type": "string"
+					},
+					"family_name": {
+						"display": [
+							{
+								"name": "Surname",
+								"locale": "en-US"
+							}
+						],
+						"value_type": "string"
+					}
+				}
+			},
+			"proof_types_supported": {
+				"jwt": {
+					"proof_signing_alg_values_supported": ["ES256"]
+				}
+			},
+			"display": [
+				{
+					"name": "Identity Credential",
+					"locale": "en-US"
+				}
+			]
 		}
 	}
 }

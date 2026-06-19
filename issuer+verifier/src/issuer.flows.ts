@@ -1,4 +1,4 @@
-import { base64url, exportJWK } from 'jose'
+import { base64url, calculateJwkThumbprint, exportJWK } from 'jose'
 import { Cnonce } from './cnonce.types'
 import {
   CredentialConfigurationId,
@@ -6,13 +6,14 @@ import {
   CredentialIssuerMetadata,
 } from './credential-issuer.types'
 import { CredentialOffer } from './credential-offer.types'
-import { CredentialRequest, ProofTypes } from './credential-request.types'
+import { CredentialFormats, CredentialRequest, ProofTypes } from './credential-request.types'
 import { CredentialResponse } from './credential-response.types'
 import { err, raise } from './errors/vcknots.error'
+import { jwkSchema } from './jwk.type'
+import { JwtVcIssuerResponse } from './jwt-vc-issuer.types'
+import { buildSdJwtCredential } from './providers/issue-credential-sd-jwt.provider'
 import { selectProvider } from './providers/provider.utils'
 import { VcknotsContext } from './vcknots.context'
-import { JwtVcIssuerResponse } from './jwt-vc-issuer.types'
-import { jwkSchema } from './jwk.type'
 
 type OfferOptions =
   | {
@@ -61,6 +62,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const cnonceStore$ = context.providers.get('cnonce-store-provider')
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
+  const did$ = context.providers.get('did-provider')
 
   return {
     async findIssuerMetadata(id) {
@@ -91,7 +93,11 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
             if (!issuerKey) {
               return null
             }
-            return jwkSchema.parse(await exportJWK(issuerKey))
+            // Publish a `kid` so SD-JWT VCs (whose header carries a `kid`) can be
+            // matched to the right key during verification.
+            const jwk = await exportJWK(issuerKey)
+            const kid = await calculateJwkThumbprint(jwk)
+            return jwkSchema.parse({ ...jwk, kid })
           })
         )
       ).filter((key) => key !== null)
@@ -168,7 +174,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: 'Credential request format is not specified.',
         })
       }
-      const issueCredentialProvider = selectProvider(issueCredential$, format)
 
       // https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html#name-credential-request-2
       const credentialConfiguration = metadata.credential_configurations_supported
@@ -236,12 +241,6 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         }
       }
 
-      const verifiableCredential = issueCredentialProvider.createCredential(
-        issuer,
-        configuration,
-        verifyProof,
-        options?.claims
-      )
       const keyAlg = options?.alg ?? 'ES256'
       if (
         !configuration.credential_signing_alg_values_supported ||
@@ -251,6 +250,84 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: 'Unsupported key algorithm.',
         })
       }
+
+      // SD-JWT VC keeps claim values out of the signed body and binds them to the
+      // holder key, so it follows a dedicated assembly path instead of the W3C
+      // JWT VC one below.
+      if (format === CredentialFormats.DC_SD_JWT) {
+        const holderKid = verifyProof.header.kid
+        const didSplit = holderKid.split(':')
+        const didProvider = selectProvider(did$, didSplit[1])
+        const holderDidDoc = await didProvider.resolveDid(holderKid)
+        const holderJwk = holderDidDoc?.verificationMethod?.[0]?.publicKeyJwk
+        if (!holderJwk) {
+          throw err('INVALID_PROOF', {
+            message: 'Cannot resolve holder key for SD-JWT key binding.',
+          })
+        }
+
+        // The SD-JWT `vct` is the configuration's specific (non-base) type.
+        const types = configuration.credential_definition.type
+        const vct = types.find((it) => it !== 'VerifiableCredential') ?? types[0]
+
+        // Collect the disclosable claims declared by the configuration.
+        const subject = configuration.credential_definition.credentialSubject ?? {}
+        const claims: Record<string, unknown> = {}
+        for (const [key, definition] of Object.entries(subject)) {
+          if (options?.claims && key in options.claims) {
+            const value = options.claims[key]
+            claims[key] =
+              definition.value_type === 'number'
+                ? Number(value)
+                : definition.value_type === 'string'
+                  ? String(value)
+                  : value
+          } else if (definition.mandatory === true) {
+            throw err('INVALID_CLAIMS', {
+              message: `Claim ${key} is defined as mandatory but was not provided.`,
+            })
+          }
+        }
+
+        const issuerKey = await keyStore$.fetch(issuer, keyAlg)
+        if (!issuerKey) {
+          throw err('AUTHZ_ISSUER_KEY_NOT_FOUND', {
+            message: 'Issuer key not found.',
+          })
+        }
+        // Must match the `kid` published in the issuer JWKS (see jwt-vc-issuer).
+        const issuerKid = await calculateJwkThumbprint(await exportJWK(issuerKey))
+
+        const credential = await buildSdJwtCredential({
+          issuer,
+          vct,
+          alg: keyAlg,
+          kid: issuerKid,
+          holderJwk,
+          claims,
+          sign: (payload, header) =>
+            keyStore$.sign(
+              issuer,
+              keyAlg,
+              payload as Parameters<typeof keyStore$.sign>[2],
+              header as Parameters<typeof keyStore$.sign>[3]
+            ),
+        })
+
+        return {
+          credential,
+          c_nonce: nonce,
+          c_nonce_expires_in: options?.cnonce?.c_nonce_expires_in ?? 86400,
+        }
+      }
+
+      const issueCredentialProvider = selectProvider(issueCredential$, format)
+      const verifiableCredential = issueCredentialProvider.createCredential(
+        issuer,
+        configuration,
+        verifyProof,
+        options?.claims
+      )
       const jwtHeader = {
         alg: keyAlg,
         typ: 'JWT',

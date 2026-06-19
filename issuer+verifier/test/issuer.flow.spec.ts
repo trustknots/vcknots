@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { before, describe, it, mock } from 'node:test'
-import { exportJWK, generateKeyPair } from 'jose'
+import { calculateJwkThumbprint, exportJWK, generateKeyPair } from 'jose'
 import {
   CredentialConfigurationId,
   CredentialIssuer,
@@ -159,7 +159,10 @@ describe('IssuerFlow', () => {
       credential_configurations_supported: {},
     }
     const keys = await generateKeyPair('ES256', { extractable: true })
-    const expectedJwk = await exportJWK(keys.publicKey)
+    const baseJwk = await exportJWK(keys.publicKey)
+    // The published JWK now carries a thumbprint `kid` so SD-JWT VCs can be
+    // matched to the issuer key during verification.
+    const expectedJwk = { ...baseJwk, kid: await calculateJwkThumbprint(baseJwk) }
     mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
     mock.method(mockIssuerKeyStoreProvider, 'fetch', async () => keys.publicKey)
 
