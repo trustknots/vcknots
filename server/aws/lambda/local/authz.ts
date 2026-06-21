@@ -1,7 +1,6 @@
-import { handle } from 'hono/aws-lambda'
+import 'dotenv/config'
 import { createAuthzApp } from '../apps/create-authz-app.js'
+import { serveApp } from './serve.js'
 
 const { app } = createAuthzApp()
-
-export { app }
-export const handler = handle(app)
+serveApp(app, 'Authz', 8082)

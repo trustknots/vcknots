@@ -1,7 +1,6 @@
-import { handle } from 'hono/aws-lambda'
+import 'dotenv/config'
 import { createIssuerApp } from '../apps/create-issuer-app.js'
+import { serveApp } from './serve.js'
 
 const { app } = createIssuerApp()
-
-export { app }
-export const handler = handle(app)
+serveApp(app, 'Issuer', 8081)

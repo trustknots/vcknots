@@ -6,17 +6,22 @@
 	"private": true,
 	"scripts": {
 		"build": "tsc",
+		"start:issuer": "tsx local/issuer.ts",
+		"start:authz": "tsx local/authz.ts",
+		"start:verifier": "tsx local/verifier.ts",
 		"typecheck": "tsc --noEmit",
 		"test": "node --import tsx --test test/**/*.spec.ts",
-		"lint": "biome lint ./handlers ./context ./utils",
-		"format": "biome format --write ./handlers ./context ./utils"
+		"lint": "biome lint ./handlers ./context ./utils ./apps ./local",
+		"format": "biome format --write ./handlers ./context ./utils ./apps ./local"
 	},
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
 	"dependencies": {
+		"@hono/node-server": "1.19.9",
 		"@trustknots/server-core": "workspace:*",
 		"@trustknots/vcknots": "workspace:*",
+		"dotenv": "17.3.1",
 		"hono": "4.11.4"
 	},
 	"devDependencies": {
