@@ -4,7 +4,7 @@ vcknots を AWS 上で動かすための CDK スタックです。
 
 関連パッケージ:
 
-- [`@trustknots/server-aws`](../lambda) — Lambda ハンドラ、vcknots context、ユーティリティ（`handlers/`、`context/`、`utils/`）
+- [`@trustknots/server-aws`](../lambda) — Lambda ハンドラ、vcknots context、ユーティリティ（`src/handlers/`、`src/context/`、`src/utils/`）
 - [`@trustknots/aws`](../../../aws/provider) — DynamoDB / KMS / Secrets Manager 向け AWS provider（プレースホルダー）
 
 ## アーキテクチャ
@@ -16,14 +16,15 @@ aws/
 server/aws/
 ├── lambda/                @trustknots/server-aws
 │   ├── package.json
-│   ├── handlers/
-│   │   ├── issuer.ts      Lambda ハンドラ（Issuer）
-│   │   ├── authz.ts       Lambda ハンドラ（Authz）
-│   │   └── verifier.ts    Lambda ハンドラ（Verifier）
-│   ├── context/
-│   │   └── vcknots-context.ts context / baseUrl ヘルパー
-│   └── utils/
-│       └── error-logger.ts  サニタイズ済み CloudWatch エラーログ
+│   └── src/
+│       ├── handlers/
+│       │   ├── issuer.ts      Lambda ハンドラ（Issuer）
+│       │   ├── authz.ts       Lambda ハンドラ（Authz）
+│       │   └── verifier.ts    Lambda ハンドラ（Verifier）
+│       ├── context/
+│       │   └── vcknots-context.ts context / baseUrl ヘルパー
+│       └── utils/
+│           └── error-logger.ts  サニタイズ済み CloudWatch エラーログ
 └── resources/             このパッケージ（CDK アプリ）
     ├── bin/resources.ts
     ├── scripts/
@@ -54,11 +55,11 @@ ResourcesStack
 
 ### Lambda ハンドラ
 
-ハンドラのソースは `@trustknots/server-aws`（`server/aws/lambda/handlers/` と `server/aws/lambda/context/`）にあります。
+ハンドラのソースは `@trustknots/server-aws`（`server/aws/lambda/src/handlers/` と `server/aws/lambda/src/context/`）にあります。
 
 各ハンドラは `@trustknots/server-core` の単一ルートを Hono アプリにマウントし、API Gateway 向けに `handle(app)` をエクスポートします。
 
-| ハンドラ（`server/aws/lambda/handlers/`） | ルート |
+| ハンドラ（`server/aws/lambda/src/handlers/`） | ルート |
 |---|---|
 | `issuer.ts` | `@trustknots/server-core/routes/issue` |
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
@@ -137,7 +138,7 @@ ResourcesStack
 | POSIX `sh` | — | デプロイスクリプト（`scripts/deploy-resources.sh`；macOS/Linux では `/bin/sh`） |
 
 `aws-cdk`、`ts-node`、`esbuild` は `server/aws/resources` の devDependencies としてインストールされます。  
-グローバルな `cdk` インストールは不要です。`server/aws/resources` から `pnpm cdk` または `pnpm deploy` を使用してください。
+グローバルな `cdk` インストールは不要です。`server/aws/resources` から `pnpm cdk` または `pnpm run deploy` を使用してください。
 
 ### AWS アカウントアクセス
 
@@ -172,7 +173,10 @@ cp server/aws/resources/scripts/.env.example server/aws/resources/scripts/.env
 TypeScript は `dist/` にコンパイルされます（ソースと同じ場所には出力しません）。
 
 ```bash
-cd server/aws/resources
+# プロジェクトルートから
+pnpm --filter resources build
+
+# または server/aws/resources から
 pnpm build
 ```
 
@@ -184,13 +188,13 @@ pnpm build
 cd server/aws/resources
 
 # 既定の AWS プロファイル、ステージ: test
-pnpm deploy
+pnpm run deploy
 
 # プロファイルやステージを指定
-pnpm deploy -- --profile vc-knots
-pnpm deploy -- --stage prod --profile vc-knots
+pnpm run deploy -- --profile vc-knots
+pnpm run deploy -- --stage prod --profile vc-knots
 # prod では CORS_ALLOWED_ORIGINS が必須（環境変数または scripts/.env）
-CORS_ALLOWED_ORIGINS=https://app.example.com pnpm deploy -- --stage prod
+CORS_ALLOWED_ORIGINS=https://app.example.com pnpm run deploy -- --stage prod
 ```
 
 オプション:

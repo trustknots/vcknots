@@ -16,5 +16,5 @@ export function getLambdaRoot(): string {
 }
 
 export function handlerEntry(handlerFile: string): string {
-  return path.join(getLambdaRoot(), 'handlers', handlerFile);
+  return path.join(getLambdaRoot(), 'src', 'handlers', handlerFile);
 }

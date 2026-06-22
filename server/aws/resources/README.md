@@ -4,7 +4,7 @@ CDK stack for vcknots on AWS.
 
 Related packages:
 
-- [`@trustknots/server-aws`](../lambda) — Lambda handlers, vcknots context, and utilities (`handlers/`, `context/`, `utils/`)
+- [`@trustknots/server-aws`](../lambda) — Lambda handlers, vcknots context, and utilities (`src/handlers/`, `src/context/`, `src/utils/`)
 - [`@trustknots/aws`](../../../aws/provider) — AWS providers for DynamoDB / KMS / Secrets Manager (placeholder)
 
 ## Architecture
@@ -16,14 +16,15 @@ aws/
 server/aws/
 ├── lambda/                @trustknots/server-aws
 │   ├── package.json
-│   ├── handlers/
-│   │   ├── issuer.ts      Lambda handler (Issuer)
-│   │   ├── authz.ts       Lambda handler (Authz)
-│   │   └── verifier.ts    Lambda handler (Verifier)
-│   ├── context/
-│   │   └── vcknots-context.ts context / baseUrl helpers
-│   └── utils/
-│       └── error-logger.ts  sanitized CloudWatch error logging
+│   └── src/
+│       ├── handlers/
+│       │   ├── issuer.ts      Lambda handler (Issuer)
+│       │   ├── authz.ts       Lambda handler (Authz)
+│       │   └── verifier.ts    Lambda handler (Verifier)
+│       ├── context/
+│       │   └── vcknots-context.ts context / baseUrl helpers
+│       └── utils/
+│           └── error-logger.ts  sanitized CloudWatch error logging
 └── resources/             this package (CDK app)
     ├── bin/resources.ts
     ├── scripts/
@@ -54,11 +55,11 @@ ResourcesStack
 
 ### Lambda handlers
 
-Handler sources live in `@trustknots/server-aws` (`server/aws/lambda/handlers/` and `server/aws/lambda/context/`).
+Handler sources live in `@trustknots/server-aws` (`server/aws/lambda/src/handlers/` and `server/aws/lambda/src/context/`).
 
 Each handler mounts a single route from `@trustknots/server-core` on a Hono app and exports `handle(app)` for API Gateway.
 
-| Handler (`server/aws/lambda/handlers/`) | Route |
+| Handler (`server/aws/lambda/src/handlers/`) | Route |
 |---|---|
 | `issuer.ts` | `@trustknots/server-core/routes/issue` |
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
@@ -137,7 +138,7 @@ Attributes other than `id` (metadata body, `expires_at`, and so on) are written 
 | POSIX `sh` | — | Deploy script (`scripts/deploy-resources.sh`; `/bin/sh` on macOS/Linux) |
 
 `aws-cdk`, `ts-node`, and `esbuild` are installed as `server/aws/resources` devDependencies.  
-You do **not** need a global `cdk` install; use `pnpm cdk` or `pnpm deploy` from `server/aws/resources`.
+You do **not** need a global `cdk` install; use `pnpm cdk` or `pnpm run deploy` from `server/aws/resources`.
 
 ### AWS account access
 
@@ -172,7 +173,10 @@ cp server/aws/resources/scripts/.env.example server/aws/resources/scripts/.env
 TypeScript compiles to `dist/` (not alongside source files).
 
 ```bash
-cd server/aws/resources
+# from project root
+pnpm --filter resources build
+
+# or from server/aws/resources
 pnpm build
 ```
 
@@ -184,13 +188,13 @@ Use the deploy script (runs `cdk bootstrap` then `cdk deploy`). CDK runs via `ts
 cd server/aws/resources
 
 # default AWS profile, stage: test
-pnpm deploy
+pnpm run deploy
 
 # specify profile and/or stage
-pnpm deploy -- --profile vc-knots
-pnpm deploy -- --stage prod --profile vc-knots
+pnpm run deploy -- --profile vc-knots
+pnpm run deploy -- --stage prod --profile vc-knots
 # prod requires CORS_ALLOWED_ORIGINS (env or scripts/.env)
-CORS_ALLOWED_ORIGINS=https://app.example.com pnpm deploy -- --stage prod
+CORS_ALLOWED_ORIGINS=https://app.example.com pnpm run deploy -- --stage prod
 ```
 
 Options:
