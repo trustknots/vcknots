@@ -11,8 +11,8 @@
 		"start:verifier": "tsx local/verifier.ts",
 		"typecheck": "tsc --noEmit",
 		"test": "node --import tsx --test test/**/*.spec.ts",
-		"lint": "biome lint ./handlers ./context ./utils ./apps ./local",
-		"format": "biome format --write ./handlers ./context ./utils ./apps ./local"
+		"lint": "biome lint ./apps ./context ./handlers ./local ./utils",
+		"format": "biome format --write ./apps ./context ./handlers ./local ./utils"
 	},
 	"keywords": [],
 	"author": "",

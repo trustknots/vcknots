@@ -39,7 +39,7 @@ function stageScopedRestApiName(serviceName: string): string {
 }
 
 export interface LambdaApiProps {
-  /** Handler file name under server/aws/lambda/handlers/ (e.g. issuer.ts). */
+  /** Handler file name under server/aws/lambda/src/handlers/ (e.g. issuer.ts). */
   handlerFile: string;
   /** Short service id used in stage-scoped physical names (e.g. issuer → /vcknots/{stage}/issuer). */
   serviceName: string;

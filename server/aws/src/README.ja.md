@@ -14,7 +14,7 @@ Issuer および Verifier の **実際の API 仕様・パラメーター・型�
 ## ディレクトリ構成
 
 ```text
-lambda/
+src/
 ├── apps/
 │   ├── create-base-app.ts      # 共通 Hono アプリファクトリ
 │   ├── create-issuer-app.ts    # Issuer アプリ（DynamoDB issuer メタデータストア）
@@ -70,7 +70,7 @@ pnpm -F @trustknots/aws build
 ### 3. 環境変数の設定
 
 ```bash
-cd server/aws/lambda
+cd server/aws/src
 cp .env.example .env
 ```
 
@@ -95,7 +95,7 @@ cp .env.example .env
 
 ## サーバーの起動
 
-`server/aws/lambda` ディレクトリで、各サーバーを別々のターミナルで起動します：
+`server/aws/src` ディレクトリで、各サーバーを別々のターミナルで起動します：
 
 ```bash
 # Issuer — http://localhost:8081

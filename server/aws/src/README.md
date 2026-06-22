@@ -14,7 +14,7 @@ The endpoint list in this README is an overview of the paths used in this server
 ## Directory Structure
 
 ```text
-lambda/
+src/
 ├── apps/
 │   ├── create-base-app.ts      # Shared Hono app factory
 │   ├── create-issuer-app.ts    # Issuer app (DynamoDB issuer metadata store)
@@ -70,7 +70,7 @@ pnpm -F @trustknots/aws build
 ### 3. Configure environment variables
 
 ```bash
-cd server/aws/lambda
+cd server/aws/src
 cp .env.example .env
 ```
 
@@ -95,7 +95,7 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 
 ## Start the Servers
 
-Run each server in a separate terminal from `server/aws/lambda`:
+Run each server in a separate terminal from `server/aws/src`:
 
 ```bash
 # Issuer — http://localhost:8081
