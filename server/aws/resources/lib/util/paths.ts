@@ -10,9 +10,9 @@ export function getResourcesRoot(): string {
   return path.resolve(__dirname, '..', '..');
 }
 
-/** Absolute path to server/aws/lambda (@trustknots/server-aws). */
+/** Absolute path to server/aws/src (@trustknots/server-aws). */
 export function getLambdaRoot(): string {
-  return path.join(getResourcesRoot(), '..', 'lambda');
+  return path.join(getResourcesRoot(), '..', 'src');
 }
 
 export function handlerEntry(handlerFile: string): string {
