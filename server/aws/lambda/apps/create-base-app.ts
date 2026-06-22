@@ -6,7 +6,7 @@ import { sanitizeError } from '../utils/error-logger.js'
 
 type RouteFactory = (context: VcknotsContext, baseUrl: string) => Hono
 
-export function createRoleApp(createRouter: RouteFactory, options?: VcknotsOptions) {
+export function createBaseApp(createRouter: RouteFactory, options?: VcknotsOptions) {
   const context = createVcknotsContext(options)
   const baseUrl = getBaseUrl()
 
