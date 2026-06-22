@@ -154,7 +154,35 @@ importers:
         specifier: 9.0.10
         version: 9.0.10
 
-  server/aws/lambda:
+  server/aws/resources:
+    dependencies:
+      aws-cdk-lib:
+        specifier: ^2.258.1
+        version: 2.258.1(constructs@10.6.0)
+      constructs:
+        specifier: ^10.6.0
+        version: 10.6.0
+    devDependencies:
+      '@types/aws-lambda':
+        specifier: ^8.10.161
+        version: 8.10.162
+      '@types/node':
+        specifier: ^24.12.4
+        version: 24.13.1
+      aws-cdk:
+        specifier: 2.1128.0
+        version: 2.1128.0
+      esbuild:
+        specifier: ^0.27.3
+        version: 0.27.3
+      ts-node:
+        specifier: ^10.9.2
+        version: 10.9.2(@types/node@24.13.1)(typescript@5.9.3)
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  server/aws/src:
     dependencies:
       '@hono/node-server':
         specifier: 1.19.9
@@ -181,34 +209,6 @@ importers:
       '@types/node':
         specifier: ^24.12.4
         version: 24.13.1
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  server/aws/resources:
-    dependencies:
-      aws-cdk-lib:
-        specifier: ^2.258.1
-        version: 2.258.1(constructs@10.6.0)
-      constructs:
-        specifier: ^10.6.0
-        version: 10.6.0
-    devDependencies:
-      '@types/aws-lambda':
-        specifier: ^8.10.161
-        version: 8.10.162
-      '@types/node':
-        specifier: ^24.12.4
-        version: 24.13.1
-      aws-cdk:
-        specifier: 2.1128.0
-        version: 2.1128.0
-      esbuild:
-        specifier: ^0.27.3
-        version: 0.27.3
-      ts-node:
-        specifier: ^10.9.2
-        version: 10.9.2(@types/node@24.13.1)(typescript@5.9.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
