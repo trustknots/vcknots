@@ -8,7 +8,7 @@ export type DynamoDbIssuerMetadataStoreOptions = DynamoDbProviderOptions & {
   tableName: string
 }
 
-const toPartitionKey = (issuer: CredentialIssuer): string =>
+const md5 = (issuer: CredentialIssuer): string =>
   createHash('md5').update(issuer).digest('base64url')
 
 export const dynamodbIssuerMetadataStore = (
@@ -23,7 +23,7 @@ export const dynamodbIssuerMetadataStore = (
     single: true,
 
     async fetch(issuer) {
-      const id = toPartitionKey(issuer)
+      const id = md5(issuer)
       const result = await client.send(
         new GetCommand({
           TableName: tableName,
@@ -40,7 +40,7 @@ export const dynamodbIssuerMetadataStore = (
     },
 
     async save(issuer) {
-      const id = toPartitionKey(issuer.credential_issuer)
+      const id = md5(issuer.credential_issuer)
       await client.send(
         new PutCommand({
           TableName: tableName,
