@@ -159,6 +159,9 @@ importers:
       '@hono/node-server':
         specifier: 1.19.9
         version: 1.19.9(hono@4.11.4)
+      '@trustknots/aws':
+        specifier: workspace:*
+        version: link:../../../aws/provider
       '@trustknots/server-core':
         specifier: workspace:*
         version: link:../../core
