@@ -1,0 +1,212 @@
+# AWS Resources
+
+vcknots を AWS 上で動かすための CDK スタックです。
+
+関連パッケージ:
+
+- [`@trustknots/server-aws`](../lambda) — Lambda ハンドラ、vcknots context、ユーティリティ（`handlers/`、`context/`、`utils/`）
+- [`@trustknots/aws`](../../../aws/provider) — DynamoDB / KMS / Secrets Manager 向け AWS provider（プレースホルダー）
+
+## アーキテクチャ
+
+```text
+aws/
+└── provider/              @trustknots/aws（プレースホルダー）
+
+server/aws/
+├── lambda/                @trustknots/server-aws
+│   ├── package.json
+│   ├── handlers/
+│   │   ├── issuer.ts      Lambda ハンドラ（Issuer）
+│   │   ├── authz.ts       Lambda ハンドラ（Authz）
+│   │   └── verifier.ts    Lambda ハンドラ（Verifier）
+│   ├── context/
+│   │   └── vcknots-context.ts context / baseUrl ヘルパー
+│   └── utils/
+│       └── error-logger.ts  サニタイズ済み CloudWatch エラーログ
+└── resources/             このパッケージ（CDK アプリ）
+    ├── bin/resources.ts
+    ├── scripts/
+    │   ├── deploy-resources.sh
+    │   └── .env.example
+    └── lib/
+        ├── construct/
+        │   ├── data/
+        │   │   └── data-stores.ts
+        │   ├── api/
+        │   │   ├── lambda-api.ts
+        │   │   ├── issuer-api.ts
+        │   │   ├── authz-api.ts
+        │   │   └── verifier-api.ts
+        │   └── security/
+        │       ├── key-management.ts      （プレースホルダー、スタック未組み込み）
+        │       └── secret-management.ts   （プレースホルダー、スタック未組み込み）
+        ├── util/
+        │   └── paths.ts
+        └── resources-stack.ts
+
+ResourcesStack
+├── DataStores (construct/data)
+├── IssuerApi  (construct/api) → Lambda + REST API (vcknots-issuer-{stage})
+├── AuthzApi   (construct/api) → Lambda + REST API (vcknots-authz-{stage})
+└── VerifierApi (construct/api) → Lambda + REST API (vcknots-verifier-{stage})
+```
+
+### Lambda ハンドラ
+
+ハンドラのソースは `@trustknots/server-aws`（`server/aws/lambda/handlers/` と `server/aws/lambda/context/`）にあります。
+
+各ハンドラは `@trustknots/server-core` の単一ルートを Hono アプリにマウントし、API Gateway 向けに `handle(app)` をエクスポートします。
+
+| ハンドラ（`server/aws/lambda/handlers/`） | ルート |
+|---|---|
+| `issuer.ts` | `@trustknots/server-core/routes/issue` |
+| `authz.ts` | `@trustknots/server-core/routes/authz` |
+| `verifier.ts` | `@trustknots/server-core/routes/verify` |
+
+ハンドラは現在、デフォルトのインメモリ vcknots provider を使用しています。`@trustknots/aws` provider の実装後に接続してください。
+
+未処理エラーは `utils/error-logger.ts`（`sanitizeError`）経由でログ出力され、CloudWatch には安全なフィールドのみが記録されます。
+
+### API Gateway + Lambda
+
+各ロールは共通の `LambdaApi` construct（`lib/construct/api/lambda-api.ts`）を使用します。
+
+物理名（ロググループ、REST API 名）には `API_STAGE` から取得したデプロイステージが含まれ、同一アカウント/リージョン内で複数ステージを共存させられます。
+
+| リソース | 設定 |
+|---|---|
+| API 種別 | `{proxy+}` 付き `LambdaRestApi` |
+| ステージ | `API_STAGE` 環境変数（既定: `test`；デプロイ時の `--stage` または `scripts/.env` で設定） |
+| CORS | `defaultCorsPreflightOptions`: `prod` 以外のステージは全オリジン許可；`prod` は `CORS_ALLOWED_ORIGINS`（カンマ区切りの HTTPS オリジン）が必須。メソッド: GET, POST, DELETE, OPTIONS |
+| Lambda ランタイム | Node.js 24（`NODEJS_24_X`、ARM64） |
+| タイムアウト | 29 秒 |
+| メモリ | 512 MB |
+| ログ保持 | 1 週間 |
+| `API_GATEWAY_ID`、`API_STAGE` | ランタイムで API Gateway のデフォルト URL を組み立てるために使用 |
+
+| Lambda | ロググループ（`{stage}` = `API_STAGE`） | REST API 名 | テーブル環境変数 |
+|---|---|---|---|
+| Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`、`NONCES_TABLE_NAME`、`PRE_CODES_TABLE_NAME` |
+| Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`、`PRE_CODES_TABLE_NAME` |
+| Verifier | `/vcknots/{stage}/verifier` | `vcknots-verifier-{stage}` | `VERIFIERS_TABLE_NAME`、`REQUEST_OBJECTS_TABLE_NAME`、`NONCES_TABLE_NAME` |
+
+`lib/construct/api/` のロール別 construct が DynamoDB テーブル、IAM、環境変数を接続します。
+
+カスタムドメイン（ACM / Route 53）は未設定です。
+
+### DynamoDB テーブル設計
+
+データ種別ごとに 1 テーブルです。  
+各テーブルはパーティションキー `id` のみで 1 アイテムを識別します（ソートキーなし）。  
+課金はオンデマンド（`PAY_PER_REQUEST`）です。スタック削除時は `RETAIN` とし、**ポイントインタイムリカバリ（PITR）** を有効にしています。
+
+| テーブル | `id` の例 | TTL | 保存データ |
+|---|---|---|---|
+| IssuersTable | Issuer URL のハッシュ | なし | Credential Issuer メタデータ |
+| AuthServersTable | Authorization Server URL のハッシュ | なし | Authorization Server メタデータ |
+| PreCodesTable | Pre-Authorized Code 文字列 | あり（`expires_at`） | 発行時に使用する Pre-authorized code |
+| NoncesTable | Nonce 文字列 | あり（`expires_at`） | リプレイ防止用 Nonce |
+| VerifiersTable | Verifier client ID のハッシュ | なし | Verifier メタデータ |
+| RequestObjectsTable | Request Object ID | あり（`expires_at`） | VP リクエスト用 Request Object |
+
+`id` 以外の属性（メタデータ本体、`expires_at` など）はアプリケーションが書き込みます。
+
+### IAM
+
+| Lambda | DynamoDB アクセス |
+|---|---|
+| Issuer | IssuersTable、NoncesTable（読み書き）；PreCodesTable（書き込みのみ） |
+| Authz | AuthServersTable、PreCodesTable（読み書き） |
+| Verifier | VerifiersTable、RequestObjectsTable、NoncesTable（読み書き） |
+
+### スタック出力
+
+- `IssuerApiUrl`、`AuthzApiUrl`、`VerifierApiUrl`
+- `IssuersTableName`、`AuthServersTableName`、`PreCodesTableName`、`NoncesTableName`、`VerifiersTableName`、`RequestObjectsTableName`
+
+## 前提条件
+
+### ローカル環境
+
+| ツール | バージョン | 備考 |
+|---|---|---|
+| [Node.js](https://nodejs.org/) | 20+ | CDK 実行および Lambda ハンドラのバンドルに必要（Lambda ランタイム: Node.js 24） |
+| [pnpm](https://pnpm.io/) | 10.11.0 | モノレポのパッケージマネージャ（ルート `package.json` の `packageManager`） |
+| [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | v2 推奨 | `deploy-resources.sh` がアイデンティティ/リージョン取得に使用 |
+| POSIX `sh` | — | デプロイスクリプト（`scripts/deploy-resources.sh`；macOS/Linux では `/bin/sh`） |
+
+`aws-cdk`、`ts-node`、`esbuild` は `server/aws/resources` の devDependencies としてインストールされます。  
+グローバルな `cdk` インストールは不要です。`server/aws/resources` から `pnpm cdk` または `pnpm deploy` を使用してください。
+
+### AWS アカウントアクセス
+
+- 対象アカウント/リージョン向けの認証情報（`~/.aws/credentials`、`~/.aws/config`、または環境変数）。
+- CDK bootstrap およびデプロイを実行する IAM 権限（CloudFormation、Lambda、API Gateway、DynamoDB、IAM、S3、ECR、SSM など関連リソース）。
+- アカウント/リージョンへの初回デプロイ時、デプロイスクリプトが自動的に `cdk bootstrap` を実行します。
+
+デプロイ前にアクセスを確認してください:
+
+```bash
+aws sts get-caller-identity
+aws configure get region
+```
+
+### プロジェクトのセットアップ
+
+モノレポのルートから:
+
+```bash
+pnpm install
+```
+
+任意のローカルデプロイ既定値:
+
+```bash
+cp server/aws/resources/scripts/.env.example server/aws/resources/scripts/.env
+# API_STAGE、AWS_PROFILE、CORS_ALLOWED_ORIGINS（API_STAGE=prod 時は必須）などを編集
+```
+
+## ビルド
+
+TypeScript は `dist/` にコンパイルされます（ソースと同じ場所には出力しません）。
+
+```bash
+cd server/aws/resources
+pnpm build
+```
+
+## デプロイ
+
+デプロイスクリプトを使用します（`cdk bootstrap` の後に `cdk deploy` を実行）。CDK は `ts-node` 経由で実行されます（`cdk.json`）。`pnpm build` は不要です。
+
+```bash
+cd server/aws/resources
+
+# 既定の AWS プロファイル、ステージ: test
+pnpm deploy
+
+# プロファイルやステージを指定
+pnpm deploy -- --profile vc-knots
+pnpm deploy -- --stage prod --profile vc-knots
+# prod では CORS_ALLOWED_ORIGINS が必須（環境変数または scripts/.env）
+CORS_ALLOWED_ORIGINS=https://app.example.com pnpm deploy -- --stage prod
+```
+
+オプション:
+
+| フラグ / 環境変数 | 説明 |
+|---|---|
+| `--profile` | AWS プロファイル（任意；省略時は CLI の既定値を使用） |
+| `--stage` | API Gateway ステージ名（既定: `test`）。CDK synth 時の `API_STAGE` にも設定される |
+| `CORS_ALLOWED_ORIGINS` | API Gateway CORS 用のカンマ区切り HTTPS オリジン（**`API_STAGE=prod` 時は必須**） |
+| `STACK_NAME` | CloudFormation スタック名（既定: `ResourcesStack`） |
+
+`scripts/.env` は存在する場合に読み込まれます。CLI フラグは `.env` より優先されます。
+
+## Synth のみ
+
+```bash
+cd server/aws/resources
+pnpm cdk synth
+```

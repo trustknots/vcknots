@@ -30,7 +30,7 @@ app/routes/utilの実装は `@trustknots/server-core` を利用します。
 AWS Lambda 向けのサーバー実装です。ハンドラは `server/aws/lambda/handlers/`、vcknots context は `server/aws/lambda/context/`（`@trustknots/server-aws`）にあります。
 CDK インフラは `server/aws/resources/`、AWS provider は `aws/provider/`（`@trustknots/aws`）です。
 
-デプロイ手順とアーキテクチャの詳細は [aws/resources/README.md](./aws/resources/README.md) を参照してください。
+デプロイ手順とアーキテクチャの詳細は [aws/resources/README.ja.md](./aws/resources/README.ja.md) を参照してください。
 
 ### `multi/`
 
