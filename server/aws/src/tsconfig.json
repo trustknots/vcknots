@@ -4,5 +4,5 @@
 		"outDir": "./lib",
 		"types": ["node"]
 	},
-	"include": ["./apps", "./context", "./handlers", "./local", "./utils"]
+	"include": ["./apps", "./context", "./handlers", "./utils"]
 }

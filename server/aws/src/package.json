@@ -6,13 +6,13 @@
 	"private": true,
 	"scripts": {
 		"build": "tsc",
-		"start:issuer": "tsx local/issuer.ts",
-		"start:authz": "tsx local/authz.ts",
-		"start:verifier": "tsx local/verifier.ts",
+		"start:issuer": "tsx handlers/issuer.ts",
+		"start:authz": "tsx handlers/authz.ts",
+		"start:verifier": "tsx handlers/verifier.ts",
 		"typecheck": "tsc --noEmit",
 		"test": "node --import tsx --test test/**/*.spec.ts",
-		"lint": "biome lint ./apps ./context ./handlers ./local ./utils",
-		"format": "biome format --write ./apps ./context ./handlers ./local ./utils"
+		"lint": "biome lint ./apps ./context ./handlers ./utils",
+		"format": "biome format --write ./apps ./context ./handlers ./utils"
 	},
 	"keywords": [],
 	"author": "",
