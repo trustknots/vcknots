@@ -186,7 +186,7 @@ Use the deploy script (runs `cdk bootstrap` then `cdk deploy`). CDK runs via `ts
 
 ```bash
 # from project root
-pnpm -F @trustknots/aws-resources deploy
+pnpm -F @trustknots/aws-resources run deploy
 
 # or from server/aws/resources
 cd server/aws/resources

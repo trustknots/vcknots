@@ -186,7 +186,7 @@ pnpm build
 
 ```bash
 # プロジェクトルートから
-pnpm -F @trustknots/aws-resources deploy
+pnpm -F @trustknots/aws-resources run deploy
 
 # または server/aws/resources から
 cd server/aws/resources
