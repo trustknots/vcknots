@@ -174,7 +174,7 @@ TypeScript compiles to `dist/` (not alongside source files).
 
 ```bash
 # from project root
-pnpm --filter resources build
+pnpm -F @trustknots/aws-resources build
 
 # or from server/aws/resources
 pnpm build
@@ -185,6 +185,10 @@ pnpm build
 Use the deploy script (runs `cdk bootstrap` then `cdk deploy`). CDK runs via `ts-node` (`cdk.json`); `pnpm build` is not required.
 
 ```bash
+# from project root
+pnpm -F @trustknots/aws-resources deploy
+
+# or from server/aws/resources
 cd server/aws/resources
 
 # default AWS profile, stage: test
