@@ -4,7 +4,7 @@ import { afterEach, describe, it } from 'node:test'
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb'
 import { mockClient } from 'aws-sdk-client-mock'
 import { CredentialIssuer, CredentialIssuerMetadata } from '@trustknots/vcknots/issuer'
-import { dynamodbIssuerMetadataStore } from '../src/dynamodb-issuer-metadata-store.provider'
+import { dynamodbIssuerMetadataStore } from '../src/providers/dynamodb-issuer-metadata-store.provider'
 
 const TABLE_NAME = 'IssuersTable'
 const ddbMock = mockClient(DynamoDBDocumentClient)

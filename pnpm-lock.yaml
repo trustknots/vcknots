@@ -33,7 +33,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  aws/provider:
+  aws:
     dependencies:
       '@aws-sdk/client-dynamodb':
         specifier: ^3.1064.0
@@ -43,7 +43,7 @@ importers:
         version: 3.1064.0(@aws-sdk/client-dynamodb@3.1064.0)
       '@trustknots/vcknots':
         specifier: workspace:*
-        version: link:../../issuer+verifier
+        version: link:../issuer+verifier
     devDependencies:
       '@types/node':
         specifier: ^24.12.4
@@ -189,7 +189,7 @@ importers:
         version: 1.19.9(hono@4.11.4)
       '@trustknots/aws':
         specifier: workspace:*
-        version: link:../../../aws/provider
+        version: link:../../../aws
       '@trustknots/server-core':
         specifier: workspace:*
         version: link:../../core
