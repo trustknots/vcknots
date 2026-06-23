@@ -174,7 +174,7 @@ TypeScript は `dist/` にコンパイルされます（ソースと同じ場所
 
 ```bash
 # プロジェクトルートから
-pnpm --filter resources build
+pnpm -F @trustknots/aws-resources build
 
 # または server/aws/resources から
 pnpm build
@@ -185,6 +185,10 @@ pnpm build
 デプロイスクリプトを使用します（`cdk bootstrap` の後に `cdk deploy` を実行）。CDK は `ts-node` 経由で実行されます（`cdk.json`）。`pnpm build` は不要です。
 
 ```bash
+# プロジェクトルートから
+pnpm -F @trustknots/aws-resources deploy
+
+# または server/aws/resources から
 cd server/aws/resources
 
 # 既定の AWS プロファイル、ステージ: test

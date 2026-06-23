@@ -1,5 +1,5 @@
 {
-  "name": "resources",
+  "name": "@trustknots/aws-resources",
   "version": "0.1.0",
   "scripts": {
     "build": "tsc",
