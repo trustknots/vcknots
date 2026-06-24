@@ -115,7 +115,17 @@ pnpm -F @trustknots/server-aws start:issuer
 
 ### Startup confirmation
 
+On first run, the Issuer automatically seeds initial metadata from `server/samples/issuer_metadata.json` into DynamoDB:
+
 ```
+Issuer metadata initialized
+Issuer is running on http://localhost:8081
+```
+
+On subsequent runs, initialization is skipped if the data already exists:
+
+```
+Issuer metadata already exists, skipping initialization
 Issuer is running on http://localhost:8081
 ```
 
