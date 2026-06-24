@@ -76,7 +76,8 @@ type Wallet struct {
 	verifier   *verifier.VerificationDispatcher
 	presenter  *presenter.PresentationDispatcher
 
-	dpop DPoPConfig
+	dpop       DPoPConfig
+	clientAuth ClientAuthConfig
 }
 
 // Config specifies the dispatcher components used by a Wallet.
@@ -95,13 +96,32 @@ type Config struct {
 	Verifier   *verifier.VerificationDispatcher
 	Presenter  *presenter.PresentationDispatcher
 
-	DPoP DPoPConfig
+	DPoP       DPoPConfig
+	ClientAuth ClientAuthConfig
 }
 
 // DPoPConfig holds configuration for DPoP proof generation.
 type DPoPConfig struct {
 	Enabled bool
 	Key     IKeyEntry
+}
+
+// ClientAuthConfig holds configuration for client authentication at the
+// authorization server's token endpoint.
+//
+// PreferredMethods is the ordered list of authentication methods the wallet
+// wants to use, e.g. {None, PrivateKeyJwt}. The wallet selects the first method
+// from this list that is both advertised by the authorization server metadata
+// and usable with the configured credentials. When empty, it defaults to
+// {None, PrivateKeyJwt}.
+//
+// ClientID and Key are required to use PrivateKeyJwt. Key must be the private
+// key whose corresponding public key is registered with the authorization
+// server (as JWKS).
+type ClientAuthConfig struct {
+	ClientID         string
+	Key              IKeyEntry
+	PreferredMethods []receiverTypes.TokenEndpointAuthMethod
 }
 
 var dpopNonceHTTPClient = &http.Client{
@@ -240,6 +260,7 @@ func NewWalletWithConfig(config Config) (*Wallet, error) {
 		verifier:   config.Verifier,
 		presenter:  config.Presenter,
 		dpop:       config.DPoP,
+		clientAuth: config.ClientAuth,
 	}, nil
 }
 
@@ -584,6 +605,134 @@ func (w *Wallet) generateDPoPProof(key IKeyEntry, method, targetURL, accessToken
 	return proof, nil
 }
 
+// generateClientAssertion builds a signed JWT used as the client_assertion
+// parameter for private_key_jwt client authentication (RFC 7523).
+//
+// The resulting JWT contains the following claims: iss, sub (both equal to the
+// client_id), aud (the token endpoint URL), iat, nbf, exp, and jti. The header
+// carries the signing key's kid and the alg (ES256).
+func (w *Wallet) generateClientAssertion(key IKeyEntry, clientID, tokenEndpointURL string) (string, error) {
+	if key == nil {
+		return "", fmt.Errorf("client auth key is required")
+	}
+	if strings.TrimSpace(clientID) == "" {
+		return "", fmt.Errorf("clientID is required for client assertion")
+	}
+	if strings.TrimSpace(tokenEndpointURL) == "" {
+		return "", fmt.Errorf("token endpoint URL is required for client assertion aud")
+	}
+
+	signerAdapter, err := joseutil.NewJWKSigner(key, jose.ES256)
+	if err != nil {
+		return "", fmt.Errorf("failed to create client assertion signer adapter: %w", err)
+	}
+
+	signerOpts := (&jose.SignerOptions{}).WithType("jwt")
+	if kid := key.PublicKey().KeyID; strings.TrimSpace(kid) != "" {
+		signerOpts = signerOpts.WithHeader("kid", kid)
+	}
+
+	signingKey := jose.SigningKey{
+		Algorithm: jose.ES256,
+		Key:       signerAdapter,
+	}
+
+	signer, err := jose.NewSigner(signingKey, signerOpts)
+	if err != nil {
+		return "", fmt.Errorf("failed to create client assertion signer: %w", err)
+	}
+
+	now := time.Now()
+	claims := map[string]any{
+		"iss": clientID,
+		"sub": clientID,
+		"aud": tokenEndpointURL,
+		"iat": now.Unix(),
+		"nbf": now.Unix(),
+		"exp": now.Add(clientAssertionLifetime).Unix(),
+		"jti": uuid.NewString(),
+	}
+
+	assertion, err := jwt.Signed(signer).Claims(claims).Serialize()
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize client assertion: %w", err)
+	}
+
+	return assertion, nil
+}
+
+// clientAssertionLifetime is the validity window of a generated client_assertion.
+const clientAssertionLifetime = 5 * time.Minute
+
+// resolveClientAuthMethod selects the client authentication method to use at the
+// token endpoint by intersecting the wallet's preferred methods (in priority
+// order) with the methods advertised and usable given the current configuration.
+//
+// It returns the selected method and ok=true, or ok=false when no method is
+// usable (in which case the caller should treat the token request as impossible).
+func resolveClientAuthMethod(clientAuth ClientAuthConfig, authMetadata *receiverTypes.AuthorizationServerMetadata) (receiverTypes.TokenEndpointAuthMethod, bool) {
+	methods := clientAuth.PreferredMethods
+	if len(methods) == 0 {
+		methods = []receiverTypes.TokenEndpointAuthMethod{receiverTypes.None, receiverTypes.PrivateKeyJwt}
+	}
+
+	for _, method := range methods {
+		if clientAuthMethodAvailable(method, clientAuth, authMetadata) {
+			return method, true
+		}
+	}
+	return "", false
+}
+
+// clientAuthMethodAvailable reports whether the given method can be used against
+// the authorization server described by authMetadata with the given config.
+func clientAuthMethodAvailable(method receiverTypes.TokenEndpointAuthMethod, clientAuth ClientAuthConfig, authMetadata *receiverTypes.AuthorizationServerMetadata) bool {
+	switch method {
+	case receiverTypes.None:
+		return authMetadata != nil &&
+			authMetadata.PreAuthorizedGrantAnonymousAccessSupported != nil &&
+			*authMetadata.PreAuthorizedGrantAnonymousAccessSupported
+
+	case receiverTypes.PrivateKeyJwt:
+		if strings.TrimSpace(clientAuth.ClientID) == "" || clientAuth.Key == nil {
+			return false
+		}
+		if !asMetadataSupportsAuthMethod(authMetadata, receiverTypes.PrivateKeyJwt) {
+			return false
+		}
+		return asMetadataSupportsSigningAlg(authMetadata, jose.ES256)
+	}
+	return false
+}
+
+func asMetadataSupportsAuthMethod(authMetadata *receiverTypes.AuthorizationServerMetadata, method receiverTypes.TokenEndpointAuthMethod) bool {
+	if authMetadata == nil || authMetadata.TokenEndpointAuthMethodsSupported == nil {
+		return false
+	}
+	for _, m := range *authMetadata.TokenEndpointAuthMethodsSupported {
+		if m == method {
+			return true
+		}
+	}
+	return false
+}
+
+// asMetadataSupportsSigningAlg reports whether alg is accepted by the
+// authorization server. When the signing alg list is not advertised, all
+// algorithms are considered acceptable.
+func asMetadataSupportsSigningAlg(authMetadata *receiverTypes.AuthorizationServerMetadata, alg jose.SignatureAlgorithm) bool {
+	if authMetadata == nil || authMetadata.TokenEndpointAuthSigningAlgValuesSupported == nil ||
+		len(*authMetadata.TokenEndpointAuthSigningAlgValuesSupported) == 0 {
+		return true
+	}
+	for _, a := range *authMetadata.TokenEndpointAuthSigningAlgValuesSupported {
+		if a == alg {
+			return true
+		}
+	}
+	return false
+}
+
 // GetCredentialEntries retrieves credential entries with optional filtering.
 func (w *Wallet) GetCredentialEntries(req GetCredentialEntriesRequest) ([]*SavedCredential, int, error) {
 	if req.Filter != nil {
@@ -901,15 +1050,15 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 		return nil, nil, fmt.Errorf("authorization server metadata is nil")
 	}
 
-	if authMetadata.PreAuthorizedGrantAnonymousAccessSupported == nil || !*authMetadata.PreAuthorizedGrantAnonymousAccessSupported {
-		return nil, nil, fmt.Errorf(
-			"anonymous access support is missing on authorization server that the credential issuer relies on; PreAuthorizedGrantAnonymousAccessSupported: %v",
-			authMetadata.PreAuthorizedGrantAnonymousAccessSupported,
-		)
-	}
-
 	if authMetadata.TokenEndpoint == nil {
 		return nil, nil, fmt.Errorf("token endpoint is missing on authorization server")
+	}
+
+	if _, ok := resolveClientAuthMethod(w.clientAuth, authMetadata); !ok {
+		return nil, nil, fmt.Errorf(
+			"no usable client authentication method for the authorization server token endpoint; " +
+				"either advertise pre-authorized_grant_anonymous_access_supported or configure a client authentication method",
+		)
 	}
 
 	return issuerMetadata, authMetadata, nil
@@ -922,14 +1071,30 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 	}
 
 	tokenEndpoint := *authMetadata.TokenEndpoint
+	tokenEndpointURL := receiverTypes.ResolveTokenEndpointURL(tokenEndpoint)
+
+	authMethod, ok := resolveClientAuthMethod(w.clientAuth, authMetadata)
+	if !ok {
+		return nil, fmt.Errorf(
+			"no usable client authentication method for the authorization server token endpoint; " +
+				"either advertise pre-authorized_grant_anonymous_access_supported or configure a client authentication method",
+		)
+	}
 
 	fetchAccessToken := func(dpopNonce *string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
 		var tokenReqOptions []receiverTypes.TokenRequestOption
+		if authMethod == receiverTypes.PrivateKeyJwt {
+			assertion, err := w.generateClientAssertion(w.clientAuth.Key, w.clientAuth.ClientID, tokenEndpointURL)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate client assertion: %w", err)
+			}
+			tokenReqOptions = append(tokenReqOptions, receiverTypes.WithClientAssertion(w.clientAuth.ClientID, assertion))
+		}
 		if w.dpop.Enabled {
 			proof, err := w.generateDPoPProof(
 				w.dpop.Key,
 				http.MethodPost,
-				receiverTypes.ResolveTokenEndpointURL(tokenEndpoint),
+				tokenEndpointURL,
 				"",
 				dpopNonce,
 			)

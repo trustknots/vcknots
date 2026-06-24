@@ -995,6 +995,7 @@ func TestWallet_obtainAccessToken_DPoPEnabledControlsProof(t *testing.T) {
 	require.NoError(t, err)
 	authMetadata := &receiverTypes.AuthorizationServerMetadata{
 		TokenEndpoint: tokenEndpoint,
+		PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
 	}
 	t.Run("disabled does not attach proof", func(t *testing.T) {
 		cap := &captureDpopReceiver{}
@@ -1089,6 +1090,7 @@ func TestWallet_obtainAccessToken_DPoPNonceChallengeRetriesWithNonce(t *testing.
 	require.NoError(t, err)
 	authMetadata := &receiverTypes.AuthorizationServerMetadata{
 		TokenEndpoint: tokenEndpoint,
+		PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
 	}
 	dpopKey, err := newInMemoryECKeyEntry()
 	require.NoError(t, err)
@@ -1325,6 +1327,464 @@ func TestController_generateJWTProof_NonAnonymousFlow_IncludesIssAsClientID(t *t
 	if iss != clientID {
 		t.Fatalf("expected iss %q, got %q", clientID, iss)
 	}
+}
+
+// --- private_key_jwt client authentication tests ---
+
+func newClientAuthKeyEntry(t *testing.T, keyID string) (*mockKeyEntry, jose.JSONWebKey) {
+	t.Helper()
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	privateJWK := jose.JSONWebKey{
+		Key:       privKey,
+		KeyID:     keyID,
+		Algorithm: "ES256",
+		Use:       "sig",
+	}
+	return &mockKeyEntry{
+		id:         keyID,
+		key:        privateJWK,
+		privateKey: privKey,
+	}, privateJWK.Public()
+}
+
+func TestWallet_generateClientAssertion_HeaderAndPayload(t *testing.T) {
+	w := &Wallet{}
+
+	key, _ := newClientAuthKeyEntry(t, "client-key-1")
+	const clientID = "test-client-id"
+	const tokenEndpoint = "https://as.example.com/token"
+
+	assertion, err := w.generateClientAssertion(key, clientID, tokenEndpoint)
+	require.NoError(t, err)
+
+	parts := strings.Split(assertion, ".")
+	require.Len(t, parts, 3)
+
+	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	require.NoError(t, err)
+	var header map[string]interface{}
+	require.NoError(t, json.Unmarshal(headerBytes, &header))
+	assert.Equal(t, "jwt", header["typ"])
+	assert.Equal(t, "ES256", header["alg"])
+	assert.Equal(t, "client-key-1", header["kid"])
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal(payloadBytes, &payload))
+
+	assert.Equal(t, clientID, payload["iss"])
+	assert.Equal(t, clientID, payload["sub"])
+	assert.Equal(t, tokenEndpoint, payload["aud"])
+	assert.NotEmpty(t, payload["jti"])
+	assert.NotZero(t, payload["iat"])
+	assert.NotZero(t, payload["exp"])
+	assert.NotZero(t, payload["nbf"])
+
+	expClaim, ok := payload["exp"].(float64)
+	require.True(t, ok)
+	iatClaim, ok := payload["iat"].(float64)
+	require.True(t, ok)
+	assert.InDelta(t, float64(clientAssertionLifetime.Seconds()), expClaim-iatClaim, 2)
+}
+
+func TestWallet_generateClientAssertion_ErrorsOnMissingInputs(t *testing.T) {
+	w := &Wallet{}
+	key, _ := newClientAuthKeyEntry(t, "client-key-1")
+
+	_, err := w.generateClientAssertion(nil, "client-id", "https://as.example.com/token")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "client auth key is required")
+
+	_, err = w.generateClientAssertion(key, "  ", "https://as.example.com/token")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "clientID is required")
+
+	_, err = w.generateClientAssertion(key, "client-id", "  ")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "token endpoint URL is required")
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func authMethodsPtr(methods ...receiverTypes.TokenEndpointAuthMethod) *[]receiverTypes.TokenEndpointAuthMethod {
+	m := methods
+	return &m
+}
+
+func TestResolveClientAuthMethod(t *testing.T) {
+	key, _ := newClientAuthKeyEntry(t, "client-key-1")
+
+	t.Run("defaults to none when anonymous supported and nothing configured", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
+		}
+		method, ok := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
+		require.True(t, ok)
+		assert.Equal(t, receiverTypes.None, method)
+	})
+
+	t.Run("selects private_key_jwt when configured and advertised", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.PrivateKeyJwt),
+		}
+		method, ok := resolveClientAuthMethod(ClientAuthConfig{
+			ClientID: "client-id",
+			Key:      key,
+		}, authMetadata)
+		require.True(t, ok)
+		assert.Equal(t, receiverTypes.PrivateKeyJwt, method)
+	})
+
+	t.Run("prefers none over private_key_jwt by default ordering", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
+		}
+		method, ok := resolveClientAuthMethod(ClientAuthConfig{
+			ClientID: "client-id",
+			Key:      key,
+		}, authMetadata)
+		require.True(t, ok)
+		assert.Equal(t, receiverTypes.None, method)
+	})
+
+	t.Run("honors explicit private_key_jwt priority", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
+		}
+		method, ok := resolveClientAuthMethod(ClientAuthConfig{
+			ClientID:         "client-id",
+			Key:              key,
+			PreferredMethods: []receiverTypes.TokenEndpointAuthMethod{receiverTypes.PrivateKeyJwt, receiverTypes.None},
+		}, authMetadata)
+		require.True(t, ok)
+		assert.Equal(t, receiverTypes.PrivateKeyJwt, method)
+	})
+
+	t.Run("falls back to none when private_key_jwt not advertised", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
+		}
+		method, ok := resolveClientAuthMethod(ClientAuthConfig{
+			ClientID:         "client-id",
+			Key:              key,
+			PreferredMethods: []receiverTypes.TokenEndpointAuthMethod{receiverTypes.PrivateKeyJwt, receiverTypes.None},
+		}, authMetadata)
+		require.True(t, ok)
+		assert.Equal(t, receiverTypes.None, method)
+	})
+
+	t.Run("returns false when no method is usable", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(false),
+		}
+		_, ok := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
+		assert.False(t, ok)
+	})
+
+	t.Run("private_key_jwt rejected when alg not supported", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
+			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.RS256},
+		}
+		_, ok := resolveClientAuthMethod(ClientAuthConfig{
+			ClientID: "client-id",
+			Key:      key,
+		}, authMetadata)
+		assert.False(t, ok)
+	})
+
+	t.Run("private_key_jwt rejected when client id/key missing", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.PrivateKeyJwt),
+		}
+		_, ok := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
+		assert.False(t, ok)
+	})
+}
+
+type captureClientAuthReceiver struct {
+	capturedClientID        *string
+	capturedClientAssertion *string
+	capturedDPoP            *string
+}
+
+func (c *captureClientAuthReceiver) FetchIssuerMetadata(endpoint common.URIField, rt receiverTypes.SupportedReceivingTypes) (*receiverTypes.CredentialIssuerMetadata, error) {
+	return nil, fmt.Errorf("unexpected call to FetchIssuerMetadata")
+}
+
+func (c *captureClientAuthReceiver) FetchAuthorizationServerMetadata(endpoint common.URIField, rt receiverTypes.SupportedReceivingTypes) (*receiverTypes.AuthorizationServerMetadata, error) {
+	return nil, fmt.Errorf("unexpected call to FetchAuthorizationServerMetadata")
+}
+
+func (c *captureClientAuthReceiver) FetchAccessToken(rt receiverTypes.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, opts ...receiverTypes.TokenRequestOption) (*receiverTypes.CredentialIssuanceAccessToken, error) {
+	cfg := receiverTypes.NewTokenRequestConfig(opts...)
+	if cfg.ClientAssertion != "" {
+		id, assertion := cfg.ClientID, cfg.ClientAssertion
+		c.capturedClientID = &id
+		c.capturedClientAssertion = &assertion
+	}
+	if cfg.DPoPProof != "" {
+		proof := cfg.DPoPProof
+		c.capturedDPoP = &proof
+	}
+	return &receiverTypes.CredentialIssuanceAccessToken{
+		Token:     "tok",
+		TokenType: "Bearer",
+	}, nil
+}
+
+func (c *captureClientAuthReceiver) FetchNonce(rt receiverTypes.SupportedReceivingTypes, endpoint common.URIField) (*string, error) {
+	return nil, fmt.Errorf("unexpected call to FetchNonce")
+}
+
+func (c *captureClientAuthReceiver) ReceiveCredential(
+	rt receiverTypes.SupportedReceivingTypes,
+	endpoint common.URIField,
+	credentialConfigurationID string,
+	credentialIdentifier *string,
+	accessToken receiverTypes.CredentialIssuanceAccessToken,
+	credentialDefinition *receiverTypes.CredentialDefinition,
+	jwtProof *string,
+	options ...*receiverTypes.CredentialRequestOptions,
+) (*string, error) {
+	return nil, fmt.Errorf("unexpected call to ReceiveCredential")
+}
+
+func TestWallet_obtainAccessToken_PrivateKeyJwtAttachesAssertion(t *testing.T) {
+	tokenEndpoint, err := common.ParseURIField("https://as.example.com/token")
+	require.NoError(t, err)
+	authMetadata := &receiverTypes.AuthorizationServerMetadata{
+		TokenEndpoint: tokenEndpoint,
+		TokenEndpointAuthMethodsSupported: authMethodsPtr(
+			receiverTypes.PrivateKeyJwt,
+		),
+	}
+
+	key, _ := newClientAuthKeyEntry(t, "client-key-1")
+	cap := &captureClientAuthReceiver{}
+	d, err := receiver.NewReceivingDispatcher(receiver.WithPlugin(receiverTypes.Mock, cap))
+	require.NoError(t, err)
+	w := &Wallet{
+		receiver: d,
+		clientAuth: ClientAuthConfig{
+			ClientID:         "wallet-id",
+			Key:              key,
+			PreferredMethods: []receiverTypes.TokenEndpointAuthMethod{receiverTypes.PrivateKeyJwt, receiverTypes.None},
+		},
+	}
+
+	token, err := w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	require.NotNil(t, cap.capturedClientAssertion)
+	require.NotNil(t, cap.capturedClientID)
+	assert.Equal(t, "wallet-id", *cap.capturedClientID)
+	assert.Nil(t, cap.capturedDPoP, "DPoP should not be attached when disabled")
+}
+
+func TestWallet_obtainAccessToken_AnonymousByDefaultDoesNotAttachAssertion(t *testing.T) {
+	tokenEndpoint, err := common.ParseURIField("https://as.example.com/token")
+	require.NoError(t, err)
+	authMetadata := &receiverTypes.AuthorizationServerMetadata{
+		TokenEndpoint: tokenEndpoint,
+		PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
+	}
+
+	cap := &captureClientAuthReceiver{}
+	d, err := receiver.NewReceivingDispatcher(receiver.WithPlugin(receiverTypes.Mock, cap))
+	require.NoError(t, err)
+	w := &Wallet{
+		receiver: d,
+	}
+
+	token, err := w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	assert.Nil(t, cap.capturedClientAssertion, "client assertion must not be attached for anonymous flow")
+}
+
+func TestWallet_obtainAccessToken_NoUsableMethodReturnsError(t *testing.T) {
+	tokenEndpoint, err := common.ParseURIField("https://as.example.com/token")
+	require.NoError(t, err)
+	authMetadata := &receiverTypes.AuthorizationServerMetadata{
+		TokenEndpoint: tokenEndpoint,
+		PreAuthorizedGrantAnonymousAccessSupported: boolPtr(false),
+	}
+
+	cap := &captureClientAuthReceiver{}
+	d, err := receiver.NewReceivingDispatcher(receiver.WithPlugin(receiverTypes.Mock, cap))
+	require.NoError(t, err)
+	w := &Wallet{
+		receiver: d,
+	}
+
+	_, err = w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no usable client authentication method")
+}
+
+func TestWallet_obtainAccessToken_PrivateKeyJwtEndToEndWithMockServer(t *testing.T) {
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	key, publicJWK := newClientAuthKeyEntry(t, "client-key-1")
+	pubKey := publicJWK
+
+	issuerConfig := &mockserver.OID4VCIIssuerConfig{
+		KeyPair:                           mockserver.MustGenerateKeyPair("issuer-key-id"),
+		IssuerID:                          "test-issuer",
+		PreAuthorizedGrantAnonymous:       false,
+		TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+		TokenEndpointAuthSigningAlgs:      []string{"ES256"},
+		RequireClientAssertion:            true,
+		ClientAuthPublicKey:               &pubKey,
+		ExpectedClientID:                  "wallet-id",
+		CredentialConfigurations: map[string]interface{}{
+			"test-config": map[string]interface{}{
+				"format": "jwt_vc_json",
+				"credential_definition": map[string]interface{}{
+					"type": []string{"VerifiableCredential"},
+				},
+			},
+		},
+		TokenResponse: map[string]interface{}{
+			"access_token": "mock-access-token",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+			"c_nonce":      "mock-nonce",
+		},
+		CustomCredentials: make(map[string]string),
+	}
+	issuer := mockserver.NewOID4VCIIssuerServer(issuerConfig)
+	defer issuer.Close()
+
+	issuerURL, err := url.Parse(issuer.URL())
+	require.NoError(t, err)
+	asEndpoint := common.URIField(*issuerURL)
+	tokenEndpoint, err := common.ParseURIField(issuer.URL() + "/token")
+	require.NoError(t, err)
+
+	d, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+	require.NoError(t, err)
+	w := &Wallet{
+		receiver: d,
+		clientAuth: ClientAuthConfig{
+			ClientID:         "wallet-id",
+			Key:              key,
+			PreferredMethods: []receiverTypes.TokenEndpointAuthMethod{receiverTypes.PrivateKeyJwt, receiverTypes.None},
+		},
+	}
+
+	authMetadata, err := d.FetchAuthorizationServerMetadata(asEndpoint, receiverTypes.Oid4vci)
+	require.NoError(t, err)
+	require.NotNil(t, authMetadata.TokenEndpoint)
+
+	authMetadata.TokenEndpoint = tokenEndpoint
+
+	token, err := w.obtainAccessToken(receiverTypes.Oid4vci, authMetadata, "pre-auth-code", "")
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	assert.Equal(t, "mock-access-token", token.Token)
+}
+
+func TestWallet_fetchCredentialMetadata_AllowsPrivateKeyJwtWhenAnonymousNotSupported(t *testing.T) {
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	key, _ := newClientAuthKeyEntry(t, "client-key-1")
+	issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
+		KeyPair:                           mockserver.MustGenerateKeyPair("issuer-key-id"),
+		IssuerID:                          "test-issuer",
+		PreAuthorizedGrantAnonymous:       false,
+		TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+		TokenEndpointAuthSigningAlgs:      []string{"ES256"},
+		CredentialConfigurations: map[string]interface{}{
+			"test-config": map[string]interface{}{
+				"format": "jwt_vc_json",
+				"credential_definition": map[string]interface{}{
+					"type": []string{"VerifiableCredential"},
+				},
+			},
+		},
+		CustomCredentials: make(map[string]string),
+	})
+	defer issuer.Close()
+
+	issuerURL, err := url.Parse(issuer.URL())
+	require.NoError(t, err)
+
+	d, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+	require.NoError(t, err)
+	w := &Wallet{
+		receiver: d,
+		clientAuth: ClientAuthConfig{
+			ClientID: "wallet-id",
+			Key:      key,
+		},
+	}
+
+	offer := &CredentialOffer{
+		CredentialIssuer:           issuerURL,
+		CredentialConfigurationIDs: []string{"test-config"},
+		Grants:                     map[string]*CredentialOfferGrant{"urn:ietf:params:oauth:grant-type:pre-authorized_code": {}},
+	}
+	req := ReceiveCredentialRequest{
+		CredentialOffer: offer,
+		Type:            receiverTypes.Oid4vci,
+	}
+
+	_, authMetadata, err := w.fetchCredentialMetadata(req)
+	require.NoError(t, err)
+	require.NotNil(t, authMetadata)
+}
+
+func TestWallet_fetchCredentialMetadata_RejectsWhenNoUsableMethod(t *testing.T) {
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
+		KeyPair:                     mockserver.MustGenerateKeyPair("issuer-key-id"),
+		IssuerID:                    "test-issuer",
+		PreAuthorizedGrantAnonymous: false,
+		CredentialConfigurations: map[string]interface{}{
+			"test-config": map[string]interface{}{
+				"format": "jwt_vc_json",
+				"credential_definition": map[string]interface{}{
+					"type": []string{"VerifiableCredential"},
+				},
+			},
+		},
+		CustomCredentials: make(map[string]string),
+	})
+	defer issuer.Close()
+
+	issuerURL, err := url.Parse(issuer.URL())
+	require.NoError(t, err)
+
+	d, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+	require.NoError(t, err)
+	w := &Wallet{receiver: d}
+
+	offer := &CredentialOffer{
+		CredentialIssuer:           issuerURL,
+		CredentialConfigurationIDs: []string{"test-config"},
+		Grants:                     map[string]*CredentialOfferGrant{"urn:ietf:params:oauth:grant-type:pre-authorized_code": {}},
+	}
+	req := ReceiveCredentialRequest{
+		CredentialOffer: offer,
+		Type:            receiverTypes.Oid4vci,
+	}
+
+	_, _, err = w.fetchCredentialMetadata(req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no usable client authentication method")
 }
 
 func TestController_generateJWTProof_NonAnonymousFlow_EmptyClientIDReturnsError(t *testing.T) {
