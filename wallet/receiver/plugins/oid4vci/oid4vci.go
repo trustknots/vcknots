@@ -151,6 +151,12 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	if txCode != "" {
 		formData.Set("tx_code", txCode)
 	}
+	requestConfig := types.NewTokenRequestConfig(opts...)
+	if requestConfig.ClientAssertion != "" {
+		formData.Set("client_id", requestConfig.ClientID)
+		formData.Set("client_assertion", requestConfig.ClientAssertion)
+		formData.Set("client_assertion_type", types.ClientAssertionTypeJWTBearer)
+	}
 	endpointURLString := types.ResolveTokenEndpointURL(endpoint)
 	endpointURL, err := url.Parse(endpointURLString)
 	if err != nil {
@@ -172,7 +178,6 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	requestConfig := types.NewTokenRequestConfig(opts...)
 	if requestConfig.DPoPProof != "" {
 		req.Header.Set("DPoP", requestConfig.DPoPProof)
 	}

@@ -519,6 +519,101 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 	})
 }
 
+func TestOid4vciReceiver_FetchAccessToken_ClientAssertion(t *testing.T) {
+	receiver := &Oid4vciReceiver{}
+
+	t.Run("client_assertion form fields are sent when provided", func(t *testing.T) {
+		httpAllowed := env.IsHTTPAllowed()
+		defer env.SetHTTPAllowed(httpAllowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to parse form: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("client_id"); got != "wallet-id" {
+				handlerErrCh <- fmt.Errorf("expected client_id wallet-id, got %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("client_assertion_type"); got != types.ClientAssertionTypeJWTBearer {
+				handlerErrCh <- fmt.Errorf("expected client_assertion_type jwt-bearer, got %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("client_assertion"); got != "assertion.jwt.value" {
+				handlerErrCh <- fmt.Errorf("expected client_assertion assertion.jwt.value, got %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+			mockserver.JSONResponse(w, http.StatusOK, map[string]string{
+				"access_token": "tok",
+				"token_type":   "Bearer",
+			})
+		})
+
+		captureURL, err := url.Parse(captureServer.URL() + "/token")
+		require.NoError(t, err)
+		token, err := receiver.FetchAccessToken(
+			types.Oid4vci,
+			common.URIField(*captureURL),
+			"code",
+			"",
+			types.WithClientAssertion("wallet-id", "assertion.jwt.value"),
+		)
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		require.NoError(t, <-handlerErrCh)
+	})
+
+	t.Run("client_assertion form fields are absent when not provided", func(t *testing.T) {
+		httpAllowed := env.IsHTTPAllowed()
+		defer env.SetHTTPAllowed(httpAllowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to parse form: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("client_assertion"); got != "" {
+				handlerErrCh <- fmt.Errorf("client_assertion must be absent, got %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("client_id"); got != "" {
+				handlerErrCh <- fmt.Errorf("client_id must be absent, got %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+			mockserver.JSONResponse(w, http.StatusOK, map[string]string{
+				"access_token": "tok",
+				"token_type":   "Bearer",
+			})
+		})
+
+		captureURL, err := url.Parse(captureServer.URL() + "/token")
+		require.NoError(t, err)
+		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "code", "")
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		require.NoError(t, <-handlerErrCh)
+	})
+}
+
 func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 	receiver := &Oid4vciReceiver{}
 	accessToken := types.CredentialIssuanceAccessToken{Token: "test_token", TokenType: "bearer"}

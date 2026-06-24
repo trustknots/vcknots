@@ -247,6 +247,10 @@ type CredentialIssuanceAuthorizationDetail struct {
 
 const AuthorizationDetailTypeOpenIDCredential = "openid_credential"
 
+// ClientAssertionTypeJWTBearer is the client_assertion_type value used for
+// private_key_jwt (and client_secret_jwt) client authentication per RFC 7523.
+const ClientAssertionTypeJWTBearer = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+
 type CredentialIssuanceAccessToken struct {
 	Token                string                                  `json:"access_token"`
 	TokenType            string                                  `json:"token_type"`
@@ -262,7 +266,9 @@ type CredentialRequestOptions struct {
 }
 
 type TokenRequestConfig struct {
-	DPoPProof string
+	DPoPProof       string
+	ClientID        string
+	ClientAssertion string
 }
 
 type TokenRequestOption func(*TokenRequestConfig)
@@ -280,6 +286,16 @@ func NewTokenRequestConfig(opts ...TokenRequestOption) *TokenRequestConfig {
 func WithDPoPProof(proof string) TokenRequestOption {
 	return func(cfg *TokenRequestConfig) {
 		cfg.DPoPProof = proof
+	}
+}
+
+// WithClientAssertion sets the private_key_jwt client authentication parameters.
+// When set, the token request includes client_id, client_assertion and
+// client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer.
+func WithClientAssertion(clientID, assertion string) TokenRequestOption {
+	return func(cfg *TokenRequestConfig) {
+		cfg.ClientID = clientID
+		cfg.ClientAssertion = assertion
 	}
 }
 
