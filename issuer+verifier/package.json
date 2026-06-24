@@ -44,7 +44,7 @@
 	],
 	"author": "Trust Knots Project Team",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@10.33.0",
+	"packageManager": "pnpm@11.6.0",
 	"dependencies": {
 		"@sd-jwt/core": "0.19.0",
 		"@sd-jwt/crypto-nodejs": "0.19.0",
@@ -54,7 +54,7 @@
 		"jose": "6.2.2",
 		"jsonwebtoken": "9.0.3",
 		"key-did-resolver": "4.0.0",
-		"zod": "4.3.6"
+		"zod": "4.4.3"
 	},
 	"devDependencies": {
 		"@types/jsonwebtoken": "9.0.10"

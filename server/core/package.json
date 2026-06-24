@@ -42,7 +42,7 @@
 		"lint": "biome lint ./src"
 	},
 	"dependencies": {
-		"@hono/node-server": "1.19.14",
+		"@hono/node-server": "2.0.4",
 		"@trustknots/vcknots": "workspace:*",
 		"hono": "4.12.18"
 	}
