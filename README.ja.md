@@ -31,10 +31,12 @@ vcknots/
 │                       # Issuer、Verifier、Authorization Server 用のライブラリ
 ├── wallet/             # Wallet ライブラリ (Go)
 │                       # Credential の受信・保管・提示、識別子・鍵管理機能
-├── server/             # @trustknots/server (TypeScript)
-│                       # サンプルサーバー実装
-└── google-cloud/       # @trustknots/google-cloud (TypeScript)
-                        # Google Cloud 統合
+├── aws/                # @trustknots/aws (TypeScript)
+│                       # AWS プロバイダー (DynamoDB、KMS、Secrets Manager)
+└── server/             # サンプルサーバー実装 (TypeScript)
+    ├── single/         # @trustknots/server-single — シングルテナントサーバー
+    ├── google-cloud/   # @trustknots/server-google-cloud — Google Cloud 統合
+    └── aws/            # @trustknots/server-aws — AWS Lambda ハンドラー + CDK スタック
 ```
 
 ## ユーザードキュメント
