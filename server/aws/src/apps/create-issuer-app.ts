@@ -8,10 +8,6 @@ import type { VcknotsOptions } from '@trustknots/vcknots'
 import { createBaseApp } from './create-base-app.js'
 import { createVcknotsContext } from '../context/vcknots-context.js'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const samplesDir = join(__dirname, '../../../samples')
-const sampleIssuerMetadata = JSON.parse(readFileSync(join(samplesDir, 'issuer_metadata.json'), 'utf-8'))
-
 export function createIssuerApp(options?: VcknotsOptions) {
   const tableName = process.env.ISSUERS_TABLE_NAME
   if (!tableName) {
@@ -31,6 +27,9 @@ export function createIssuerApp(options?: VcknotsOptions) {
       console.log('Issuer metadata already exists, skipping initialization')
       return
     }
+
+    const samplesDir = join(dirname(fileURLToPath(import.meta.url)), '../../../samples')
+    const sampleIssuerMetadata = JSON.parse(readFileSync(join(samplesDir, 'issuer_metadata.json'), 'utf-8'))
 
     const context = createVcknotsContext({ ...options, providers: [store, ...(options?.providers ?? [])] })
     const issuerFlow = initializeIssuerFlow(context)

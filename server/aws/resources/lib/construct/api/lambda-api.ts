@@ -88,6 +88,9 @@ export class LambdaApi extends Construct {
       memorySize: 512,
       role: this.role,
       logGroup,
+      bundling: {
+        format: lambdaNode.OutputFormat.ESM,
+      },
       environment: {
         NODE_ENV: 'production',
         API_STAGE: apiStage,
