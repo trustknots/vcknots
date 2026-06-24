@@ -112,8 +112,8 @@ importers:
         specifier: 3.0.1
         version: 3.0.1
       did-resolver:
-        specifier: 5.0.1
-        version: 5.0.1
+        specifier: 4.1.0
+        version: 4.1.0
       jose:
         specifier: 6.2.2
         version: 6.2.2
@@ -3315,8 +3315,8 @@ packages:
   devlop@1.1.0:
     resolution: {integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==}
 
-  did-resolver@5.0.1:
-    resolution: {integrity: sha512-AtbIfBt/D9Z6GeNKhm1AzCbF7y5PhsNukgmVYnsdxbIX8UAsquQpbm8ECfPwDRXAOM3EsGdHheK5WMojcPlAPg==}
+  did-resolver@4.1.0:
+    resolution: {integrity: sha512-S6fWHvCXkZg2IhS4RcVHxwuyVejPR7c+a4Go0xbQ9ps5kILa8viiYQgrM4gfTyeTjJ0ekgJH9gk/BawTpmkbZA==}
 
   dir-glob@3.0.1:
     resolution: {integrity: sha512-WkrWp9GR4KXfKGYzOLmTuGVi1UWFfws377n9cc55/tb6DuqyF6pcQ5AbiHEshaDpY9v6oaSr2XCDidGmMwdzIA==}
@@ -10643,7 +10643,7 @@ snapshots:
     dependencies:
       dequal: 2.0.3
 
-  did-resolver@5.0.1: {}
+  did-resolver@4.1.0: {}
 
   dir-glob@3.0.1:
     dependencies:
