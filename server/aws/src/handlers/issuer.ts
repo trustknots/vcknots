@@ -9,8 +9,8 @@ export { app }
 export const handler = handle(app)
 
 if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
-  const port = Number.parseInt(process.env.PORT ?? '8081', 10)
-  const baseUrl = process.env.BASE_URL ?? `http://localhost:${port}`
+  const port = Number.parseInt(process.env.ISSUER_PORT ?? '8081', 10)
+  const baseUrl = process.env.ISSUER_BASE_URL ?? `http://localhost:${port}`
   serve({ fetch: app.fetch, port }, () => {
     console.log(`Issuer is running on ${baseUrl}`)
   })

@@ -9,8 +9,9 @@ export function createIssuerApp(options?: VcknotsOptions) {
     throw new Error('ISSUERS_TABLE_NAME is required')
   }
 
-  return createBaseApp(createIssueRouter, {
-    ...options,
-    providers: [dynamodbIssuerMetadataStore({ tableName }), ...(options?.providers ?? [])],
-  })
+  return createBaseApp(
+    createIssueRouter,
+    { port: Number.parseInt(process.env.ISSUER_PORT ?? '8081', 10), baseUrl: process.env.ISSUER_BASE_URL },
+    { ...options, providers: [dynamodbIssuerMetadataStore({ tableName }), ...(options?.providers ?? [])] },
+  )
 }

@@ -1,7 +1,9 @@
 import { createVerifierRouter } from '@trustknots/server-core/routes/verify'
-import type { VcknotsOptions } from '@trustknots/vcknots'
 import { createBaseApp } from './create-base-app.js'
 
-export function createVerifierApp(options?: VcknotsOptions) {
-  return createBaseApp(createVerifierRouter, options)
+export function createVerifierApp() {
+  return createBaseApp(
+    createVerifierRouter,
+    { port: Number.parseInt(process.env.VERIFIER_PORT ?? '8083', 10), baseUrl: process.env.VERIFIER_BASE_URL },
+  )
 }

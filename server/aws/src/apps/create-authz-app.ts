@@ -1,7 +1,9 @@
 import { createAuthzRouter } from '@trustknots/server-core/routes/authz'
-import type { VcknotsOptions } from '@trustknots/vcknots'
 import { createBaseApp } from './create-base-app.js'
 
-export function createAuthzApp(options?: VcknotsOptions) {
-  return createBaseApp(createAuthzRouter, options)
+export function createAuthzApp() {
+  return createBaseApp(
+    createAuthzRouter,
+    { port: Number.parseInt(process.env.AUTHZ_PORT ?? '8082', 10), baseUrl: process.env.AUTHZ_BASE_URL },
+  )
 }

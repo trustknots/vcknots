@@ -83,8 +83,12 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `VERIFIERS_TABLE_NAME` | Verifier (optional) | DynamoDB table name (stack output: `VerifiersTableName`) |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier (optional) | DynamoDB table name (stack output: `RequestObjectsTableName`) |
 | `NONCES_TABLE_NAME` | Verifier (optional) | DynamoDB table name (stack output: `NoncesTableName`) |
-| `BASE_URL` | All (optional) | Override the base URL used in metadata (default: `http://localhost:{port}`) |
-| `PORT` | All (optional) | Override the listening port |
+| `ISSUER_PORT` | Issuer (optional) | Override the Issuer listening port (default: `8081`) |
+| `ISSUER_BASE_URL` | Issuer (optional) | Override the base URL used in Issuer metadata (default: `http://localhost:{ISSUER_PORT}`) |
+| `AUTHZ_PORT` | Authz (optional) | Override the Authorization Server listening port (default: `8082`) |
+| `AUTHZ_BASE_URL` | Authz (optional) | Override the base URL used in Authz metadata (default: `http://localhost:{AUTHZ_PORT}`) |
+| `VERIFIER_PORT` | Verifier (optional) | Override the Verifier listening port (default: `8083`) |
+| `VERIFIER_BASE_URL` | Verifier (optional) | Override the base URL used in Verifier metadata (default: `http://localhost:{VERIFIER_PORT}`) |
 
 **`ISSUERS_TABLE_NAME` is required** — the Issuer server exits at startup if it is missing.
 
@@ -118,7 +122,7 @@ Issuer is running on http://localhost:8081
 ### Override port or base URL
 
 ```bash
-PORT=9081 BASE_URL=http://localhost:9081 pnpm start:issuer
+ISSUER_PORT=9081 ISSUER_BASE_URL=http://localhost:9081 pnpm start:issuer
 ```
 
 ## Endpoints

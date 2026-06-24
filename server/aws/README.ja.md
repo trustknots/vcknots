@@ -83,8 +83,12 @@ cp .env.example .env
 | `VERIFIERS_TABLE_NAME` | Verifier（任意） | DynamoDB テーブル名（スタック出力: `VerifiersTableName`） |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier（任意） | DynamoDB テーブル名（スタック出力: `RequestObjectsTableName`） |
 | `NONCES_TABLE_NAME` | Verifier（任意） | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
-| `BASE_URL` | 全サーバー（任意） | メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{port}`） |
-| `PORT` | 全サーバー（任意） | リッスンポートを上書き |
+| `ISSUER_PORT` | Issuer（任意） | Issuer のリッスンポートを上書き（デフォルト: `8081`） |
+| `ISSUER_BASE_URL` | Issuer（任意） | Issuer メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{ISSUER_PORT}`） |
+| `AUTHZ_PORT` | Authz（任意） | Authorization Server のリッスンポートを上書き（デフォルト: `8082`） |
+| `AUTHZ_BASE_URL` | Authz（任意） | Authz メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{AUTHZ_PORT}`） |
+| `VERIFIER_PORT` | Verifier（任意） | Verifier のリッスンポートを上書き（デフォルト: `8083`） |
+| `VERIFIER_BASE_URL` | Verifier（任意） | Verifier メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{VERIFIER_PORT}`） |
 
 **`ISSUERS_TABLE_NAME` は必須**です。未設定の場合、Issuer サーバーは起動時に終了します。
 
@@ -118,7 +122,7 @@ Issuer is running on http://localhost:8081
 ### ポートまたはベース URL の変更
 
 ```bash
-PORT=9081 BASE_URL=http://localhost:9081 pnpm start:issuer
+ISSUER_PORT=9081 ISSUER_BASE_URL=http://localhost:9081 pnpm start:issuer
 ```
 
 ## エンドポイント
