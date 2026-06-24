@@ -117,7 +117,7 @@ pnpm -F @trustknots/server-aws start:issuer
 
 初回起動時、Issuer は `server/samples/issuer_metadata.json` のサンプルデータを DynamoDB へ自動投入します：
 
-```
+```text
 Issuer metadata initialized
 Issuer is running on http://localhost:8081
 ```

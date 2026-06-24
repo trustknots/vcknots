@@ -1,4 +1,4 @@
-import * as cdk from 'aws-cdk-lib/core';
+import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { AuthzApi } from './construct/api/authz-api';
 import { IssuerApi } from './construct/api/issuer-api';

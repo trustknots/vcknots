@@ -5,7 +5,7 @@ vcknots を AWS 上で動かすための CDK スタックです。
 関連パッケージ:
 
 - [`@trustknots/server-aws`](../src) — Lambda ハンドラ、vcknots context、ユーティリティ（`src/handlers/`、`src/context/`、`src/utils/`）
-- [`@trustknots/aws`](../../../aws) — DynamoDB / KMS / Secrets Manager 向け AWS provider
+- [`@trustknots/aws`](../../../aws) — DynamoDB 向け AWS provider（KMS / Secrets Manager は未実装）
 
 ## アーキテクチャ
 

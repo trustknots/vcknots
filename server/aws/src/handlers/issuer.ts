@@ -10,6 +10,7 @@ export const handler = handle(app)
 
 if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
   const port = Number.parseInt(process.env.ISSUER_PORT ?? '8081', 10)
+  if (Number.isNaN(port)) throw new Error('ISSUER_PORT must be a valid integer')
   const baseUrl = process.env.ISSUER_BASE_URL ?? `http://localhost:${port}`
   await initialize(baseUrl)
   serve({ fetch: app.fetch, port }, () => {

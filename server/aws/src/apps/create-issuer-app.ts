@@ -14,10 +14,13 @@ export function createIssuerApp(options?: VcknotsOptions) {
     throw new Error('ISSUERS_TABLE_NAME is required')
   }
 
+  const port = Number.parseInt(process.env.ISSUER_PORT ?? '8081', 10)
+  if (Number.isNaN(port)) throw new Error('ISSUER_PORT must be a valid integer')
+
   const store = dynamodbIssuerMetadataStore({ tableName })
   const { app } = createBaseApp(
     createIssueRouter,
-    { port: Number.parseInt(process.env.ISSUER_PORT ?? '8081', 10), baseUrl: process.env.ISSUER_BASE_URL },
+    { port, baseUrl: process.env.ISSUER_BASE_URL },
     { ...options, providers: [store, ...(options?.providers ?? [])] },
   )
 

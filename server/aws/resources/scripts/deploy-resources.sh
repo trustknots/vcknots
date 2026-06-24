@@ -79,9 +79,13 @@ echo "==> Stack: ${STACK_NAME}"
 echo "==> Working directory: ${RESOURCES_DIR}"
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
-REGION="$(aws configure get region || true)"
+REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
 if [ -z "${REGION}" ]; then
-  REGION="${AWS_DEFAULT_REGION:-ap-northeast-1}"
+  REGION="$(aws configure get region || true)"
+fi
+if [ -z "${REGION}" ]; then
+  echo "Error: AWS region is not configured. Set AWS_REGION, AWS_DEFAULT_REGION, or profile region." >&2
+  exit 1
 fi
 
 export CDK_DEFAULT_ACCOUNT="${ACCOUNT_ID}"

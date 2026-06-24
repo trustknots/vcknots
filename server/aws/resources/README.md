@@ -5,7 +5,7 @@ CDK stack for vcknots on AWS.
 Related packages:
 
 - [`@trustknots/server-aws`](../src) — Lambda handlers, vcknots context, and utilities (`src/handlers/`, `src/context/`, `src/utils/`)
-- [`@trustknots/aws`](../../../aws) — AWS providers for DynamoDB / KMS / Secrets Manager
+- [`@trustknots/aws`](../../../aws) — AWS providers for DynamoDB (KMS / Secrets Manager not yet implemented)
 
 ## Architecture
 
