@@ -33,7 +33,7 @@
 		"@changesets/cli": "2.31.0",
 		"@types/node": "22.19.19",
 		"husky": "9.1.7",
-		"tsx": "4.22.3",
+		"tsx": "4.22.4",
 		"typescript": "5.9.3"
 	}
 }

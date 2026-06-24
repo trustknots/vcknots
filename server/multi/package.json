@@ -18,8 +18,8 @@
 	"license": "Apache-2.0",
 	"packageManager": "pnpm@11.6.0",
 	"dependencies": {
-		"@hono/node-server": "2.0.4",
+		"@hono/node-server": "2.0.5",
 		"@trustknots/vcknots": "workspace:*",
-		"hono": "4.12.18"
+		"hono": "4.12.26"
 	}
 }
