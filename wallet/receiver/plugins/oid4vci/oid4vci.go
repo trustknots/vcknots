@@ -160,7 +160,6 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	if !env.IsHTTPAllowed() && !strings.EqualFold(endpointURL.Scheme, "https") {
 		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
 	}
-
 	req, err := http.NewRequest(
 		http.MethodPost,
 		endpointURL.String(),

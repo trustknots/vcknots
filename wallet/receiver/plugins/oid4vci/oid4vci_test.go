@@ -388,7 +388,6 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 	})
 
 	t.Run("DPoP header is absent when proof is nil", func(t *testing.T) {
-
 		httpAllowed := env.IsHTTPAllowed()
 		defer env.SetHTTPAllowed(httpAllowed)
 		env.SetHTTPAllowed(true)
@@ -414,7 +413,6 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 	})
 
 	t.Run("DPoP header is absent when proof is empty string", func(t *testing.T) {
-
 		httpAllowed := env.IsHTTPAllowed()
 		defer env.SetHTTPAllowed(httpAllowed)
 		env.SetHTTPAllowed(true)

@@ -280,6 +280,16 @@ func TestNewWalletWithConfig_MissingComponents(t *testing.T) {
 	}
 }
 
+func TestNewInMemoryECKeyEntry(t *testing.T) {
+	key, err := newInMemoryECKeyEntry()
+	require.NoError(t, err)
+	require.NotEmpty(t, key.ID())
+
+	pub, ok := key.PublicKey().Key.(*ecdsa.PublicKey)
+	require.True(t, ok)
+	require.Equal(t, elliptic.P256(), pub.Curve)
+}
+
 func TestController_GenerateDID_Integration(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 
@@ -1093,6 +1103,24 @@ func extractHeaderField(t *testing.T, compactJWT string, field string) any {
 	value, ok := header[field]
 	require.True(t, ok, "field %q not found in header", field)
 	return value
+}
+
+func TestWallet_generateDPoPProof_SignatureVerifies(t *testing.T) {
+	key, err := newInMemoryECKeyEntry()
+	require.NoError(t, err)
+
+	w := &Wallet{}
+	proof, err := w.generateDPoPProof(key, http.MethodPost, "https://server.example.com/token", "", nil)
+	require.NoError(t, err)
+
+	parsed, err := jose.ParseSigned(proof, []jose.SignatureAlgorithm{jose.ES256})
+	require.NoError(t, err)
+
+	embeddedJWK := parsed.Signatures[0].Header.JSONWebKey
+	require.NotNil(t, embeddedJWK)
+
+	_, err = parsed.Verify(embeddedJWK.Key)
+	require.NoError(t, err)
 }
 
 func TestController_generateJWTProof_AnonymousPreAuthorizedFlow_OmitsIss(t *testing.T) {
