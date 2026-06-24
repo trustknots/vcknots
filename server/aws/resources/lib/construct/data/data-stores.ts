@@ -1,0 +1,46 @@
+import { Construct } from 'constructs';
+import * as cdk from 'aws-cdk-lib';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+
+const baseTableProps = {
+  partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+  billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+  removalPolicy: cdk.RemovalPolicy.RETAIN,
+  // Enable continuous backups so accidental writes/deletes can be restored.
+  pointInTimeRecovery: true,
+} as const;
+
+export class DataStores extends Construct {
+  public readonly issuersTable: dynamodb.Table;
+  public readonly authServersTable: dynamodb.Table;
+  public readonly preCodesTable: dynamodb.Table;
+  public readonly noncesTable: dynamodb.Table;
+  public readonly verifiersTable: dynamodb.Table;
+  public readonly requestObjectsTable: dynamodb.Table;
+
+  constructor(scope: Construct, id: string) {
+    super(scope, id);
+
+    // One table per data type. Each item is looked up by `id` (partition key).
+    this.issuersTable = new dynamodb.Table(this, 'IssuersTable', baseTableProps);
+
+    this.authServersTable = new dynamodb.Table(this, 'AuthServersTable', baseTableProps);
+
+    this.preCodesTable = new dynamodb.Table(this, 'PreCodesTable', {
+      ...baseTableProps,
+      timeToLiveAttribute: 'expires_at',
+    });
+
+    this.noncesTable = new dynamodb.Table(this, 'NoncesTable', {
+      ...baseTableProps,
+      timeToLiveAttribute: 'expires_at',
+    });
+
+    this.verifiersTable = new dynamodb.Table(this, 'VerifiersTable', baseTableProps);
+
+    this.requestObjectsTable = new dynamodb.Table(this, 'RequestObjectsTable', {
+      ...baseTableProps,
+      timeToLiveAttribute: 'expires_at',
+    });
+  }
+}

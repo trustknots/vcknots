@@ -1,0 +1,7 @@
+dist/
+node_modules
+scripts/.env
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
