@@ -23,11 +23,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/trustknots/vcknots/wallet"
-	"github.com/trustknots/vcknots/wallet/credential"
-	"github.com/trustknots/vcknots/wallet/credstore"
 	"github.com/trustknots/vcknots/wallet/examples/common"
 	"github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 )
@@ -248,49 +245,36 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	credStore := runtime.CredStore
-	serializer := runtime.Serializer
 	w := runtime.Wallet
-
-	sdJwtCredFile, err := os.ReadFile("example_sd_jwt.txt")
-	if err != nil {
-		panic(err)
-	}
-	sdJwtCredFile = []byte(strings.TrimRight(string(sdJwtCredFile), "\r\n"))
-	err = credStore.SaveCredentialEntry(credstore.CredentialEntry{
-		Id:         "sample-sdjwt-kbjwt",
-		ReceivedAt: time.Now(),
-		Raw:        sdJwtCredFile,
-		MimeType:   string(credential.SDJwtVC),
-	}, credstore.SupportedCredStoreTypes(0))
-	if err != nil {
-		panic(err)
-	}
-
-	savedSdJwtCredEntry, err := credStore.GetCredentialEntry("sample-sdjwt-kbjwt", credstore.SupportedCredStoreTypes(0))
-	if err != nil {
-		panic(err)
-	}
 
 	logger.Info("Starting SD-JWT + KB-JWT server integration check...")
 
 	mockKey := common.NewMockKeyEntry()
 
-	deserializedSdJwtCred, err := serializer.DeserializeCredential(credential.SDJwtVC, savedSdJwtCredEntry.Raw)
+	// Issue and receive a fresh SD-JWT VC from the local server via the OID4VCI
+	// pre-authorized-code flow, then present it with a Key-Binding JWT.
+	logger.Info("Requesting SD-JWT credential from issuer...")
+	savedSdJwtCred, err := common.ReceiveCredentialFromOffer(
+		w,
+		mockKey,
+		verifierURL+"/configurations/IdentityCredential/offer",
+		"dc+sd-jwt",
+	)
 	if err != nil {
-		panic(err)
+		logger.Error("Failed to receive credential", "error", err)
+		os.Exit(1)
 	}
-
-	savedSdJwtCred := wallet.SavedCredential{
-		Credential: deserializedSdJwtCred,
-		Entry:      savedSdJwtCredEntry,
-	}
-	logger.Info("Deserialized credential", "credential.issuer", deserializedSdJwtCred.Issuer, "credential.claims", deserializedSdJwtCred.Claims)
+	logger.Info(
+		"Received SD-JWT credential",
+		"id", savedSdJwtCred.Entry.Id,
+		"issuer", savedSdJwtCred.Credential.Issuer,
+		"claims", savedSdJwtCred.Credential.Claims,
+	)
 
 	options := sdjwtvc.SdJwtVcPresentationOptions{
 		SelectedClaims:    []string{"given_name"},
 		RequireKeyBinding: true,
 	}
 
-	presentation(w, mockKey, &savedSdJwtCred, &options, logger)
+	presentation(w, mockKey, savedSdJwtCred, &options, logger)
 }

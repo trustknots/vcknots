@@ -7,9 +7,14 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/trustknots/vcknots/wallet"
@@ -18,6 +23,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/presenter"
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
 	"github.com/trustknots/vcknots/wallet/receiver"
+	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer"
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
@@ -154,5 +160,82 @@ func NewOID4VPRuntime(certPath string) (*Runtime, error) {
 		CredStore:  credStore,
 		Serializer: serializerDispatcher,
 		Wallet:     w,
+	}, nil
+}
+
+const credentialOfferURIPrefix = "openid-credential-offer://?credential_offer="
+
+// ReceiveCredentialFromOffer fetches a credential offer from the issuer's offer
+// endpoint, then runs the OID4VCI pre-authorized-code flow to receive and store
+// the credential. format is the OID4VCI credential format to request, e.g.
+// "jwt_vc_json" or "dc+sd-jwt".
+func ReceiveCredentialFromOffer(
+	w *wallet.Wallet,
+	key *MockKeyEntry,
+	offerEndpoint string,
+	format string,
+) (*wallet.SavedCredential, error) {
+	resp, err := http.Post(offerEndpoint, "application/json", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch credential offer: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read offer response: %w", err)
+	}
+
+	offer, err := parseCredentialOffer(string(body))
+	if err != nil {
+		return nil, err
+	}
+
+	return w.ReceiveCredential(wallet.ReceiveCredentialRequest{
+		CredentialOffer: offer,
+		Type:            receiverTypes.Oid4vci,
+		Key:             key,
+		Format:          format,
+	})
+}
+
+// parseCredentialOffer parses an "openid-credential-offer://" URI into a
+// wallet.CredentialOffer.
+func parseCredentialOffer(offerURI string) (*wallet.CredentialOffer, error) {
+	offerURI = strings.TrimSpace(offerURI)
+	if !strings.HasPrefix(offerURI, credentialOfferURIPrefix) {
+		return nil, fmt.Errorf("invalid offer URI format: %q", offerURI)
+	}
+
+	decodedOffer, err := url.QueryUnescape(strings.TrimPrefix(offerURI, credentialOfferURIPrefix))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode offer: %w", err)
+	}
+
+	var offerData struct {
+		CredentialIssuer           string   `json:"credential_issuer"`
+		CredentialConfigurationIDs []string `json:"credential_configuration_ids"`
+		Grants                     map[string]struct {
+			PreAuthorizedCode string `json:"pre-authorized_code"`
+		} `json:"grants"`
+	}
+	if err := json.Unmarshal([]byte(decodedOffer), &offerData); err != nil {
+		return nil, fmt.Errorf("failed to parse offer JSON: %w", err)
+	}
+
+	issuerURL, err := url.Parse(offerData.CredentialIssuer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse credential issuer URL: %w", err)
+	}
+
+	grants := make(map[string]*wallet.CredentialOfferGrant, len(offerData.Grants))
+	for grantType, grant := range offerData.Grants {
+		grants[grantType] = &wallet.CredentialOfferGrant{PreAuthorizedCode: grant.PreAuthorizedCode}
+	}
+
+	return &wallet.CredentialOffer{
+		CredentialIssuer:           issuerURL,
+		CredentialConfigurationIDs: offerData.CredentialConfigurationIDs,
+		Grants:                     grants,
 	}, nil
 }

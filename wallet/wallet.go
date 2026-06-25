@@ -252,6 +252,27 @@ type ReceiveCredentialRequest struct {
 	Type                 receiverTypes.SupportedReceivingTypes
 	Key                  IKeyEntry
 	CachedIssuerMetadata *receiverTypes.CredentialIssuerMetadata
+	// Format is the OID4VCI credential format to request, e.g. "jwt_vc_json" or
+	// "dc+sd-jwt". When empty it defaults to "jwt_vc_json" for backward
+	// compatibility.
+	Format string
+}
+
+// OID4VCI credential request formats supported by the wallet.
+const (
+	formatJwtVcJson = "jwt_vc_json"
+	formatDcSdJwt   = "dc+sd-jwt"
+)
+
+// credentialFormatToMime maps an OID4VCI credential format to the MIME type used
+// to store and deserialize the received credential.
+func credentialFormatToMime(format string) string {
+	switch format {
+	case formatDcSdJwt:
+		return string(credential.SDJwtVC)
+	default:
+		return string(credential.JwtVc)
+	}
 }
 
 // CredentialOffer represents a credential offer from an issuer.
@@ -472,7 +493,7 @@ func (w *Wallet) ReceiveCredential(req ReceiveCredentialRequest) (*SavedCredenti
 		return nil, err
 	}
 
-	return w.storeAndParseCredential(credentialJWT)
+	return w.storeAndParseCredential(credentialJWT, credentialFormatToMime(req.Format))
 }
 
 // validateCredentialOffer validates the credential offer and extracts pre-authorization code.
@@ -563,10 +584,15 @@ func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata 
 		return nil, fmt.Errorf("failed to generate JWT proof: %w", err)
 	}
 
+	format := req.Format
+	if format == "" {
+		format = formatJwtVcJson
+	}
+
 	credentialJWT, err := w.receiver.ReceiveCredential(
 		req.Type,
 		issuerMetadata.CredentialEndpoint,
-		"jwt_vc_json",
+		format,
 		*accessToken,
 		&receiverTypes.CredentialDefinition{
 			Type: append(req.CredentialOffer.CredentialConfigurationIDs, "VerifiableCredential"),
@@ -580,13 +606,14 @@ func (w *Wallet) requestCredential(req ReceiveCredentialRequest, issuerMetadata 
 	return credentialJWT, nil
 }
 
-// storeAndParseCredential stores the credential and parses it for return.
-func (w *Wallet) storeAndParseCredential(credentialJWT *string) (*SavedCredential, error) {
+// storeAndParseCredential stores the credential under the given MIME type and
+// parses it for return.
+func (w *Wallet) storeAndParseCredential(credentialJWT *string, mimeType string) (*SavedCredential, error) {
 	credentialEntry := types.CredentialEntry{
 		Id:         uuid.New().String(),
 		ReceivedAt: time.Now(),
 		Raw:        []byte(*credentialJWT),
-		MimeType:   "application/vc+jwt",
+		MimeType:   mimeType,
 	}
 
 	if err := w.credStore.SaveCredentialEntry(credentialEntry, types.SupportedCredStoreTypes(0)); err != nil {

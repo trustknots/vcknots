@@ -16,8 +16,8 @@ package main
 //   - Usage: go run server_integration_sdjwt.go "<OID4VP_URI>"
 //   - Example: go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_uri=..."
 //
-// Both modes follow the same flow: seed credential -> build wallet -> get OID4VP request URI -> present.
-// The only differences are runtime inputs (request URI source, certificate pool, selected claims).
+// In server integration mode the credential is issued and received from the local
+// server (OID4VCI); in conformance mode it is loaded from a pre-issued sample file.
 
 import (
 	"crypto/x509"
@@ -216,6 +216,43 @@ func buildCertPool(isConformanceMode bool) *x509.CertPool {
 	return certPool
 }
 
+// seedSdJwtFromFile loads a pre-issued SD-JWT credential from example_sd_jwt.txt
+// into the credential store and returns it. Used for conformance mode, where no
+// local issuer is available to issue a credential.
+func seedSdJwtFromFile(
+	credStore *credstore.CredStoreDispatcher,
+	serializerDisp *serializer.SerializationDispatcher,
+	logger *slog.Logger,
+) *wallet.SavedCredential {
+	sdJwtCredFile, err := os.ReadFile("example_sd_jwt.txt")
+	if err != nil {
+		panic(err)
+	}
+
+	credID := "sample-sdjwt"
+	if err := credStore.SaveCredentialEntry(credstore.CredentialEntry{
+		Id:         credID,
+		ReceivedAt: time.Now(),
+		Raw:        sdJwtCredFile,
+		MimeType:   string(credential.SDJwtVC),
+	}, credstore.SupportedCredStoreTypes(0)); err != nil {
+		panic(err)
+	}
+
+	entry, err := credStore.GetCredentialEntry(credID, credstore.SupportedCredStoreTypes(0))
+	if err != nil {
+		panic(err)
+	}
+
+	deserialized, err := serializerDisp.DeserializeCredential(credential.SDJwtVC, entry.Raw)
+	if err != nil {
+		panic(err)
+	}
+	logger.Info("Seeded credential from file", "issuer", deserialized.Issuer, "claims", deserialized.Claims)
+
+	return &wallet.SavedCredential{Credential: deserialized, Entry: entry}
+}
+
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
@@ -249,28 +286,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	sdJwtCredFile, err := os.ReadFile("example_sd_jwt.txt")
-	if err != nil {
-		panic(err)
-	}
-
-	credID := "sample-sdjwt"
-	err = credStore.SaveCredentialEntry(credstore.CredentialEntry{
-		Id:         credID,
-		ReceivedAt: time.Now(),
-		Raw:        sdJwtCredFile,
-		MimeType:   string(credential.SDJwtVC),
-	}, credstore.SupportedCredStoreTypes(0))
-	if err != nil {
-		panic(err)
-	}
-
-	savedSdJwtCredEntry, err := credStore.GetCredentialEntry(credID, credstore.SupportedCredStoreTypes(0))
-	if err != nil {
-		panic(err)
-	}
-	logger.Info("Retrieved credential entry", "mime_type", savedSdJwtCredEntry.MimeType)
 
 	certPool := buildCertPool(isConformanceMode)
 	p := &oid4vp.Oid4vpPresenter{
@@ -318,15 +333,32 @@ func main() {
 
 	mockKey := common.NewMockKeyEntry()
 
-	deserializedCred, err := serializerDisp.DeserializeCredential(credential.SDJwtVC, savedSdJwtCredEntry.Raw)
-	if err != nil {
-		panic(err)
+	var savedCred *wallet.SavedCredential
+	if isConformanceMode {
+		// Conformance mode runs against external services with no local issuer,
+		// so the credential to present is loaded from a pre-issued sample file.
+		savedCred = seedSdJwtFromFile(credStore, serializerDisp, logger)
+	} else {
+		// Server integration mode issues and receives a fresh SD-JWT VC from the
+		// local server via the OID4VCI pre-authorized-code flow.
+		logger.Info("Requesting SD-JWT credential from issuer...")
+		savedCred, err = common.ReceiveCredentialFromOffer(
+			w,
+			mockKey,
+			"http://localhost:8080/configurations/IdentityCredential/offer",
+			"dc+sd-jwt",
+		)
+		if err != nil {
+			logger.Error("Failed to receive credential", "error", err)
+			os.Exit(1)
+		}
+		logger.Info(
+			"Received SD-JWT credential",
+			"id", savedCred.Entry.Id,
+			"issuer", savedCred.Credential.Issuer,
+			"claims", savedCred.Credential.Claims,
+		)
 	}
-	savedCred := &wallet.SavedCredential{
-		Credential: deserializedCred,
-		Entry:      savedSdJwtCredEntry,
-	}
-	logger.Info("Deserialized credential", "issuer", deserializedCred.Issuer, "claims", deserializedCred.Claims)
 
 	var oid4vpURI string
 	var options *sdjwtvc.SdJwtVcPresentationOptions
