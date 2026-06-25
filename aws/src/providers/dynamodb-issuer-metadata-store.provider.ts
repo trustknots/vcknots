@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb'
 import { CredentialIssuer, CredentialIssuerMetadata } from '@trustknots/vcknots/issuer'
 import { IssuerMetadataStoreProvider } from '@trustknots/vcknots/providers'
-import { DynamoDbProviderOptions, resolveDynamoDbDocumentClient } from './dynamodb.provider'
+import { DynamoDbProviderOptions, resolveDynamoDbDocumentClient } from './dynamodb'
 
 export type DynamoDbIssuerMetadataStoreOptions = DynamoDbProviderOptions & {
   tableName: string

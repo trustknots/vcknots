@@ -1,7 +1,7 @@
 export {
   DynamoDbProviderOptions,
   resolveDynamoDbDocumentClient,
-} from './providers/dynamodb.provider'
+} from './providers/dynamodb'
 export {
   DynamoDbIssuerMetadataStoreOptions,
   dynamodbIssuerMetadataStore,
