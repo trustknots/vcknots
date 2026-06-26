@@ -4,27 +4,29 @@ vcknots を AWS 上で動かすための CDK スタックです。
 
 関連パッケージ:
 
-- [`@trustknots/server-aws`](../lambda) — Lambda ハンドラ、vcknots context、ユーティリティ（`src/handlers/`、`src/context/`、`src/utils/`）
-- [`@trustknots/aws`](../../../aws/provider) — DynamoDB / KMS / Secrets Manager 向け AWS provider（プレースホルダー）
+- [`@trustknots/server-aws`](../src) — Lambda ハンドラ、vcknots context、ユーティリティ（`src/handlers/`、`src/context/`、`src/utils/`）
+- [`@trustknots/aws`](../../../aws) — DynamoDB 向け AWS provider（KMS / Secrets Manager は未実装）
 
 ## アーキテクチャ
 
 ```text
-aws/
-└── provider/              @trustknots/aws（プレースホルダー）
+aws/                       @trustknots/aws
 
 server/aws/
-├── lambda/                @trustknots/server-aws
+├── src/                   @trustknots/server-aws
 │   ├── package.json
-│   └── src/
-│       ├── handlers/
-│       │   ├── issuer.ts      Lambda ハンドラ（Issuer）
-│       │   ├── authz.ts       Lambda ハンドラ（Authz）
-│       │   └── verifier.ts    Lambda ハンドラ（Verifier）
-│       ├── context/
-│       │   └── vcknots-context.ts context / baseUrl ヘルパー
-│       └── utils/
-│           └── error-logger.ts  サニタイズ済み CloudWatch エラーログ
+│   ├── handlers/
+│   │   ├── issuer.ts      Lambda ハンドラ（Issuer）
+│   │   ├── authz.ts       Lambda ハンドラ（Authz）
+│   │   └── verifier.ts    Lambda ハンドラ（Verifier）
+│   ├── apps/
+│   │   ├── create-issuer-app.ts   Issuer アプリ（DynamoDB issuer メタデータストア）
+│   │   ├── create-authz-app.ts    Authorization Server アプリ（インメモリ）
+│   │   └── create-verifier-app.ts Verifier アプリ（インメモリ）
+│   ├── context/
+│   │   └── vcknots-context.ts context / baseUrl ヘルパー
+│   └── utils/
+│       └── error-logger.ts  サニタイズ済み CloudWatch エラーログ
 └── resources/             このパッケージ（CDK アプリ）
     ├── bin/resources.ts
     ├── scripts/
@@ -55,17 +57,17 @@ ResourcesStack
 
 ### Lambda ハンドラ
 
-ハンドラのソースは `@trustknots/server-aws`（`server/aws/lambda/src/handlers/` と `server/aws/lambda/src/context/`）にあります。
+ハンドラのソースは `@trustknots/server-aws`（`server/aws/src/handlers/` と `server/aws/src/context/`）にあります。
 
 各ハンドラは `@trustknots/server-core` の単一ルートを Hono アプリにマウントし、API Gateway 向けに `handle(app)` をエクスポートします。
 
-| ハンドラ（`server/aws/lambda/src/handlers/`） | ルート |
+| ハンドラ（`server/aws/src/handlers/`） | ルート |
 |---|---|
 | `issuer.ts` | `@trustknots/server-core/routes/issue` |
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
 | `verifier.ts` | `@trustknots/server-core/routes/verify` |
 
-ハンドラは現在、デフォルトのインメモリ vcknots provider を使用しています。`@trustknots/aws` provider の実装後に接続してください。
+Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` を使用します。Authorization Server と Verifier はインメモリプロバイダーを使用します。
 
 未処理エラーは `utils/error-logger.ts`（`sanitizeError`）経由でログ出力され、CloudWatch には安全なフィールドのみが記録されます。
 

@@ -32,10 +32,12 @@ vcknots/
 │                       # Issuer, Verifier, and Authorization Server library
 ├── wallet/             # Wallet library (Go)
 │                       # Credential operations and key management
-├── server/             # @trustknots/server (TypeScript)
-│                       # Sample server implementation
-└── google-cloud/       # @trustknots/google-cloud (TypeScript)
-                        # Google Cloud integration
+├── aws/                # @trustknots/aws (TypeScript)
+│                       # AWS providers (DynamoDB, KMS, Secrets Manager)
+└── server/             # Sample server implementations (TypeScript)
+    ├── single/         # @trustknots/server-single — single-tenant server
+    ├── google-cloud/   # @trustknots/server-google-cloud — Google Cloud integration
+    └── aws/            # @trustknots/server-aws — AWS Lambda handlers + CDK stack
 ```
 
 ## User Documentation

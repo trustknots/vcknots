@@ -8,7 +8,7 @@ export function createVcknotsContext(options?: VcknotsOptions) {
   })
 }
 
-export function getBaseUrl() {
+export function getBaseUrl({ port = 8080, baseUrl = `http://localhost:${port}` }: { port?: number; baseUrl?: string } = {}) {
   const apiId = process.env.API_GATEWAY_ID
   const region = process.env.AWS_REGION
   const stage = process.env.API_STAGE ?? 'test'
@@ -17,5 +17,5 @@ export function getBaseUrl() {
     return `https://${apiId}.execute-api.${region}.amazonaws.com/${stage}`
   }
 
-  return process.env.BASE_URL ?? 'http://localhost:8080'
+  return baseUrl
 }

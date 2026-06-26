@@ -25,5 +25,10 @@
 		"@aws-sdk/client-dynamodb": "^3.1064.0",
 		"@aws-sdk/lib-dynamodb": "^3.1064.0",
 		"@trustknots/vcknots": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^24.12.4",
+		"aws-sdk-client-mock": "^4.1.0",
+		"typescript": "~5.9.3"
 	}
 }

@@ -60,6 +60,7 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 GEMINI.md
+CLAUDE.md
 .claude
 
 # Cursor - commit project rules only

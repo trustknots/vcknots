@@ -27,8 +27,8 @@ This package also uses `@trustknots/server-core` for shared app/routes/util logi
 
 ### `aws/`
 
-AWS Lambda server implementation. Handler sources live in `server/aws/lambda/handlers/` and vcknots context in `server/aws/lambda/context/` (`@trustknots/server-aws`).
-CDK infrastructure is under `server/aws/resources/`. AWS providers are in `aws/provider/` (`@trustknots/aws`).
+AWS Lambda server implementation. Handler sources live in `server/aws/src/handlers/` and vcknots context in `server/aws/src/context/` (`@trustknots/server-aws`).
+CDK infrastructure is under `server/aws/resources/`. AWS providers are in `aws/src/` (`@trustknots/aws`).
 
 For deploy and architecture details, see [aws/resources/README.md](./aws/resources/README.md).
 

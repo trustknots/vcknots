@@ -4,27 +4,29 @@ CDK stack for vcknots on AWS.
 
 Related packages:
 
-- [`@trustknots/server-aws`](../lambda) — Lambda handlers, vcknots context, and utilities (`src/handlers/`, `src/context/`, `src/utils/`)
-- [`@trustknots/aws`](../../../aws/provider) — AWS providers for DynamoDB / KMS / Secrets Manager (placeholder)
+- [`@trustknots/server-aws`](../src) — Lambda handlers, vcknots context, and utilities (`src/handlers/`, `src/context/`, `src/utils/`)
+- [`@trustknots/aws`](../../../aws) — AWS providers for DynamoDB (KMS / Secrets Manager not yet implemented)
 
 ## Architecture
 
 ```text
-aws/
-└── provider/              @trustknots/aws (placeholder)
+aws/                       @trustknots/aws
 
 server/aws/
-├── lambda/                @trustknots/server-aws
+├── src/                   @trustknots/server-aws
 │   ├── package.json
-│   └── src/
-│       ├── handlers/
-│       │   ├── issuer.ts      Lambda handler (Issuer)
-│       │   ├── authz.ts       Lambda handler (Authz)
-│       │   └── verifier.ts    Lambda handler (Verifier)
-│       ├── context/
-│       │   └── vcknots-context.ts context / baseUrl helpers
-│       └── utils/
-│           └── error-logger.ts  sanitized CloudWatch error logging
+│   ├── handlers/
+│   │   ├── issuer.ts      Lambda handler (Issuer)
+│   │   ├── authz.ts       Lambda handler (Authz)
+│   │   └── verifier.ts    Lambda handler (Verifier)
+│   ├── apps/
+│   │   ├── create-issuer-app.ts   Issuer app (DynamoDB issuer metadata store)
+│   │   ├── create-authz-app.ts    Authorization Server app (in-memory)
+│   │   └── create-verifier-app.ts Verifier app (in-memory)
+│   ├── context/
+│   │   └── vcknots-context.ts context / baseUrl helpers
+│   └── utils/
+│       └── error-logger.ts  sanitized CloudWatch error logging
 └── resources/             this package (CDK app)
     ├── bin/resources.ts
     ├── scripts/
@@ -55,17 +57,17 @@ ResourcesStack
 
 ### Lambda handlers
 
-Handler sources live in `@trustknots/server-aws` (`server/aws/lambda/src/handlers/` and `server/aws/lambda/src/context/`).
+Handler sources live in `@trustknots/server-aws` (`server/aws/src/handlers/` and `server/aws/src/context/`).
 
 Each handler mounts a single route from `@trustknots/server-core` on a Hono app and exports `handle(app)` for API Gateway.
 
-| Handler (`server/aws/lambda/src/handlers/`) | Route |
+| Handler (`server/aws/src/handlers/`) | Route |
 |---|---|
 | `issuer.ts` | `@trustknots/server-core/routes/issue` |
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
 | `verifier.ts` | `@trustknots/server-core/routes/verify` |
 
-Handlers currently use the default in-memory vcknots providers. Wire `@trustknots/aws` providers once implemented.
+The Issuer uses `dynamodbIssuerMetadataStore` from `@trustknots/aws`. The Authorization Server and Verifier use in-memory providers.
 
 Unhandled errors are logged via `utils/error-logger.ts` (`sanitizeError`) so only safe fields reach CloudWatch.
 
