@@ -10,3 +10,7 @@ export {
   DynamoDbIssuerMetadataStoreOptions,
   dynamodbIssuerMetadataStore,
 } from './providers/dynamodb-issuer-metadata-store.provider'
+export {
+  DynamoDbVerifierMetadataStoreOptions,
+  dynamodbVerifierMetadataStore,
+} from './providers/dynamodb-verifier-metadata-store.provider'

@@ -2,7 +2,7 @@
 
 `@trustknots/server-aws` — AWS API Gateway 上で動作する Issuer・Authorization Server・Verifier の Lambda ハンドラーです。
 
-共通ルートは `@trustknots/server-core` が提供します。Issuer と Authorization Server は DynamoDB バックエンドのメタデータストア（`@trustknots/aws`）を使用します。Verifier はデフォルトでインメモリプロバイダーを使用します。
+共通ルートは `@trustknots/server-core` が提供します。Issuer・Authorization Server・Verifier はいずれも DynamoDB バックエンドのメタデータストア（`@trustknots/aws`）を使用します。
 
 Issuer および Verifier の **実際の API 仕様・パラメーター・型定義・使用例**については、以下の公式ドキュメントを参照してください：
 
@@ -19,7 +19,7 @@ src/
 │   ├── create-base-app.ts      # 共通 Hono アプリファクトリ
 │   ├── create-issuer-app.ts    # Issuer アプリ（DynamoDB issuer メタデータストア）
 │   ├── create-authz-app.ts     # Authorization Server アプリ（DynamoDB authz server メタデータストア）
-│   └── create-verifier-app.ts  # Verifier アプリ（インメモリ）
+│   └── create-verifier-app.ts  # Verifier アプリ（DynamoDB verifier メタデータストア）
 ├── handlers/
 │   ├── issuer.ts               # Lambda ハンドラー / ローカル起動エントリーポイント — Issuer（ポート 8081）
 │   ├── authz.ts                # Lambda ハンドラー / ローカル起動エントリーポイント — Authorization Server（ポート 8082）
@@ -38,11 +38,11 @@ src/
 |---|---|---|
 | [Node.js](https://nodejs.org/) | 20 以上 | |
 | [pnpm](https://pnpm.io/) | 10.11.0 | モノレポパッケージマネージャー |
-| AWS 認証情報 | — | Issuer および Authorization Server（DynamoDB）で必要 |
+| AWS 認証情報 | — | Issuer・Authorization Server・Verifier（DynamoDB）で必要 |
 
 AWS 認証情報は `~/.aws/credentials`・`~/.aws/config`・環境変数（`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`）・`AWS_PROFILE` のいずれかで設定できます。
 
-Issuer および Authorization Server をローカルで起動するには、CDK スタック（`server/aws/resources`）を事前に AWS へデプロイしておく必要があります（実際の DynamoDB テーブルを参照するため）。Verifier はインメモリプロバイダーを使用するため、**AWS は不要**です。
+Issuer・Authorization Server・Verifier をローカルで起動するには、CDK スタック（`server/aws/resources`）を事前に AWS へデプロイしておく必要があります（実際の DynamoDB テーブルを参照するため）。
 
 ## セットアップ
 
@@ -80,7 +80,7 @@ cp .env.example .env
 | `PRE_CODES_TABLE_NAME` | Issuer（任意） | DynamoDB テーブル名（スタック出力: `PreCodesTableName`） |
 | `AUTH_SERVERS_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthServersTableName`） |
 | `PRE_CODES_TABLE_NAME` | Authz（任意） | DynamoDB テーブル名（スタック出力: `PreCodesTableName`） |
-| `VERIFIERS_TABLE_NAME` | Verifier（任意） | DynamoDB テーブル名（スタック出力: `VerifiersTableName`） |
+| `VERIFIERS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `VerifiersTableName`） |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier（任意） | DynamoDB テーブル名（スタック出力: `RequestObjectsTableName`） |
 | `NONCES_TABLE_NAME` | Verifier（任意） | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
 | `ISSUER_PORT` | Issuer（任意） | Issuer のリッスンポートを上書き（デフォルト: `8081`） |
@@ -90,7 +90,7 @@ cp .env.example .env
 | `VERIFIER_PORT` | Verifier（任意） | Verifier のリッスンポートを上書き（デフォルト: `8083`） |
 | `VERIFIER_BASE_URL` | Verifier（任意） | Verifier メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{VERIFIER_PORT}`） |
 
-**`ISSUERS_TABLE_NAME` および `AUTH_SERVERS_TABLE_NAME` は必須**です。未設定の場合、該当サーバーは起動時に終了します。
+**`ISSUERS_TABLE_NAME`・`AUTH_SERVERS_TABLE_NAME`・`VERIFIERS_TABLE_NAME` は必須**です。未設定の場合、該当サーバーは起動時に終了します。
 
 ## サーバーの起動
 
@@ -115,7 +115,7 @@ pnpm -F @trustknots/server-aws start:issuer
 
 ### 起動確認
 
-初回起動時、Issuer と Authorization Server は `server/samples/` のサンプルデータを DynamoDB へ自動投入します：
+初回起動時、Issuer・Authorization Server・Verifier は `server/samples/` のサンプルデータを DynamoDB へ自動投入します：
 
 ```text
 Issuer metadata initialized
@@ -125,6 +125,11 @@ Issuer is running on http://localhost:8081
 ```text
 Authz server metadata initialized
 Authz is running on http://localhost:8082
+```
+
+```text
+Verifier metadata initialized
+Verifier is running on http://localhost:8083
 ```
 
 2回目以降はデータが既に存在する場合スキップされます：
@@ -137,6 +142,11 @@ Issuer is running on http://localhost:8081
 ```text
 Authz server metadata already exists, skipping initialization
 Authz is running on http://localhost:8082
+```
+
+```text
+Verifier metadata already exists, skipping initialization
+Verifier is running on http://localhost:8083
 ```
 
 ### ポートまたはベース URL の変更
