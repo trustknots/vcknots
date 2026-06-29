@@ -115,7 +115,7 @@ pnpm -F @trustknots/server-aws start:issuer
 
 ### Startup confirmation
 
-On first run, each server automatically seeds initial metadata into DynamoDB from the `server/samples/` directory:
+On first run, the Issuer and Authorization Server automatically seed initial metadata into DynamoDB from the `server/samples/` directory:
 
 ```text
 Issuer metadata initialized
@@ -129,12 +129,12 @@ Authz is running on http://localhost:8082
 
 On subsequent runs, initialization is skipped if the data already exists:
 
-```
+```text
 Issuer metadata already exists, skipping initialization
 Issuer is running on http://localhost:8081
 ```
 
-```
+```text
 Authz server metadata already exists, skipping initialization
 Authz is running on http://localhost:8082
 ```

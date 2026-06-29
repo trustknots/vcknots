@@ -115,7 +115,7 @@ pnpm -F @trustknots/server-aws start:issuer
 
 ### 起動確認
 
-初回起動時、各サーバーは `server/samples/` のサンプルデータを DynamoDB へ自動投入します：
+初回起動時、Issuer と Authorization Server は `server/samples/` のサンプルデータを DynamoDB へ自動投入します：
 
 ```text
 Issuer metadata initialized
@@ -129,12 +129,12 @@ Authz is running on http://localhost:8082
 
 2回目以降はデータが既に存在する場合スキップされます：
 
-```
+```text
 Issuer metadata already exists, skipping initialization
 Issuer is running on http://localhost:8081
 ```
 
-```
+```text
 Authz server metadata already exists, skipping initialization
 Authz is running on http://localhost:8082
 ```
