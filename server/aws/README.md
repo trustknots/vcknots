@@ -2,7 +2,7 @@
 
 `@trustknots/server-aws` — Lambda handlers for Issuer, Authorization Server, and Verifier on AWS API Gateway.
 
-Shared routes are provided by `@trustknots/server-core`. The Issuer uses a DynamoDB-backed metadata store (`@trustknots/aws`). The Authorization Server and Verifier use in-memory providers by default.
+Shared routes are provided by `@trustknots/server-core`. The Issuer and Authorization Server use DynamoDB-backed metadata stores (`@trustknots/aws`). The Verifier uses in-memory providers by default.
 
 For **actual API specifications, parameters, type definitions, and usage examples** for Issuer, Authorization Server, and Verifier, please refer to the following official documentation:
 
@@ -18,7 +18,7 @@ src/
 ├── apps/
 │   ├── create-base-app.ts      # Shared Hono app factory
 │   ├── create-issuer-app.ts    # Issuer app (DynamoDB issuer metadata store)
-│   ├── create-authz-app.ts     # Authorization Server app (in-memory)
+│   ├── create-authz-app.ts     # Authorization Server app (DynamoDB authz server metadata store)
 │   └── create-verifier-app.ts  # Verifier app (in-memory)
 ├── handlers/
 │   ├── issuer.ts               # Lambda handler / local entrypoint — Issuer (port 8081)
@@ -38,11 +38,11 @@ src/
 |---|---|---|
 | [Node.js](https://nodejs.org/) | 20+ | |
 | [pnpm](https://pnpm.io/) | 10.11.0 | Monorepo package manager |
-| AWS credentials | — | Required only for the Issuer (DynamoDB) |
+| AWS credentials | — | Required for the Issuer and Authorization Server (DynamoDB) |
 
 AWS credentials can be set via `~/.aws/credentials`, `~/.aws/config`, environment variables (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`), or `AWS_PROFILE`.
 
-The CDK stack (`server/aws/resources`) must be deployed to AWS before starting the Issuer locally, because the Issuer reads from a live DynamoDB table. The Authorization Server and Verifier use in-memory providers and do **not** require AWS.
+The CDK stack (`server/aws/resources`) must be deployed to AWS before starting the Issuer or Authorization Server locally, because both read from live DynamoDB tables. The Verifier uses in-memory providers and does **not** require AWS.
 
 ## Setup
 
@@ -78,7 +78,7 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `ISSUERS_TABLE_NAME` | Issuer **required** | DynamoDB table name (stack output: `IssuersTableName`) |
 | `NONCES_TABLE_NAME` | Issuer (optional) | DynamoDB table name (stack output: `NoncesTableName`) |
 | `PRE_CODES_TABLE_NAME` | Issuer (optional) | DynamoDB table name (stack output: `PreCodesTableName`) |
-| `AUTH_SERVERS_TABLE_NAME` | Authz (optional) | DynamoDB table name (stack output: `AuthServersTableName`) |
+| `AUTH_SERVERS_TABLE_NAME` | Authz **required** | DynamoDB table name (stack output: `AuthServersTableName`) |
 | `PRE_CODES_TABLE_NAME` | Authz (optional) | DynamoDB table name (stack output: `PreCodesTableName`) |
 | `VERIFIERS_TABLE_NAME` | Verifier (optional) | DynamoDB table name (stack output: `VerifiersTableName`) |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier (optional) | DynamoDB table name (stack output: `RequestObjectsTableName`) |
@@ -90,7 +90,7 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `VERIFIER_PORT` | Verifier (optional) | Override the Verifier listening port (default: `8083`) |
 | `VERIFIER_BASE_URL` | Verifier (optional) | Override the base URL used in Verifier metadata (default: `http://localhost:{VERIFIER_PORT}`) |
 
-**`ISSUERS_TABLE_NAME` is required** — the Issuer server exits at startup if it is missing.
+**`ISSUERS_TABLE_NAME` and `AUTH_SERVERS_TABLE_NAME` are required** — each server exits at startup if its table name is missing.
 
 ## Start the Servers
 
@@ -115,18 +115,28 @@ pnpm -F @trustknots/server-aws start:issuer
 
 ### Startup confirmation
 
-On first run, the Issuer automatically seeds initial metadata from `server/samples/issuer_metadata.json` into DynamoDB:
+On first run, the Issuer and Authorization Server automatically seed initial metadata into DynamoDB from the `server/samples/` directory:
 
 ```text
 Issuer metadata initialized
 Issuer is running on http://localhost:8081
 ```
 
+```text
+Authz server metadata initialized
+Authz is running on http://localhost:8082
+```
+
 On subsequent runs, initialization is skipped if the data already exists:
 
-```
+```text
 Issuer metadata already exists, skipping initialization
 Issuer is running on http://localhost:8081
+```
+
+```text
+Authz server metadata already exists, skipping initialization
+Authz is running on http://localhost:8082
 ```
 
 ### Override port or base URL
