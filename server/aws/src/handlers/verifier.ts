@@ -2,13 +2,16 @@ import { serve } from '@hono/node-server'
 import { handle } from 'hono/aws-lambda'
 import { createVerifierApp } from '../apps/create-verifier-app.js'
 
+if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  await import('dotenv/config')
+}
+
 const { app, initialize } = createVerifierApp()
 
 export { app }
 export const handler = handle(app)
 
 if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
-  await import('dotenv/config')
   const rawPort = process.env.VERIFIER_PORT ?? '8083'
   const port = Number.parseInt(rawPort, 10)
   if (!Number.isFinite(port)) throw new Error(`Invalid VERIFIER_PORT: "${rawPort}"`)
