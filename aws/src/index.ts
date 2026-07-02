@@ -14,3 +14,7 @@ export {
   DynamoDbVerifierMetadataStoreOptions,
   dynamodbVerifierMetadataStore,
 } from './providers/dynamodb-verifier-metadata-store.provider'
+export {
+  DynamoDbRequestObjectStoreOptions,
+  dynamodbRequestObjectStore,
+} from './providers/dynamodb-request-object-store.provider'
