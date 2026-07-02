@@ -7,11 +7,9 @@ import { AuthorizationResponse } from '../src/authorization-response.types'
 import { ClientId } from '../src/client-id.types'
 import { ClientIdentifier } from '../src/client-id-scheme.types'
 import { Dcql } from '../src/dcql.type'
-import { PresentationExchange } from '../src/presentation-exchange.types'
 import {
   CnonceProvider,
   CnonceStoreProvider,
-  CredentialQueryGenerationOptions,
   CredentialQueryProvider,
   RequestObjectIdProvider,
   RequestObjectStoreProvider,
@@ -82,9 +80,8 @@ describe('VerifierFlow', () => {
   const mockCredentialQueryProvider = {
     kind: 'credential-query-provider',
     name: 'mock-credential-query-provider',
-    single: false,
+    single: true,
     generate: mock.fn(),
-    canHandle: mock.fn(),
   } satisfies CredentialQueryProvider
 
   const mockVerifyVerifiablePresentationProvider = {
@@ -269,69 +266,6 @@ describe('VerifierFlow', () => {
   })
 
   describe('createAuthzRequest', () => {
-    it('creates request for Presentation Exchange', async () => {
-      const metadata = VerifierMetadata({
-        client_name: 'Test Verifier',
-        vp_formats: {
-          jwt_vc_json: {
-            alg_values_supported: ['ES256'],
-          },
-          jwt_vp_json: {
-            alg_values_supported: ['ES256'],
-          },
-          ldp_vp: {
-            proof_type: ['JsonWebSignature2020'],
-          },
-        },
-      })
-      const presentationDefinition = {
-        id: 'test-pd-id',
-        input_descriptors: [
-          {
-            id: 'test_credential',
-            constraints: {
-              fields: [
-                {
-                  path: ['$.type[*]'],
-                  filter: {
-                    type: 'string',
-                    const: 'TestCredential',
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      }
-
-      mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => {})
-      mock.method(
-        mockCredentialQueryProvider,
-        'generate',
-        async (options: CredentialQueryGenerationOptions) => {
-          assert.equal(options.kind, 'presentation-exchange')
-          return PresentationExchange(options.query)
-        }
-      )
-
-      const req = await verifierFlow.createAuthzRequest(
-        ClientId('did:key:verifier'),
-        'vp_token',
-        'redirect_uri:did:key:verifier',
-        'direct_post',
-        { presentation_definition: presentationDefinition },
-        false,
-        {}
-      )
-
-      AuthorizationRequest(req)
-      assert.equal(req.response_type, 'vp_token')
-      assert.equal(req.response_mode, 'direct_post')
-      assert.equal(req.nonce, 'nonce-123')
-    })
-
     it('creates request for Dcql', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
@@ -371,13 +305,8 @@ describe('VerifierFlow', () => {
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
       mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
       mock.method(mockCnonceStoreProvider, 'save', async () => {})
-      mock.method(
-        mockCredentialQueryProvider,
-        'generate',
-        async (options: CredentialQueryGenerationOptions) => {
-          assert.equal(options.kind, 'dcql')
-          return Dcql(options.query)
-        }
+      mock.method(mockCredentialQueryProvider, 'generate', async (query: unknown) =>
+        Dcql(query as Dcql)
       )
       mock.method(mockTransactionDataProvider, 'generate', (type: string, ids: string[]) => {
         const data = {
@@ -398,31 +327,13 @@ describe('VerifierFlow', () => {
       )
 
       AuthorizationRequest(req)
+      if ('request_uri' in req) throw new Error('unexpected request_uri flow')
       assert.equal(req.response_type, 'vp_token')
       assert.equal(req.response_mode, 'direct_post')
       assert.equal(req.nonce, 'nonce-123')
     })
 
     it('should throw VERIFIER_NOT_FOUND if metadata missing', async () => {
-      const presentationDefinition = {
-        id: 'test-pd-id',
-        input_descriptors: [
-          {
-            id: 'test_credential',
-            constraints: {
-              fields: [
-                {
-                  path: ['$.type[*]'],
-                  filter: {
-                    type: 'string',
-                    const: 'TestCredential',
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      }
       mock.method(mockVerifierMetadataStore, 'fetch', async () => null)
       await assert.rejects(
         verifierFlow.createAuthzRequest(
@@ -430,7 +341,11 @@ describe('VerifierFlow', () => {
           'vp_token',
           'redirect_uri:https://example.com',
           'direct_post',
-          { presentation_definition: presentationDefinition },
+          {
+            dcql_query: {
+              credentials: [{ id: 'test_credential', format: 'jwt_vc_json' }],
+            },
+          },
           false,
           {}
         ),
@@ -442,44 +357,12 @@ describe('VerifierFlow', () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
         vp_formats: {
-          jwt_vc_json: {
-            alg_values_supported: ['ES256'],
-          },
-          jwt_vp_json: {
-            alg_values_supported: ['ES256'],
-          },
-          ldp_vp: {
-            proof_type: ['JsonWebSignature2020'],
-          },
+          jwt_vc_json: { alg_values_supported: ['ES256'] },
         },
       })
-      const presentationDefinition = {
-        id: 'test-pd-id',
-        input_descriptors: [
-          {
-            id: 'test_credential',
-            constraints: {
-              fields: [
-                {
-                  path: ['$.type[*]'],
-                  filter: {
-                    type: 'string',
-                    const: 'TestCredential',
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      }
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(
-        mockCredentialQueryProvider,
-        'generate',
-        async (options: CredentialQueryGenerationOptions) => {
-          assert.equal(options.kind, 'presentation-exchange')
-          return PresentationExchange(options.query)
-        }
+      mock.method(mockCredentialQueryProvider, 'generate', async (query: unknown) =>
+        Dcql(query as Dcql)
       )
       mock.method(mockRequestObjectIdProvider, 'generate', async () => '1234')
       mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
@@ -489,12 +372,24 @@ describe('VerifierFlow', () => {
         'vp_token',
         'redirect_uri:https://example.com',
         'direct_post',
-        { presentation_definition: presentationDefinition },
+        {
+          dcql_query: {
+            credentials: [
+              {
+                id: 'test_credential',
+                format: 'jwt_vc_json',
+                meta: { type_values: [['VerifiableCredential']] },
+                claims: [{ path: ['vc', 'credentialSubject', 'id'] }],
+              },
+            ],
+          },
+        },
         true,
         { base_url: 'https://example.com' }
       )
 
       AuthorizationRequest(req)
+      if (!('request_uri' in req)) throw new Error('expected request_uri flow')
       assert.equal(typeof req.request_uri, 'string')
       assert.equal(
         req.request_uri,
@@ -510,45 +405,11 @@ describe('VerifierFlow', () => {
     it('should throw INVALID_REQUEST when request_uri is true and base_url is not present', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
-        vp_formats: {
-          jwt_vc_json: {
-            alg_values_supported: ['ES256'],
-          },
-          jwt_vp_json: {
-            alg_values_supported: ['ES256'],
-          },
-          ldp_vp: {
-            proof_type: ['JsonWebSignature2020'],
-          },
-        },
+        vp_formats: { jwt_vc_json: { alg_values_supported: ['ES256'] } },
       })
-      const presentationDefinition = {
-        id: 'test-pd-id',
-        input_descriptors: [
-          {
-            id: 'test_credential',
-            constraints: {
-              fields: [
-                {
-                  path: ['$.type[*]'],
-                  filter: {
-                    type: 'string',
-                    const: 'TestCredential',
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      }
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(
-        mockCredentialQueryProvider,
-        'generate',
-        async (options: CredentialQueryGenerationOptions) => {
-          assert.equal(options.kind, 'presentation-exchange')
-          return PresentationExchange(options.query)
-        }
+      mock.method(mockCredentialQueryProvider, 'generate', async (query: unknown) =>
+        Dcql(query as Dcql)
       )
       mock.method(mockRequestObjectIdProvider, 'generate', async () => 'reqobj-123')
       mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
@@ -559,67 +420,18 @@ describe('VerifierFlow', () => {
           'vp_token',
           'redirect_uri:https://example.com',
           'direct_post',
-          { presentation_definition: presentationDefinition },
-          true,
-          {}
-        ),
-        { name: 'INVALID_REQUEST' }
-      )
-    })
-
-    it('should throw INVALID_REQUEST when neither request_uri nor base_url is present', async () => {
-      const metadata = VerifierMetadata({
-        client_name: 'Test Verifier',
-        vp_formats: {
-          jwt_vc_json: {
-            alg_values_supported: ['ES256'],
-          },
-          jwt_vp_json: {
-            alg_values_supported: ['ES256'],
-          },
-          ldp_vp: {
-            proof_type: ['JsonWebSignature2020'],
-          },
-        },
-      })
-      const presentationDefinition = {
-        id: 'test-pd-id',
-        input_descriptors: [
           {
-            id: 'test_credential',
-            constraints: {
-              fields: [
+            dcql_query: {
+              credentials: [
                 {
-                  path: ['$.type[*]'],
-                  filter: {
-                    type: 'string',
-                    const: 'TestCredential',
-                  },
+                  id: 'test_credential',
+                  format: 'jwt_vc_json',
+                  meta: { type_values: [['VerifiableCredential']] },
+                  claims: [{ path: ['vc', 'credentialSubject', 'id'] }],
                 },
               ],
             },
           },
-        ],
-      }
-      mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(
-        mockCredentialQueryProvider,
-        'generate',
-        async (options: CredentialQueryGenerationOptions) => {
-          assert.equal(options.kind, 'presentation-exchange')
-          return PresentationExchange(options.query)
-        }
-      )
-      mock.method(mockRequestObjectIdProvider, 'generate', async () => 'reqobj-123')
-      mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
-
-      await assert.rejects(
-        verifierFlow.createAuthzRequest(
-          ClientId('https://example.com'),
-          'vp_token',
-          'redirect_uri:https://example.com',
-          'direct_post',
-          { presentation_definition: presentationDefinition },
           true,
           {}
         ),
@@ -628,50 +440,20 @@ describe('VerifierFlow', () => {
     })
   })
   describe('createAuthzRequest', () => {
-    it('should include transaction_data for dc+sd-jwt format in presentation exchange', async () => {
+    it('should include transaction_data for dc+sd-jwt format in dcql query', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
-        vp_formats: {
-          'dc+sd-jwt': {},
-        },
+        vp_formats: { 'dc+sd-jwt': {} },
       })
-      const presentationDefinition = {
-        id: 'test-pd-id',
-        input_descriptors: [
-          {
-            id: 'test_credential',
-            format: { 'dc+sd-jwt': { alg: ['ES256'] } },
-            constraints: {
-              limit_disclosure: 'required',
-              fields: [
-                {
-                  path: ['$.type[*]'],
-                  filter: {
-                    type: 'string',
-                    const: 'TestCredential',
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      }
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
       mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
       mock.method(mockCnonceStoreProvider, 'save', async () => {})
-      mock.method(
-        mockCredentialQueryProvider,
-        'generate',
-        async (options: CredentialQueryGenerationOptions) => {
-          return PresentationExchange(options.query as PresentationExchange)
-        }
+      mock.method(mockCredentialQueryProvider, 'generate', async (query: unknown) =>
+        Dcql(query as Dcql)
       )
       mock.method(mockTransactionDataProvider, 'generate', (type: string, ids: string[]) => {
-        const data = {
-          type,
-          credential_ids: ids,
-        }
+        const data = { type, credential_ids: ids }
         return base64url.encode(JSON.stringify(data))
       })
 
@@ -680,12 +462,24 @@ describe('VerifierFlow', () => {
         'vp_token',
         'redirect_uri:did:key:verifier',
         'direct_post',
-        { presentation_definition: presentationDefinition },
+        {
+          dcql_query: {
+            credentials: [
+              {
+                id: 'test_credential',
+                format: 'dc+sd-jwt',
+                meta: { vct_values: ['TestCredential'] },
+                claims: [{ path: ['given_name'] }],
+              },
+            ],
+          },
+        },
         false,
         { transaction_data: { type: 'test_transaction' } }
       )
 
       AuthorizationRequest(req)
+      if ('request_uri' in req) throw new Error('unexpected request_uri flow')
       assert.equal(req.response_type, 'vp_token')
       assert.equal(req.response_mode, 'direct_post')
       assert.equal(req.nonce, 'nonce-123')

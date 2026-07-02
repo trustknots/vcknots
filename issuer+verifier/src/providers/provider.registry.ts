@@ -18,7 +18,6 @@ import { issueCredentialJwt } from './issue-credential-jwt-vc-json.provider'
 import { issuerSignatureKey } from './issuer-signature-key.provider'
 import { jwtSignature } from './jwt-signature.provider'
 import { preAuthorizedCode } from './pre-authorized-code.provider'
-import { presentationExchange } from './presentation-exchange.provider'
 import { Provider } from './provider.types'
 import { requestObjectId } from './request-object-id.provider'
 import { verifierSignatureKey } from './verifier-signature-key.provider'
@@ -64,7 +63,6 @@ const initializeDefaultProviders = (
   authzSignatureKey(),
   issueCredentialJwt(),
   did(),
-  presentationExchange(),
   dcql(),
   credentialProofJWT(),
   verifyCredentialJwt(),

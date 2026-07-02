@@ -7,7 +7,6 @@ import {
   VerifierAuthorizationResponse,
   VerifierClientId,
   ClientIdentifier,
-  PresentationExchange,
 } from '@trustknots/vcknots/verifier'
 import { randomUUID } from 'node:crypto'
 import { handleError } from '../utils/error-handler.js'
@@ -93,36 +92,20 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       }
       const client_id = validateClientIdScheme(body.client_id as string)
 
-      const query = PresentationExchange({
-        presentation_definition: {
-          id: randomUUID(),
-          name: 'Test Name',
-          purpose: 'Test Purpose',
-          input_descriptors: [
+      const query = {
+        dcql_query: {
+          credentials: [
             {
-              id: credentialId,
-              format: {
-                jwt_vc_json: {
-                  proof_type: ['ES256'],
-                },
-              },
-              constraints: {
-                fields: [
-                  {
-                    path: ['$.vc.type'],
-                    filter: {
-                      type: 'array',
-                      contains: {
-                        const: 'VerifiableCredential',
-                      },
-                    },
-                  },
-                ],
+              id: randomUUID(),
+              format: 'jwt_vc_json',
+              meta: {
+                type_values: [['VerifiableCredential']],
               },
             },
           ],
         },
-      })
+      }
+
       const request = await verifierFlow.createAuthzRequest(
         verifierId,
         'vp_token',
@@ -249,8 +232,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
   })
 
   // Create the request in JAR format
+  type AuthzQueryInput = Parameters<typeof verifierFlow.createAuthzRequest>[4]
   type RequestObjectShape = {
-    query: PresentationExchange
+    query: AuthzQueryInput
     state: string
     base_url: string
     is_request_uri: boolean
@@ -258,35 +242,28 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     is_transaction_data: boolean
     response_uri?: string
   }
+  type RequestObjectInput = Partial<
+    Omit<RequestObjectShape, 'query' | 'client_id'> & {
+      query: unknown
+      client_id: string
+    }
+  >
   verifyApp.post('/request-object', async (c) => {
-    const presentationDefinitionJwtVC = {
-      id: randomUUID(),
-      name: 'Test Name',
-      purpose: 'Test Purpose',
-      input_descriptors: [
-        {
-          id: randomUUID(),
-          format: {
-            jwt_vc_json: {
-              proof_type: ['ES256'],
+    // TODO: Sample
+    const dcqlQuery = {
+      dcql_query: {
+        credentials: [
+          {
+            id: randomUUID(),
+            format: 'jwt_vc_json',
+            meta: {
+              type_values: [['VerifiableCredential']],
             },
           },
-          constraints: {
-            fields: [
-              {
-                path: ['$.vc.type'],
-                filter: {
-                  type: 'array',
-                  contains: {
-                    const: 'VerifiableCredential',
-                  },
-                },
-              },
-            ],
-          },
-        },
-      ],
+        ],
+      },
     }
+
     const raw = await c.req.text()
     let parsed: unknown = {}
     if (raw.trim()) {
@@ -299,15 +276,12 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         )
       }
     }
-    const input =
-      parsed && typeof parsed === 'object' ? (parsed as Partial<RequestObjectShape>) : {}
+    const input = parsed && typeof parsed === 'object' ? (parsed as RequestObjectInput) : {}
     const requestObject: RequestObjectShape = {
       query:
-        typeof input.query === 'object' && input.query !== null
+        typeof input.query === 'object' && input.query !== null && !Array.isArray(input.query)
           ? input.query
-          : {
-              presentation_definition: presentationDefinitionJwtVC,
-            },
+          : dcqlQuery,
       state:
         typeof input.state === 'string' && input.state.trim() !== ''
           ? input.state

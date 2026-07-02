@@ -12,14 +12,14 @@ import {
   CredentialIssuerMetadata,
 } from '../credential-issuer.types'
 import { CredentialOffer } from '../credential-offer.types'
-import { CredentialQuery, CredentialQueryType } from '../credential-query.type'
+import { CredentialQuery } from '../credential-query.type'
+
 import { CredentialFormats } from '../credential-request.types'
 import { JwtVcJson, ProofJwt, ProofJwtHeader, VerifiableCredential } from '../credential.types'
 import { Dcql } from '../dcql.type'
 import { DidDocument } from '../did.types'
 import { JwtContent, JwtPayload } from '../jwt.types'
 import { PreAuthorizedCode } from '../pre-authorized-code.types'
-import { PresentationExchange } from '../presentation-exchange.types'
 import { VpTokenPayload } from '../presentation.types'
 import { RequestObjectId } from '../request-object-id.types'
 import { RequestObject } from '../request-object.types'
@@ -165,7 +165,7 @@ export type VerifyVerifiablePresentationVerifyOptions =
       expectedNonce?: string
       expectedTransactionDataHashes?: string[]
     }
-  // | {
+// | {
 //     kind: 'dc+sd-jwt'
 //     specifiedDisclosures?: string[]
 //     isKbJwt?: boolean
@@ -366,23 +366,12 @@ export type IssueCredentialProvider = {
   canHandle(format: CredentialFormats): boolean
 }
 
-export type CredentialQueryGenerationOptions =
-  | {
-      kind: 'presentation-exchange'
-      query: DeepPartialUnknown<PresentationExchange>
-    }
-  | {
-      kind: 'dcql'
-      query: DeepPartialUnknown<Dcql>
-    }
-
 export type CredentialQueryProvider = {
   kind: 'credential-query-provider'
   name: string
-  single: false
+  single: true
 
-  generate(options: CredentialQueryGenerationOptions): Promise<CredentialQuery>
-  canHandle(query: CredentialQueryType): boolean
+  generate(query: DeepPartialUnknown<Dcql>): Promise<CredentialQuery>
 }
 
 export type AuthzRequestJARProvider = {
