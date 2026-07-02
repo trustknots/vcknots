@@ -90,6 +90,10 @@ export class LambdaApi extends Construct {
       logGroup,
       bundling: {
         format: lambdaNode.OutputFormat.ESM,
+        // CJS packages bundled into ESM output need a require() polyfill.
+        // createRequire makes require available in the module scope so that
+        // esbuild's __require2 helper can find it at runtime.
+        banner: 'import { createRequire } from "module"; const require = createRequire(import.meta.url);',
       },
       environment: {
         NODE_ENV: 'production',

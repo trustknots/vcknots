@@ -26,7 +26,10 @@ export function createIssuerApp(options?: VcknotsOptions) {
   )
 
   async function initialize(baseUrl: string) {
-    const existing = await store.fetch(CredentialIssuer(baseUrl))
+    const context = createVcknotsContext({ ...options, providers: [store, ...(options?.providers ?? [])] })
+    const issuerFlow = initializeIssuerFlow(context)
+
+    const existing = await issuerFlow.findIssuerMetadata(CredentialIssuer(baseUrl))
     if (existing) {
       console.log('Issuer metadata already exists, skipping initialization')
       return
@@ -34,9 +37,6 @@ export function createIssuerApp(options?: VcknotsOptions) {
 
     const samplesDir = join(dirname(fileURLToPath(import.meta.url)), '../../../samples')
     const sampleIssuerMetadata = JSON.parse(readFileSync(join(samplesDir, 'issuer_metadata.json'), 'utf-8'))
-
-    const context = createVcknotsContext({ ...options, providers: [store, ...(options?.providers ?? [])] })
-    const issuerFlow = initializeIssuerFlow(context)
     const metadata = CredentialIssuerMetadata({
       ...sampleIssuerMetadata,
       credential_issuer: baseUrl,
