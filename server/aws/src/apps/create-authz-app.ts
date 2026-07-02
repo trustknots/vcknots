@@ -26,7 +26,10 @@ export function createAuthzApp(options?: VcknotsOptions) {
   )
 
   async function initialize(baseUrl: string) {
-    const existing = await store.fetch(AuthorizationServerIssuer(baseUrl))
+    const context = createVcknotsContext({ ...options, providers: [store, ...(options?.providers ?? [])] })
+    const authzFlow = initializeAuthzFlow(context)
+
+    const existing = await authzFlow.findAuthzServerMetadata(AuthorizationServerIssuer(baseUrl))
     if (existing) {
       console.log('Authz server metadata already exists, skipping initialization')
       return
@@ -34,9 +37,6 @@ export function createAuthzApp(options?: VcknotsOptions) {
 
     const samplesDir = join(dirname(fileURLToPath(import.meta.url)), '../../../samples')
     const sampleAuthzMetadata = JSON.parse(readFileSync(join(samplesDir, 'authorization_metadata.json'), 'utf-8'))
-
-    const context = createVcknotsContext({ ...options, providers: [store, ...(options?.providers ?? [])] })
-    const authzFlow = initializeAuthzFlow(context)
     const metadata = AuthorizationServerMetadata({
       ...sampleAuthzMetadata,
       issuer: baseUrl,

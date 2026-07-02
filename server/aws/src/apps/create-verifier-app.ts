@@ -3,9 +3,10 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dynamodbVerifierMetadataStore } from '@trustknots/aws'
 import { createVerifierRouter } from '@trustknots/server-core/routes/verify'
-import { VerifierClientId, VerifierMetadata } from '@trustknots/vcknots/verifier'
+import { VerifierClientId, VerifierMetadata, initializeVerifierFlow } from '@trustknots/vcknots/verifier'
 import type { VcknotsOptions } from '@trustknots/vcknots'
 import { createBaseApp } from './create-base-app.js'
+import { createVcknotsContext } from '../context/vcknots-context.js'
 
 export function createVerifierApp(options?: VcknotsOptions) {
   const tableName = process.env.VERIFIERS_TABLE_NAME
@@ -26,7 +27,10 @@ export function createVerifierApp(options?: VcknotsOptions) {
 
   async function initialize(baseUrl: string) {
     const verifierId = VerifierClientId(baseUrl)
-    const existing = await store.fetch(verifierId)
+    const context = createVcknotsContext({ ...options, providers: [store, ...(options?.providers ?? [])] })
+    const verifierFlow = initializeVerifierFlow(context)
+
+    const existing = await verifierFlow.findVerifierMetadata(verifierId)
     if (existing) {
       console.log('Verifier metadata already exists, skipping initialization')
       return
@@ -36,7 +40,7 @@ export function createVerifierApp(options?: VcknotsOptions) {
     const sampleVerifierMetadata = JSON.parse(readFileSync(join(samplesDir, 'verifier_metadata.json'), 'utf-8'))
 
     const metadata = VerifierMetadata(sampleVerifierMetadata)
-    await store.save(verifierId, metadata)
+    await verifierFlow.createVerifierMetadata(verifierId, metadata)
     console.log('Verifier metadata initialized')
   }
 
