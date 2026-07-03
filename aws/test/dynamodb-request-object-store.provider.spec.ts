@@ -76,6 +76,17 @@ describe('dynamodbRequestObjectStore', () => {
     assert.equal(fetched, null)
   })
 
+  it('should return null when expires_at is missing', async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { id: requestObjectId, requestObject },
+    })
+
+    const provider = createProvider()
+    const fetched = await provider.fetch(requestObjectId)
+
+    assert.equal(fetched, null)
+  })
+
   it('should save with correct table name and expires_at', async () => {
     ddbMock.on(PutCommand).resolves({})
     const before = Math.floor(Date.now() / 1000)

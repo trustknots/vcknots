@@ -40,7 +40,7 @@ export const dynamodbRequestObjectStore = (
       }
 
       // DynamoDB TTL deletion is eventually consistent — check expiry manually.
-      if (Math.floor(Date.now() / 1000) > expires_at) {
+      if (typeof expires_at !== 'number' || Math.floor(Date.now() / 1000) > expires_at) {
         return null
       }
 
