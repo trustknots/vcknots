@@ -37,7 +37,7 @@ import { initializeContext } from '@trustknots/vcknots'
 
 const context = initializeContext({
   providers: [
-    timestampNonceProvider,
+    timestampNonceProvider(),
   ],
 })
 ```
@@ -52,7 +52,7 @@ const context = initializeContext({
 
 Provider の選択時には、ユーザーが登録した provider が優先して評価され、条件に一致しない場合はデフォルト provider が利用されます。
 
-同一 `kind` の Multi Provider を複数登録した場合は、後から登録した provier ほど優先して評価されます。
+同一 `kind` の Multi Provider を複数登録した場合は、後から登録した provider ほど優先して評価されます。
 
 ### ユースケース
 
@@ -73,10 +73,53 @@ import { initializeContext } from '@trustknots/vcknots'
 
 const context = initializeContext({
   providers: [
-    es384SignatureKeyProvider,
+    es384SignatureKeyProvider(),
   ],
 })
 ```
+
+## プロバイダー間の協調動作
+
+プロバイダーは、他のプロバイダーと協調して動作することができます。
+
+VCKnots のプロバイダーレジストリ（`ProviderRegistry`）は、登録されたプロバイダーインスタンスが `providers` プロパティを持っている場合、自動的に自身（`ProviderRegistry`）をそのプロパティに注入します。
+
+これにより、独自プロバイダーの内部から、他の登録済みプロバイダー（例: `did-provider` や `jwt-signature-provider`）を簡単に取得して利用することができます。
+
+### 実装パターン
+
+他プロバイダーとの連携が必要な独自プロバイダーを実装する場合、以下のように `withProviderRegistry` を展開（スプレッド）したファクトリ関数として実装することを推奨します。
+
+```ts
+import {
+  ProviderRegistry,
+  WithProviderRegistry,
+  withProviderRegistry,
+} from '@trustknots/vcknots'
+
+// ファクトリ関数形式で定義
+export const myCustomProvider = (): MyCustomProvider & WithProviderRegistry => {
+  return {
+    ...withProviderRegistry, // 自動注入される providers のプレースホルダーを展開
+
+    kind: 'some-custom-provider',
+    name: 'my-custom-provider',
+    single: true,
+
+    async doSomething() {
+      // 注入された providers から、別のプロバイダー（例: DID 解決プロバイダー）を取得する
+      const didProvider = this.providers.get('did-provider')
+      const didDocument = await didProvider.resolveDid('did:example:123')
+
+      // 取得した他のプロバイダーと連携して処理を行う
+      // ...
+    }
+  }
+}
+```
+
+このパターンを使用することで、型安全に自動注入される `providers` の初期値を定義しつつ、他のプロバイダー（例: DID 解決や鍵管理）と疎結合に協調動作させることができます。
+ProviderRegistry の詳細については [05. ProviderRegistry の役割と仕組み](./05-provider-registry.md) を参照してください。
 
 ## テスト
 
