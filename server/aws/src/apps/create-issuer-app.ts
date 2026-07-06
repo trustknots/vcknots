@@ -6,7 +6,6 @@ import { createIssueRouter } from '@trustknots/server-core/routes/issue'
 import { CredentialIssuer, CredentialIssuerMetadata, initializeIssuerFlow } from '@trustknots/vcknots/issuer'
 import type { VcknotsOptions } from '@trustknots/vcknots'
 import { createBaseApp } from './create-base-app.js'
-import { createVcknotsContext } from '../context/vcknots-context.js'
 
 export function createIssuerApp(options?: VcknotsOptions) {
   const tableName = process.env.ISSUERS_TABLE_NAME
@@ -19,14 +18,13 @@ export function createIssuerApp(options?: VcknotsOptions) {
   if (!Number.isFinite(port)) throw new Error(`Invalid ISSUER_PORT: "${rawPort}"`)
 
   const store = dynamodbIssuerMetadataStore({ tableName })
-  const { app } = createBaseApp(
+  const { app, context } = createBaseApp(
     createIssueRouter,
     { port, baseUrl: process.env.ISSUER_BASE_URL },
     { ...options, providers: [store, ...(options?.providers ?? [])] },
   )
 
   async function initialize(baseUrl: string) {
-    const context = createVcknotsContext({ ...options, providers: [store, ...(options?.providers ?? [])] })
     const issuerFlow = initializeIssuerFlow(context)
 
     const existing = await issuerFlow.findIssuerMetadata(CredentialIssuer(baseUrl))

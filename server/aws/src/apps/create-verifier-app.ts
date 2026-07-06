@@ -6,7 +6,6 @@ import { createVerifierRouter } from '@trustknots/server-core/routes/verify'
 import { VerifierClientId, VerifierMetadata, initializeVerifierFlow } from '@trustknots/vcknots/verifier'
 import type { VcknotsOptions } from '@trustknots/vcknots'
 import { createBaseApp } from './create-base-app.js'
-import { createVcknotsContext } from '../context/vcknots-context.js'
 
 export function createVerifierApp(options?: VcknotsOptions) {
   const verifiersTableName = process.env.VERIFIERS_TABLE_NAME
@@ -25,7 +24,7 @@ export function createVerifierApp(options?: VcknotsOptions) {
 
   const verifierMetadataStore = dynamodbVerifierMetadataStore({ tableName: verifiersTableName })
   const requestObjectStore = dynamodbRequestObjectStore({ tableName: requestObjectsTableName })
-  const { app } = createBaseApp(
+  const { app, context } = createBaseApp(
     createVerifierRouter,
     { port, baseUrl: process.env.VERIFIER_BASE_URL },
     { ...options, providers: [verifierMetadataStore, requestObjectStore, ...(options?.providers ?? [])] },
@@ -33,7 +32,6 @@ export function createVerifierApp(options?: VcknotsOptions) {
 
   async function initialize(baseUrl: string) {
     const verifierId = VerifierClientId(baseUrl)
-    const context = createVcknotsContext({ ...options, providers: [verifierMetadataStore, requestObjectStore, ...(options?.providers ?? [])] })
     const verifierFlow = initializeVerifierFlow(context)
 
     const existing = await verifierFlow.findVerifierMetadata(verifierId)
