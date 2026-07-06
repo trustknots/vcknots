@@ -1,8 +1,8 @@
 ---
-sidebar_position: 7
+sidebar_position: 6
 ---
 
-# 03. Provider インターフェースの基本
+# 02. Provider インターフェースの基本
 
 VCKnots では、各種の機能モジュール（ストレージ, 鍵管理, DID 解決, 検証など）を疎結合に保ちつつ、柔軟に差し替え・拡張できるようにするために `Provider` インターフェースを採用しています。
 

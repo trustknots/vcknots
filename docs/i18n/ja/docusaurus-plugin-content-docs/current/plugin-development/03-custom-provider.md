@@ -1,10 +1,10 @@
 ---
-sidebar_position: 6
+sidebar_position: 7
 ---
 
-# 02. Custom Provider の作成
+# 03. Custom Provider の作成
 
-この章では、独自の `provider` を作成して VCKnots に組み込む方法を説明します。
+この章では、独自の `provider` を作成して VC Knots に組み込む方法を説明します。
 
 基本的な流れは次のとおりです。
 
@@ -81,17 +81,44 @@ const context = initializeContext({
 
 ### ユースケース
 
-`issuer-signature-key-provider` は、Credential 発行時に利用する署名鍵を生成する provider です。
+`did-provider` は、デフォルトでは `did:key` の DID 解決に対応しています。provider を追加することで `did:web` などの DID Method を解決できるようになります。
 
-デフォルトでは ES256 の署名鍵生成に対応しています。provider を追加することで ES384 や EdDSA など別のアルゴリズムを利用できるようになります。
+デフォルトの `did-provider` を削除する必要はなく、対応可能な方式を追加する用途に適しています。
 
-デフォルトの ES256 を削除する必要はなく、利用可能なアルゴリズムを追加する用途に適しています。
+独自の処理を提供したい場合は、Multi Provider においても Single Provider と同様にインターフェースに従って provider を作成し、 `VcknotsOptions.providers` へ登録してください。
 
-利用したいアルゴリズムに対して `issuer-signature-key-provider` のデフォルト実装で対応できる場合、引数にアルゴリズム名を指定することで、そのアルゴリズムに対応した provider を登録できます。
+### 実装例
 
-なお、利用したいアルゴリズムそれぞれに対応する provider は事前にすべて `VcknotsOptions.providers` へ登録する必要があります。
+```ts
+import { DidDocument } from '../did.types'
+import { DidProvider } from './provider.types'
 
-独自の鍵生成処理を提供したい場合は、Single Provider の例と同様に、インターフェースに従って provider を作成し、 `VcknotsOptions.providers` へ登録してください。
+
+export const didWeb = (): DidProvider => {
+  return {
+    kind: 'did-provider',
+    name: 'did-web-provider',
+    single: false,
+
+    async resolveDid(did: string): Promise<DidDocument | null> {
+        // did:web から取得先URLを組み立ててDID Documentを取得する処理を実装する
+        const response = await fetch(
+          `https://example.com`
+        )
+      
+        const document = await response.json()
+
+        // 取得した DID document のバリデーションを実装する
+
+        return document as DidDocument
+      }
+
+    canHandle(method: string): boolean {
+      return method === 'web'
+    },
+  }
+}
+```
 
 ### 登録例
 
@@ -100,29 +127,28 @@ import { initializeContext } from '@trustknots/vcknots'
 
 const context = initializeContext({
   providers: [
-    issuerSignatureKey({ alg: "ES384" }),
-    issuerSignatureKey({ alg: "EdDSA" }),
+    didWeb(),
   ],
 })
 ```
 
-## プロバイダー間の協調動作
+## Provider 間の協調動作
 
-プロバイダーは、他のプロバイダーと協調して動作することができます。
+provider は、他の provider と協調して動作することができます。
 
-VCKnots のプロバイダーレジストリ（`ProviderRegistry`）は、登録されたプロバイダーインスタンスが `providers` プロパティを持っている場合、自動的に自身（`ProviderRegistry`）をそのプロパティに注入します。
+VC Knots の `ProviderRegistry` は、登録された provider インスタンスが `providers` プロパティを持っている場合、自動的に自身（`ProviderRegistry`）をそのプロパティに注入します。
 
-これにより、独自プロバイダーの内部から、他の登録済みプロバイダー（例: `did-provider` や `jwt-signature-provider`）を簡単に取得して利用することができます。
+これにより、独自 provider の内部から、他の登録済み provider （例: `did-provider` や `jwt-signature-provider`）を簡単に取得して利用することができます。
 
 ### 実装パターン
 
-他プロバイダーとの連携が必要な独自プロバイダーを実装する場合、以下のように `withProviderRegistry` を展開（スプレッド）したファクトリ関数として実装することを推奨します。
+他 provider との連携が必要な独自 provider を実装する場合、以下のように `withProviderRegistry` を展開（スプレッド）したファクトリ関数として実装することを推奨します。
 
 ```ts
 import {
-  ProviderRegistry,
   WithProviderRegistry,
   withProviderRegistry,
+  selectProvider,
 } from '@trustknots/vcknots'
 
 // ファクトリ関数形式で定義
@@ -135,18 +161,21 @@ export const myCustomProvider = (): MyCustomProvider & WithProviderRegistry => {
     single: true,
 
     async doSomething() {
-      // 注入された providers から、別のプロバイダー（例: DID 解決プロバイダー）を取得する
-      const didProvider = this.providers.get('did-provider')
+      // 注入された providers から、別の provider （例: DID 解決 provider ）を取得する
+      const didProvider = selectProvider(
+        this.providers.get('did-provider'),
+        'key'
+      )
       const didDocument = await didProvider.resolveDid('did:example:123')
 
-      // 取得した他のプロバイダーと連携して処理を行う
+      // 取得した他の provider と連携して処理を行う
       // ...
     }
   }
 }
 ```
 
-このパターンを使用することで、型安全に自動注入される `providers` の初期値を定義しつつ、他のプロバイダー（例: DID 解決や鍵管理）と疎結合に協調動作させることができます。
+このパターンを使用することで、型安全に自動注入される `providers` の初期値を定義しつつ、他の provider （例: DID 解決や鍵管理）と疎結合に協調動作させることができます。
 ProviderRegistry の詳細については [05. ProviderRegistry の役割と仕組み](./05-provider-registry.md) を参照してください。
 
 ## テスト
@@ -159,4 +188,4 @@ provider が期待どおりの値を返すことや、異常系を含めた prov
 
 ### Integration Test
 
-provider を VCKnots に登録し、Issuer や Verifier の処理の中で期待どおりに利用されることを確認します。
+provider を VC Knots に登録し、Issuer や Verifier のフローの中で期待どおりに利用されることを確認します。
