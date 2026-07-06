@@ -26,9 +26,36 @@ sidebar_position: 6
 
 例えば、生成する `c_nonce` にタイムスタンプを含めることで、外部データベースで時系列順にソートしやすい識別子を生成できます。
 
+また、他にも外部の乱数生成器を利用したり、乱数アルゴリズムを社内標準へ変更したりする用途にも利用できます。
+
 ### 実装例
 
-> （nonce-provider の実装例を掲載）
+```ts
+import { randomUUID } from 'node:crypto'
+import { Nonce } from '../nonce.types'
+import { NonceProvider } from './provider.types'
+
+const DEFAULT_NONCE_EXPIRES_IN_MS = 60 * 5 * 1000 // 5 minutes
+
+export const timestampNonce = (): NonceProvider => {
+  return {
+    kind: 'nonce-provider',
+    name: 'timestamp-nonce-provider',
+    single: true,
+
+    async generate(options?: { nonce_expires_in?: number }): Promise<Nonce> {
+      const timestamp = Date.now()
+      const uuid = randomUUID().replaceAll('-', '')
+
+      return Nonce({
+        nonce: `${timestamp}-${uuid}`,
+        nonce_expires_in:
+          options?.nonce_expires_in ?? DEFAULT_NONCE_EXPIRES_IN_MS,
+      })
+    },
+  }
+}
+```
 
 ### 登録例
 
@@ -37,7 +64,7 @@ import { initializeContext } from '@trustknots/vcknots'
 
 const context = initializeContext({
   providers: [
-    timestampNonceProvider(),
+    timestampNonce(),
   ],
 })
 ```
@@ -50,21 +77,21 @@ const context = initializeContext({
 
 追加した provider はデフォルトの provider を置き換えるのではなく、デフォルト provider と共存します。
 
-Provider の選択時には、ユーザーが登録した provider が優先して評価され、条件に一致しない場合はデフォルト provider が利用されます。
-
-同一 `kind` の Multi Provider を複数登録した場合は、後から登録した provider ほど優先して評価されます。
+同一 `kind` の provider の選択時には、後から登録した provider ほど優先して評価されます。条件に一致しない場合はデフォルト provider が利用されます。
 
 ### ユースケース
 
-`issuer-signature-key-provider` は、Credential 発行時に利用する署名アルゴリズムを提供します。
+`issuer-signature-key-provider` は、Credential 発行時に利用する署名鍵を生成する provider です。
 
-デフォルトでは ES256 を利用できますが、provider を追加することで ES384 や EdDSA など別のアルゴリズムを利用できるようになります。
+デフォルトでは ES256 の署名鍵生成に対応しています。provider を追加することで ES384 や EdDSA など別のアルゴリズムを利用できるようになります。
 
 デフォルトの ES256 を削除する必要はなく、利用可能なアルゴリズムを追加する用途に適しています。
 
-### 実装例
+利用したいアルゴリズムに対して `issuer-signature-key-provider` のデフォルト実装で対応できる場合、引数にアルゴリズム名を指定することで、そのアルゴリズムに対応した provider を登録できます。
 
-> （issuer-signature-key-provider の実装例を掲載）
+なお、利用したいアルゴリズムそれぞれに対応する provider は事前にすべて `VcknotsOptions.providers` へ登録する必要があります。
+
+独自の鍵生成処理を提供したい場合は、Single Provider の例と同様に、インターフェースに従って provider を作成し、 `VcknotsOptions.providers` へ登録してください。
 
 ### 登録例
 
@@ -73,7 +100,8 @@ import { initializeContext } from '@trustknots/vcknots'
 
 const context = initializeContext({
   providers: [
-    es384SignatureKeyProvider(),
+    issuerSignatureKey({ alg: "ES384" }),
+    issuerSignatureKey({ alg: "EdDSA" }),
   ],
 })
 ```
@@ -127,7 +155,7 @@ ProviderRegistry の詳細については [05. ProviderRegistry の役割と仕�
 
 ### Unit Test
 
-provider が期待どおりの値を返すことや、異常系を含めた provider 単体でのロジックを確認します。
+provider が期待どおりの値を返すことや、異常系を含めた provider 単体のロジックを確認します。
 
 ### Integration Test
 
