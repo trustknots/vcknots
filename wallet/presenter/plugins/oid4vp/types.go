@@ -68,6 +68,8 @@ const (
 	ServerError OAuthAuthzError = "server_error"
 	// TemporarilyUnavailableError indicates that the authorization server is currently unable to handle the request due to a temporary overloading or maintenance of the server. (This error code is needed because a 503 Service Unavailable HTTP status code cannot be returned to the client via a HTTP redirect.)
 	TemporarilyUnavailableError OAuthAuthzError = "temporarily_unavailable"
+	// VPFormatsNotSupportedError indicates that the Wallet does not support any of the Credential formats requested by the Verifier. (defined in OID4VP)
+	VPFormatsNotSupportedError OAuthAuthzError = "vp_formats_not_supported"
 )
 
 // CredentialPresentationRequest represents a OAuth 2.0 Authorization Request
