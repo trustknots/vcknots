@@ -18,11 +18,11 @@ VC Knots のコンテキスト初期化時 (`initializeContext`)、内部では�
 
 ### 1. フラット化と Single Provider の上書き
 すべてのデフォルト `provider` とユーザー定義 `provider` が、単一のリストへと統合されます。
-- `single: true` (シングル `provider` ) : 同じ `kind` の `provider` が既に存在している場合、後から登録された `provider` で **完全に上書き（置き換え）** されます。
-- `single: false` (マルチ `provider` ) : 既存の `provider` と競合せず、すべてが同一のリスト内に保持（共存）されます。
+- `single: true` ( Single Provider ) : 同じ `kind` の `provider` が既に存在している場合、後から登録された `provider` で **完全に上書き（置き換え）** されます。
+- `single: false` ( Multi Provider  ) : 既存の `provider` と競合せず、すべてが同一のリスト内に保持（共存）されます。
 
 ### 2. インデックス化と Multi Provider の優先順位の決定
-共存可能なマルチ `provider` について、VC Knots がどの `provider` を優先して選択するかの「評価順位」がここで決定されます。
+共存可能な Multi Provider  について、VC Knots がどの `provider` を優先して選択するかの「評価順位」がここで決定されます。
 - 新しくマージされる（＝後からユーザーによって登録された） `provider` ほど、 **解決用リストの先頭に配置** されます。
 - これにより、システム内部で解決を試みる際、自動的に「後から登録されたカスタム実装がデフォルト実装より優先して評価される」という **「後勝ち」** の優先ルールが成立します。
 
@@ -41,7 +41,7 @@ VC Knots のコンテキスト初期化時 (`initializeContext`)、内部では�
 Multi Provider の中から、特定の条件 (`value`) を処理できる最適な `provider` を 1 つだけ動的に解決して返します。
 
 #### 動的解決のフロー
-1. 指定された `kind` のマルチ `provider` 配列（優先評価順）を取得します。
+1. 指定された `kind` の Multi Provider 配列（優先評価順）を取得します。
 2. 配列の先頭から順に走査し、各 `provider` の `canHandle(value)` メソッドを呼び出します。
 3. 最初に `true` を返した `provider` を、最適な解決先として返却します。
 4. どの `provider` も `canHandle(value)` で `true` を返さなかった場合は、解決不可エラーを発生させます。
