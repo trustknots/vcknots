@@ -6,7 +6,6 @@ import { createAuthzRouter } from '@trustknots/server-core/routes/authz'
 import { AuthorizationServerIssuer, AuthorizationServerMetadata, initializeAuthzFlow } from '@trustknots/vcknots/authz'
 import type { VcknotsOptions } from '@trustknots/vcknots'
 import { createBaseApp } from './create-base-app.js'
-import { createVcknotsContext } from '../context/vcknots-context.js'
 
 export function createAuthzApp(options?: VcknotsOptions) {
   const tableName = process.env.AUTH_SERVERS_TABLE_NAME
@@ -19,14 +18,13 @@ export function createAuthzApp(options?: VcknotsOptions) {
   if (!Number.isFinite(port)) throw new Error(`Invalid AUTHZ_PORT: "${rawPort}"`)
 
   const store = dynamodbAuthzServerMetadataStore({ tableName })
-  const { app } = createBaseApp(
+  const { app, context } = createBaseApp(
     createAuthzRouter,
     { port, baseUrl: process.env.AUTHZ_BASE_URL },
     { ...options, providers: [store, ...(options?.providers ?? [])] },
   )
 
   async function initialize(baseUrl: string) {
-    const context = createVcknotsContext({ ...options, providers: [store, ...(options?.providers ?? [])] })
     const authzFlow = initializeAuthzFlow(context)
 
     const existing = await authzFlow.findAuthzServerMetadata(AuthorizationServerIssuer(baseUrl))

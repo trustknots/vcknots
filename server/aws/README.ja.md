@@ -81,7 +81,7 @@ cp .env.example .env
 | `AUTH_SERVERS_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthServersTableName`） |
 | `PRE_CODES_TABLE_NAME` | Authz（任意） | DynamoDB テーブル名（スタック出力: `PreCodesTableName`） |
 | `VERIFIERS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `VerifiersTableName`） |
-| `REQUEST_OBJECTS_TABLE_NAME` | Verifier（任意） | DynamoDB テーブル名（スタック出力: `RequestObjectsTableName`） |
+| `REQUEST_OBJECTS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `RequestObjectsTableName`） |
 | `NONCES_TABLE_NAME` | Verifier（任意） | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
 | `ISSUER_PORT` | Issuer（任意） | Issuer のリッスンポートを上書き（デフォルト: `8081`） |
 | `ISSUER_BASE_URL` | Issuer（任意） | Issuer メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{ISSUER_PORT}`） |
@@ -90,7 +90,7 @@ cp .env.example .env
 | `VERIFIER_PORT` | Verifier（任意） | Verifier のリッスンポートを上書き（デフォルト: `8083`） |
 | `VERIFIER_BASE_URL` | Verifier（任意） | Verifier メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{VERIFIER_PORT}`） |
 
-**`ISSUERS_TABLE_NAME`・`AUTH_SERVERS_TABLE_NAME`・`VERIFIERS_TABLE_NAME` は必須**です。未設定の場合、該当サーバーは起動時に終了します。
+**`ISSUERS_TABLE_NAME`・`AUTH_SERVERS_TABLE_NAME`・`VERIFIERS_TABLE_NAME`・`REQUEST_OBJECTS_TABLE_NAME` は必須**です。未設定の場合、該当サーバーは起動時に終了します。
 
 ## サーバーの起動
 

@@ -23,5 +23,5 @@ export function createBaseApp(
     return c.json({ error: 'internal_server_error' }, 500)
   })
 
-  return { app }
+  return { app, context }
 }
