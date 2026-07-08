@@ -34,6 +34,7 @@ package main
 import (
 	"crypto/x509"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -57,12 +58,71 @@ import (
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
+const requestTimeout = 10 * time.Second
+
+// credentialOfferURIPrefix is the expected scheme/prefix of an OID4VCI credential offer URI.
+const credentialOfferURIPrefix = "openid-credential-offer://?credential_offer="
+
+var httpClient = &http.Client{
+	Timeout: requestTimeout,
+}
+
+type runOptions struct {
+	OID4VPURI          string
+	CredentialOfferURI string
+	TxCode             string
+}
+
+func parseRunOptions(args []string) (runOptions, error) {
+	var opts runOptions
+	fs := flag.NewFlagSet("server_integration_sdjwt", flag.ContinueOnError)
+	fs.StringVar(&opts.CredentialOfferURI, "credential-offer-uri", "", "openid-credential-offer URI to use instead of fetching one from the local server")
+	fs.StringVar(&opts.TxCode, "tx-code", "", "tx_code to send to the token endpoint")
+	fs.StringVar(&opts.TxCode, "tx_code", "", "tx_code to send to the token endpoint")
+
+	if err := fs.Parse(args); err != nil {
+		return opts, err
+	}
+
+	positionals := fs.Args()
+	if len(positionals) > 1 {
+		return opts, fmt.Errorf("expected at most one OID4VP URI, got %d", len(positionals))
+	}
+	if len(positionals) == 1 {
+		opts.OID4VPURI = positionals[0]
+	}
+	if err := opts.validate(); err != nil {
+		return opts, err
+	}
+
+	return opts, nil
+}
+
+// validate checks the parsed configuration before the integration flow starts.
+func (o runOptions) validate() error {
+	if o.OID4VPURI != "" && o.CredentialOfferURI != "" {
+		return fmt.Errorf("--credential-offer-uri cannot be used with positional OID4VP URI")
+	}
+	if o.CredentialOfferURI != "" && !strings.HasPrefix(o.CredentialOfferURI, credentialOfferURIPrefix) {
+		return fmt.Errorf("--credential-offer-uri must start with %q", credentialOfferURIPrefix)
+	}
+	if o.OID4VPURI != "" && !strings.HasPrefix(o.OID4VPURI, "openid4vp://") {
+		return fmt.Errorf("OID4VP URI must use the openid4vp:// scheme")
+	}
+	return nil
+}
+
+func serverURLFromEnv() string {
+	if raw := strings.TrimSpace(os.Getenv("VCKNOTS_SERVER_URL")); raw != "" {
+		return strings.TrimRight(raw, "/")
+	}
+	return "http://localhost:8080"
+}
+
 // fetchOID4VPURIFromServer constructs a presentation definition from the credential,
 // sends it to the local server, and returns the OID4VP authorization request URI.
-func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger *slog.Logger) string {
-	verifierURL := "http://localhost:8080"
-
-	logger.Info("Verifier Details", "URL", verifierURL)
+func fetchOID4VPURIFromServer(serverURL string, receivedCredential *wallet.SavedCredential, logger *slog.Logger) string {
+	logger.Info("Verifier Details", "URL", serverURL)
 	logger.Info("Using received credential for presentation", "credential_id", receivedCredential.Entry.Id)
 	logger.Info("Decoding received credential")
 
@@ -143,9 +203,9 @@ func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger
 			},
 		},
 		"state":          "example-state",
-		"base_url":       verifierURL,
+		"base_url":       serverURL,
 		"is_request_uri": true,
-		"response_uri":   verifierURL + "/callback",
+		"response_uri":   serverURL + "/callback",
 		"client_id":      "x509_san_dns:localhost",
 	}
 
@@ -161,13 +221,13 @@ func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger
 		panic(err)
 	}
 	reqBody := io.NopCloser(strings.NewReader(string(jsonBody)))
-	req, err := http.NewRequest("POST", verifierURL+"/request-object", reqBody)
+	req, err := http.NewRequest("POST", serverURL+"/request-object", reqBody)
 	if err != nil {
 		panic(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		panic(err)
 	}
@@ -201,12 +261,11 @@ func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger
 }
 
 // fetchCredentialOfferFromServer fetches a Credential Offer URI from the local server.
-func fetchCredentialOfferFromServer(configurationID string, logger *slog.Logger) string {
-	issuerURL := "http://localhost:8080"
-	endpoint := fmt.Sprintf("%s/configurations/%s/offer", issuerURL, configurationID)
+func fetchCredentialOfferFromServer(serverURL string, configurationID string, logger *slog.Logger) string {
+	endpoint := fmt.Sprintf("%s/configurations/%s/offer", serverURL, configurationID)
 	logger.Info("Fetching credential offer", "endpoint", endpoint)
 
-	resp, err := http.Post(endpoint, "application/json", nil)
+	resp, err := httpClient.Post(endpoint, "application/json", nil)
 	if err != nil {
 		panic(fmt.Sprintf("failed to fetch credential offer: %v", err))
 	}
@@ -292,14 +351,20 @@ func buildCertPool(isConformanceMode bool) *x509.CertPool {
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	runOpts, err := parseRunOptions(os.Args[1:])
+	if err != nil {
+		logger.Error("Invalid arguments", "error", err)
+		os.Exit(2)
+	}
 
-	isConformanceMode := len(os.Args) >= 2
+	isConformanceMode := runOpts.OID4VPURI != ""
+	serverURL := serverURLFromEnv()
 
 	if isConformanceMode {
 		logger.Info("=== Conformance Test Mode ===")
 	} else {
 		logger.Info("=== Server Integration Test Mode ===")
-		logger.Info("Make sure the server is running on http://localhost:8080")
+		logger.Info("Make sure the server is running", "url", serverURL)
 
 		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
 		defer env.SetHTTPAllowed(http_allowed)
@@ -408,7 +473,7 @@ func main() {
 		}
 		logger.Info("Deserialized credential", "issuer", deserializedCred.Issuer, "claims", deserializedCred.Claims)
 
-		oid4vpURI = os.Args[1]
+		oid4vpURI = runOpts.OID4VPURI
 		logger.Info("Using OID4VP URI from command line", "uri", oid4vpURI)
 
 		options = &sdjwtvc.SdJwtVcPresentationOptions{
@@ -417,7 +482,12 @@ func main() {
 		}
 	} else {
 		// Receive SD-JWT VC from local server via OID4VCI (exercises branch changes)
-		offerURI := fetchCredentialOfferFromServer("UniversityDegreeCredentialSdJwt", logger)
+		offerURI := runOpts.CredentialOfferURI
+		if offerURI == "" {
+			offerURI = fetchCredentialOfferFromServer(serverURL, "UniversityDegreeCredentialSdJwt", logger)
+		} else {
+			logger.Info("Using credential offer URI from command line")
+		}
 		offer := parseCredentialOffer(offerURI, logger)
 
 		savedCred, err = w.ReceiveCredential(wallet.ReceiveCredentialRequest{
@@ -425,17 +495,21 @@ func main() {
 			Type:            receiver.Oid4vci,
 			Key:             mockKey,
 			RequestedFormat: credential.SDJwtVC,
+			TxCode:          runOpts.TxCode,
 		})
 		if err != nil {
 			logger.Error("Failed to receive SD-JWT credential", "error", err)
 			os.Exit(1)
+		}
+		if runOpts.TxCode != "" {
+			logger.Info("Used tx_code from command line")
 		}
 		logger.Info("SD-JWT credential received",
 			"id", savedCred.Entry.Id,
 			"mime_type", savedCred.Entry.MimeType,
 		)
 
-		oid4vpURI = fetchOID4VPURIFromServer(savedCred, logger)
+		oid4vpURI = fetchOID4VPURIFromServer(serverURL, savedCred, logger)
 
 		options = &sdjwtvc.SdJwtVcPresentationOptions{
 			SelectedClaims:    []string{"given_name"},
