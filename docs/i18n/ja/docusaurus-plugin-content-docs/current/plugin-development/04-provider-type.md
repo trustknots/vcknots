@@ -14,18 +14,18 @@ sidebar_position: 8
 | Issuerメタデータの保存・取得処理を変更したい | [`issuer-metadata-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20issuer-metadata-store-provider&type=code) |
 | Authorization Serverメタデータの保存・取得処理を変更したい | [`authz-server-metadata-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20authz-server-metadata-store-provider&type=code) |
 | Verifierメタデータの保存・取得処理を変更したい | [`verifier-metadata-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20verifier-metadata-store-provider&type=code) |
-| OAuth Client 情報の保存・取得処理を変更したい | `authz-oauth-client-store-provider` |
-| OAuth Policy の保存・取得処理を変更したい | `authz-oauth-policy-store-provider` |
+| OAuth Client 情報の保存・取得処理を変更したい | [`authz-oauth-client-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20authz-oauth-client-store-provider&type=code) |
+| OAuth Policy の保存・取得処理を変更したい | [`authz-oauth-policy-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20authz-oauth-policy-store-provider&type=code) |
 | Pre-Authorized Code の生成方法を変更したい | [`pre-authorized-code-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20pre-authorized-code-provider&type=code) |
 | Pre-Authorized Code の保存・消費処理を変更したい | [`pre-authorized-code-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20pre-authorized-code-store-provider&type=code) |
 | Access Token の payload 生成処理を変更したい | [`access-token-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20access-token-provider&type=code) |
-| Access Token ごとに発行可能な `credential_configuration_id` を保存・取得したい | `allowed-credential-configuration-store-provider` |
+| Access Token ごとに発行可能な `credential_configuration_id` を保存・取得したい | [`allowed-credential-configuration-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20allowed-credential-configuration-store-provider&type=code) |
 | Credential Offer の生成処理を変更したい | [`credential-offer-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20credential-offer-provider&type=code) |
 | `c_nonce` の生成方法を変更したい | [`nonce-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20nonce-provider&type=code) |
 | `c_nonce` の保存・検証・失効・消費処理を変更したい | [`nonce-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20nonce-store-provider&type=code) |
-| DPoP Proof JWT の検証処理を変更したい | `dpop-proof-provider` |
-| DPoP Proof JWT の replay 防止に利用する `jti` の保存処理を変更したい | `dpop-proof-jti-store-provider` |
-| Client Assertion の replay 防止に利用する `jti` の保存処理を変更したい | `oauth-client-assertion-jti-store-provider` |
+| DPoP Proof JWT の検証処理を変更したい | [`dpop-proof-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20dpop-proof-provider&type=code) |
+| DPoP Proof JWT の replay 防止に利用する `jti` の保存処理を変更したい | [`dpop-proof-jti-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20dpop-proof-jti-store-provider&type=code) |
+| Client Assertion の replay 防止に利用する `jti` の保存処理を変更したい | [`oauth-client-assertion-jti-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20oauth-client-assertion-jti-store-provider&type=code) |
 | Issuer の署名鍵の保存・取得・署名処理を変更したい | [`issuer-signature-key-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20issuer-signature-key-store-provider&type=code) |
 | Authorization Server の署名鍵の保存・取得・署名処理を変更したい | [`authz-signature-key-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20authz-signature-key-store-provider&type=code) |
 | Verifier の署名鍵の保存・取得・署名処理を変更したい | [`verifier-signature-key-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20verifier-signature-key-store-provider&type=code) |
@@ -45,5 +45,5 @@ sidebar_position: 8
 | Authorization Request の JAR 生成処理を追加・変更したい | [`authz-request-jar-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20authz-request-jar-provider&type=code) |
 | Verifier に紐づく証明書の保存・取得処理を変更したい | [`verifier-certificate-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20verifier-certificate-store-provider&type=code) |
 | 証明書の検証や、証明書から公開鍵を取得する処理を変更したい | [`certificate-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20certificate-provider&type=code) |
-| Transaction Code の生成方法を変更したい | `transaction-code-provider` |
+| Transaction Code の生成方法を変更したい | [`transaction-code-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20transaction-code-provider&type=code) |
 | Transaction Data の生成方法を変更したい | [`transaction-data-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20transaction-data-provider&type=code) |
