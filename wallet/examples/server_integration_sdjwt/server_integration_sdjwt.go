@@ -60,6 +60,9 @@ import (
 
 const requestTimeout = 10 * time.Second
 
+// credentialOfferURIPrefix is the expected scheme/prefix of an OID4VCI credential offer URI.
+const credentialOfferURIPrefix = "openid-credential-offer://?credential_offer="
+
 var httpClient = &http.Client{
 	Timeout: requestTimeout,
 }
@@ -88,11 +91,25 @@ func parseRunOptions(args []string) (runOptions, error) {
 	if len(positionals) == 1 {
 		opts.OID4VPURI = positionals[0]
 	}
-	if opts.OID4VPURI != "" && opts.CredentialOfferURI != "" {
-		return opts, fmt.Errorf("--credential-offer-uri cannot be used with positional OID4VP URI")
+	if err := opts.validate(); err != nil {
+		return opts, err
 	}
 
 	return opts, nil
+}
+
+// validate checks the parsed configuration before the integration flow starts.
+func (o runOptions) validate() error {
+	if o.OID4VPURI != "" && o.CredentialOfferURI != "" {
+		return fmt.Errorf("--credential-offer-uri cannot be used with positional OID4VP URI")
+	}
+	if o.CredentialOfferURI != "" && !strings.HasPrefix(o.CredentialOfferURI, credentialOfferURIPrefix) {
+		return fmt.Errorf("--credential-offer-uri must start with %q", credentialOfferURIPrefix)
+	}
+	if o.OID4VPURI != "" && !strings.HasPrefix(o.OID4VPURI, "openid4vp://") {
+		return fmt.Errorf("OID4VP URI must use the openid4vp:// scheme")
+	}
+	return nil
 }
 
 func serverURLFromEnv() string {

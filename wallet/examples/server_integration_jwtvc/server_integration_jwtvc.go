@@ -39,6 +39,9 @@ import (
 
 const requestTimeout = 10 * time.Second
 
+// credentialOfferURIPrefix is the expected scheme/prefix of an OID4VCI credential offer URI.
+const credentialOfferURIPrefix = "openid-credential-offer://?credential_offer="
+
 var httpClient = &http.Client{
 	Timeout: requestTimeout,
 }
@@ -61,8 +64,19 @@ func parseRunOptions(args []string) (runOptions, error) {
 	if rest := fs.Args(); len(rest) > 0 {
 		return opts, fmt.Errorf("unexpected positional arguments: %s", strings.Join(rest, ", "))
 	}
+	if err := opts.validate(); err != nil {
+		return opts, err
+	}
 
 	return opts, nil
+}
+
+// validate checks the parsed configuration before the integration flow starts.
+func (o runOptions) validate() error {
+	if o.CredentialOfferURI != "" && !strings.HasPrefix(o.CredentialOfferURI, credentialOfferURIPrefix) {
+		return fmt.Errorf("--credential-offer-uri must start with %q", credentialOfferURIPrefix)
+	}
+	return nil
 }
 
 func serverURLFromEnv() string {
@@ -103,7 +117,7 @@ func receiveCredential(w *wallet.Wallet, key *common.MockKeyEntry, logger *slog.
 
 	// Extract the credential_offer parameter from the URL
 	// Format: openid-credential-offer://?credential_offer={encoded-json}
-	if !strings.HasPrefix(offerURL, "openid-credential-offer://?credential_offer=") {
+	if !strings.HasPrefix(offerURL, credentialOfferURIPrefix) {
 		logger.Error("Invalid offer URL format", "url", offerURL)
 		panic(fmt.Errorf("invalid offer URL format"))
 	}
