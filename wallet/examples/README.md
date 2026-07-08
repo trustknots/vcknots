@@ -141,7 +141,7 @@ Set `VCKNOTS_SERVER_URL` when the server is not running on `http://localhost:808
 VCKNOTS_SERVER_URL=http://localhost:18080 go run server_integration_sdjwt.go
 ```
 
-To run against an offer URI created separately, pass both the offer URI and its transaction code. `--tx_code` is also accepted.
+To run against an offer URI created separately, pass it via `--credential-offer-uri`. If the offer requires a transaction code, also pass `--tx-code` (`--tx_code` is also accepted).
 
 ```bash
 OFFER_URI='openid-credential-offer://?...'

@@ -108,6 +108,10 @@ func receiveCredential(w *wallet.Wallet, key *common.MockKeyEntry, logger *slog.
 		}
 
 		offerURL = strings.TrimSpace(string(body))
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			logger.Error("Server returned error fetching offer", "status", resp.Status, "body", offerURL)
+			panic(fmt.Sprintf("server error fetching offer: %s - %s", resp.Status, offerURL))
+		}
 	} else {
 		logger.Info("Using credential offer URI from command line")
 	}
@@ -122,7 +126,7 @@ func receiveCredential(w *wallet.Wallet, key *common.MockKeyEntry, logger *slog.
 		panic(fmt.Errorf("invalid offer URL format"))
 	}
 
-	encodedOffer := strings.TrimPrefix(offerURL, "openid-credential-offer://?credential_offer=")
+	encodedOffer := strings.TrimPrefix(offerURL, credentialOfferURIPrefix)
 	decodedOffer, err := url.QueryUnescape(encodedOffer)
 	if err != nil {
 		logger.Error("Failed to decode offer", "error", err)

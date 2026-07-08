@@ -141,7 +141,7 @@ server が `http://localhost:8080` 以外で動いている場合は、`VCKNOTS_
 VCKNOTS_SERVER_URL=http://localhost:18080 go run server_integration_sdjwt.go
 ```
 
-別途作成した offer URI を使う場合は、offer URI と transaction code を一緒に指定します。`--tx_code` も利用できます：
+別途作成した offer URI を使う場合は、`--credential-offer-uri` で指定します。offer が transaction code を要求する場合は `--tx-code`（`--tx_code` も利用可能）を併せて指定します：
 
 ```bash
 OFFER_URI='openid-credential-offer://?...'
