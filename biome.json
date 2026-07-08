@@ -35,12 +35,6 @@
 			"semicolons": "asNeeded"
 		}
 	},
-	"markdown": {
-		"formatter": {
-			"enabled": true,
-			"lineWidth": 100
-		}
-	},
 	"overrides": [
 		{
 			"include": ["server/**"],
