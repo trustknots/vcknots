@@ -76,13 +76,13 @@ cp .env.example .env
 | `AWS_REGION` | Issuer | DynamoDB テーブルがデプロイされている AWS リージョン（例: `ap-northeast-1`） |
 | `AWS_PROFILE` | Issuer（任意） | 使用する AWS プロファイル（省略時はデフォルトを使用） |
 | `ISSUERS_TABLE_NAME` | Issuer **必須** | DynamoDB テーブル名（スタック出力: `IssuersTableName`） |
-| `NONCES_TABLE_NAME` | Issuer（任意） | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
+| `NONCES_TABLE_NAME` | Issuer **必須** | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
 | `PRE_CODES_TABLE_NAME` | Issuer（任意） | DynamoDB テーブル名（スタック出力: `PreCodesTableName`） |
 | `AUTH_SERVERS_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthServersTableName`） |
 | `PRE_CODES_TABLE_NAME` | Authz（任意） | DynamoDB テーブル名（スタック出力: `PreCodesTableName`） |
 | `VERIFIERS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `VerifiersTableName`） |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `RequestObjectsTableName`） |
-| `NONCES_TABLE_NAME` | Verifier（任意） | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
+| `NONCES_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
 | `ISSUER_PORT` | Issuer（任意） | Issuer のリッスンポートを上書き（デフォルト: `8081`） |
 | `ISSUER_BASE_URL` | Issuer（任意） | Issuer メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{ISSUER_PORT}`） |
 | `AUTHZ_PORT` | Authz（任意） | Authorization Server のリッスンポートを上書き（デフォルト: `8082`） |
@@ -90,7 +90,7 @@ cp .env.example .env
 | `VERIFIER_PORT` | Verifier（任意） | Verifier のリッスンポートを上書き（デフォルト: `8083`） |
 | `VERIFIER_BASE_URL` | Verifier（任意） | Verifier メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{VERIFIER_PORT}`） |
 
-**`ISSUERS_TABLE_NAME`・`AUTH_SERVERS_TABLE_NAME`・`VERIFIERS_TABLE_NAME`・`REQUEST_OBJECTS_TABLE_NAME` は必須**です。未設定の場合、該当サーバーは起動時に終了します。
+**`ISSUERS_TABLE_NAME`・`AUTH_SERVERS_TABLE_NAME`・`VERIFIERS_TABLE_NAME`・`REQUEST_OBJECTS_TABLE_NAME`・`NONCES_TABLE_NAME`（Issuer と Verifier）は必須**です。未設定の場合、該当サーバーは起動時に終了します。
 
 ## サーバーの起動
 

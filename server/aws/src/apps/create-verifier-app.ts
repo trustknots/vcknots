@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { dynamodbRequestObjectStore, dynamodbVerifierMetadataStore } from '@trustknots/aws'
+import { dynamodbNonceStore, dynamodbRequestObjectStore, dynamodbVerifierMetadataStore } from '@trustknots/aws'
 import { createVerifierRouter } from '@trustknots/server-core/routes/verify'
 import { VerifierClientId, VerifierMetadata, initializeVerifierFlow } from '@trustknots/vcknots/verifier'
 import type { VcknotsOptions } from '@trustknots/vcknots'
@@ -18,16 +18,25 @@ export function createVerifierApp(options?: VcknotsOptions) {
     throw new Error('REQUEST_OBJECTS_TABLE_NAME is required')
   }
 
+  const noncesTableName = process.env.NONCES_TABLE_NAME
+  if (!noncesTableName) {
+    throw new Error('NONCES_TABLE_NAME is required')
+  }
+
   const rawPort = process.env.VERIFIER_PORT ?? '8083'
   const port = Number.parseInt(rawPort, 10)
   if (!Number.isFinite(port)) throw new Error(`Invalid VERIFIER_PORT: "${rawPort}"`)
 
   const verifierMetadataStore = dynamodbVerifierMetadataStore({ tableName: verifiersTableName })
   const requestObjectStore = dynamodbRequestObjectStore({ tableName: requestObjectsTableName })
+  const nonceStore = dynamodbNonceStore({ tableName: noncesTableName })
   const { app, context } = createBaseApp(
     createVerifierRouter,
     { port, baseUrl: process.env.VERIFIER_BASE_URL },
-    { ...options, providers: [verifierMetadataStore, requestObjectStore, ...(options?.providers ?? [])] },
+    {
+      ...options,
+      providers: [verifierMetadataStore, requestObjectStore, nonceStore, ...(options?.providers ?? [])],
+    },
   )
 
   async function initialize(baseUrl: string) {

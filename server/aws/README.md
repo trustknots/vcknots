@@ -76,13 +76,13 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `AWS_REGION` | Issuer | AWS region where DynamoDB tables are deployed (e.g. `ap-northeast-1`) |
 | `AWS_PROFILE` | Issuer (optional) | AWS profile to use (omit to use the default) |
 | `ISSUERS_TABLE_NAME` | Issuer **required** | DynamoDB table name (stack output: `IssuersTableName`) |
-| `NONCES_TABLE_NAME` | Issuer (optional) | DynamoDB table name (stack output: `NoncesTableName`) |
+| `NONCES_TABLE_NAME` | Issuer **required** | DynamoDB table name (stack output: `NoncesTableName`) |
 | `PRE_CODES_TABLE_NAME` | Issuer (optional) | DynamoDB table name (stack output: `PreCodesTableName`) |
 | `AUTH_SERVERS_TABLE_NAME` | Authz **required** | DynamoDB table name (stack output: `AuthServersTableName`) |
 | `PRE_CODES_TABLE_NAME` | Authz (optional) | DynamoDB table name (stack output: `PreCodesTableName`) |
 | `VERIFIERS_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `VerifiersTableName`) |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `RequestObjectsTableName`) |
-| `NONCES_TABLE_NAME` | Verifier (optional) | DynamoDB table name (stack output: `NoncesTableName`) |
+| `NONCES_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `NoncesTableName`) |
 | `ISSUER_PORT` | Issuer (optional) | Override the Issuer listening port (default: `8081`) |
 | `ISSUER_BASE_URL` | Issuer (optional) | Override the base URL used in Issuer metadata (default: `http://localhost:{ISSUER_PORT}`) |
 | `AUTHZ_PORT` | Authz (optional) | Override the Authorization Server listening port (default: `8082`) |
@@ -90,7 +90,7 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `VERIFIER_PORT` | Verifier (optional) | Override the Verifier listening port (default: `8083`) |
 | `VERIFIER_BASE_URL` | Verifier (optional) | Override the base URL used in Verifier metadata (default: `http://localhost:{VERIFIER_PORT}`) |
 
-**`ISSUERS_TABLE_NAME`, `AUTH_SERVERS_TABLE_NAME`, `VERIFIERS_TABLE_NAME`, and `REQUEST_OBJECTS_TABLE_NAME` are required** — each server exits at startup if its table name is missing.
+**`ISSUERS_TABLE_NAME`, `AUTH_SERVERS_TABLE_NAME`, `VERIFIERS_TABLE_NAME`, `REQUEST_OBJECTS_TABLE_NAME`, and `NONCES_TABLE_NAME` (Issuer and Verifier) are required** — each server exits at startup if its table name is missing.
 
 ## Start the Servers
 
