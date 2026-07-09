@@ -55,7 +55,17 @@ export const dynamodbNonceStore = (options: DynamoDbNonceStoreOptions): NonceSto
 
       // DynamoDB TTL deletion is eventually consistent — check expiry manually.
       const { expires_at } = result.Item as NonceItem
-      return !isExpired(expires_at)
+      if (isExpired(expires_at)) {
+        // Match the Firestore provider: proactively delete expired nonces instead of waiting for TTL.
+        await client.send(
+          new DeleteCommand({
+            TableName: tableName,
+            Key: { id: nonce.nonce },
+          })
+        )
+        return false
+      }
+      return true
     },
 
     async revoke(nonce): Promise<boolean> {

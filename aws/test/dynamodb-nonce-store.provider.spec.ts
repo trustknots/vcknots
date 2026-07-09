@@ -72,14 +72,20 @@ describe('dynamodbNonceStore', () => {
     assert.equal(await provider.validate(nonce), false)
   })
 
-  it('validate should return false for an expired nonce', async () => {
+  it('validate should return false and delete an expired nonce', async () => {
     const pastExpiry = Math.floor(Date.now() / 1000) - 1
     ddbMock.on(GetCommand).resolves({
       Item: { id: nonce.nonce, nonce, expires_at: pastExpiry },
     })
+    ddbMock.on(DeleteCommand).resolves({})
 
     const provider = createProvider()
     assert.equal(await provider.validate(nonce), false)
+
+    // Match the Firestore provider: expired nonces are proactively deleted, not left to TTL.
+    const deleteCall = ddbMock.commandCalls(DeleteCommand)[0]
+    assert.equal(deleteCall?.args[0].input.TableName, TABLE_NAME)
+    assert.deepEqual(deleteCall?.args[0].input.Key, { id: nonce.nonce })
   })
 
   it('revoke should return true when the nonce existed', async () => {
