@@ -17,8 +17,9 @@ export const dynamodbNonceStore = (options: DynamoDbNonceStoreOptions): NonceSto
   const client = resolveDynamoDbDocumentClient(options)
   const { tableName } = options
 
+  // Treat the boundary second as expired (>=) to avoid reusing a nonce at its exact expiry.
   const isExpired = (expires_at: unknown): boolean =>
-    typeof expires_at !== 'number' || Math.floor(Date.now() / 1000) > expires_at
+    typeof expires_at !== 'number' || Math.floor(Date.now() / 1000) >= expires_at
 
   return {
     kind: 'nonce-store-provider',
