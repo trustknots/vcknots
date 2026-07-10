@@ -87,7 +87,7 @@ export const customProvider = (): MyProvider & WithProviderRegistry => {
 
 Whenever a provider is retrieved through `ProviderRegistry` (`get()` or `select()`), the registry performs the following steps.
 
-- It checks whether the provider contains a `providers` property supplied by `withProviderRegistry`.
+- It checks whether the provider contains a `provider` property supplied by `withProviderRegistry`.
 - If present, it injects the current `ProviderRegistry` instance into that property.
 
 This design provides several advantages.

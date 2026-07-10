@@ -6,13 +6,13 @@ sidebar_position: 6
 
 In VC Knots, the `provider` interface is used to keep functional modules—such as storage, key management, DID resolution, and verification—loosely coupled while allowing them to be replaced or extended flexibly.
 
-This chapter explains the core properties shared by all `providers` and how providers are registered and resolved.
+This chapter explains the core properties shared by all `provider` and how providers are registered and resolved.
 
 ---
 
 ## 1. Core Properties of a Provider
 
-All `providers` in VC Knots share the following three common properties.
+All `provider` in VC Knots share the following three common properties.
 
 ```ts
 export type Provider = {

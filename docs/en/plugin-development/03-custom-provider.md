@@ -173,7 +173,7 @@ const context = initializeContext({
 
 Providers can collaborate with one another.
 
-If a registered provider instance exposes a `providers` property, VC Knots automatically injects its `ProviderRegistry` instance into that property.
+If a registered provider instance exposes a `provider` property, VC Knots automatically injects its `ProviderRegistry` instance into that property.
 
 This allows custom providers to retrieve and use other registered providers (such as `did-provider` and `jwt-signature-provider`) from within their own implementation.
 
@@ -214,7 +214,7 @@ export const myCustomProvider = (): MyCustomProvider & WithProviderRegistry => {
 }
 ```
 
-This pattern lets you define the initial placeholder for the automatically injected `providers` property in a type-safe manner while keeping your provider loosely coupled with other providers, such as those responsible for DID resolution and key management.
+This pattern lets you define the initial placeholder for the automatically injected `provider` property in a type-safe manner while keeping your provider loosely coupled with other providers, such as those responsible for DID resolution and key management.
 
 For more information about `ProviderRegistry`, see [05. ProviderRegistry: Roles and Internal Mechanisms](./05-provider-registry.md).
 
