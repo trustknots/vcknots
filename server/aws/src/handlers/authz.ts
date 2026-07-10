@@ -1,10 +1,7 @@
+import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { handle } from "hono/aws-lambda";
 import { createAuthzApp } from "../apps/create-authz-app.js";
-
-if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
-  await import("dotenv/config");
-}
 
 const { app, initialize } = createAuthzApp();
 

@@ -1,0 +1,370 @@
+import assert from 'node:assert/strict'
+import { afterEach, describe, it } from 'node:test'
+import {
+  DeleteCommand,
+  DynamoDBDocumentClient,
+  GetCommand,
+  PutCommand,
+} from '@aws-sdk/lib-dynamodb'
+import { CredentialConfigurationId, PreAuthorizedCode } from '@trustknots/vcknots'
+import { mockClient } from 'aws-sdk-client-mock'
+import { dynamodbPreAuthorizedCodeStore } from '../src/providers/dynamodb-pre-authorized-code-store.provider'
+
+const TABLE_NAME = 'PreCodesTable'
+const ddbMock = mockClient(DynamoDBDocumentClient)
+
+const configurations: CredentialConfigurationId[] = [CredentialConfigurationId('University_Degree')]
+
+describe('dynamodbPreAuthorizedCodeStore', () => {
+  afterEach(() => {
+    ddbMock.reset()
+  })
+
+  const createProvider = (expiresIn?: number) =>
+    dynamodbPreAuthorizedCodeStore({
+      client: ddbMock as unknown as DynamoDBDocumentClient,
+      tableName: TABLE_NAME,
+      ...(expiresIn !== undefined && { expiresIn }),
+    })
+
+  /** Grab the Item written by the most recent PutCommand. */
+  const lastPutItem = () => ddbMock.commandCalls(PutCommand).at(-1)?.args[0].input.Item
+
+  /** Wire GetCommand to return whatever the last save persisted. */
+  const armGetFromLastPut = () => {
+    ddbMock.on(GetCommand).resolves({ Item: lastPutItem() })
+  }
+
+  it('should have correct provider metadata', () => {
+    const provider = createProvider()
+    assert.equal(provider.kind, 'pre-authorized-code-store-provider')
+    assert.equal(provider.name, 'dynamodb-pre-authorized-code-store-provider')
+    assert.equal(provider.single, true)
+  })
+
+  it('should save and consume a code without tx_code', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    ddbMock.on(DeleteCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('code-123'), configurations)
+    armGetFromLastPut()
+
+    const result = await provider.consume(PreAuthorizedCode('code-123'))
+    assert.deepEqual(result, configurations)
+    assert.equal(ddbMock.commandCalls(DeleteCommand).length, 1)
+  })
+
+  it('should save and validate a code with tx_code (numeric)', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    ddbMock.on(DeleteCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('code-numeric'), configurations, 123, {
+      tx_code_input_mode: 'numeric',
+    })
+    armGetFromLastPut()
+
+    const result = await provider.consume(PreAuthorizedCode('code-numeric'), 123)
+    assert.deepEqual(result, configurations)
+  })
+
+  it('should save and validate a code with tx_code (text)', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    ddbMock.on(DeleteCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('code-text'), configurations, 'abc123', {
+      tx_code_input_mode: 'text',
+    })
+    armGetFromLastPut()
+
+    const result = await provider.consume(PreAuthorizedCode('code-text'), 'abc123')
+    assert.deepEqual(result, configurations)
+  })
+
+  it('should throw invalid_grant for incorrect tx_code', async () => {
+    ddbMock.on(PutCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('code-wrong'), configurations, 123, {
+      tx_code_input_mode: 'numeric',
+    })
+    armGetFromLastPut()
+
+    await assert.rejects(provider.consume(PreAuthorizedCode('code-wrong'), 456), {
+      name: 'invalid_grant',
+    })
+  })
+
+  it('should allow string numeric tx_code in numeric mode', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    ddbMock.on(DeleteCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('code-type'), configurations, 123, {
+      tx_code_input_mode: 'numeric',
+    })
+    armGetFromLastPut()
+
+    const result = await provider.consume(PreAuthorizedCode('code-type'), '123')
+    assert.deepEqual(result, configurations)
+  })
+
+  it('should throw invalid_grant for non-numeric string tx_code in numeric mode', async () => {
+    ddbMock.on(PutCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('code-invalid-num'), configurations, 123, {
+      tx_code_input_mode: 'numeric',
+    })
+    armGetFromLastPut()
+
+    await assert.rejects(provider.consume(PreAuthorizedCode('code-invalid-num'), '12a3'), {
+      name: 'invalid_grant',
+    })
+  })
+
+  it('should preserve leading zeros in numeric mode', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    ddbMock.on(DeleteCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('code-leading-zero'), configurations, '0123', {
+      tx_code_input_mode: 'numeric',
+    })
+    armGetFromLastPut()
+
+    const result = await provider.consume(PreAuthorizedCode('code-leading-zero'), '0123')
+    assert.deepEqual(result, configurations)
+  })
+
+  it('should throw invalid_grant when leading-zero digit-string is validated as number', async () => {
+    ddbMock.on(PutCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('code-leading-zero-mismatch'), configurations, '0123', {
+      tx_code_input_mode: 'numeric',
+    })
+    armGetFromLastPut()
+
+    await assert.rejects(provider.consume(PreAuthorizedCode('code-leading-zero-mismatch'), 123), {
+      name: 'invalid_grant',
+    })
+  })
+
+  it('should throw invalid_tx_code for a non-digit tx_code in numeric mode on save', async () => {
+    ddbMock.on(PutCommand).resolves({})
+
+    const provider = createProvider()
+    await assert.rejects(
+      provider.save(PreAuthorizedCode('code-bad-save'), configurations, 'not-a-number', {
+        tx_code_input_mode: 'numeric',
+      }),
+      { name: 'invalid_tx_code' }
+    )
+  })
+
+  it('should require tx_code when a hash is stored', async () => {
+    ddbMock.on(PutCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('code-requires-tx'), configurations, 123, {
+      tx_code_input_mode: 'numeric',
+    })
+    armGetFromLastPut()
+
+    await assert.rejects(provider.consume(PreAuthorizedCode('code-requires-tx')), {
+      name: 'invalid_request',
+    })
+  })
+
+  it('should reject tx_code when none was stored', async () => {
+    ddbMock.on(PutCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('code-no-tx'), configurations)
+    armGetFromLastPut()
+
+    await assert.rejects(provider.consume(PreAuthorizedCode('code-no-tx'), 123), {
+      name: 'invalid_request',
+    })
+  })
+
+  it('should store only the hashed tx_code, never the clear value', async () => {
+    ddbMock.on(PutCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('hashed-code'), configurations, 123, {
+      tx_code_input_mode: 'numeric',
+    })
+
+    const item = lastPutItem()
+    assert.ok(item)
+    assert.equal(item.tx_code_input_mode, 'numeric')
+    assert.equal(typeof item.tx_code_hash, 'string')
+    assert.equal(item.tx_code_hash.length, 64) // SHA-256 hex length
+    assert.ok(!('tx_code' in item))
+    assert.ok(!Object.values(item).includes(123))
+    assert.ok(!Object.values(item).includes('123'))
+  })
+
+  it('should default to numeric mode when not specified', async () => {
+    ddbMock.on(PutCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('default-mode'), configurations, 456)
+
+    assert.equal(lastPutItem()?.tx_code_input_mode, 'numeric')
+  })
+
+  it('should persist credential_configuration_ids and id', async () => {
+    ddbMock.on(PutCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('stored-config'), configurations)
+
+    const putCall = ddbMock.commandCalls(PutCommand)[0]
+    assert.equal(putCall?.args[0].input.TableName, TABLE_NAME)
+    assert.equal(lastPutItem()?.id, 'stored-config')
+    assert.deepEqual(lastPutItem()?.credential_configuration_ids, configurations)
+  })
+
+  it('should store expires_at as a UNIX timestamp in seconds', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    const before = Math.floor(Date.now() / 1000)
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('ttl-default'), configurations)
+
+    const after = Math.floor(Date.now() / 1000)
+    const expiresAt = lastPutItem()?.expires_at
+    assert.equal(typeof expiresAt, 'number')
+    assert.ok(expiresAt >= before + 300)
+    assert.ok(expiresAt <= after + 300)
+  })
+
+  it('should honor a custom expiresIn', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    const before = Math.floor(Date.now() / 1000)
+
+    const provider = createProvider(60 * 1000)
+    await provider.save(PreAuthorizedCode('ttl-custom'), configurations)
+
+    const after = Math.floor(Date.now() / 1000)
+    const expiresAt = lastPutItem()?.expires_at
+    assert.ok(expiresAt >= before + 60)
+    assert.ok(expiresAt <= after + 60)
+  })
+
+  it('should prefer saveOptions.ttlSec over the default', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    const before = Math.floor(Date.now() / 1000)
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('ttl-override'), configurations, undefined, {
+      ttlSec: 30,
+    })
+
+    const after = Math.floor(Date.now() / 1000)
+    const expiresAt = lastPutItem()?.expires_at
+    assert.ok(expiresAt >= before + 30)
+    assert.ok(expiresAt <= after + 30)
+  })
+
+  it('should fall back to the default ttl when saveOptions.ttlSec is invalid', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    const before = Math.floor(Date.now() / 1000)
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('ttl-nan'), configurations, undefined, {
+      ttlSec: Number.NaN,
+    })
+
+    const after = Math.floor(Date.now() / 1000)
+    const expiresAt = lastPutItem()?.expires_at
+    assert.ok(expiresAt >= before + 300)
+    assert.ok(expiresAt <= after + 300)
+  })
+
+  it('should floor a fractional ttlSec', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    const before = Math.floor(Date.now() / 1000)
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('ttl-frac'), configurations, undefined, { ttlSec: 30.9 })
+
+    const after = Math.floor(Date.now() / 1000)
+    const expiresAt = lastPutItem()?.expires_at
+    assert.ok(expiresAt >= before + 30)
+    assert.ok(expiresAt <= after + 30)
+  })
+
+  it('should throw invalid_grant when the code is unknown', async () => {
+    ddbMock.on(GetCommand).resolves({})
+
+    const provider = createProvider()
+    await assert.rejects(provider.consume(PreAuthorizedCode('unknown')), {
+      name: 'invalid_grant',
+    })
+  })
+
+  it('should throw invalid_grant and delete when the code is expired', async () => {
+    const pastExpiry = Math.floor(Date.now() / 1000) - 1
+    ddbMock.on(GetCommand).resolves({
+      Item: { id: 'expired', credential_configuration_ids: configurations, expires_at: pastExpiry },
+    })
+    ddbMock.on(DeleteCommand).resolves({})
+
+    const provider = createProvider()
+    await assert.rejects(provider.consume(PreAuthorizedCode('expired')), {
+      name: 'invalid_grant',
+    })
+    assert.equal(ddbMock.commandCalls(DeleteCommand).length, 1)
+  })
+
+  it('should throw invalid_grant when expires_at is missing', async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { id: 'no-exp', credential_configuration_ids: configurations },
+    })
+    ddbMock.on(DeleteCommand).resolves({})
+
+    const provider = createProvider()
+    await assert.rejects(provider.consume(PreAuthorizedCode('no-exp')), {
+      name: 'invalid_grant',
+    })
+  })
+
+  it('should delete the code conditionally after a successful consume', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    ddbMock.on(DeleteCommand).resolves({})
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('consume-delete'), configurations)
+    armGetFromLastPut()
+
+    await provider.consume(PreAuthorizedCode('consume-delete'))
+
+    const deleteCall = ddbMock.commandCalls(DeleteCommand)[0]
+    assert.equal(deleteCall?.args[0].input.TableName, TABLE_NAME)
+    assert.deepEqual(deleteCall?.args[0].input.Key, { id: 'consume-delete' })
+    assert.equal(deleteCall?.args[0].input.ConditionExpression, 'attribute_exists(id)')
+  })
+
+  it('should surface a lost delete race as invalid_grant (double consume)', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    ddbMock.on(DeleteCommand).rejects(
+      Object.assign(new Error('conditional check failed'), {
+        name: 'ConditionalCheckFailedException',
+      })
+    )
+
+    const provider = createProvider()
+    await provider.save(PreAuthorizedCode('race'), configurations)
+    armGetFromLastPut()
+
+    await assert.rejects(provider.consume(PreAuthorizedCode('race')), {
+      name: 'invalid_grant',
+    })
+  })
+})
