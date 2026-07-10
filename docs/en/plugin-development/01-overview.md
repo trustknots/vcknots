@@ -16,7 +16,7 @@ In the `issuer+verifier` package, extension points are called `providers`.
 
 By replacing or adding `providers`, you can customize or extend functionality such as storage, key management, DID resolution, signing, and verification.
 
-In other words, `providers` allow you to replace peripheral implementations or extend supported functionality without modifying the core logic of VC Knots.For more information, see [Creating a Custom Provider](./03-custom-provider.md).
+In other words, `providers` allow you to replace peripheral implementations or extend supported functionality without modifying the core logic of VC Knots.For more information, see [03. Creating a Custom Provider](./03-custom-provider.md).
 
 ### Wallet Features
 

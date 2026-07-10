@@ -216,7 +216,7 @@ export const myCustomProvider = (): MyCustomProvider & WithProviderRegistry => {
 
 This pattern lets you define the initial placeholder for the automatically injected `providers` property in a type-safe manner while keeping your provider loosely coupled with other providers, such as those responsible for DID resolution and key management.
 
-For more information about `ProviderRegistry`, see [05. The Role and Architecture of ProviderRegistry](./05-provider-registry.md).
+For more information about `ProviderRegistry`, see [05. ProviderRegistry: Roles and Internal Mechanisms](./05-provider-registry.md).
 
 ## Testing
 
