@@ -6,13 +6,48 @@ sidebar_position: 7
 
 This chapter explains how to create a custom `provider` and integrate it into VC Knots.
 
-The basic workflow is as follows:
+The basic workflow is as follows.
 
-1. Implement a `provider`
-2. Register it in `VcknotsOptions.providers`
-3. Verify its behavior through testing
+1. Install VC Knots in your project.
+2. Implement a custom `provider`.
+3. Register it in `VcknotsOptions.providers`.
+4. Verify its behavior through testing.
 
-This chapter introduces the usage of both `single: true` and `single: false` providers using representative examples.
+This chapter introduces representative examples of both `single: true` and `single: false` providers.
+
+## Preparing to Create a Provider
+
+Create a project that uses VC Knots (and implements custom `provider`s), then install VC Knots.
+
+```bash
+npm install @trustknots/vcknots
+```
+
+The following is an example project structure.
+
+```text
+my-vcknots-plugin/
+├── package.json
+├── tsconfig.json
+├── src/
+│   ├── providers/
+│   │   ├── timestamp-nonce.provider.ts // Single Provider example
+│   │   └── did-web.provider.ts         // Multi Provider example
+│   ├── index.ts
+│   └── main.ts
+└── test/
+    ├── timestamp-nonce.provider.test.ts
+    └── integration.test.ts
+```
+
+Each file has the following responsibility.
+
+| File | Description |
+|------|-------------|
+| `src/providers/` | Custom `provider` implementations |
+| `src/index.ts` | Entry point for exporting your plugin package |
+| `src/main.ts` | Initializes VC Knots by calling `initializeContext()` |
+| `test/` | Unit Tests and Integration Tests |
 
 ## Example of a Single Provider
 
@@ -57,6 +92,8 @@ export const timestampNonce = (): NonceProvider => {
 }
 ```
 
+For details about provider registration, see [How to Set Up and Use the Issuer Feature](../issuer.md).
+
 ### Registration Example
 
 ```ts
@@ -77,13 +114,13 @@ A `single: false` provider allows multiple providers to be registered for the sa
 
 Additional providers coexist with the default provider rather than replacing it.
 
-When selecting a provider of the same `kind`, providers registered later are evaluated first. If none of them can handle the request, the default provider is used.
+When resolving providers of the same `kind`, providers registered later are evaluated first. If none of them can handle the request, the default provider is used.
 
 ### Use Case
 
 The `did-provider` supports DID resolution for the `did:key` method by default. By registering an additional provider, you can add support for other DID methods such as `did:web`.
 
-There is no need to remove the default `did-provider`; it is intended to extend the set of supported DID methods.
+There is no need to remove the default `did-provider`; Multi Providers are designed to extend the set of supported implementations rather than replace existing ones.
 
 If you need to provide custom behavior, implement a provider according to the interface, just as you would for a Single Provider, and register it in `VcknotsOptions.providers`.
 
@@ -134,15 +171,15 @@ const context = initializeContext({
 
 ## Collaboration Between Providers
 
-A `provider` can collaborate with other providers.
+Providers can collaborate with one another.
 
 If a registered provider instance exposes a `providers` property, VC Knots automatically injects its `ProviderRegistry` instance into that property.
 
-This allows a custom provider to retrieve and use other registered providers (such as `did-provider` and `jwt-signature-provider`) from within its own implementation.
+This allows custom providers to retrieve and use other registered providers (such as `did-provider` and `jwt-signature-provider`) from within their own implementation.
 
-### Implementation Pattern
+### Recommended Implementation Pattern
 
-If your custom provider needs to interact with other providers, it is recommended to implement it as a factory function that spreads `withProviderRegistry`, as shown below.
+If your custom provider needs to collaborate with other providers, it is recommended to implement it as a factory function that spreads `withProviderRegistry`, as shown below.
 
 ```ts
 import {
@@ -154,7 +191,7 @@ import {
 // Define the provider as a factory function.
 export const myCustomProvider = (): MyCustomProvider & WithProviderRegistry => {
   return {
-    ...withProviderRegistry, // Placeholder for the automatically injected ProviderRegistry
+    ...withProviderRegistry, // Expands the placeholder for the automatically injected providers
 
     kind: 'some-custom-provider',
     name: 'my-custom-provider',
@@ -177,9 +214,9 @@ export const myCustomProvider = (): MyCustomProvider & WithProviderRegistry => {
 }
 ```
 
-This pattern allows you to define the initial value of the automatically injected `providers` property in a type-safe manner while keeping your provider loosely coupled with other providers, such as those responsible for DID resolution and key management.
+This pattern lets you define the initial placeholder for the automatically injected `providers` property in a type-safe manner while keeping your provider loosely coupled with other providers, such as those responsible for DID resolution and key management.
 
-For more information about `ProviderRegistry`, see [05. ProviderRegistry](./05-provider-registry.md).
+For more information about `ProviderRegistry`, see [05. The Role and Architecture of ProviderRegistry](./05-provider-registry.md).
 
 ## Testing
 
@@ -187,8 +224,8 @@ When implementing a custom provider, it is recommended to perform both Unit Test
 
 ### Unit Test
 
-Verify the provider's standalone logic, including expected outputs and error handling.
+Verify the provider's standalone behavior, including expected outputs and error handling.
 
 ### Integration Test
 
-Register the provider in VC Knots and verify that it behaves as expected within the Issuer and Verifier workflows.
+Register the provider in VC Knots and verify that it behaves as expected as part of the Issuer and Verifier workflows.

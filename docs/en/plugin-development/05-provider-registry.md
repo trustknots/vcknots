@@ -74,7 +74,7 @@ import { WithProviderRegistry, withProviderRegistry } from '@trustknots/vcknots'
 
 export const customProvider = (): MyProvider & WithProviderRegistry => {
   return {
-    ...withProviderRegistry,
+    ...withProviderRegistry, // Expands the providers placeholder
     kind: 'my-provider',
     name: 'custom-provider',
     single: true,
