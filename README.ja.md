@@ -42,6 +42,7 @@ vcknots/
 ## ユーザードキュメント
 
 詳細なユーザードキュメントについては、[VCKnots ドキュメントサイト](https://trustknots.github.io/vcknots/)をご覧ください。
+また、OID4VCI および OID4VP の現在の対応状況をまとめたサポートマトリックスも掲載しています。
 
 
 ## コントリビューション
