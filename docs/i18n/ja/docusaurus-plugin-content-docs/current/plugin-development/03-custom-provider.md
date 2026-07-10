@@ -8,11 +8,46 @@ sidebar_position: 7
 
 基本的な流れは次のとおりです。
 
-1. `provider` を実装する
-2. `VcknotsOptions.providers` に登録する
-3. テストで動作を確認する
+1. プロジェクトにVC Knotsを導入する
+2. `provider` を実装する
+3. `VcknotsOptions.providers` に登録する
+4. テストで動作を確認する
 
 ここでは、`single: true` と `single: false` の代表的な例を用いて、それぞれの利用方法を紹介します。
+
+## Provider 作成の準備
+
+VC Knotsを利用する(独自 `provider` を実装する)プロジェクトを作成し、VC Knotsをインストールします。
+
+```bash
+npm install @trustknots/vcknots
+```
+
+以下はディレクトリ構成例です。
+
+```text
+my-vcknots-plugin/
+├── package.json
+├── tsconfig.json
+├── src/
+│   ├── providers/
+│   │   ├── timestamp-nonce.provider.ts // Single Provider の例で作成します
+│   │   └── did-web.provider.ts  // Multi Provider の例で作成します
+│   ├── index.ts
+│   └── main.ts
+└── test/
+    ├── timestamp-nonce.provider.test.ts
+    └── integration.test.ts
+```
+
+各ファイルの役割は次のとおりです。
+
+| ファイル | 役割 |
+|----------|------|
+| `src/providers/` | 独自 `provider` の実装 |
+| `src/index.ts` | 自身のプロジェクトを外部へ公開するエントリポイント |
+| `src/main.ts` | `initializeContext()` を行い、実際に VC Knots の利用を準備する場所 |
+| `test/` | Unit Test / Integration Test |
 
 ## Single Provider の例
 
@@ -30,6 +65,7 @@ sidebar_position: 7
 
 ### 実装例
 
+`timestamp-nonce.provider.ts`
 ```ts
 import { randomUUID } from 'node:crypto'
 import { Nonce } from '../nonce.types'
@@ -57,8 +93,11 @@ export const timestampNonce = (): NonceProvider => {
 }
 ```
 
+登録例の詳細は [Issuer機能のセットアップと使用方法](../issuer.md) を参考にしてください。
+
 ### 登録例
 
+`main.ts`
 ```ts
 import { initializeContext } from '@trustknots/vcknots'
 
@@ -89,6 +128,7 @@ const context = initializeContext({
 
 ### 実装例
 
+`did-web.provider.ts`
 ```ts
 import { DidDocument } from '../did.types'
 import { DidProvider } from './provider.types'
@@ -122,6 +162,7 @@ export const didWeb = (): DidProvider => {
 
 ### 登録例
 
+`main.ts`
 ```ts
 import { initializeContext } from '@trustknots/vcknots'
 

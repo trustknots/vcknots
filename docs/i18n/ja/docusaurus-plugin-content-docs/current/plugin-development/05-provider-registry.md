@@ -100,7 +100,7 @@ Issuer メタデータを取得した際にログに記録する `traceFetchedIs
 import { CredentialIssuer, CredentialIssuerMetadata } from '../credential-issuer.types'
 import { Extension } from './extension.types'
 
-export const traceFetchedIssuerzMetadata = (): Extension<
+export const traceFetchedIssuerMetadata = (): Extension<
   CredentialIssuer,
   Promise<CredentialIssuerMetadata | null>
 > => {
@@ -136,5 +136,5 @@ export const traceFetchedIssuerzMetadata = (): Extension<
 ### 開発者にとってのメリット (関心事の分離)
 この Weaving 機構のおかげで、 `provider` を開発する側も利用する側も、拡張機能の存在や適用ロジックをコード内に意識して記述する必要がありません。
 
-- ** `provider` 開発者**: ログ出力、例外監視、パフォーマンス測定などの「横断的関心事」を、 `provider` のロジック内に記述する必要がありません。純粋な機能実装（DID解決やメタデータストアなど）のみに集中できます。
-- ** `provider` 利用者**: 通常通りのインターフェースを介して `provider` を呼び出すだけで、定義されたすべての共通機能（セキュリティ監査や監視など）が自動的に、かつ透過的に適用されます。
+- **`provider` 開発者**: ログ出力、例外監視、パフォーマンス測定などの「横断的関心事」を、 `provider` のロジック内に記述する必要がありません。純粋な機能実装（DID解決やメタデータストアなど）のみに集中できます。
+- **`provider` 利用者**: 通常通りのインターフェースを介して `provider` を呼び出すだけで、定義されたすべての共通機能（セキュリティ監査や監視など）が自動的に、かつ透過的に適用されます。

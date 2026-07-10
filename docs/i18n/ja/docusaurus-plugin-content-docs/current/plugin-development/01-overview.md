@@ -14,7 +14,7 @@ VC Knots の機能を拡張するための仕組みを指します。
 
 `issuer+verifier` パッケージでは、拡張ポイントを `provider` と呼びます。
 `provider` を差し替え・追加することで、ストレージ、鍵管理、DID Resolution、署名・検証などの処理を変更・追加することが可能です。
-つまり `provider` を使うことで、VC Knots のコアロジックを変更せずに、周辺の実装だけの入れ替えや、対応範囲の拡張ができます。
+つまり `provider` を使うことで、VC Knots のコアロジックを変更せずに、周辺の実装だけの入れ替えや、対応範囲の拡張ができます。[Custom Provider の作成](./03-custom-provider.md) を参考にしてください
 
 ### Wallet 機能
 
