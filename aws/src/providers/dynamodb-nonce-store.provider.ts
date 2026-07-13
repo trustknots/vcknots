@@ -10,16 +10,19 @@ export type DynamoDbNonceStoreOptions = DynamoDbProviderOptions & {
 type NonceItem = {
   id: string
   nonce: Nonce
+  /** Epoch milliseconds — used for manual expiry checks (parity with Firestore / in-memory). */
   expires_at: number
+  /** Epoch seconds — DynamoDB TTL attribute (infra-only, see CDK `timeToLiveAttribute: 'ttl'`). */
+  ttl: number
 }
 
 export const dynamodbNonceStore = (options: DynamoDbNonceStoreOptions): NonceStoreProvider => {
   const client = resolveDynamoDbDocumentClient(options)
   const { tableName } = options
 
-  // Treat the boundary second as expired (>=) to avoid reusing a nonce at its exact expiry.
+  // Match the Firestore / in-memory providers: expires_at is epoch ms and the exact boundary is still valid (>).
   const isExpired = (expires_at: unknown): boolean =>
-    typeof expires_at !== 'number' || Math.floor(Date.now() / 1000) >= expires_at
+    typeof expires_at !== 'number' || Date.now() > expires_at
 
   return {
     kind: 'nonce-store-provider',
@@ -31,12 +34,13 @@ export const dynamodbNonceStore = (options: DynamoDbNonceStoreOptions): NonceSto
       if (ttlMs == null) {
         throw new Error('nonce_expires_in is required when saving nonce')
       }
-      // DynamoDB TTL expects an epoch time in seconds.
-      const expires_at = Math.floor((Date.now() + ttlMs) / 1000)
+      const expires_at = Date.now() + ttlMs
+      // DynamoDB TTL expects epoch seconds; round up so TTL never deletes before the real (ms) expiry.
+      const ttl = Math.ceil(expires_at / 1000)
       await client.send(
         new PutCommand({
           TableName: tableName,
-          Item: { id: nonce.nonce, nonce, expires_at } satisfies NonceItem,
+          Item: { id: nonce.nonce, nonce, expires_at, ttl } satisfies NonceItem,
         })
       )
     },

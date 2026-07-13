@@ -28,22 +28,25 @@ describe('dynamodbNonceStore', () => {
     assert.equal(provider.single, true)
   })
 
-  it('should save with correct table name and epoch-seconds expires_at', async () => {
+  it('should save with epoch-ms expires_at and epoch-seconds ttl', async () => {
     ddbMock.on(PutCommand).resolves({})
-    const before = Math.floor(Date.now() / 1000)
+    const before = Date.now()
 
     const provider = createProvider()
     await provider.save(nonce)
 
-    const after = Math.floor(Date.now() / 1000)
+    const after = Date.now()
     const putCall = ddbMock.commandCalls(PutCommand)[0]
     const item = putCall?.args[0].input.Item
 
     assert.equal(putCall?.args[0].input.TableName, TABLE_NAME)
     assert.equal(item?.id, nonce.nonce)
     assert.deepEqual(item?.nonce, nonce)
-    assert.ok(item?.expires_at >= before + 300)
-    assert.ok(item?.expires_at <= after + 300)
+    // expires_at is epoch ms (parity with Firestore / in-memory).
+    assert.ok(item?.expires_at >= before + 300 * 1000)
+    assert.ok(item?.expires_at <= after + 300 * 1000)
+    // ttl is epoch seconds, rounded up so TTL never fires before the real (ms) expiry.
+    assert.equal(item?.ttl, Math.ceil(item?.expires_at / 1000))
   })
 
   it('should throw when nonce_expires_in is missing on save', async () => {
@@ -53,7 +56,7 @@ describe('dynamodbNonceStore', () => {
   })
 
   it('validate should return true for a valid nonce', async () => {
-    const futureExpiry = Math.floor(Date.now() / 1000) + 300
+    const futureExpiry = Date.now() + 300 * 1000
     ddbMock.on(GetCommand).resolves({
       Item: { id: nonce.nonce, nonce, expires_at: futureExpiry },
     })
@@ -73,7 +76,7 @@ describe('dynamodbNonceStore', () => {
   })
 
   it('validate should return false and delete an expired nonce', async () => {
-    const pastExpiry = Math.floor(Date.now() / 1000) - 1
+    const pastExpiry = Date.now() - 1000
     ddbMock.on(GetCommand).resolves({
       Item: { id: nonce.nonce, nonce, expires_at: pastExpiry },
     })
@@ -90,7 +93,7 @@ describe('dynamodbNonceStore', () => {
 
   it('revoke should return true when the nonce existed', async () => {
     ddbMock.on(DeleteCommand).resolves({
-      Attributes: { id: nonce.nonce, nonce, expires_at: Math.floor(Date.now() / 1000) + 300 },
+      Attributes: { id: nonce.nonce, nonce, expires_at: Date.now() + 300 * 1000 },
     })
 
     const provider = createProvider()
@@ -110,7 +113,7 @@ describe('dynamodbNonceStore', () => {
 
   it('consume should return true and delete a valid nonce', async () => {
     ddbMock.on(DeleteCommand).resolves({
-      Attributes: { id: nonce.nonce, nonce, expires_at: Math.floor(Date.now() / 1000) + 300 },
+      Attributes: { id: nonce.nonce, nonce, expires_at: Date.now() + 300 * 1000 },
     })
 
     const provider = createProvider()
@@ -128,7 +131,7 @@ describe('dynamodbNonceStore', () => {
 
   it('consume should return false for an expired nonce', async () => {
     ddbMock.on(DeleteCommand).resolves({
-      Attributes: { id: nonce.nonce, nonce, expires_at: Math.floor(Date.now() / 1000) - 1 },
+      Attributes: { id: nonce.nonce, nonce, expires_at: Date.now() - 1000 },
     })
 
     const provider = createProvider()
