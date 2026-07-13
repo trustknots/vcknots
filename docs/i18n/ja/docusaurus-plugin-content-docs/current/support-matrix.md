@@ -18,7 +18,7 @@ sidebar_position: 1
 | [3.5](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-3.5) | Transaction Code | `tx_code` | ✅ 発行・検証 | ✅ 送信 | Pre-Authorized Code Flow で使用。 |
 | [3.3.1](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-3.3.1) | Credential Format | `jwt_vc_json` | ✅ 発行 | ✅ 受領 |  |
 | [3.3.1](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-3.3.1) | Credential Format | `dc+sd-jwt`（SD-JWT VC） | ✅ 発行 | ✅ 受領 |  |
-| [A.2](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-mobile-documents-or-mdocs) | Credential Format | `mso_mdoc` | ❌ | ❌ |  |
+| [A.2](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-mobile-documents-or-mdocs-i) | Credential Format | `mso_mdoc` | ❌ | ❌ |  |
 | [6](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-6) | Token Endpoint | Access Token の発行 | ✅ | ✅ | Pre-Authorized Code に対応。 |
 | [6.1 / 13.2](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-13.2) | Client Authentication | `private_key_jwt` | ✅ 検証 | ❌ 送信 | 登録済み OAuth client の Token Endpoint 認証方式。 |
 | [6.1 / 12.3](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-6.1) | Client Authentication | 匿名の Pre-Authorized Token Request | ✅ 条件付き | ✅ 送信 | Authorization Server Metadata の `pre-authorized_grant_anonymous_access_supported` が `true` の場合のみ。 |

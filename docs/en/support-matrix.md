@@ -18,7 +18,7 @@ The following tables are organized based on [OpenID for Verifiable Credential Is
 | [3.5](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-3.5) | Transaction Code | `tx_code` | ✅ Issue / validate | ✅ Send | Used in the Pre-Authorized Code Flow. |
 | [3.3.1](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-3.3.1) | Credential Format | `jwt_vc_json` | ✅ Issue | ✅ Receive |  |
 | [3.3.1](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-3.3.1) | Credential Format | `dc+sd-jwt` (SD-JWT VC) | ✅ Issue | ✅ Receive |  |
-| [A.2](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-mobile-documents-or-mdocs) | Credential Format | `mso_mdoc` | ❌ | ❌ |  |
+| [A.2](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-mobile-documents-or-mdocs-i) | Credential Format | `mso_mdoc` | ❌ | ❌ |  |
 | [6](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-6) | Token Endpoint | Access Token issuance | ✅ | ✅ | Supports the Pre-Authorized Code Flow. |
 | [6.1 / 13.2](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-13.2) | Client Authentication | `private_key_jwt` | ✅ Validate | ❌ Send | Client authentication method for registered OAuth clients at the Token Endpoint. |
 | [6.1 / 12.3](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-6.1) | Client Authentication | Anonymous Pre-Authorized Token Request | ✅ Conditional | ✅ Send | Available only when `pre-authorized_grant_anonymous_access_supported` is `true` in the Authorization Server Metadata. |
