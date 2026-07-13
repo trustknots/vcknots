@@ -837,7 +837,7 @@ DPoP-bound access token を使う後続リクエストでは、同じ公開鍵�
 
 ### 6. Nonceエンドポイント
 
-OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) に相当するエンドポイントです。Wallet が credential リクエストを送る前に c_nonce を取得する際に使用します。
+OpenID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) に相当するエンドポイントです。Wallet が credential リクエストを送る前に c_nonce を取得する際に使用します。
 
 Issuer メタデータに `nonce_endpoint` を設定すると、Wallet は `/.well-known/openid-credential-issuer` から取得したメタデータ経由で nonce エンドポイントの URL を参照します。
 
@@ -1230,7 +1230,7 @@ createIssuerMetadata(issuer: CredentialIssuerMetadata): Promise<void>
 
 ### createNonce
 
-nonce（c_nonce）を作成します。OID4VCI の nonce endpoint 用です。
+nonce（c_nonce）を作成します。OpenID4VCI の nonce endpoint 用です。
 
 ```typescript
 createNonce(ttlMs?: number): Promise<string>
@@ -1369,7 +1369,7 @@ keyごとの動き:
 - `unknown_credential_configuration`: `credential_configuration_id`がサポートされていない
 - `unsupported_credential_type`: 指定された`credential_definition`もしくは`proof_type`がサポートされていない
 - `invalid_credential_request`: Credential Request ボディ不正、許可されていない `credential_configuration_id`、`proof` が見つからないかサポートされていない、設定 ID 不備など
-- `invalid_proof`: `proof`が検証できない、OID4VCI の JWT proof に合わないヘッダ（`typ` / `alg` / `kid`・`jwk`・`x5c` の組み合わせなど）、未サポートの header、`nonce`が見つからない
+- `invalid_proof`: `proof`が検証できない、OpenID4VCI の JWT proof に合わないヘッダ（`typ` / `alg` / `kid`・`jwk`・`x5c` の組み合わせなど）、未サポートの header、`nonce`が見つからない
 - `unsupported_issuer_key_alg`: Issuerの署名アルゴリズムがサポートされていない
 - `authz_issuer_key_not_found`: Issuerの鍵が見つからない
 - `internal_server_error`: 署名に失敗した
