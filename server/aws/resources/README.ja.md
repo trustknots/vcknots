@@ -108,12 +108,12 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` を使用しま�
 |---|---|---|---|
 | IssuersTable | Issuer URL のハッシュ | なし | Credential Issuer メタデータ |
 | AuthServersTable | Authorization Server URL のハッシュ | なし | Authorization Server メタデータ |
-| PreCodesTable | Pre-Authorized Code 文字列 | あり（`expires_at`） | 発行時に使用する Pre-authorized code |
+| PreCodesTable | Pre-Authorized Code 文字列 | あり（`ttl`） | 発行時に使用する Pre-authorized code |
 | NoncesTable | Nonce 文字列 | あり（`ttl`） | リプレイ防止用 Nonce |
 | VerifiersTable | Verifier client ID のハッシュ | なし | Verifier メタデータ |
 | RequestObjectsTable | Request Object ID | あり（`ttl`） | VP リクエスト用 Request Object |
 
-`id` 以外の属性（メタデータ本体、`expires_at`、`ttl` など）はアプリケーションが書き込みます。NoncesTable / RequestObjectsTable では、`expires_at` はアプリケーションレベルの有効期限で **epoch ミリ秒**（Firestore / in-memory プロバイダと揃えた期限判定に使用）、`ttl` は DynamoDB TTL 専用の **epoch 秒**属性です。PreCodesTable は引き続き `expires_at`（秒）を TTL 属性として使用します。
+`id` 以外の属性（メタデータ本体、`expires_at`、`ttl` など）はアプリケーションが書き込みます。TTL を使うテーブル（PreCodesTable / NoncesTable / RequestObjectsTable）では、`expires_at` はアプリケーションレベルの有効期限で **epoch ミリ秒**（Firestore / in-memory プロバイダと揃えた期限判定に使用）、`ttl` は DynamoDB TTL 専用の **epoch 秒**属性です。
 
 ### IAM
 

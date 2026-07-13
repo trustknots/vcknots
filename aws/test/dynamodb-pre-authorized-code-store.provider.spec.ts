@@ -230,74 +230,78 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
     assert.deepEqual(lastPutItem()?.credential_configuration_ids, configurations)
   })
 
-  it('should store expires_at as a UNIX timestamp in seconds', async () => {
+  it('should store expires_at in epoch ms and ttl in epoch seconds', async () => {
     ddbMock.on(PutCommand).resolves({})
-    const before = Math.floor(Date.now() / 1000)
+    const before = Date.now()
 
     const provider = createProvider()
     await provider.save(PreAuthorizedCode('ttl-default'), configurations)
 
-    const after = Math.floor(Date.now() / 1000)
-    const expiresAt = lastPutItem()?.expires_at
+    const after = Date.now()
+    const item = lastPutItem()
+    const expiresAt = item?.expires_at
     assert.equal(typeof expiresAt, 'number')
-    assert.ok(expiresAt >= before + 300)
-    assert.ok(expiresAt <= after + 300)
+    // expires_at is epoch ms (parity with Firestore / in-memory).
+    assert.ok(expiresAt >= before + 300 * 1000)
+    assert.ok(expiresAt <= after + 300 * 1000)
+    // ttl is epoch seconds, rounded up so TTL never fires before the real (ms) expiry.
+    assert.equal(item?.ttl, Math.ceil(expiresAt / 1000))
   })
 
   it('should honor a custom expiresIn', async () => {
     ddbMock.on(PutCommand).resolves({})
-    const before = Math.floor(Date.now() / 1000)
+    const before = Date.now()
 
     const provider = createProvider(60 * 1000)
     await provider.save(PreAuthorizedCode('ttl-custom'), configurations)
 
-    const after = Math.floor(Date.now() / 1000)
+    const after = Date.now()
     const expiresAt = lastPutItem()?.expires_at
-    assert.ok(expiresAt >= before + 60)
-    assert.ok(expiresAt <= after + 60)
+    assert.ok(expiresAt >= before + 60 * 1000)
+    assert.ok(expiresAt <= after + 60 * 1000)
   })
 
   it('should prefer saveOptions.ttlSec over the default', async () => {
     ddbMock.on(PutCommand).resolves({})
-    const before = Math.floor(Date.now() / 1000)
+    const before = Date.now()
 
     const provider = createProvider()
     await provider.save(PreAuthorizedCode('ttl-override'), configurations, undefined, {
       ttlSec: 30,
     })
 
-    const after = Math.floor(Date.now() / 1000)
+    const after = Date.now()
     const expiresAt = lastPutItem()?.expires_at
-    assert.ok(expiresAt >= before + 30)
-    assert.ok(expiresAt <= after + 30)
+    assert.ok(expiresAt >= before + 30 * 1000)
+    assert.ok(expiresAt <= after + 30 * 1000)
   })
 
   it('should fall back to the default ttl when saveOptions.ttlSec is invalid', async () => {
     ddbMock.on(PutCommand).resolves({})
-    const before = Math.floor(Date.now() / 1000)
+    const before = Date.now()
 
     const provider = createProvider()
     await provider.save(PreAuthorizedCode('ttl-nan'), configurations, undefined, {
       ttlSec: Number.NaN,
     })
 
-    const after = Math.floor(Date.now() / 1000)
+    const after = Date.now()
     const expiresAt = lastPutItem()?.expires_at
-    assert.ok(expiresAt >= before + 300)
-    assert.ok(expiresAt <= after + 300)
+    assert.ok(expiresAt >= before + 300 * 1000)
+    assert.ok(expiresAt <= after + 300 * 1000)
   })
 
   it('should floor a fractional ttlSec', async () => {
     ddbMock.on(PutCommand).resolves({})
-    const before = Math.floor(Date.now() / 1000)
+    const before = Date.now()
 
     const provider = createProvider()
     await provider.save(PreAuthorizedCode('ttl-frac'), configurations, undefined, { ttlSec: 30.9 })
 
-    const after = Math.floor(Date.now() / 1000)
+    const after = Date.now()
     const expiresAt = lastPutItem()?.expires_at
-    assert.ok(expiresAt >= before + 30)
-    assert.ok(expiresAt <= after + 30)
+    assert.ok(expiresAt >= before + 30 * 1000)
+    assert.ok(expiresAt <= after + 30 * 1000)
   })
 
   it('should throw invalid_grant when the code is unknown', async () => {
@@ -310,7 +314,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
   })
 
   it('should throw invalid_grant and delete when the code is expired', async () => {
-    const pastExpiry = Math.floor(Date.now() / 1000) - 1
+    const pastExpiry = Date.now() - 1000
     ddbMock.on(GetCommand).resolves({
       Item: { id: 'expired', credential_configuration_ids: configurations, expires_at: pastExpiry },
     })

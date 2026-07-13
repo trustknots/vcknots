@@ -16,8 +16,10 @@ const DEFAULT_EXPIRES_IN_MS = 60 * 5 * 1000
 /**
  * Item stored in DynamoDB. The pre-authorized code itself is the partition key
  * (`id`). `tx_code` is never persisted in the clear — only its HMAC hash is
- * stored as `tx_code_hash`. `expires_at` is a UNIX timestamp in **seconds** so
- * DynamoDB TTL can expire the item automatically.
+ * stored as `tx_code_hash`. `expires_at` is the application-level expiry in
+ * **epoch milliseconds** (used for manual expiry checks, matching the Firestore /
+ * in-memory providers); `ttl` is a separate **epoch-seconds** value used only by
+ * DynamoDB TTL.
  */
 type DynamoDbPreAuthorizedCodeItem = {
   id: string
@@ -25,6 +27,7 @@ type DynamoDbPreAuthorizedCodeItem = {
   tx_code_input_mode?: 'numeric' | 'text'
   tx_code_hash?: string
   expires_at: number
+  ttl: number
 }
 
 const toDigitString = (value: string | number): string | null => {
@@ -75,13 +78,15 @@ export const dynamodbPreAuthorizedCodeStore = (
       const ttlSec =
         Number.isFinite(ttlSecRaw) && ttlSecCandidate > 0 ? ttlSecCandidate : defaultTtlSec
       const tx_code_input_mode = saveOptions?.tx_code_input_mode ?? 'numeric'
-      const expires_at = Math.floor(Date.now() / 1000) + ttlSec
+      const expires_at = Date.now() + ttlSec * 1000
 
       const item: DynamoDbPreAuthorizedCodeItem = {
         id: code,
         credential_configuration_ids: credentialConfigurationIds,
         tx_code_input_mode,
         expires_at,
+        // DynamoDB TTL expects epoch seconds; round up so TTL never deletes before the real (ms) expiry.
+        ttl: Math.ceil(expires_at / 1000),
       }
 
       if (tx_code !== undefined) {
@@ -122,8 +127,8 @@ export const dynamodbPreAuthorizedCodeStore = (
 
       const item = result.Item as DynamoDbPreAuthorizedCodeItem
 
-      // DynamoDB TTL deletion is eventually consistent — check expiry manually.
-      if (typeof item.expires_at !== 'number' || Math.floor(Date.now() / 1000) > item.expires_at) {
+      // expires_at is epoch ms (parity with Firestore / in-memory). DynamoDB TTL is eventually consistent — check manually.
+      if (typeof item.expires_at !== 'number' || Date.now() > item.expires_at) {
         await deleteCode(code)
         throw raise('invalid_grant', {
           message: 'Pre-authorized code has expired',
