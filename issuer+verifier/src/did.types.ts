@@ -1,6 +1,7 @@
 // https://www.w3.org/TR/did-core/#did-document-properties
+export type DidContextEntry = string | Record<string, unknown>
 export interface DidDocument {
-  '@context'?: 'https://www.w3.org/ns/did/v1' | string | string[]
+  '@context'?: 'https://www.w3.org/ns/did/v1' | DidContextEntry | DidContextEntry[]
   id: string
   alsoKnownAs?: string[]
   controller?: string | string[]

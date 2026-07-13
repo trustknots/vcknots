@@ -10,7 +10,8 @@
     "target": "ES2022",
     "skipLibCheck": true,
     "declaration": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "types": ["node"]
   },
 	"compileOnSave": true
 }
