@@ -1,16 +1,16 @@
-# VCKnots
+# VC Knots
 
 <h3 align="center">A pluggable framework for building Verifiable Credentials ecosystems.</h3>
 
 ## Overview
 
 VCKnots is an open-source library for building Verifiable Credentials ecosystems.
-It implements OID4VCI (OpenID for Verifiable Credential Issuance) and OID4VP (OpenID for Verifiable Presentations), with core wallet functionalities for identifier and key management.
+It implements OpenID4VCI (OpenID for Verifiable Credential Issuance) and OpenID4VP (OpenID for Verifiable Presentations), with core wallet functionalities for identifier and key management.
 
 The framework supports pluggable extensions for data serialization formats, protocol flavors, and cryptographic algorithms.
 
 **Key Features:**
-- OID4VCI and OID4VP implementations
+- OpenID4VCI and OpenID4VP implementations
 - Core wallet functionalities (identifier and key management)
 - Pluggable architecture (extensible formats, protocols, and algorithms)
 
@@ -20,11 +20,11 @@ Choose the documentation that matches your goal.
 
 | Goal | Documentation |
 | --- | --- |
-| Learn how to use VCKnots | [User Documentation](https://trustknots.github.io/vcknots/) |
+| Learn how to use VC Knots | [User Documentation](https://trustknots.github.io/vcknots/) |
 | Build an Issuer | [Issuer Guide](https://trustknots.github.io/vcknots/docs/issuer) |
 | Implement a Wallet | [Wallet Guide](https://trustknots.github.io/vcknots/docs/wallet) |
 | Build a Verifier | [Verifier Guide](https://trustknots.github.io/vcknots/docs/verifier) |
-| Check OID4VCI / OID4VP support | [Support Matrix](https://trustknots.github.io/vcknots/docs/support-matrix) |
+| Check OpenID4VCI / OpenID4VP support | [Support Matrix](https://trustknots.github.io/vcknots/docs/support-matrix) |
 | Run the sample server | [Single Server README](./server/single/README.md) |
 
 ## Installation

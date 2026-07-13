@@ -4,12 +4,12 @@
 
 ## 概要
 
-VCKnots は、Verifiable Credentials エコシステムの開発をサポートするオープンソースライブラリです。OID4VCI（OpenID for Verifiable Credential Issuance）と OID4VP（OpenID for Verifiable Presentations）の実装を提供し、識別子や鍵の管理など、ウォレットのコア機能をサポートします。
+VCKnots は、Verifiable Credentials エコシステムの開発をサポートするオープンソースライブラリです。OpenID4VCI（OpenID for Verifiable Credential Issuance）と OpenID4VP（OpenID for Verifiable Presentations）の実装を提供し、識別子や鍵の管理など、ウォレットのコア機能をサポートします。
 
 データシリアライズフォーマット、プロトコルフレーバー、暗号アルゴリズムなどの可変点をプラグイン方式で拡張できる設計になっています。
 
 **主な特徴:**
-- OID4VCI と OID4VP の実装
+- OpenID4VCI と OpenID4VP の実装
 - ウォレットコア機能（識別子・鍵管理）
 - Pluggable Architecture（フォーマット、プロトコル、アルゴリズムを拡張可能）
 
@@ -19,11 +19,11 @@ VCKnots は、Verifiable Credentials エコシステムの開発をサポート�
 
 | 目的 | ドキュメント |
 | --- | --- |
-| VCKnotsの使い方を確認したい | [ユーザードキュメント](https://trustknots.github.io/vcknots/ja/) |
+| VC Knotsの使い方を確認したい | [ユーザードキュメント](https://trustknots.github.io/vcknots/ja/) |
 | Issuerを構築したい | [Issuerガイド](https://trustknots.github.io/vcknots/ja/docs/issuer) |
 | Walletを実装したい | [Walletガイド](https://trustknots.github.io/vcknots/ja/docs/wallet) |
 | Verifierを構築したい | [Verifierガイド](https://trustknots.github.io/vcknots/ja/docs/verifier) |
-| OID4VCI / OID4VPの対応状況を確認したい | [サポートマトリクス](https://trustknots.github.io/vcknots/ja/docs/support-matrix) |
+| OpenID4VCI / OpenID4VPの対応状況を確認したい | [サポートマトリクス](https://trustknots.github.io/vcknots/ja/docs/support-matrix) |
 | サンプルサーバーを動かしたい | [Single Server README](./server/single/README.ja.md) |
 
 ## インストール
