@@ -18,3 +18,7 @@ export {
   DynamoDbRequestObjectStoreOptions,
   dynamodbRequestObjectStore,
 } from './providers/dynamodb-request-object-store.provider'
+export {
+  DynamoDbNonceStoreOptions,
+  dynamodbNonceStore,
+} from './providers/dynamodb-nonce-store.provider'
