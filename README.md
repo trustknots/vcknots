@@ -42,7 +42,7 @@ vcknots/
 
 ## User Documentation
 For detailed user documentation, please visit the [VCKnots Documentation Site](https://trustknots.github.io/vcknots/).
-It also provides support matrix tables summarizing the current feature coverage for OID4VCI and OID4VP.
+It also provides support matrix tables summarizing the current feature coverage for OpenID for Verifiable Credential Issuance 1.0 and OpenID for Verifiable Presentations - draft 24.
 
 ## Contributing
 

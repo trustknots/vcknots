@@ -1,12 +1,12 @@
 ---
-sidebar_position: 9
+sidebar_position: 1
 ---
 
 # VC Knots のサポート範囲
 
-下記の表は、 [OID4VCI 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)  および [OID4VP Draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html) を基準に整理しています。
+下記の表は、 [OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)  および [OpenID for Verifiable Presentations - draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html) を基準に整理しています。
 
-## OID4VCI (1.0)
+## OpenID for Verifiable Credential Issuance 1.0
 
 | 機能 | Issuer | Wallet |
 | --- | --- | --- |
@@ -30,7 +30,7 @@ sidebar_position: 9
 | Credential Request の暗号化 | ❌ | ❌ |
 | Notification Endpoint | ❌ | ❌ |
 
-## OID4VP (Draft 24)
+## OpenID for Verifiable Presentations - draft 24
 
 | 機能 | Verifier | Wallet |
 | --- | --- | --- |

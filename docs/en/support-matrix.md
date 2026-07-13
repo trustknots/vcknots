@@ -1,12 +1,12 @@
 ---
-sidebar_position: 9
+sidebar_position: 
 ---
 
 # VC Knots Coverage
 
-The following tables are organized based on [OID4VCI 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html) and [OID4VP Draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html).
+The following tables are organized based on [OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html) and [OpenID for Verifiable Presentations - draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html).
 
-## OID4VCI (1.0)
+## OpenID for Verifiable Credential Issuance 1.0
 
 | Feature | Issuer | Wallet |
 | --- | --- | --- |
@@ -30,7 +30,7 @@ The following tables are organized based on [OID4VCI 1.0](https://openid.net/spe
 | Credential request encryption | ❌ | ❌ |
 | Notification Endpoint | ❌ | ❌ |
 
-## OID4VP (Draft 24)
+## OpenID for Verifiable Presentations - draft 24
 
 | Feature | Verifier | Wallet |
 | --- | --- | --- |
