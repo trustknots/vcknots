@@ -1,6 +1,6 @@
 # VCKnots
 
-<p align="center">Verifiable Credentials エコシステム構築のためのプラッガブルなフレームワーク</p>
+<h3 align="center">Verifiable Credentials エコシステム構築のためのプラッガブルなフレームワーク</h3>
 
 ## 概要
 
@@ -12,6 +12,19 @@ VCKnots は、Verifiable Credentials エコシステムの開発をサポート�
 - OID4VCI と OID4VP の実装
 - ウォレットコア機能（識別子・鍵管理）
 - Pluggable Architecture（フォーマット、プロトコル、アルゴリズムを拡張可能）
+
+## はじめに
+
+目的に応じて、以下のドキュメントからお読みください。
+
+| 目的 | ドキュメント |
+| --- | --- |
+| VCKnotsの使い方を確認したい | [ユーザードキュメント](https://trustknots.github.io/vcknots/ja/) |
+| Issuerを構築したい | [Issuerガイド](https://trustknots.github.io/vcknots/ja/docs/issuer) |
+| Walletを実装したい | [Walletガイド](https://trustknots.github.io/vcknots/ja/docs/wallet) |
+| Verifierを構築したい | [Verifierガイド](https://trustknots.github.io/vcknots/ja/docs/verifier) |
+| OID4VCI / OID4VPの対応状況を確認したい | [サポートマトリクス](https://trustknots.github.io/vcknots/ja/docs/support-matrix) |
+| サンプルサーバーを動かしたい | [Single Server README](./server/single/README.ja.md) |
 
 ## インストール
 
@@ -38,11 +51,6 @@ vcknots/
     ├── google-cloud/   # @trustknots/server-google-cloud — Google Cloud 統合
     └── aws/            # @trustknots/server-aws — AWS Lambda ハンドラー + CDK スタック
 ```
-
-## ユーザードキュメント
-
-詳細なユーザードキュメントについては、[VCKnots ドキュメントサイト](https://trustknots.github.io/vcknots/)をご覧ください。
-また、OpenID for Verifiable Credential Issuance 1.0 および OpenID for Verifiable Presentations - draft 24 の現在の対応状況をまとめたサポートマトリックスも掲載しています。
 
 ## コントリビューション
 
