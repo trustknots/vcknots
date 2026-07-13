@@ -39,8 +39,8 @@ export const dynamodbRequestObjectStore = (
         requestObject: RequestObject
       }
 
-      // DynamoDB TTL deletion is eventually consistent — check expiry manually.
-      if (typeof expires_at !== 'number' || Math.floor(Date.now() / 1000) > expires_at) {
+      // expires_at is epoch ms (parity with Firestore / in-memory). DynamoDB TTL is eventually consistent — check manually.
+      if (typeof expires_at !== 'number' || Date.now() > expires_at) {
         return null
       }
 
@@ -48,11 +48,13 @@ export const dynamodbRequestObjectStore = (
     },
 
     async save(id, requestObject) {
-      const expires_at = Math.floor((Date.now() + expiresIn) / 1000)
+      const expires_at = Date.now() + expiresIn
+      // DynamoDB TTL expects epoch seconds; round up so TTL never deletes before the real (ms) expiry.
+      const ttl = Math.ceil(expires_at / 1000)
       await client.send(
         new PutCommand({
           TableName: tableName,
-          Item: { id, requestObject, expires_at },
+          Item: { id, requestObject, expires_at, ttl },
         })
       )
     },

@@ -40,7 +40,7 @@ describe('dynamodbRequestObjectStore', () => {
   })
 
   it('should save and fetch a request object', async () => {
-    const futureExpiry = Math.floor(Date.now() / 1000) + 300
+    const futureExpiry = Date.now() + 300 * 1000
     ddbMock.on(PutCommand).resolves({})
     ddbMock.on(GetCommand).resolves({
       Item: { id: requestObjectId, requestObject, expires_at: futureExpiry },
@@ -65,7 +65,7 @@ describe('dynamodbRequestObjectStore', () => {
   })
 
   it('should return null when the item is expired', async () => {
-    const pastExpiry = Math.floor(Date.now() / 1000) - 1
+    const pastExpiry = Date.now() - 1000
     ddbMock.on(GetCommand).resolves({
       Item: { id: requestObjectId, requestObject, expires_at: pastExpiry },
     })
@@ -87,22 +87,25 @@ describe('dynamodbRequestObjectStore', () => {
     assert.equal(fetched, null)
   })
 
-  it('should save with correct table name and expires_at', async () => {
+  it('should save with epoch-ms expires_at and epoch-seconds ttl', async () => {
     ddbMock.on(PutCommand).resolves({})
-    const before = Math.floor(Date.now() / 1000)
+    const before = Date.now()
 
     const provider = createProvider()
     await provider.save(requestObjectId, requestObject)
 
-    const after = Math.floor(Date.now() / 1000)
+    const after = Date.now()
     const putCall = ddbMock.commandCalls(PutCommand)[0]
     const item = putCall?.args[0].input.Item
 
     assert.equal(putCall?.args[0].input.TableName, TABLE_NAME)
     assert.equal(item?.id, requestObjectId)
     assert.deepEqual(item?.requestObject, requestObject)
-    assert.ok(item?.expires_at >= before + 300)
-    assert.ok(item?.expires_at <= after + 300)
+    // expires_at is epoch ms (parity with Firestore / in-memory).
+    assert.ok(item?.expires_at >= before + 300 * 1000)
+    assert.ok(item?.expires_at <= after + 300 * 1000)
+    // ttl is epoch seconds, rounded up so TTL never fires before the real (ms) expiry.
+    assert.equal(item?.ttl, Math.ceil(item?.expires_at / 1000))
   })
 
   it('should delete a request object', async () => {
