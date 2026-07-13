@@ -1,4 +1,4 @@
-# VCKnots
+# VC Knots
 
 <h3 align="center">Verifiable Credentials エコシステム構築のためのプラッガブルなフレームワーク</h3>
 
