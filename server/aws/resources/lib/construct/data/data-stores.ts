@@ -33,14 +33,16 @@ export class DataStores extends Construct {
 
     this.noncesTable = new dynamodb.Table(this, 'NoncesTable', {
       ...baseTableProps,
-      timeToLiveAttribute: 'expires_at',
+      // `expires_at` is app-level epoch ms; DynamoDB TTL uses the epoch-seconds `ttl` attribute.
+      timeToLiveAttribute: 'ttl',
     });
 
     this.verifiersTable = new dynamodb.Table(this, 'VerifiersTable', baseTableProps);
 
     this.requestObjectsTable = new dynamodb.Table(this, 'RequestObjectsTable', {
       ...baseTableProps,
-      timeToLiveAttribute: 'expires_at',
+      // `expires_at` is app-level epoch ms; DynamoDB TTL uses the epoch-seconds `ttl` attribute.
+      timeToLiveAttribute: 'ttl',
     });
   }
 }
