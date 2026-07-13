@@ -1,6 +1,6 @@
 # VCKnots
 
-<p align="center">Pluggable framework for building Verifiable Credentials ecosystems.</p>
+<h3 align="center">A pluggable framework for building Verifiable Credentials ecosystems.</h3>
 
 ## Overview
 
@@ -13,6 +13,19 @@ The framework supports pluggable extensions for data serialization formats, prot
 - OID4VCI and OID4VP implementations
 - Core wallet functionalities (identifier and key management)
 - Pluggable architecture (extensible formats, protocols, and algorithms)
+
+## Start Here
+
+Choose the documentation that matches your goal.
+
+| Goal | Documentation |
+| --- | --- |
+| Learn how to use VCKnots | [User Documentation](https://trustknots.github.io/vcknots/) |
+| Build an Issuer | [Issuer Guide](https://trustknots.github.io/vcknots/docs/issuer) |
+| Implement a Wallet | [Wallet Guide](https://trustknots.github.io/vcknots/docs/wallet) |
+| Build a Verifier | [Verifier Guide](https://trustknots.github.io/vcknots/docs/verifier) |
+| Check OID4VCI / OID4VP support | [Support Matrix](https://trustknots.github.io/vcknots/docs/support-matrix) |
+| Run the sample server | [Single Server README](./server/single/README.md) |
 
 ## Installation
 
@@ -39,10 +52,6 @@ vcknots/
     ├── google-cloud/   # @trustknots/server-google-cloud — Google Cloud integration
     └── aws/            # @trustknots/server-aws — AWS Lambda handlers + CDK stack
 ```
-
-## User Documentation
-For detailed user documentation, please visit the [VCKnots Documentation Site](https://trustknots.github.io/vcknots/).
-It also provides support matrix tables summarizing the current feature coverage for OpenID for Verifiable Credential Issuance 1.0 and OpenID for Verifiable Presentations - draft 24.
 
 ## Contributing
 
