@@ -1,19 +1,19 @@
 # @trustknots/vcknots
 
-OpenID for Verifiable Credential Issuance (OID4VCI) 1.0 および OpenID for Verifiable Presentations (OID4VP) Draft 24 を実装するための柔軟で拡張可能なライブラリです。
+OpenID for Verifiable Credential Issuance (OpenID4VCI) 1.0 および OpenID for Verifiable Presentations (OpenID4VP) Draft 24 を実装するための柔軟で拡張可能なライブラリです。
 
 このパッケージは Issuer と Verifier の両方のコアロジックを提供し、準拠した SSI（Self-Sovereign Identity）アプリケーションの構築を可能にします。プロバイダーベースのアーキテクチャで設計されており、ストレージ、鍵管理、その他のインフラ依存関係の実装を簡単に差し替えることができます。
 
 ## 機能
 
-*   **OID4VCI (Issuer):**
+*   **OpenID4VCI (Issuer):**
     *   Issuer メタデータの管理
     *   クレデンシャルオファーの作成（事前認可コードフロー）
     *   検証可能クレデンシャルの発行（JWT-VC 形式）
     *   c_nonce 管理のための nonce エンドポイントのサポート
     *   DPoP Proof 検証、DPoP nonce、DPoP-bound access token のサポート
     *   リゾルバーによる `did:key` およびその他の DID メソッドのサポート
-*   **OID4VP (Verifier):**
+*   **OpenID4VP (Verifier):**
     *   Verifier メタデータの管理
     *   認可リクエストの作成（JAR - Signed Request Objects）
     *   検証可能プレゼンテーションの検証（VP Token）
@@ -120,7 +120,7 @@ console.log('Issued Credential:', credential)
 
 **JWT クレデンシャルプルーフ（`proofs.jwt`）と `options.proofJwt`**
 
-OID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一致し、`iss` はフローと access token の取得方法に応じて扱われます。
+OpenID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一致し、`iss` はフローと access token の取得方法に応じて扱われます。
 
 上記コードの `authorizationContext` は、credential endpoint で access token（および必要なら DPoP Proof）を検証した結果です。access token の payload に `client_id` がある場合、その値は `authorizationContext` 経由で `issueCredential` 内部の proof 検証に渡されます。**呼び出し側が `proofJwt.clientId` を別途指定する必要はありません。**
 
@@ -136,7 +136,7 @@ OID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一致�
 
 #### 4. Nonce 管理（オプション）
 
-OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) を使用する場合、Wallet はクレデンシャルリクエストを送信する前に `c_nonce` を取得できます。複数のクレデンシャルをリクエストする際に便利です。同一の nonce を有効期限内で再利用できます。
+OpenID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) を使用する場合、Wallet はクレデンシャルリクエストを送信する前に `c_nonce` を取得できます。複数のクレデンシャルをリクエストする際に便利です。同一の nonce を有効期限内で再利用できます。
 
 HTTP サーバー実装で DPoP 用 nonce を返したい場合は、Authorization Server の OAuth policy store で DPoP mode を管理します。サーバー実装側でこの policy を参照すると、`POST /nonce` の JSON ボディ `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返すかどうかを制御できます。`c_nonce` と `DPoP-Nonce` は別の値です。実装例は [server/core/src/routes/issue.ts](../server/core/src/routes/issue.ts) を参照してください。
 

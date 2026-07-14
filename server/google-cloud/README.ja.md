@@ -6,7 +6,7 @@ Google Cloud / Firebase 連携付きのシングルテナントサーバー実�
 
 ## 概要
 
-このサーバーは OID4VCI（OpenID for Verifiable Credential Issuance）および OID4VP（OpenID for Verifiable Presentations）をベースに実装されています。
+このサーバーは OpenID4VCI（OpenID for Verifiable Credential Issuance）および OpenID4VP（OpenID for Verifiable Presentations）をベースに実装されています。
 
 バックエンドの保存先として、Firebase Admin SDK と `@trustknots/google-cloud` による Firestore Provider 連携を利用します。
 

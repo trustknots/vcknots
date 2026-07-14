@@ -5,7 +5,7 @@ Shared app/routes/server/util implementations are provided by `@trustknots/serve
 
 ## Overview
 
-This server is implemented based on the OID4VCI (OpenID for Verifiable Credential Issuance) and OID4VP (OpenID for Verifiable Presentations) specifications.
+This server is implemented based on the OpenID4VCI (OpenID for Verifiable Credential Issuance) and OpenID4VP (OpenID for Verifiable Presentations) specifications.
 
 ## Actual API Specifications
 
@@ -251,7 +251,7 @@ Get JWT VC Issuer metadata
 <a id="post-nonce"></a>
 #### `POST /nonce`
 
-Create a nonce (c_nonce). Corresponds to the OID4VCI [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint). Used when a Wallet obtains a c_nonce before sending credential requests. When requesting multiple credentials, the same nonce can be reused within its validity period.
+Create a nonce (c_nonce). Corresponds to the OpenID4VCI [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint). Used when a Wallet obtains a c_nonce before sending credential requests. When requesting multiple credentials, the same nonce can be reused within its validity period.
 
 **Response Headers:**
 - `Cache-Control: no-store` - Disable caching

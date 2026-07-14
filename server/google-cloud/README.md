@@ -6,7 +6,7 @@ Shared app/routes/server/util implementations are provided by `@trustknots/serve
 
 ## Overview
 
-This server is implemented based on the OID4VCI (OpenID for Verifiable Credential Issuance) and OID4VP (OpenID for Verifiable Presentations) specifications.
+This server is implemented based on the OpenID4VCI (OpenID for Verifiable Credential Issuance) and OpenID4VP (OpenID for Verifiable Presentations) specifications.
 
 It uses Firebase Admin SDK and Firestore provider integration (`@trustknots/google-cloud`) for backend storage.
 

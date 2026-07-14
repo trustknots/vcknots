@@ -5,7 +5,7 @@
 
 ## 概要
 
-このサーバーは、OID4VCI（OpenID for Verifiable Credential Issuance）とOID4VP（OpenID for Verifiable Presentations）の仕様に基づいて実装されています。
+このサーバーは、OpenID4VCI（OpenID for Verifiable Credential Issuance）とOpenID4VP（OpenID for Verifiable Presentations）の仕様に基づいて実装されています。
 
 ## 実際のAPI仕様について
 
@@ -249,7 +249,7 @@ JWT VC Issuer メタデータの取得
 <a id="post-nonce"></a>
 #### `POST /nonce`
 
-nonce（c_nonce）の作成。OID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) に相当します。Wallet が credential リクエストを送る前に c_nonce を取得する際に使用します。複数の credential を取得する場合、同一の nonce を有効期限内で再利用できます。
+nonce（c_nonce）の作成。OpenID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) に相当します。Wallet が credential リクエストを送る前に c_nonce を取得する際に使用します。複数の credential を取得する場合、同一の nonce を有効期限内で再利用できます。
 
 **レスポンスヘッダー:**
 - `Cache-Control: no-store` - キャッシュを無効化

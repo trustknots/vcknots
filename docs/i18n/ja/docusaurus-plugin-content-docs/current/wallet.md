@@ -97,7 +97,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/pkg/dispatcher/serializer"
 	"github.com/trustknots/vcknots/wallet/pkg/dispatcher/verifier"
 	"github.com/trustknots/vcknots/wallet/pkg/presenter"
-	oid4vp "github.com/trustknots/vcknots/wallet/pkg/presenter/oid4vp" // OID4VPプラグイン
+	oid4vp "github.com/trustknots/vcknots/wallet/pkg/presenter/oid4vp" // OpenID4VPプラグイン
 	"github.com/trustknots/vcknots/wallet/pkg/util"
 	
 	// 鍵生成と署名のための標準ライブラリ
@@ -126,7 +126,7 @@ func NewController() *vcknots_wallet.Controller {
     verificationDispatcher := verifier.NewVerificationDispatcher(verifier.WithDefaultConfig())
     idProfileDispatcher := idprof.NewIdentityProfileDispatcher(idprof.WithDefaultConfig())
 
-    // 2. OID4VPプラグインの初期化
+    // 2. OpenID4VPプラグインの初期化
     // (プレゼンテーションのロジックはプラグイン化されている)
     oid4vpPlugin, err := oid4vp.New(
         oid4vp.WithLogger(logger),
@@ -136,7 +136,7 @@ func NewController() *vcknots_wallet.Controller {
         panic(err)
     }
 
-    // 3. 提示ディスパッチャにOID4VPプラグインを登録
+    // 3. 提示ディスパッチャにOpenID4VPプラグインを登録
     presentationDispatcher := presenter.NewPresentationDispatcher(
         presenter.WithPlugin(presenter.Oid4vp, oid4vpPlugin),
     )
@@ -186,7 +186,7 @@ type IKeyEntry interface {
 チュートリアル用に、`server_integration.go` で提供されているインメモリのモック実装（`MockKeyEntry`）を使用します。
 
 この `MockKeyEntry` の `Sign` メソッド は、単なる `ecdsa.Sign` のラッパーではありません。
-これは、OID4VPで一般的に要求される ES256 署名（SHA-256ハッシュ）と、その結果をIEEE P1363形式（r と s を連結した64バイトのバイト列）にシリアライズするロジックを含んでいます。
+これは、OpenID4VPで一般的に要求される ES256 署名（SHA-256ハッシュ）と、その結果をIEEE P1363形式（r と s を連結した64バイトのバイト列）にシリアライズするロジックを含んでいます。
 
 
 ```go
@@ -285,16 +285,16 @@ func receiveTestCredential(key *MockKeyEntry) (*vcknots_wallet.SavedCredential, 
 }
 ```
 
-### 3-3. Credentialの提示 (OID4VP)
+### 3-3. Credentialの提示 (OpenID4VP)
 
 - Verifier (Node.jsサーバー) から `openid4vp://authorize?...` 形式のリクエストURIを受け取った後、Controller の `PresentCredential` メソッドを呼び出します。
-- このメソッド は、`uriString`（OID4VPリクエスト）をパースし、リクエスト内容（`presentation_definition`）を解析し、`credstore` から適合するCredentialを検索し、`IKeyEntry` を使ってVerifiable Presentation (VP) に署名し、Verifierの`callback` エンドポイント に`HTTP POST`します。
+- このメソッド は、`uriString`（OpenID4VPリクエスト）をパースし、リクエスト内容（`presentation_definition`）を解析し、`credstore` から適合するCredentialを検索し、`IKeyEntry` を使ってVerifiable Presentation (VP) に署名し、Verifierの`callback` エンドポイント に`HTTP POST`します。
 - `server_integration.go` の `presentation` 関数に基づき、Node.jsサーバー（`/verifiers/test_verifier/request` エンドポイント）から取得したリクエストURIを処理します。
 
 
 ```go
 func presentTestCredential(key *MockKeyEntry) error {
-    // 1. Verifier (Node.js サーバー) から OID4VP リクエストURIを取得
+    // 1. Verifier (Node.js サーバー) から OpenID4VP リクエストURIを取得
     // このURIは通常、QRコードのスキャンによって取得されます
     // ここでは の /verifiers/test_verifier/request を直接呼び出します
     resp, err := http.Get("http://localhost:8080/verifiers/test_verifier/request")
@@ -429,8 +429,8 @@ vcknots/wallet ライブラリの Controller とのインタラクションに�
     - `credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())` は、デフォルトで `go.etcd.io/bbolt` （組み込みKVS）を `wallet.db` のようなローカルファイルに永続化しようと試みます。
     - 実行ディレクトリに書き込み権限があることを確認してください。
 
-5. **OID4VP `client_id` の厳格な検証:**
-    - このWalletは、OID4VPコンフォーマンステストに準拠するため、`client_id`の厳格な検証を実装しています。
+5. **OpenID4VP `client_id` の厳格な検証:**
+    - このWalletは、OpenID4VPコンフォーマンステストに準拠するため、`client_id`の厳格な検証を実装しています。
     - 重複プレフィックス（例: `x509_san_dns:x509_san_dns:...`）や不正な形式は自動的に拒否されます。
     - `x509_san_dns:`スキームの場合、リクエストJWTの`x5c`ヘッダーから証明書を抽出し、証明書のSubject Alternative Name (SAN) DNSフィールドと`client_id`の値を照合します。
     - 詳細は `wallet/presenter/plugins/oid4vp/oid4vp.go` の `parseOID4VPClientID()` 関数と `x509_san_dns` 検証ロジックを参照してください。
@@ -465,12 +465,12 @@ vcknots/wallet ライブラリの Controller とのインタラクションに�
 * **Q: `controller.ReceiveCredential` が `issuer metadata not found` で失敗する。**  
   * **A:** Node.jsサーバー は起動しているかもしれませんが、`/.well-known/openid-credential-issuer` エンドポイントが正しく機能していない可能性があります。`curl http://localhost:8080/.well-known/openid-credential-issuer` （または「4. Walletメタデータの登録」で指定されたIssuerのベースURL）を実行して、JSONメタデータが返されることを確認してください。
 
-* **Q: OID4VPコンフォーマンステストで `client_id` 検証エラーが発生する。**
+* **Q: OpenID4VPコンフォーマンステストで `client_id` 検証エラーが発生する。**
   * **A:** コンフォーマンステストは、意図的に不正な`client_id`（重複プレフィックス、末尾の空白など）を送信してWalletの検証ロジックをテストします。修正後のWalletは、このような不正な`client_id`を正しく拒否します。
   * エラー例: `"invalid client_id: duplicate prefix detected"` または `"SAN of the certificate and client_id did not match"`
   * これらのエラーは**期待される動作**であり、Walletが正しくセキュリティチェックを実施していることを示します。
 
-* **Q: OID4VPコンフォーマンステストで `x509: certificate is not standards compliant` エラーが発生する。**
+* **Q: OpenID4VPコンフォーマンステストで `x509: certificate is not standards compliant` エラーが発生する。**
   * **A:** コンフォーマンステストサーバーは、テスト目的で自己署名証明書や非標準的な証明書構造を使用することがあります。
   * **解決策**: テスト環境でのみ`InsecureSkipX509Verify: true`を設定してください：
     ```go

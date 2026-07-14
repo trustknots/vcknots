@@ -1,19 +1,19 @@
 # @trustknots/vcknots
 
-A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) 1.0 and OpenID for Verifiable Presentations (OID4VP) Draft 24.
+A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OpenID4VCI) 1.0 and OpenID for Verifiable Presentations (OpenID4VP) Draft 24.
 
 This package provides the core logic for both Issuers and Verifiers, allowing you to build compliant SSI (Self-Sovereign Identity) applications. It is designed with a provider-based architecture, making it easy to swap out implementations for storage, key management, and other infrastructure dependencies.
 
 ## Features
 
-*   **OID4VCI (Issuer):**
+*   **OpenID4VCI (Issuer):**
     *   Manage Issuer Metadata.
     *   Create Credential Offers (Pre-Authorized Code Flow).
     *   Issue Verifiable Credentials (JWT-VC format).
     *   Nonce endpoint support for c_nonce management.
     *   DPoP Proof verification, DPoP nonce, and DPoP-bound access token support.
     *   Support for `did:key` and other DID methods via resolvers.
-*   **OID4VP (Verifier):**
+*   **OpenID4VP (Verifier):**
     *   Manage Verifier Metadata.
     *   Create Authorization Requests (JAR - Signed Request Objects).
     *   Verify Verifiable Presentations (VP Token).
@@ -120,7 +120,7 @@ console.log('Issued Credential:', credential)
 
 **JWT credential proofs (`proofs.jwt`) and `options.proofJwt`**
 
-For OID4VCI JWT proofs, `aud` must match the Credential Issuer Identifier, and `iss` is validated according to the flow and how the access token was obtained.
+For OpenID4VCI JWT proofs, `aud` must match the Credential Issuer Identifier, and `iss` is validated according to the flow and how the access token was obtained.
 
 In the code above, `authorizationContext` is the result of verifying the access token (and DPoP Proof when required) at the credential endpoint. When the access token payload includes `client_id`, that value is passed internally to proof verification inside `issueCredential`. **Callers do not need to set `proofJwt.clientId` separately.**
 
@@ -136,7 +136,7 @@ If `proofJwt` does not match the real flow, `aud` / `iss` checks may fail with `
 
 #### 4. Nonce Management (Optional)
 
-When using the [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) (OID4VCI), Wallets can obtain a `c_nonce` before sending credential requests. This is useful when requesting multiple credentials—a single nonce can be reused within its validity period.
+When using the [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) (OpenID4VCI), Wallets can obtain a `c_nonce` before sending credential requests. This is useful when requesting multiple credentials—a single nonce can be reused within its validity period.
 
 If your HTTP server implementation needs to expose a DPoP nonce, manage the DPoP mode in the Authorization Server OAuth policy store. Server implementations can consult this policy to decide whether `POST /nonce` should return a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values. See [server/core/src/routes/issue.ts](../server/core/src/routes/issue.ts) for an implementation example.
 

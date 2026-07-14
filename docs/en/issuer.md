@@ -839,7 +839,7 @@ In [server/core](https://github.com/trustknots/vcknots/blob/main/server/core/src
 
 ### 6. Nonce Endpoint
 
-This endpoint corresponds to the OID4VCI [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint). It is used when a Wallet obtains a c_nonce before sending a credential request. 
+This endpoint corresponds to the OpenID4VCI [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint). It is used when a Wallet obtains a c_nonce before sending a credential request. 
 
 When `nonce_endpoint` is set in the Issuer metadata, the Wallet references the nonce endpoint URL via the metadata obtained from `/.well-known/openid-credential-issuer`.
 
@@ -1231,7 +1231,7 @@ createIssuerMetadata(issuer: CredentialIssuerMetadata): Promise<void>
 
 ### createNonce
 
-Creates a nonce (c_nonce). Used for the OID4VCI nonce endpoint.
+Creates a nonce (c_nonce). Used for the OpenID4VCI nonce endpoint.
 
 ```typescript
 createNonce(ttlMs?: number): Promise<string>
@@ -1369,7 +1369,7 @@ Per-header behavior:
 - `unknown_credential_configuration`: `credential_configuration_id` is not supported
 - `unsupported_credential_type`: The specified `credential_definition` or `proof_type` is not supported
 - `invalid_credential_request`: Invalid Credential Request body, disallowed `credential_configuration_id`, missing or unsupported `proof`, invalid configuration id, etc.
-- `invalid_proof`: The `proof` cannot be verified, the header does not conform to OID4VCI JWT proof rules (e.g. `typ` / `alg` / combinations of `kid`, `jwk`, and `x5c`), an unsupported header is set, or a `nonce` is missing
+- `invalid_proof`: The `proof` cannot be verified, the header does not conform to OpenID4VCI JWT proof rules (e.g. `typ` / `alg` / combinations of `kid`, `jwk`, and `x5c`), an unsupported header is set, or a `nonce` is missing
 - `unsupported_issuer_key_alg`: The Issuer’s signing algorithm is not supported
 - `authz_issuer_key_not_found`: The Issuer’s key cannot be found
 - `internal_server_error`: Signing failed
