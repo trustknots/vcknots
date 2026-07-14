@@ -78,9 +78,8 @@ cp .env.example .env
 | `TX_CODE_PEPPER` | 全サーバー **必須** | `tx_code` を DynamoDB に保存する前に HMAC ハッシュ化するための秘密 pepper |
 | `ISSUERS_TABLE_NAME` | Issuer **必須** | DynamoDB テーブル名（スタック出力: `IssuersTableName`） |
 | `NONCES_TABLE_NAME` | Issuer **必須** | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
-| `PRE_CODES_TABLE_NAME` | Issuer **必須** | DynamoDB テーブル名（スタック出力: `PreCodesTableName`） |
+| `PRE_CODES_TABLE_NAME` | Issuer・Authz **必須** | DynamoDB テーブル名（Issuer/Authz 共通、スタック出力: `PreCodesTableName`） |
 | `AUTH_SERVERS_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthServersTableName`） |
-| `PRE_CODES_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `PreCodesTableName`） |
 | `VERIFIERS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `VerifiersTableName`） |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `RequestObjectsTableName`） |
 | `NONCES_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |

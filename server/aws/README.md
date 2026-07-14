@@ -78,9 +78,8 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `TX_CODE_PEPPER` | All **required** | Secret pepper used to HMAC-hash `tx_code` before storing it in DynamoDB |
 | `ISSUERS_TABLE_NAME` | Issuer **required** | DynamoDB table name (stack output: `IssuersTableName`) |
 | `NONCES_TABLE_NAME` | Issuer **required** | DynamoDB table name (stack output: `NoncesTableName`) |
-| `PRE_CODES_TABLE_NAME` | Issuer **required** | DynamoDB table name (stack output: `PreCodesTableName`) |
+| `PRE_CODES_TABLE_NAME` | Issuer & Authz **required** | DynamoDB table name, shared by both servers (stack output: `PreCodesTableName`) |
 | `AUTH_SERVERS_TABLE_NAME` | Authz **required** | DynamoDB table name (stack output: `AuthServersTableName`) |
-| `PRE_CODES_TABLE_NAME` | Authz **required** | DynamoDB table name (stack output: `PreCodesTableName`) |
 | `VERIFIERS_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `VerifiersTableName`) |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `RequestObjectsTableName`) |
 | `NONCES_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `NoncesTableName`) |
