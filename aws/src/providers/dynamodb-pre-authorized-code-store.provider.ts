@@ -1,4 +1,4 @@
-import { DeleteCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb'
+import { DeleteCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { PreAuthorizedCodeStoreEntry } from '@trustknots/vcknots'
 import { raise } from '@trustknots/vcknots/errors'
 import { PreAuthorizedCodeStoreProvider } from '@trustknots/vcknots/providers'
@@ -9,9 +9,15 @@ export type DynamoDbPreAuthorizedCodeStoreOptions = DynamoDbProviderOptions & {
   tableName: string
   /** Default TTL in milliseconds when a per-save ttlSec is not provided. Defaults to 5 minutes. */
   expiresIn?: number
+  /**
+   * Number of failed `tx_code` attempts allowed per pre-authorized code before it
+   * is invalidated (brute-force lockout). Defaults to 5.
+   */
+  maxTxCodeAttempts?: number
 }
 
 const DEFAULT_EXPIRES_IN_MS = 60 * 5 * 1000
+const DEFAULT_MAX_TX_CODE_ATTEMPTS = 5
 
 /**
  * Item stored in DynamoDB. The pre-authorized code itself is the partition key
@@ -28,6 +34,8 @@ type DynamoDbPreAuthorizedCodeItem = {
   tx_code_hash?: string
   expires_at: number
   ttl: number
+  /** Number of failed `tx_code` attempts so far (brute-force lockout counter). */
+  attempts?: number
 }
 
 const toDigitString = (value: string | number): string | null => {
@@ -43,6 +51,10 @@ export const dynamodbPreAuthorizedCodeStore = (
   const client = resolveDynamoDbDocumentClient(options)
   const { tableName, expiresIn = DEFAULT_EXPIRES_IN_MS } = options
   const defaultTtlSec = Math.max(1, Math.floor(expiresIn / 1000))
+  const maxTxCodeAttempts = Math.max(
+    1,
+    Math.floor(options.maxTxCodeAttempts ?? DEFAULT_MAX_TX_CODE_ATTEMPTS)
+  )
 
   /**
    * Deletes a stored code. When `conditional` is true the delete only succeeds
@@ -112,20 +124,36 @@ export const dynamodbPreAuthorizedCodeStore = (
     },
 
     async consume(code, tx_code) {
-      const result = await client.send(
-        new GetCommand({
-          TableName: tableName,
-          Key: { id: code },
-        })
-      )
-
-      if (!result.Item) {
-        throw raise('invalid_grant', {
-          message: 'Pre-authorized code not found',
-        })
+      // Count-first admission gate (brute-force lockout): atomically increment `attempts`
+      // only while the code still exists AND the per-code limit hasn't been reached, then
+      // read the item back to compare the tx_code. DynamoDB serializes conditional writes
+      // per item, so even a highly concurrent burst admits at most `maxTxCodeAttempts`
+      // guesses — once the limit is hit, every further attempt (including the correct PIN)
+      // fails the condition and is rejected before the tx_code is ever compared.
+      let item: DynamoDbPreAuthorizedCodeItem
+      try {
+        const result = await client.send(
+          new UpdateCommand({
+            TableName: tableName,
+            Key: { id: code },
+            UpdateExpression: 'ADD #attempts :one',
+            ConditionExpression:
+              'attribute_exists(id) AND (attribute_not_exists(#attempts) OR #attempts < :max)',
+            ExpressionAttributeNames: { '#attempts': 'attempts' },
+            ExpressionAttributeValues: { ':one': 1, ':max': maxTxCodeAttempts },
+            ReturnValues: 'ALL_NEW',
+          })
+        )
+        item = result.Attributes as DynamoDbPreAuthorizedCodeItem
+      } catch (error) {
+        if ((error as { name?: string })?.name === 'ConditionalCheckFailedException') {
+          // Not found, already consumed, or locked out after too many tx_code attempts.
+          throw raise('invalid_grant', {
+            message: 'Pre-authorized code is invalid, consumed, or locked',
+          })
+        }
+        throw error
       }
-
-      const item = result.Item as DynamoDbPreAuthorizedCodeItem
 
       // expires_at is epoch ms (parity with Firestore / in-memory). DynamoDB TTL is eventually consistent — check manually.
       if (typeof item.expires_at !== 'number' || Date.now() > item.expires_at) {

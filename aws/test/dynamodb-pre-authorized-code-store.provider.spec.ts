@@ -1,11 +1,6 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
-import {
-  DeleteCommand,
-  DynamoDBDocumentClient,
-  GetCommand,
-  PutCommand,
-} from '@aws-sdk/lib-dynamodb'
+import { DeleteCommand, DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { CredentialConfigurationId, PreAuthorizedCode } from '@trustknots/vcknots'
 import { mockClient } from 'aws-sdk-client-mock'
 import { dynamodbPreAuthorizedCodeStore } from '../src/providers/dynamodb-pre-authorized-code-store.provider'
@@ -15,25 +10,38 @@ const ddbMock = mockClient(DynamoDBDocumentClient)
 
 const configurations: CredentialConfigurationId[] = [CredentialConfigurationId('University_Degree')]
 
+const conditionalCheckFailed = () =>
+  Object.assign(new Error('conditional check failed'), {
+    name: 'ConditionalCheckFailedException',
+  })
+
 describe('dynamodbPreAuthorizedCodeStore', () => {
   afterEach(() => {
     ddbMock.reset()
   })
 
-  const createProvider = (expiresIn?: number) =>
+  const createProvider = (expiresIn?: number, maxTxCodeAttempts?: number) =>
     dynamodbPreAuthorizedCodeStore({
       client: ddbMock as unknown as DynamoDBDocumentClient,
       tableName: TABLE_NAME,
       ...(expiresIn !== undefined && { expiresIn }),
+      ...(maxTxCodeAttempts !== undefined && { maxTxCodeAttempts }),
     })
 
   /** Grab the Item written by the most recent PutCommand. */
   const lastPutItem = () => ddbMock.commandCalls(PutCommand).at(-1)?.args[0].input.Item
 
-  /** Wire GetCommand to return whatever the last save persisted. */
-  const armGetFromLastPut = () => {
-    ddbMock.on(GetCommand).resolves({ Item: lastPutItem() })
+  /**
+   * Wire the count-first consume gate: the UpdateCommand (ReturnValues ALL_NEW) returns the
+   * item that would exist, with the given attempt count. Defaults to the last saved item.
+   */
+  const armConsume = (item: Record<string, unknown> | undefined, attempts = 1) => {
+    ddbMock.on(UpdateCommand).resolves(item === undefined ? {} : { Attributes: { ...item, attempts } })
   }
+  const armConsumeFromLastPut = (attempts = 1) =>
+    armConsume(lastPutItem() as Record<string, unknown>, attempts)
+  /** Wire the gate to reject the attempt (code not found, consumed, or locked out). */
+  const armConsumeRejected = () => ddbMock.on(UpdateCommand).rejects(conditionalCheckFailed())
 
   it('should have correct provider metadata', () => {
     const provider = createProvider()
@@ -48,7 +56,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
 
     const provider = createProvider()
     await provider.save(PreAuthorizedCode('code-123'), configurations)
-    armGetFromLastPut()
+    armConsumeFromLastPut()
 
     const result = await provider.consume(PreAuthorizedCode('code-123'))
     assert.deepEqual(result, configurations)
@@ -63,7 +71,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('code-numeric'), configurations, 123, {
       tx_code_input_mode: 'numeric',
     })
-    armGetFromLastPut()
+    armConsumeFromLastPut()
 
     const result = await provider.consume(PreAuthorizedCode('code-numeric'), 123)
     assert.deepEqual(result, configurations)
@@ -77,7 +85,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('code-text'), configurations, 'abc123', {
       tx_code_input_mode: 'text',
     })
-    armGetFromLastPut()
+    armConsumeFromLastPut()
 
     const result = await provider.consume(PreAuthorizedCode('code-text'), 'abc123')
     assert.deepEqual(result, configurations)
@@ -90,7 +98,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('code-wrong'), configurations, 123, {
       tx_code_input_mode: 'numeric',
     })
-    armGetFromLastPut()
+    armConsumeFromLastPut()
 
     await assert.rejects(provider.consume(PreAuthorizedCode('code-wrong'), 456), {
       name: 'invalid_grant',
@@ -105,7 +113,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('code-type'), configurations, 123, {
       tx_code_input_mode: 'numeric',
     })
-    armGetFromLastPut()
+    armConsumeFromLastPut()
 
     const result = await provider.consume(PreAuthorizedCode('code-type'), '123')
     assert.deepEqual(result, configurations)
@@ -118,7 +126,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('code-invalid-num'), configurations, 123, {
       tx_code_input_mode: 'numeric',
     })
-    armGetFromLastPut()
+    armConsumeFromLastPut()
 
     await assert.rejects(provider.consume(PreAuthorizedCode('code-invalid-num'), '12a3'), {
       name: 'invalid_grant',
@@ -133,7 +141,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('code-leading-zero'), configurations, '0123', {
       tx_code_input_mode: 'numeric',
     })
-    armGetFromLastPut()
+    armConsumeFromLastPut()
 
     const result = await provider.consume(PreAuthorizedCode('code-leading-zero'), '0123')
     assert.deepEqual(result, configurations)
@@ -146,7 +154,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('code-leading-zero-mismatch'), configurations, '0123', {
       tx_code_input_mode: 'numeric',
     })
-    armGetFromLastPut()
+    armConsumeFromLastPut()
 
     await assert.rejects(provider.consume(PreAuthorizedCode('code-leading-zero-mismatch'), 123), {
       name: 'invalid_grant',
@@ -172,7 +180,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
     await provider.save(PreAuthorizedCode('code-requires-tx'), configurations, 123, {
       tx_code_input_mode: 'numeric',
     })
-    armGetFromLastPut()
+    armConsumeFromLastPut()
 
     await assert.rejects(provider.consume(PreAuthorizedCode('code-requires-tx')), {
       name: 'invalid_request',
@@ -184,7 +192,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
 
     const provider = createProvider()
     await provider.save(PreAuthorizedCode('code-no-tx'), configurations)
-    armGetFromLastPut()
+    armConsumeFromLastPut()
 
     await assert.rejects(provider.consume(PreAuthorizedCode('code-no-tx'), 123), {
       name: 'invalid_request',
@@ -305,7 +313,8 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
   })
 
   it('should throw invalid_grant when the code is unknown', async () => {
-    ddbMock.on(GetCommand).resolves({})
+    // The count-first gate rejects (attribute_exists(id) fails) when the code doesn't exist.
+    armConsumeRejected()
 
     const provider = createProvider()
     await assert.rejects(provider.consume(PreAuthorizedCode('unknown')), {
@@ -315,9 +324,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
 
   it('should throw invalid_grant and delete when the code is expired', async () => {
     const pastExpiry = Date.now() - 1000
-    ddbMock.on(GetCommand).resolves({
-      Item: { id: 'expired', credential_configuration_ids: configurations, expires_at: pastExpiry },
-    })
+    armConsume({ id: 'expired', credential_configuration_ids: configurations, expires_at: pastExpiry })
     ddbMock.on(DeleteCommand).resolves({})
 
     const provider = createProvider()
@@ -328,9 +335,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
   })
 
   it('should throw invalid_grant when expires_at is missing', async () => {
-    ddbMock.on(GetCommand).resolves({
-      Item: { id: 'no-exp', credential_configuration_ids: configurations },
-    })
+    armConsume({ id: 'no-exp', credential_configuration_ids: configurations })
     ddbMock.on(DeleteCommand).resolves({})
 
     const provider = createProvider()
@@ -345,7 +350,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
 
     const provider = createProvider()
     await provider.save(PreAuthorizedCode('consume-delete'), configurations)
-    armGetFromLastPut()
+    armConsumeFromLastPut()
 
     await provider.consume(PreAuthorizedCode('consume-delete'))
 
@@ -357,18 +362,92 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
 
   it('should surface a lost delete race as invalid_grant (double consume)', async () => {
     ddbMock.on(PutCommand).resolves({})
-    ddbMock.on(DeleteCommand).rejects(
-      Object.assign(new Error('conditional check failed'), {
-        name: 'ConditionalCheckFailedException',
-      })
-    )
+    ddbMock.on(DeleteCommand).rejects(conditionalCheckFailed())
 
     const provider = createProvider()
     await provider.save(PreAuthorizedCode('race'), configurations)
-    armGetFromLastPut()
+    armConsumeFromLastPut()
 
     await assert.rejects(provider.consume(PreAuthorizedCode('race')), {
       name: 'invalid_grant',
+    })
+  })
+
+  describe('tx_code brute-force lockout (count-first gate)', () => {
+    const saveWithTxCode = async (provider: ReturnType<typeof createProvider>, code: string) => {
+      await provider.save(PreAuthorizedCode(code), configurations, 1234, {
+        tx_code_input_mode: 'numeric',
+      })
+    }
+
+    it('gates each attempt with an atomic, capped ADD before comparing tx_code', async () => {
+      ddbMock.on(PutCommand).resolves({})
+
+      const provider = createProvider()
+      await saveWithTxCode(provider, 'bf-gate')
+      armConsumeFromLastPut(1)
+
+      await assert.rejects(provider.consume(PreAuthorizedCode('bf-gate'), 9999), {
+        name: 'invalid_grant',
+      })
+
+      const upd = ddbMock.commandCalls(UpdateCommand)[0]?.args[0].input
+      assert.equal(upd?.UpdateExpression, 'ADD #attempts :one')
+      assert.equal(
+        upd?.ConditionExpression,
+        'attribute_exists(id) AND (attribute_not_exists(#attempts) OR #attempts < :max)'
+      )
+      assert.deepEqual(upd?.ExpressionAttributeNames, { '#attempts': 'attempts' })
+      // Default limit of 5 is enforced atomically in the condition.
+      assert.equal(upd?.ExpressionAttributeValues?.[':max'], 5)
+      assert.deepEqual(upd?.Key, { id: 'bf-gate' })
+    })
+
+    it('rejects a locked/exhausted code before comparing the tx_code', async () => {
+      ddbMock.on(PutCommand).resolves({})
+      // Gate fails: the code is over the attempt limit (or gone) — DynamoDB rejects the ADD.
+      armConsumeRejected()
+
+      const provider = createProvider()
+      await saveWithTxCode(provider, 'bf-locked')
+
+      // Even the correct PIN is rejected once the code is locked.
+      await assert.rejects(provider.consume(PreAuthorizedCode('bf-locked'), 1234), {
+        name: 'invalid_grant',
+      })
+      // The tx_code is never compared, and nothing is consumed.
+      assert.equal(ddbMock.commandCalls(DeleteCommand).length, 0)
+    })
+
+    it('enforces a custom maxTxCodeAttempts in the gate condition', async () => {
+      ddbMock.on(PutCommand).resolves({})
+
+      const provider = createProvider(undefined, 2)
+      await saveWithTxCode(provider, 'bf-custom')
+      armConsumeFromLastPut(1)
+
+      await assert.rejects(provider.consume(PreAuthorizedCode('bf-custom'), 9999), {
+        name: 'invalid_grant',
+      })
+      assert.equal(
+        ddbMock.commandCalls(UpdateCommand)[0]?.args[0].input.ExpressionAttributeValues?.[':max'],
+        2
+      )
+    })
+
+    it('admits and consumes the correct tx_code through the same gate', async () => {
+      ddbMock.on(PutCommand).resolves({})
+      ddbMock.on(DeleteCommand).resolves({})
+
+      const provider = createProvider()
+      await saveWithTxCode(provider, 'bf-ok')
+      armConsumeFromLastPut(1)
+
+      const result = await provider.consume(PreAuthorizedCode('bf-ok'), 1234)
+      assert.deepEqual(result, configurations)
+      // Exactly one gated increment, then a conditional delete on success.
+      assert.equal(ddbMock.commandCalls(UpdateCommand).length, 1)
+      assert.equal(ddbMock.commandCalls(DeleteCommand).length, 1)
     })
   })
 })
