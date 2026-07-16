@@ -155,6 +155,18 @@ export const dynamodbPreAuthorizedCodeStore = (
         throw error
       }
 
+      /**
+       * Called before failing an attempt that the gate admitted. When the attempt
+       * exhausted the per-code limit the code is deleted, so a locked-out code never
+       * lingers until its TTL — later attempts fail the gate's `attribute_exists(id)`
+       * check and surface the same error.
+       */
+      const lockoutIfExhausted = async (): Promise<void> => {
+        if ((item.attempts ?? 0) >= maxTxCodeAttempts) {
+          await deleteCode(code)
+        }
+      }
+
       // expires_at is epoch ms (parity with Firestore / in-memory). DynamoDB TTL is eventually consistent — check manually.
       if (typeof item.expires_at !== 'number' || Date.now() > item.expires_at) {
         await deleteCode(code)
@@ -165,6 +177,7 @@ export const dynamodbPreAuthorizedCodeStore = (
 
       if (item.tx_code_hash) {
         if (tx_code === undefined) {
+          await lockoutIfExhausted()
           throw raise('invalid_request', {
             message: 'tx_code is required for this pre-authorized code',
           })
@@ -173,18 +186,21 @@ export const dynamodbPreAuthorizedCodeStore = (
         if (inputMode !== 'text') {
           const actual = toDigitString(tx_code)
           if (actual === null || item.tx_code_hash !== hashTxCode(actual)) {
+            await lockoutIfExhausted()
             throw raise('invalid_grant', {
               message: 'Invalid tx_code provided',
             })
           }
         } else {
           if (typeof tx_code !== 'string' || item.tx_code_hash !== hashTxCode(tx_code)) {
+            await lockoutIfExhausted()
             throw raise('invalid_grant', {
               message: 'Invalid tx_code provided',
             })
           }
         }
       } else if (tx_code !== undefined) {
+        await lockoutIfExhausted()
         throw raise('invalid_request', {
           message: 'tx_code should not be provided for this pre-authorized code',
         })

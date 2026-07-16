@@ -435,6 +435,55 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
       )
     })
 
+    it('keeps the code while attempts remain below the limit', async () => {
+      ddbMock.on(PutCommand).resolves({})
+      ddbMock.on(DeleteCommand).resolves({})
+
+      const provider = createProvider()
+      await saveWithTxCode(provider, 'bf-under')
+      // 1st of the 5 allowed attempts.
+      armConsumeFromLastPut(1)
+
+      await assert.rejects(provider.consume(PreAuthorizedCode('bf-under'), 9999), {
+        name: 'invalid_grant',
+      })
+      // Attempts remain, so the code stays available for the legitimate holder.
+      assert.equal(ddbMock.commandCalls(DeleteCommand).length, 0)
+    })
+
+    it('deletes the code once a failed attempt exhausts the limit', async () => {
+      ddbMock.on(PutCommand).resolves({})
+      ddbMock.on(DeleteCommand).resolves({})
+
+      const provider = createProvider()
+      await saveWithTxCode(provider, 'bf-exhaust')
+      // The gate admits the 5th (final) attempt, which then fails the tx_code check.
+      armConsumeFromLastPut(5)
+
+      await assert.rejects(provider.consume(PreAuthorizedCode('bf-exhaust'), 9999), {
+        name: 'invalid_grant',
+      })
+      // A locked-out code is removed rather than left to linger until its TTL.
+      assert.equal(ddbMock.commandCalls(DeleteCommand).length, 1)
+      const del = ddbMock.commandCalls(DeleteCommand)[0]?.args[0].input
+      assert.deepEqual(del?.Key, { id: 'bf-exhaust' })
+      assert.equal(del?.ConditionExpression, undefined)
+    })
+
+    it('deletes the code when a custom maxTxCodeAttempts is exhausted', async () => {
+      ddbMock.on(PutCommand).resolves({})
+      ddbMock.on(DeleteCommand).resolves({})
+
+      const provider = createProvider(undefined, 2)
+      await saveWithTxCode(provider, 'bf-custom-exhaust')
+      armConsumeFromLastPut(2)
+
+      await assert.rejects(provider.consume(PreAuthorizedCode('bf-custom-exhaust'), 9999), {
+        name: 'invalid_grant',
+      })
+      assert.equal(ddbMock.commandCalls(DeleteCommand).length, 1)
+    })
+
     it('admits and consumes the correct tx_code through the same gate', async () => {
       ddbMock.on(PutCommand).resolves({})
       ddbMock.on(DeleteCommand).resolves({})
