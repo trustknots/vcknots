@@ -20,6 +20,12 @@ const DEFAULT_EXPIRES_IN_MS = 60 * 5 * 1000
 const DEFAULT_MAX_TX_CODE_ATTEMPTS = 5
 
 /**
+ * Returned for every code that can no longer be exchanged — unknown, already consumed,
+ * or locked out. The three cases are deliberately indistinguishable to the caller.
+ */
+const LOCKED_MESSAGE = 'Pre-authorized code is invalid, consumed, or locked'
+
+/**
  * Item stored in DynamoDB. The pre-authorized code itself is the partition key
  * (`id`). `tx_code` is never persisted in the clear — only its HMAC hash is
  * stored as `tx_code_hash`. `expires_at` is the application-level expiry in
@@ -148,22 +154,23 @@ export const dynamodbPreAuthorizedCodeStore = (
       } catch (error) {
         if ((error as { name?: string })?.name === 'ConditionalCheckFailedException') {
           // Not found, already consumed, or locked out after too many tx_code attempts.
-          throw raise('invalid_grant', {
-            message: 'Pre-authorized code is invalid, consumed, or locked',
-          })
+          throw raise('invalid_grant', { message: LOCKED_MESSAGE })
         }
         throw error
       }
 
       /**
        * Called before failing an attempt that the gate admitted. When the attempt
-       * exhausted the per-code limit the code is deleted, so a locked-out code never
-       * lingers until its TTL — later attempts fail the gate's `attribute_exists(id)`
-       * check and surface the same error.
+       * exhausted the per-code limit, the code is deleted and the lockout is reported
+       * right away: the holder learns the code is dead on the attempt that killed it,
+       * rather than being told only that the tx_code was wrong — which would invite a
+       * retry that can no longer succeed. Attempts that leave the limit intact fall
+       * through, so the holder still gets the specific `Invalid tx_code` error.
        */
       const lockoutIfExhausted = async (): Promise<void> => {
         if ((item.attempts ?? 0) >= maxTxCodeAttempts) {
           await deleteCode(code)
+          raise('invalid_grant', { message: LOCKED_MESSAGE })
         }
       }
 

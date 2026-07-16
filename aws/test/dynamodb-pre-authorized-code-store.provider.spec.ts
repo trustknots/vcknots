@@ -374,6 +374,9 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
   })
 
   describe('tx_code brute-force lockout (count-first gate)', () => {
+    const LOCKED_MESSAGE = 'Pre-authorized code is invalid, consumed, or locked'
+    const INVALID_TX_CODE_MESSAGE = 'Invalid tx_code provided'
+
     const saveWithTxCode = async (provider: ReturnType<typeof createProvider>, code: string) => {
       await provider.save(PreAuthorizedCode(code), configurations, 1234, {
         tx_code_input_mode: 'numeric',
@@ -414,6 +417,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
       // Even the correct PIN is rejected once the code is locked.
       await assert.rejects(provider.consume(PreAuthorizedCode('bf-locked'), 1234), {
         name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
       })
       // The tx_code is never compared, and nothing is consumed.
       assert.equal(ddbMock.commandCalls(DeleteCommand).length, 0)
@@ -444,10 +448,11 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
       // 1st of the 5 allowed attempts.
       armConsumeFromLastPut(1)
 
+      // Attempts remain, so the holder is told what was actually wrong and can retry.
       await assert.rejects(provider.consume(PreAuthorizedCode('bf-under'), 9999), {
         name: 'invalid_grant',
+        message: INVALID_TX_CODE_MESSAGE,
       })
-      // Attempts remain, so the code stays available for the legitimate holder.
       assert.equal(ddbMock.commandCalls(DeleteCommand).length, 0)
     })
 
@@ -460,8 +465,11 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
       // The gate admits the 5th (final) attempt, which then fails the tx_code check.
       armConsumeFromLastPut(5)
 
+      // The lockout is reported on the attempt that trips it — not `Invalid tx_code`,
+      // which would invite a retry that can no longer succeed.
       await assert.rejects(provider.consume(PreAuthorizedCode('bf-exhaust'), 9999), {
         name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
       })
       // A locked-out code is removed rather than left to linger until its TTL.
       assert.equal(ddbMock.commandCalls(DeleteCommand).length, 1)
@@ -480,6 +488,7 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
 
       await assert.rejects(provider.consume(PreAuthorizedCode('bf-custom-exhaust'), 9999), {
         name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
       })
       assert.equal(ddbMock.commandCalls(DeleteCommand).length, 1)
     })
