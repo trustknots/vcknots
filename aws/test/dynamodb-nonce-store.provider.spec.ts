@@ -55,6 +55,24 @@ describe('dynamodbNonceStore', () => {
     assert.equal(ddbMock.commandCalls(PutCommand).length, 0)
   })
 
+  it('should throw when nonce_expires_in is NaN on save', async () => {
+    const provider = createProvider()
+    await assert.rejects(
+      () => provider.save({ nonce: 'bad-ttl-nan', nonce_expires_in: Number.NaN }),
+      /nonce_expires_in must be a finite number/
+    )
+    assert.equal(ddbMock.commandCalls(PutCommand).length, 0)
+  })
+
+  it('should throw when nonce_expires_in is Infinity on save', async () => {
+    const provider = createProvider()
+    await assert.rejects(
+      () => provider.save({ nonce: 'bad-ttl-inf', nonce_expires_in: Number.POSITIVE_INFINITY }),
+      /nonce_expires_in must be a finite number/
+    )
+    assert.equal(ddbMock.commandCalls(PutCommand).length, 0)
+  })
+
   it('validate should return true for a valid nonce', async () => {
     const futureExpiry = Date.now() + 300 * 1000
     ddbMock.on(GetCommand).resolves({

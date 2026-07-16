@@ -34,6 +34,9 @@ export const dynamodbNonceStore = (options: DynamoDbNonceStoreOptions): NonceSto
       if (ttlMs == null) {
         throw new Error('nonce_expires_in is required when saving nonce')
       }
+      if (!Number.isFinite(ttlMs)) {
+        throw new Error('nonce_expires_in must be a finite number when saving nonce')
+      }
       const expires_at = Date.now() + ttlMs
       // DynamoDB TTL expects epoch seconds; round up so TTL never deletes before the real (ms) expiry.
       const ttl = Math.ceil(expires_at / 1000)

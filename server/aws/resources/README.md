@@ -108,12 +108,12 @@ Billing is on-demand (`PAY_PER_REQUEST`). Tables use `RETAIN` on stack deletion 
 |---|---|---|---|
 | IssuersTable | Hash of Issuer URL | no | Credential Issuer metadata |
 | AuthServersTable | Hash of Authorization Server URL | no | Authorization Server metadata |
-| PreCodesTable | Pre-Authorized Code string | yes (`expires_at`) | Pre-authorized code used at issuance |
+| PreCodesTable | Pre-Authorized Code string | yes (`ttl`) | Pre-authorized code used at issuance |
 | NoncesTable | Nonce string | yes (`ttl`) | Nonce for replay protection |
 | VerifiersTable | Hash of Verifier client ID | no | Verifier metadata |
 | RequestObjectsTable | Request Object ID | yes (`ttl`) | VP request Request Object |
 
-Attributes other than `id` (metadata body, `expires_at`, `ttl`, and so on) are written by the application. For NoncesTable / RequestObjectsTable, `expires_at` is the application-level expiry in **epoch milliseconds** (used for expiry checks, matching the Firestore / in-memory providers) and `ttl` is a separate **epoch-seconds** attribute used only by DynamoDB TTL. PreCodesTable still uses `expires_at` (seconds) as its TTL attribute.
+Attributes other than `id` (metadata body, `expires_at`, `ttl`, and so on) are written by the application. For the TTL-enabled tables (PreCodesTable / NoncesTable / RequestObjectsTable), `expires_at` is the application-level expiry in **epoch milliseconds** (used for expiry checks, matching the Firestore / in-memory providers) and `ttl` is a separate **epoch-seconds** attribute used only by DynamoDB TTL.
 
 ### IAM
 

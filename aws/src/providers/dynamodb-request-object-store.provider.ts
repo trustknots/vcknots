@@ -16,6 +16,7 @@ export const dynamodbRequestObjectStore = (
 ): RequestObjectStoreProvider => {
   const client = resolveDynamoDbDocumentClient(options)
   const { tableName, expiresIn = DEFAULT_EXPIRES_IN_MS } = options
+  const ttlMs = Number.isFinite(expiresIn) ? expiresIn : DEFAULT_EXPIRES_IN_MS
 
   return {
     kind: 'request-object-store-provider',
@@ -48,7 +49,7 @@ export const dynamodbRequestObjectStore = (
     },
 
     async save(id, requestObject) {
-      const expires_at = Date.now() + expiresIn
+      const expires_at = Date.now() + ttlMs
       // DynamoDB TTL expects epoch seconds; round up so TTL never deletes before the real (ms) expiry.
       const ttl = Math.ceil(expires_at / 1000)
       await client.send(
