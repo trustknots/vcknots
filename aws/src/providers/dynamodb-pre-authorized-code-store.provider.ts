@@ -17,6 +17,7 @@ export type DynamoDbPreAuthorizedCodeStoreOptions = DynamoDbProviderOptions & {
 }
 
 const DEFAULT_EXPIRES_IN_MS = 60 * 5 * 1000
+const DEFAULT_TTL_SEC = DEFAULT_EXPIRES_IN_MS / 1000
 const DEFAULT_MAX_TX_CODE_ATTEMPTS = 5
 
 /**
@@ -56,11 +57,18 @@ export const dynamodbPreAuthorizedCodeStore = (
 ): PreAuthorizedCodeStoreProvider => {
   const client = resolveDynamoDbDocumentClient(options)
   const { tableName, expiresIn = DEFAULT_EXPIRES_IN_MS } = options
-  const defaultTtlSec = Math.max(1, Math.floor(expiresIn / 1000))
-  const maxTxCodeAttempts = Math.max(
-    1,
-    Math.floor(options.maxTxCodeAttempts ?? DEFAULT_MAX_TX_CODE_ATTEMPTS)
-  )
+  // save() falls back to this value, so a non-finite expiresIn has to be resolved here —
+  // otherwise NaN flows straight through that fallback into `expires_at` and `ttl`.
+  const defaultTtlSecRaw = Math.floor(expiresIn / 1000)
+  const defaultTtlSec = Number.isFinite(defaultTtlSecRaw)
+    ? Math.max(1, defaultTtlSecRaw)
+    : DEFAULT_TTL_SEC
+  // A non-finite limit would reach DynamoDB as the gate's `:max` and fail every consume,
+  // so fall back to the default rather than propagating it.
+  const maxTxCodeAttemptsRaw = options.maxTxCodeAttempts ?? DEFAULT_MAX_TX_CODE_ATTEMPTS
+  const maxTxCodeAttempts = Number.isFinite(maxTxCodeAttemptsRaw)
+    ? Math.max(1, Math.floor(maxTxCodeAttemptsRaw))
+    : DEFAULT_MAX_TX_CODE_ATTEMPTS
 
   /**
    * Deletes a stored code. When `conditional` is true the delete only succeeds

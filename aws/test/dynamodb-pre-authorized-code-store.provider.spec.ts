@@ -299,6 +299,28 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
     assert.ok(expiresAt <= after + 300 * 1000)
   })
 
+  // A non-finite expiresIn is the fallback that save() itself relies on, so it has to
+  // resolve to the default — otherwise NaN reaches DynamoDB as `expires_at` / `ttl`.
+  for (const [label, value] of [
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+  ] as const) {
+    it(`should fall back to the default ttl when expiresIn is ${label}`, async () => {
+      ddbMock.on(PutCommand).resolves({})
+      const before = Date.now()
+
+      const provider = createProvider(value)
+      await provider.save(PreAuthorizedCode(`exp-${label}`), configurations, undefined)
+
+      const after = Date.now()
+      const item = lastPutItem()
+      assert.ok(Number.isFinite(item?.expires_at), 'expires_at must never be NaN')
+      assert.ok(Number.isFinite(item?.ttl), 'ttl must never be NaN')
+      assert.ok(item?.expires_at >= before + 300 * 1000)
+      assert.ok(item?.expires_at <= after + 300 * 1000)
+    })
+  }
+
   it('should floor a fractional ttlSec', async () => {
     ddbMock.on(PutCommand).resolves({})
     const before = Date.now()
@@ -421,6 +443,45 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
       })
       // The tx_code is never compared, and nothing is consumed.
       assert.equal(ddbMock.commandCalls(DeleteCommand).length, 0)
+    })
+
+    // A non-finite limit would otherwise reach DynamoDB as `:max` and fail every consume.
+    for (const [label, value] of [
+      ['NaN', Number.NaN],
+      ['Infinity', Number.POSITIVE_INFINITY],
+    ] as const) {
+      it(`falls back to the default limit when maxTxCodeAttempts is ${label}`, async () => {
+        ddbMock.on(PutCommand).resolves({})
+
+        const provider = createProvider(undefined, value)
+        await saveWithTxCode(provider, `bf-${label}`)
+        armConsumeFromLastPut(1)
+
+        await assert.rejects(provider.consume(PreAuthorizedCode(`bf-${label}`), 9999), {
+          name: 'invalid_grant',
+          message: INVALID_TX_CODE_MESSAGE,
+        })
+        assert.equal(
+          ddbMock.commandCalls(UpdateCommand)[0]?.args[0].input.ExpressionAttributeValues?.[':max'],
+          5
+        )
+      })
+    }
+
+    it('clamps a maxTxCodeAttempts below 1 up to a single attempt', async () => {
+      ddbMock.on(PutCommand).resolves({})
+
+      const provider = createProvider(undefined, 0)
+      await saveWithTxCode(provider, 'bf-zero')
+      armConsumeFromLastPut(1)
+
+      await assert.rejects(provider.consume(PreAuthorizedCode('bf-zero'), 9999), {
+        name: 'invalid_grant',
+      })
+      assert.equal(
+        ddbMock.commandCalls(UpdateCommand)[0]?.args[0].input.ExpressionAttributeValues?.[':max'],
+        1
+      )
     })
 
     it('enforces a custom maxTxCodeAttempts in the gate condition', async () => {
