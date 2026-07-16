@@ -358,4 +358,3 @@ describe('sd-jwt provider', () => {
     )
   })
 })
-

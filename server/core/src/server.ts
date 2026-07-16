@@ -168,7 +168,9 @@ export const createServer = (options?: VcknotsOptions) => {
       for (const client of clients) {
         const current = await authzFlow.findAuthzOAuthClient(authz, client.client_id)
         if (current) {
-          console.log(`Authz OAuth client already exists, skipping initialization: ${client.client_id}`)
+          console.log(
+            `Authz OAuth client already exists, skipping initialization: ${client.client_id}`
+          )
           continue
         }
         await authzFlow.createAuthzOAuthClient(authz, client)

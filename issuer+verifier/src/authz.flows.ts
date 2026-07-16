@@ -709,7 +709,9 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   const oauthClientAssertionJtiStore$ = context.providers.get(
     'oauth-client-assertion-jti-store-provider'
   )
-  const allowedCredentialConfigurationStore$ = context.providers.get('allowed-credential-configuration-store-provider')
+  const allowedCredentialConfigurationStore$ = context.providers.get(
+    'allowed-credential-configuration-store-provider'
+  )
 
   /**
    * Verifies a bearer-style access token JWT: shape, issuer matches `authz`, signature with stored AS key.
@@ -779,7 +781,9 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
   }
 
   /** Extracts the OAuth client id carried by an access token, if the token was client-bound. */
-  const getAccessTokenClientId = (payload: JwtPayload): AuthzOAuthClient['client_id'] | undefined => {
+  const getAccessTokenClientId = (
+    payload: JwtPayload
+  ): AuthzOAuthClient['client_id'] | undefined => {
     const clientId = payload.client_id
     return typeof clientId === 'string' && clientId.trim().length > 0 ? clientId.trim() : undefined
   }
@@ -1180,7 +1184,6 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             })
           }
           const ttlSec = option?.ttlSec ?? 86400
-
           const keyAlg = options?.alg ?? 'ES256'
           // Authz access token (data)
           // for JWK privateKey
@@ -1209,7 +1212,11 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
           const accessToken = `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`
           const accessTokenHash = calculateAccessTokenHash(accessToken)
 
-          await allowedCredentialConfigurationStore$.save(accessTokenHash, credentialConfigurationIds, ttlSec)
+          await allowedCredentialConfigurationStore$.save(
+            accessTokenHash,
+            credentialConfigurationIds,
+            ttlSec
+          )
 
           // Create Token Response
           return {

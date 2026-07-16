@@ -193,6 +193,21 @@ func TestConvertDERToRaw(t *testing.T) {
 			wantErr:     false,
 		},
 		{
+			name: "ES256 raw signature starting with DER sequence tag",
+			input: func() []byte {
+				sig := make([]byte, 64)
+				sig[0] = 0x30
+				sig[1] = 0x01
+				sig[2] = 0x7f
+				sig[32] = 0x20
+				sig[63] = 0x01
+				return sig
+			}(),
+			keySize:     32,
+			expectedLen: 64,
+			wantErr:     false,
+		},
+		{
 			name:        "invalid DER signature too short",
 			input:       []byte{0x30, 0x05},
 			keySize:     32,

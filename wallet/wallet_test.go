@@ -658,7 +658,7 @@ func TestController_PresentCredential_InvalidID_Integration(t *testing.T) {
 	mockKey := newMockKeyEntry()
 
 	// This should fail when trying to parse the invalid URI
-	err := controller.PresentCredential(mockURI, mockKey, nil)
+	_, err := controller.PresentCredential(mockURI, mockKey, nil)
 	if err == nil {
 		t.Error("Expected PresentCredential to fail with invalid URI")
 		return
@@ -708,7 +708,7 @@ func TestController_PresentCredential_ErrorPaths_Integration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockKey := newMockKeyEntry()
-			err := controller.PresentCredential(tt.uri, mockKey, nil)
+			_, err := controller.PresentCredential(tt.uri, mockKey, nil)
 			if tt.wantErr && err == nil {
 				t.Errorf("PresentCredential() expected error but got none")
 			}
@@ -806,7 +806,7 @@ func TestController_PresentCredential_MissingRequiredFields_Integration(t *testi
 		t.Run(tt.name, func(t *testing.T) {
 			mockURI := tt.setupMockURI()
 			mockKey := newMockKeyEntry()
-			err := controller.PresentCredential(mockURI, mockKey, nil)
+			_, err := controller.PresentCredential(mockURI, mockKey, nil)
 
 			if err == nil {
 				t.Errorf("PresentCredential() expected error but got none")
@@ -1278,6 +1278,53 @@ func TestController_generateDPoPProof_RejectsInvalidES256SignatureEncoding(t *te
 	require.Error(t, err)
 	assert.Empty(t, proof)
 	assert.Contains(t, err.Error(), "failed to serialize dpop proof")
+}
+
+func TestController_generateJWTProof_NonAnonymousFlow_IncludesIssAsClientID(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+
+	key := newMockKeyEntry()
+	did := &idprofTypes.IdentityProfile{
+		ID:     "did:key:test123",
+		TypeID: "did:key",
+	}
+	nonce := "test-nonce"
+	clientID := "test-client-id"
+
+	proof, err := controller.generateJWTProof(
+		key,
+		did,
+		&nonce,
+		"test-aud",
+		&clientID,
+		credentialRequestProofBindingMethodKID,
+	)
+	if err != nil {
+		t.Fatalf("generateJWTProof returned error: %v", err)
+	}
+
+	proofParts := strings.Split(proof, ".")
+	if len(proofParts) != 3 {
+		t.Fatalf("expected JWT to have 3 parts, got %d", len(proofParts))
+	}
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(proofParts[1])
+	if err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("failed to unmarshal payload: %v", err)
+	}
+
+	iss, ok := payload["iss"].(string)
+	if !ok {
+		t.Fatalf("expected iss claim to be present as string in non-anonymous flow")
+	}
+	if iss != clientID {
+		t.Fatalf("expected iss %q, got %q", clientID, iss)
+	}
 }
 
 func TestController_generateJWTProof_NonAnonymousFlow_EmptyClientIDReturnsError(t *testing.T) {
@@ -2703,12 +2750,80 @@ func TestController_PresentCredential_WithMockServer_Integration(t *testing.T) {
 		url.QueryEscape(presentationDefinition), vpEndpointURL.String())
 
 	mockKey := newMockKeyEntry()
-	err = controller.PresentCredential(presentationURI, mockKey, nil)
+	_, err = controller.PresentCredential(presentationURI, mockKey, nil)
 	if err != nil {
 		t.Fatalf("PresentCredential failed: %v", err)
 	}
 
 	t.Log("PresentCredential succeeded with full OID4VCI->OID4VP flow")
+}
+
+func TestController_PresentCredential_CallsRedirectHandler(t *testing.T) {
+	// First, create a mock OID4VCI server to get a credential
+	vciServer := createMockOID4VCIServer()
+	defer vciServer.Close()
+
+	redirectTarget := "https://example.com/redirect"
+	responseServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"redirect_uri":"%s"}`, redirectTarget)))
+	}))
+	defer responseServer.Close()
+
+	controller := createTestControllerWithDefaults(t)
+
+	vciServerURL, _ := url.Parse(vciServer.URL())
+
+	// Step 1: First receive a credential via OID4VCI
+	receiveReq := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           vciServerURL,
+			CredentialConfigurationIDs: []string{"test-config"},
+			Grants: map[string]*CredentialOfferGrant{
+				"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+					PreAuthorizedCode: "test-code",
+				},
+			},
+		},
+		Type: receiverTypes.Oid4vci,
+		Key:  newMockKeyEntry(),
+	}
+
+	httpAllowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+	_, err := controller.ReceiveCredential(receiveReq)
+	if err != nil {
+		t.Skipf("ReceiveCredential failed with mock server, skipping redirect handler test: %v", err)
+	}
+
+	// Step 2: Present the credential and verify redirect handler execution
+	presentationDefinition := `{"id":"test-presentation-definition","input_descriptors":[{"id":"test-descriptor","format":{"jwt_vp":{"alg":["ES256"]}}}]}`
+	clientID := "redirect_uri:https://example.com/cb"
+	presentationURI := fmt.Sprintf(
+		"openid4vp://present?presentation_definition=%s&client_id=%s&response_type=vp_token&response_mode=direct_post&response_uri=%s&nonce=test-nonce-123&scope=openid&state=test-state-456",
+		url.QueryEscape(presentationDefinition),
+		url.QueryEscape(clientID),
+		url.QueryEscape(responseServer.URL),
+	)
+
+	called := false
+	var captured string
+	options := &PresentCredentialOptions{
+		OnRedirect: func(uri string) error {
+			called = true
+			captured = uri
+			return nil
+		},
+	}
+
+	mockKey := newMockKeyEntry()
+	redirectURI, err := controller.PresentCredentialWithOptions(presentationURI, mockKey, options)
+	require.NoError(t, err)
+	require.Equal(t, redirectTarget, redirectURI)
+	require.True(t, called, "expected redirect handler to be called")
+	require.Equal(t, redirectTarget, captured)
 }
 
 func TestController_FetchCredentialIssuerMetadata_ErrorPaths_Integration(t *testing.T) {
@@ -3065,7 +3180,7 @@ func TestController_PresentCredential_DetailedErrorPaths_Integration(t *testing.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockKey := newMockKeyEntry()
-			err := controller.PresentCredential(tt.mockURIString, mockKey, nil)
+			_, err := controller.PresentCredential(tt.mockURIString, mockKey, nil)
 
 			if !tt.expectParseError && !tt.expectCredError && err != nil {
 				t.Errorf("PresentCredential() unexpected error: %v", err)
@@ -3091,7 +3206,7 @@ func TestController_PresentCredential_DetailedErrorPaths_Integration(t *testing.
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				mockKey := newMockKeyEntry()
-				err := controller.PresentCredential(tc.uri, mockKey, nil)
+				_, err := controller.PresentCredential(tc.uri, mockKey, nil)
 				if err == nil {
 					t.Errorf("Expected error for %s but got none", tc.name)
 				}

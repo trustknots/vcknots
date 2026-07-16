@@ -524,7 +524,8 @@ describe('CredentialProofJwtProvider', () => {
       const proof = await createTestProof(
         { iss: clientId, aud: credentialIssuer, nonce: 'n' },
         'ES256',
-        testKid
+        testKid,
+        'openid4vci-proof+jwt'
       )
       const result = await provider.verifyProof(proof, preAuthRegisteredClientCtx)
       assert.ok(result)
@@ -667,4 +668,3 @@ describe('CredentialProofJwtProvider', () => {
     })
   })
 })
-

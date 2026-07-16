@@ -540,8 +540,7 @@ describe('AuthzFlows', () => {
       mock.method(mockOAuthClientAssertionJtiStoreProvider, 'saveIfAbsent', async () => true)
 
       const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
-        client_assertion_type:
-          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
         client_assertion: assertion,
       })
 
@@ -577,8 +576,7 @@ describe('AuthzFlows', () => {
       mock.method(mockAuthzMetadataProvider, 'fetch', async () => sampleMetadata)
 
       const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
-        client_assertion_type:
-          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
         client_assertion: assertion,
       })
 
@@ -607,8 +605,7 @@ describe('AuthzFlows', () => {
       }))
 
       const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
-        client_assertion_type:
-          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
         client_assertion: assertion,
       })
 
@@ -645,8 +642,7 @@ describe('AuthzFlows', () => {
       }))
 
       const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
-        client_assertion_type:
-          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
         client_assertion: assertion,
       })
 
@@ -682,8 +678,7 @@ describe('AuthzFlows', () => {
       }))
 
       const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
-        client_assertion_type:
-          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
         client_assertion: assertion,
       })
 
@@ -719,8 +714,7 @@ describe('AuthzFlows', () => {
       mock.method(mockAuthzMetadataProvider, 'fetch', async () => sampleMetadata)
 
       const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
-        client_assertion_type:
-          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
         client_assertion: assertion,
       })
 
@@ -751,8 +745,7 @@ describe('AuthzFlows', () => {
       mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
 
       const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
-        client_assertion_type:
-          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
         client_assertion: assertion,
       })
 
@@ -780,8 +773,7 @@ describe('AuthzFlows', () => {
       mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
 
       const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
-        client_assertion_type:
-          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
         client_assertion: assertion,
       })
 
@@ -813,8 +805,7 @@ describe('AuthzFlows', () => {
       mock.method(mockAuthzOAuthClientStoreProvider, 'fetch', async () => sampleClient)
 
       const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
-        client_assertion_type:
-          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
         client_assertion: assertion,
       })
 
@@ -845,8 +836,7 @@ describe('AuthzFlows', () => {
       mock.method(mockOAuthClientAssertionJtiStoreProvider, 'saveIfAbsent', async () => false)
 
       const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
-        client_assertion_type:
-          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
         client_assertion: assertion,
       })
 
@@ -879,8 +869,7 @@ describe('AuthzFlows', () => {
       })
 
       const result = await flow.resolveTokenRequestClientPolicy(sampleIssuer, {
-        client_assertion_type:
-          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
         client_assertion: assertion,
       })
 
@@ -1033,8 +1022,7 @@ describe('AuthzFlows', () => {
           clientId: 'wallet-client',
         })
 
-        const payloadOptions =
-          mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
+        const payloadOptions = mockAccessTokenProvider.createTokenPayload.mock.calls[0].arguments[2]
         assert.strictEqual(payloadOptions.ttlSec, undefined)
         assert.strictEqual(payloadOptions.clientId, 'wallet-client')
         assert.strictEqual('jti' in payloadOptions, false)

@@ -518,10 +518,13 @@ func main() {
 	}
 
 	logger.Info("Presenting credential...")
-	err = w.PresentCredential(oid4vpURI, mockKey, options)
+	redirectURI, err := w.PresentCredential(oid4vpURI, mockKey, options)
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
 		os.Exit(1)
+	}
+	if redirectURI != "" {
+		logger.Info("Verifier requested redirect", "redirect_uri", redirectURI)
 	}
 	logger.Info("Credential presented successfully!")
 }

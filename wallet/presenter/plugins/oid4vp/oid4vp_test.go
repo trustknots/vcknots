@@ -16,6 +16,8 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
 	"github.com/trustknots/vcknots/wallet/presenter/types"
@@ -90,13 +92,53 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 				endpoint = *presenterURL
 			}
 			p := &Oid4vpPresenter{}
-			err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testSubmission, nil)
+			_, err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testSubmission, nil)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Oid4vpPresenter.Present() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
+	t.Run("Returns redirect_uri from verifier resposnse", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, err := w.Write([]byte(`{"redirect_uri":"https://example.com/callback"}`))
+			if err != nil {
+				t.Fatalf("failed to write response: %v", err)
+			}
+		}))
+		defer server.Close()
+
+		endpoint, err := url.Parse(server.URL)
+		require.NoError(t, err)
+
+		p := &Oid4vpPresenter{}
+		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "https://example.com/callback", redirectURI)
+	})
+
+	t.Run("Ignores non-JSON verifier response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(http.StatusOK)
+			_, err := w.Write([]byte("ok"))
+			if err != nil {
+				t.Fatalf("failed to write response: %v", err)
+			}
+		}))
+		defer server.Close()
+
+		endpoint, err := url.Parse(server.URL)
+		require.NoError(t, err)
+
+		p := &Oid4vpPresenter{}
+		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
+		require.NoError(t, err)
+		assert.Empty(t, redirectURI)
+	})
+
 	// Test network error case with connection hijacking
 	t.Run("Network error (server closes connection)", func(t *testing.T) {
 		// Create a mock server that closes connection immediately
@@ -114,7 +156,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		hijackURL, _ := url.Parse(hijackServer.URL() + "/present")
 
 		p := &Oid4vpPresenter{}
-		err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testSubmission, nil)
+		_, err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testSubmission, nil)
 
 		if err == nil {
 			t.Error("Expected error for hijacked connection, got nil")
@@ -132,6 +174,9 @@ func mustParseURL(t *testing.T, rawURL string) *url.URL {
 }
 
 func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
+	// mockserver / httptest.NewServer use http; allow it for these tests.
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
 	// Setup mock verifier server with proper JWT signing
 	verifierServer := mockserver.NewOID4VPVerifierServer(nil)
 	defer verifierServer.Close()
@@ -155,7 +200,6 @@ func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
 		"presentation_definition": map[string]any{
 			"id": "test-def",
 		},
-		"redirect_uri":    "http://example.com/callback",
 		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
@@ -287,7 +331,6 @@ func TestOid4vpPresenter_WithRequestObject_TypHeader(t *testing.T) {
 		"presentation_definition": map[string]any{
 			"id": "test-def",
 		},
-		"redirect_uri":    "http://example.com/callback",
 		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
@@ -393,7 +436,6 @@ func TestOid4vpPresenter_WithRequestObject_IssClaimIgnored(t *testing.T) {
 		"presentation_definition": map[string]any{
 			"id": "test-def",
 		},
-		"redirect_uri":    "http://example.com/callback",
 		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
@@ -454,7 +496,6 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 			"presentation_definition": map[string]any{
 				"id": "test-def",
 			},
-			"redirect_uri":    "http://example.com/callback",
 			"response_uri":    "https://example.com/response",
 			"client_metadata": clientMetadata,
 		}
@@ -549,7 +590,6 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 			"presentation_definition": map[string]any{
 				"id": "test-def",
 			},
-			"redirect_uri":    "http://example.com/callback",
 			"response_uri":    "https://example.com/response",
 			"client_metadata": clientMetadata,
 		}
@@ -608,6 +648,15 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&response_uri=http://example.com/response",
 			wantErr: true,
 			errSub:  "response_uri must use https scheme",
+		},
+		// redirect_uri matches the client_id-derived value on purpose so the
+		// mismatch check (redirectURIFromParam vs redirectURIFromClientID) does
+		// not fire first and the new exclusivity check is exercised.
+		{
+			name:    "redirect_uri and response_uri must not coexist",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&redirect_uri=http://example.com/cb&response_uri=https://example.com/response",
+			wantErr: true,
+			errSub:  "redirect_uri and response_uri must not both be present",
 		},
 	}
 
@@ -770,7 +819,6 @@ func TestOid4vpPresenter_RequestParameterJWT_Success(t *testing.T) {
 		"presentation_definition": map[string]any{
 			"id": "test-def",
 		},
-		"redirect_uri":    "http://example.com/callback",
 		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
 	}
@@ -880,4 +928,122 @@ func TestOid4vpPresenter_RequestObject_WithX5C_X509SanDNS_SuccessAndFailures(t *
 	if _, err := b2.Build(); err == nil || !strings.Contains(err.Error(), "client_id (origin) must be same") {
 		t.Fatalf("expected hostname mismatch error, got: %v", err)
 	}
+}
+
+func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
+	// mockserver is HTTP-only; allow http scheme for these tests.
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+	t.Run("Delete default User-Agent header (GET)", func(t *testing.T) {
+		m := mockserver.NewMockServer()
+		defer m.Close()
+
+		called := false
+
+		m.HandleFunc("/request-object", func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			if ua := r.Header.Get("User-Agent"); ua != "" {
+				t.Errorf("User-Agent is not empty string, got %q", ua)
+			}
+			w.WriteHeader(http.StatusOK)
+		})
+
+		requestObjectURI, _ := url.Parse(m.URL() + "/request-object")
+
+		rb := requestBuilder{}
+		rb.WithRequestObjectURI(requestObjectURI.String(), RequestURIMethodGET)
+		if !called {
+			t.Fatal("handler was not invoked")
+		}
+	})
+
+	t.Run("Delete default User-Agent header (POST)", func(t *testing.T) {
+		m := mockserver.NewMockServer()
+		defer m.Close()
+
+		called := false
+
+		m.HandleFunc("/request-object", func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			if ua := r.Header.Get("User-Agent"); ua != "" {
+				t.Errorf("User-Agent is not empty string, got %q", ua)
+			}
+			w.WriteHeader(http.StatusOK)
+		})
+
+		requestObjectURI, _ := url.Parse(m.URL() + "/request-object")
+
+		rb := requestBuilder{}
+		rb.WithRequestObjectURI(requestObjectURI.String(), RequestURIMethodPOST)
+		if !called {
+			t.Fatal("handler was not invoked")
+		}
+	})
+
+	// OID4VP draft 24 §5.11: POST request must set the prescribed
+	// Content-Type and Accept headers.
+	t.Run("POST sets Content-Type and Accept headers", func(t *testing.T) {
+		m := mockserver.NewMockServer()
+		defer m.Close()
+
+		var gotContentType, gotAccept string
+		m.HandleFunc("/request-object", func(w http.ResponseWriter, r *http.Request) {
+			gotContentType = r.Header.Get("Content-Type")
+			gotAccept = r.Header.Get("Accept")
+			w.WriteHeader(http.StatusOK)
+		})
+
+		requestObjectURI, _ := url.Parse(m.URL() + "/request-object")
+
+		rb := requestBuilder{}
+		rb.WithRequestObjectURI(requestObjectURI.String(), RequestURIMethodPOST)
+
+		if gotContentType != "application/x-www-form-urlencoded" {
+			t.Errorf("Content-Type = %q, want application/x-www-form-urlencoded", gotContentType)
+		}
+		if gotAccept != "application/oauth-authz-req+jwt" {
+			t.Errorf("Accept = %q, want application/oauth-authz-req+jwt", gotAccept)
+		}
+	})
+
+	// OID4VP draft 24 §5.11: request_uri must use the https scheme.
+	// IsHTTPAllowed() short-circuits on DEBUG, so clear both env vars.
+	t.Run("rejects http scheme when HTTP_ALLOWED is false (GET)", func(t *testing.T) {
+		t.Setenv(env.HTTP_ALLOWED.String(), "")
+		t.Setenv(env.DEBUG.String(), "")
+
+		rb := requestBuilder{}
+		rb.WithRequestObjectURI("http://example.com/request-object", RequestURIMethodGET)
+		if rb.errValidation == nil || !strings.Contains(rb.errValidation.Error(), "https required") {
+			t.Fatalf("expected https-required error, got: %v", rb.errValidation)
+		}
+	})
+
+	t.Run("rejects http scheme when HTTP_ALLOWED is false (POST)", func(t *testing.T) {
+		t.Setenv(env.HTTP_ALLOWED.String(), "")
+		t.Setenv(env.DEBUG.String(), "")
+
+		rb := requestBuilder{}
+		rb.WithRequestObjectURI("http://example.com/request-object", RequestURIMethodPOST)
+		if rb.errValidation == nil || !strings.Contains(rb.errValidation.Error(), "https required") {
+			t.Fatalf("expected https-required error, got: %v", rb.errValidation)
+		}
+	})
+
+	// Non-http(s) schemes must be rejected regardless of HTTP_ALLOWED.
+	t.Run("rejects non-http(s) scheme even when HTTP_ALLOWED is true", func(t *testing.T) {
+		t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+		for _, badURI := range []string{
+			"ftp://example.com/request-object",
+			"file:///etc/passwd",
+			"data:text/plain,foo",
+		} {
+			rb := requestBuilder{}
+			rb.WithRequestObjectURI(badURI, RequestURIMethodGET)
+			if rb.errValidation == nil || !strings.Contains(rb.errValidation.Error(), "https required") {
+				t.Errorf("uri=%q: expected https-required error, got: %v", badURI, rb.errValidation)
+			}
+		}
+	})
 }

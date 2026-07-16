@@ -19,7 +19,7 @@ import (
 )
 
 type Oid4vpPresenter struct {
-	X509TrustChainRoots     *x509.CertPool
+	X509TrustChainRoots *x509.CertPool
 	// InsecureSkipX509Verify skips certificate verification for testing purposes.
 	// WARNING: This should NEVER be set to true in production environments.
 	// This is only for conformance testing with self-signed or non-standard certificates.
@@ -83,14 +83,14 @@ func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*Credentia
 }
 
 // Present sends the presentation to the verifier
-func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission types.PresentationSubmission, request *types.PresentationRequest) error {
+func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission types.PresentationSubmission, request *types.PresentationRequest) (string, error) {
 	if protocol != types.Oid4vp {
-		return fmt.Errorf("plugin type mismatch")
+		return "", fmt.Errorf("plugin type mismatch")
 	}
 
 	presentationSubmissionJSON, err := json.Marshal(presentationSubmission)
 	if err != nil {
-		return fmt.Errorf("failed to marshal presentation_submission: %w", err)
+		return "", fmt.Errorf("failed to marshal presentation_submission: %w", err)
 	}
 
 	// Check if JARM (JWT-Secured Authorization Response Mode) is required
@@ -116,7 +116,7 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 		// JARM: Create JWT with response parameters, encrypt it, and send as "response" parameter
 		jarmToken, err := p.createJARMResponse(string(serializedPresentation), string(presentationSubmissionJSON), request, encryptionAlg, encryptionEnc, verifierJWKS)
 		if err != nil {
-			return fmt.Errorf("failed to create JARM response: %w", err)
+			return "", fmt.Errorf("failed to create JARM response: %w", err)
 		}
 		formData.Set("response", jarmToken)
 	} else {
@@ -135,26 +135,40 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 	}
 	resp, err := client.Post(endpoint.String(), "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
 	if err != nil {
-		return fmt.Errorf("failed to send presentation to verifier: %w", err)
+		return "", fmt.Errorf("failed to send presentation to verifier: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("verifier returned non-200 status: %d, body: %s", resp.StatusCode, string(respBody))
+		return "", fmt.Errorf("verifier returned non-200 status: %d, body: %s", resp.StatusCode, string(respBody))
 	}
 
-	return nil
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read verifier response: %w", err)
+	}
+	if len(respBody) == 0 {
+		return "", nil
+	}
+	var verifierResponse struct {
+		RedirectURI string `json:"redirect_uri"`
+	}
+	if err := json.Unmarshal(respBody, &verifierResponse); err != nil {
+		return "", nil
+	}
+
+	return verifierResponse.RedirectURI, nil
 }
 
 // createJARMResponse creates a JWT-Secured Authorization Response (JARM)
 func (p *Oid4vpPresenter) createJARMResponse(vpToken, presentationSubmission string, request *types.PresentationRequest, encAlg, encEnc string, verifierJWKS *jose.JSONWebKeySet) (string, error) {
 	// Create the response payload
 	payload := map[string]interface{}{
-		"vp_token":               vpToken,
+		"vp_token":                vpToken,
 		"presentation_submission": presentationSubmission,
 	}
-	
+
 	// Add state if present
 	if request != nil && request.State != "" {
 		payload["state"] = request.State
@@ -247,6 +261,7 @@ func (p *Oid4vpPresenter) createJARMResponse(vpToken, presentationSubmission str
 	return serialized, nil
 }
 
+
 type requestBuilder struct {
 	req                    *CredentialPresentationRequest
 	x509TrustChainRoots    *x509.CertPool
@@ -301,6 +316,17 @@ func (b *requestBuilder) validate() error {
 		}
 	}
 
+	return nil
+}
+
+// validateRedirectAndResponseURIExclusivity returns an error when the
+// redirect_uri and response_uri request parameters are both set. Per OID4VP
+// they are mutually exclusive on the wire: response_uri is used with
+// response_mode=direct_post (and its JWT variant), redirect_uri otherwise.
+func validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam string) error {
+	if redirectURIFromParam != "" && responseURIFromParam != "" {
+		return fmt.Errorf("redirect_uri and response_uri must not both be present in the same request")
+	}
 	return nil
 }
 
@@ -374,7 +400,14 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 
 	b.req.ResponseMode = OAuthAuthzReqResponseMode(getParam("response_mode", true))
 
-	b.req.ResponseURI = getParam("response_uri", b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost)
+	responseURIFromParam := getParam("response_uri", b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost)
+
+	if err := validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam); err != nil {
+		b.errValidation = err
+		return
+	}
+
+	b.req.ResponseURI = responseURIFromParam
 
 	if pd := getParam("presentation_definition", true); pd != "" {
 		// Handle presentation_definition as either string (JSON) or map
@@ -516,7 +549,7 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 	clientID, err := parseOID4VPClientID(b.req.ClientID)
 	if err == nil && clientID.prefix == OID4VPClientIDPrefixX509SanDNS {
 		var certificates *[]*x509.Certificate = nil
-		
+
 		if b.insecureSkipX509Verify {
 			// For testing: Parse certificates from x5c WITHOUT calling x509.Verify(),
 			// which in Go 1.20+ performs strict standards compliance checks that reject
@@ -686,19 +719,49 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 // WithRequestObjectURI constructs the CredentialPresentationRequest
 // with fetching the request object from the given URI using the specified method,
 // and validates its claims and signature as per OID4VP and RFC9101.
+//
+// Per OID4VP draft 24 §5.11, when method is POST the request MUST use the
+// https scheme, set Content-Type: application/x-www-form-urlencoded and
+// Accept: application/oauth-authz-req+jwt. The https requirement is also
+// applied to the GET method for project-wide consistency with the same
+// guard in wallet/receiver/plugins/oid4vci/oid4vci.go (Issue #29).
+// It can be relaxed by setting the VCKNOTS_WALLET_HTTP_ALLOWED environment
+// variable for testing.
 func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMethod) *requestBuilder {
 	if b.errValidation != nil {
 		return b
 	}
 
+	parsedURI, err := url.Parse(uri)
+	if err != nil {
+		b.errValidation = fmt.Errorf("failed to parse request_uri %q: %w", uri, err)
+		return b
+	}
+	scheme := parsedURI.Scheme
+	if strings.EqualFold(scheme, "https") {
+		// HTTPS is always allowed
+	} else if strings.EqualFold(scheme, "http") {
+		if !env.IsHTTPAllowed() {
+			b.errValidation = fmt.Errorf("unsupported URL scheme for request_uri: %q (https required; set VCKNOTS_WALLET_HTTP_ALLOWED=true to allow http for testing)", parsedURI.Scheme)
+			return b
+		}
+	} else {
+		b.errValidation = fmt.Errorf("unsupported URL scheme for request_uri: %q (https required; set VCKNOTS_WALLET_HTTP_ALLOWED=true to allow http for testing)", parsedURI.Scheme)
+		return b
+	}
+
 	var req *http.Request
-	var err error
 
 	switch method {
 	case RequestURIMethodGET:
-		req, err = http.NewRequest(http.MethodGet, uri, nil)
+		req, err = http.NewRequest(http.MethodGet, parsedURI.String(), nil)
 	case RequestURIMethodPOST:
-		req, err = http.NewRequest(http.MethodPost, uri, nil)
+		req, err = http.NewRequest(http.MethodPost, parsedURI.String(), nil)
+		if err == nil {
+			// OID4VP draft 24 §5.11: Request URI Method post
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Accept", "application/oauth-authz-req+jwt")
+		}
 	default:
 		b.errValidation = fmt.Errorf("unsupported request_uri_method: %s", method)
 		return b
@@ -712,6 +775,7 @@ func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMetho
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
+	req.Header.Set("User-Agent", "")
 	resp, err := client.Do(req)
 	if err != nil {
 		b.errValidation = fmt.Errorf("failed to send %s request to %s: %w", method, uri, err)

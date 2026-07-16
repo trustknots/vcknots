@@ -139,4 +139,3 @@ describe('inMemoryVerifierSignatureKeyStore', () => {
     assert.strictEqual(signature, null)
   })
 })
-

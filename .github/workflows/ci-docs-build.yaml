@@ -2,7 +2,7 @@ name: CI docs check build(on PR changed)
 
 on:
   pull_request:
-    branches: ["main", "feat/oid4vci-1.0"]
+    branches: ["main"]
     paths:
       - "docs/**"
       - "docusaurus/**"
@@ -14,14 +14,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.3.1
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v4.4.0
         with:
-          node-version: 22
+          node-version: 22.22.3
           cache: npm
           cache-dependency-path: ./docusaurus/package-lock.json
 

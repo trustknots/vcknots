@@ -311,4 +311,4 @@ export VCKNOTS_WALLET_DEBUG=true
 
 - **状況**: サーバー統合テスト（`引数なしモード`）で発生する場合、証明書ファイルが正しく設定されていない可能性があります。
 - **状況**: コンフォーマンステスト（`引数ありモード`）では `InsecureSkipX509Verify: true` が自動設定されるため、通常は発生しません。
-- **解決策（サーバー統合テスト向け）**: 正しい証明書ファイルが `../../../server/samples/certificate-openid-test/certificate_openid.pem` に配置されていることを確認するか、`VCKNOTS_CERT_PATH` で指定してください。
+- **解決策（サーバー統合テスト向け）**: 正しい証明書ファイルが `../../../server/samples/certificate-openid-test/certificate_openid.pem` に配置されていることを確認するか、`VCKNOTS_CERT_PATH` で指定してください.

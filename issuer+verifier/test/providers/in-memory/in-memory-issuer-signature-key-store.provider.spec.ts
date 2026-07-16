@@ -164,4 +164,3 @@ describe('inMemoryIssuerSignatureKeyStore', () => {
     assert.strictEqual(signature, null)
   })
 })
-

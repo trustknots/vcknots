@@ -1,5 +1,5 @@
 [tools]
-go = "1.26.1"
+go = "1.26.4"
 
 [env]
 GOPRIVATE = "github.com/trustknots/vcknots/wallet"

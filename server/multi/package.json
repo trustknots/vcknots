@@ -16,11 +16,11 @@
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@10.30.0",
+	"packageManager": "pnpm@11.6.0",
 	"dependencies": {
-		"@hono/node-server": "1.19.9",
+		"@hono/node-server": "2.0.6",
 		"@trustknots/server-core": "workspace:*",
 		"@trustknots/vcknots": "workspace:*",
-		"hono": "4.11.4"
+		"hono": "4.12.27"
 	}
 }

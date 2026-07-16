@@ -119,7 +119,9 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
   const transactionCode$ = context.providers.get('transaction-code-provider')
-  const allowedCredentialConfigurationStore$ = context.providers.get('allowed-credential-configuration-store-provider')
+  const allowedCredentialConfigurationStore$ = context.providers.get(
+    'allowed-credential-configuration-store-provider'
+  )
 
   const rejectInsecureIssuerMetadata = (metadata: CredentialIssuerMetadata | null) => {
     if (metadata) {

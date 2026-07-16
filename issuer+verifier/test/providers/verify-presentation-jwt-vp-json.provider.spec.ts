@@ -442,4 +442,3 @@ describe('verifyVerifiablePresentation provider', () => {
     })
   })
 })
-

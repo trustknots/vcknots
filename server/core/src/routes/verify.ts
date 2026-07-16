@@ -91,7 +91,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         return c.json(
           {
             error: 'invalid_request',
-            error_description: 'state must be a non-empty string.',
+            error_description: 'state is required.',
           },
           400
         )
