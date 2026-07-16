@@ -22,18 +22,18 @@
 		"issuer+verifier/"
 	],
 	"engines": {
-		"pnpm": "11.6.0",
+		"pnpm": "11.10.0",
 		"npm": "please_use_pnpm_instead"
 	},
-	"packageManager": "pnpm@11.6.0",
+	"packageManager": "pnpm@11.10.0",
 	"devDependencies": {
 		"@biomejs/biome": "2.5.1",
-		"@commitlint/cli": "20.5.3",
-		"@commitlint/config-conventional": "20.5.3",
+		"@commitlint/cli": "21.2.0",
+		"@commitlint/config-conventional": "21.2.0",
 		"@changesets/cli": "2.31.0",
-		"@types/node": "22.19.19",
+		"@types/node": "24.13.2",
 		"husky": "9.1.7",
-		"tsx": "4.22.4",
-		"typescript": "5.9.3"
+		"tsx": "4.23.0",
+		"typescript": "6.0.3"
 	}
 }

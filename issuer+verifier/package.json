@@ -44,14 +44,14 @@
 	],
 	"author": "Trust Knots Project Team",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@11.6.0",
+	"packageManager": "pnpm@11.10.0",
 	"dependencies": {
-		"@sd-jwt/core": "0.19.0",
+		"@sd-jwt/core": "0.20.0",
 		"@sd-jwt/crypto-nodejs": "0.19.0",
 		"@sd-jwt/decode": "0.19.0",
 		"base64url": "3.0.1",
-		"did-resolver": "4.1.0",
-		"jose": "6.2.2",
+		"did-resolver": "5.0.1",
+		"jose": "6.2.3",
 		"jsonwebtoken": "9.0.3",
 		"key-did-resolver": "4.0.0",
 		"zod": "4.3.6"

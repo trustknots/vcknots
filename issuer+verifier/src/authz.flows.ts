@@ -1233,7 +1233,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         }
         default: {
           throw err('invalid_request', {
-            message: `Unsupported grant type: ${tokenRequest.grant_type}`,
+            message: `Unsupported grant type`,
           })
         }
       }
