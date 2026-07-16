@@ -1,15 +1,23 @@
 import assert from 'node:assert/strict'
-import { beforeEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 import { PreAuthorizedCode } from '../../../src/pre-authorized-code.types'
 import { inMemoryPreAuthorizedCodeStore } from '../../../src/providers/in-memory/in-memory-pre-authorized-code-store.provider'
+import { CredentialConfigurationId } from '../../../src/credential-issuer.types'
 
 describe('inMemoryPreAuthorizedCode', () => {
   let provider: ReturnType<typeof inMemoryPreAuthorizedCodeStore>
   const sampleCode: PreAuthorizedCode = PreAuthorizedCode('test_code_123_abc')
   const anotherSampleCode: PreAuthorizedCode = PreAuthorizedCode('another_code_456_def')
+  const configurations: CredentialConfigurationId[] = [
+    CredentialConfigurationId('University_Degree'),
+  ]
 
   beforeEach(() => {
     provider = inMemoryPreAuthorizedCodeStore()
+  })
+
+  afterEach(() => {
+    mock.timers.reset()
   })
 
   it('should have kind, name, and single properties correctly set', () => {
@@ -18,66 +26,107 @@ describe('inMemoryPreAuthorizedCode', () => {
     assert.strictEqual(provider.single, true)
   })
 
-  describe('save and validate', () => {
+  describe('save and consume', () => {
     it('should save a pre-authorized code and validate it successfully', async () => {
-      await provider.save(sampleCode)
-      const isValid = await provider.validate(sampleCode)
-      assert.strictEqual(isValid, true)
+      await provider.save(sampleCode, configurations)
+      const isValid = await provider.consume(sampleCode)
+      assert.strictEqual(isValid, configurations)
     })
 
-    it('should return false when validating a non-existent code', async () => {
-      const isValid = await provider.validate(sampleCode) // sampleCode is not saved yet
-      assert.strictEqual(isValid, false)
+    it('should save a pre-authorized code with tx_code (numeric) and validate it', async () => {
+      await provider.save(sampleCode, configurations, 123, { tx_code_input_mode: 'numeric' })
+      const isValid = await provider.consume(sampleCode, 123)
+      assert.strictEqual(isValid, configurations)
+    })
+
+    it('should save a pre-authorized code with tx_code (text) and validate it', async () => {
+      await provider.save(sampleCode, configurations, 'abc123', { tx_code_input_mode: 'text' })
+      const isValid = await provider.consume(sampleCode, 'abc123')
+      assert.strictEqual(isValid, configurations)
+    })
+
+    it('should throw invalid_grant when validating with incorrect tx_code', async () => {
+      await provider.save(sampleCode, configurations, 123, { tx_code_input_mode: 'numeric' })
+      await assert.rejects(provider.consume(sampleCode, 456), { name: 'invalid_grant' })
+    })
+
+    it('should allow string numeric tx_code in numeric mode', async () => {
+      await provider.save(sampleCode, configurations, 123, { tx_code_input_mode: 'numeric' })
+      const isValid = await provider.consume(sampleCode, '123')
+      assert.strictEqual(isValid, configurations)
+    })
+
+    it('should throw invalid_grant when tx_code is not numeric in numeric mode', async () => {
+      await provider.save(sampleCode, configurations, 123, { tx_code_input_mode: 'numeric' })
+      await assert.rejects(provider.consume(sampleCode, '12a3'), { name: 'invalid_grant' })
+    })
+
+    it('should preserve leading zeros in numeric mode', async () => {
+      await provider.save(sampleCode, configurations, '0123', { tx_code_input_mode: 'numeric' })
+      const isValid = await provider.consume(sampleCode, '0123')
+      assert.strictEqual(isValid, configurations)
+    })
+
+    it('should throw invalid_grant when leading-zero digit-string is validated as number', async () => {
+      await provider.save(sampleCode, configurations, '0123', { tx_code_input_mode: 'numeric' })
+      await assert.rejects(provider.consume(sampleCode, 123), { name: 'invalid_grant' })
+    })
+
+    it('should throw invalid_grant when validating a non-existent code', async () => {
+      await assert.rejects(provider.consume(sampleCode), { name: 'invalid_grant' }) // sampleCode is not saved yet
     })
 
     it('should handle multiple codes correctly', async () => {
-      await provider.save(sampleCode)
-      await provider.save(anotherSampleCode)
+      await provider.save(sampleCode, configurations)
+      await provider.save(anotherSampleCode, configurations)
 
-      assert.strictEqual(await provider.validate(sampleCode), true)
-      assert.strictEqual(await provider.validate(anotherSampleCode), true)
-    })
-  })
-
-  describe('delete', () => {
-    it('should delete a pre-authorized code, and it should no longer validate', async () => {
-      await provider.save(sampleCode)
-      assert.strictEqual(await provider.validate(sampleCode), true)
-
-      await provider.delete(sampleCode)
-      assert.strictEqual(await provider.validate(sampleCode), false)
-    })
-
-    it('should not throw an error when trying to delete a non-existent code', async () => {
-      await assert.doesNotReject(provider.delete(sampleCode))
-    })
-
-    it('should only delete the specified code', async () => {
-      await provider.save(sampleCode)
-      await provider.save(anotherSampleCode)
-
-      await provider.delete(sampleCode)
-
-      assert.strictEqual(await provider.validate(sampleCode), false)
-      assert.strictEqual(await provider.validate(anotherSampleCode), true)
+      assert.strictEqual(await provider.consume(sampleCode), configurations)
+      assert.strictEqual(await provider.consume(anotherSampleCode), configurations)
     })
   })
 
   describe('edge cases', () => {
-    it('validate should return false when the store is empty', async () => {
-      const isValid = await provider.validate(sampleCode)
-      assert.strictEqual(isValid, false)
+    it('validate should throw invalid_grant when the store is empty', async () => {
+      await assert.rejects(provider.consume(sampleCode), { name: 'invalid_grant' })
     })
 
     it('save should not return a value (void promise)', async () => {
-      const result = await provider.save(sampleCode)
+      const result = await provider.save(sampleCode, configurations)
       assert.strictEqual(result, undefined)
     })
 
-    it('delete should not return a value (void promise)', async () => {
-      await provider.save(sampleCode)
-      const result = await provider.delete(sampleCode)
-      assert.strictEqual(result, undefined)
+    it('should use default ttlSec when not specified', async () => {
+      await provider.save(sampleCode, configurations)
+      // This test just ensures no error is thrown with default values
+      const isValid = await provider.consume(sampleCode)
+      assert.strictEqual(isValid, configurations)
+    })
+
+    it('should fall back to default ttlSec when saveOptions.ttlSec is invalid', async () => {
+      mock.timers.enable({ apis: ['Date'] })
+      await provider.save(sampleCode, configurations, undefined, { ttlSec: NaN })
+      mock.timers.tick(299_000)
+      assert.strictEqual(await provider.consume(sampleCode), configurations)
+      mock.timers.tick(2_000)
+      await assert.rejects(provider.consume(sampleCode), { name: 'invalid_grant' })
+    })
+
+    it('should floor fractional ttlSec values', async () => {
+      mock.timers.enable({ apis: ['Date'] })
+      await provider.save(sampleCode, configurations, undefined, { ttlSec: 1.9 })
+      mock.timers.tick(500)
+      assert.strictEqual(await provider.consume(sampleCode), configurations)
+      mock.timers.tick(600)
+      await assert.rejects(provider.consume(sampleCode), { name: 'invalid_grant' })
+    })
+
+    it('should fall back to default ttlSec when fractional ttlSec floors to zero', async () => {
+      mock.timers.enable({ apis: ['Date'] })
+      await provider.save(sampleCode, configurations, undefined, { ttlSec: 0.1 })
+      mock.timers.tick(299_000)
+      assert.strictEqual(await provider.consume(sampleCode), configurations)
+      mock.timers.tick(2_000)
+      await assert.rejects(provider.consume(sampleCode), { name: 'invalid_grant' })
     })
   })
 })

@@ -29,7 +29,7 @@ export const inMemoryVerifierSignatureKeyStore = (): VerifierSignatureKeyStorePr
         }
       } else {
         if (pair.declaredAlg !== keyAlg) {
-          throw raise('ILLEGAL_ARGUMENT', {
+          throw raise('illegal_argument', {
             message: `The provided key pair algorithm ${pair.declaredAlg} does not match the requested key algorithm ${keyAlg}.`,
           })
         }
@@ -74,7 +74,7 @@ export const inMemoryVerifierSignatureKeyStore = (): VerifierSignatureKeyStorePr
           }
         }
         if (!privateKey) {
-          throw raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+          throw raise('authz_verifier_key_not_found', {
             message: 'Verifier private key not found.',
           })
         }
@@ -84,7 +84,7 @@ export const inMemoryVerifierSignatureKeyStore = (): VerifierSignatureKeyStorePr
         const [, , signature] = jws.split('.')
         return signature
       } catch (error) {
-        throw raise('INTERNAL_SERVER_ERROR', { message: `sign error: ${error}` })
+        throw raise('internal_server_error', { message: `sign error: ${error}` })
       }
     },
   }

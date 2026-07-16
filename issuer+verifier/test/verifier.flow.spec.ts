@@ -9,8 +9,8 @@ import { ClientIdentifier } from '../src/client-id-scheme.types'
 import { Dcql } from '../src/dcql.type'
 import { PresentationExchange } from '../src/presentation-exchange.types'
 import {
-  CnonceProvider,
-  CnonceStoreProvider,
+  NonceProvider,
+  NonceStoreProvider,
   CredentialQueryGenerationOptions,
   CredentialQueryProvider,
   RequestObjectIdProvider,
@@ -63,21 +63,22 @@ describe('VerifierFlow', () => {
     fetch: mock.fn(),
   } satisfies VerifierMetadataStoreProvider
 
-  const mockCnonceProvider = {
-    kind: 'cnonce-provider',
-    name: 'mock-cnonce-provider',
+  const mockNonceProvider = {
+    kind: 'nonce-provider',
+    name: 'mock-nonce-provider',
     single: true,
     generate: mock.fn(),
-  } satisfies CnonceProvider
+  } satisfies NonceProvider
 
-  const mockCnonceStoreProvider = {
-    kind: 'cnonce-store-provider',
-    name: 'mock-cnonce-store-provider',
+  const mockNonceStoreProvider = {
+    kind: 'nonce-store-provider',
+    name: 'mock-nonce-store-provider',
     single: true,
     save: mock.fn(),
     validate: mock.fn(),
-    revoke: mock.fn(),
-  } satisfies CnonceStoreProvider
+    revoke: mock.fn(async () => true),
+    consume: mock.fn(async () => true),
+  } satisfies NonceStoreProvider
 
   const mockCredentialQueryProvider = {
     kind: 'credential-query-provider',
@@ -159,8 +160,8 @@ describe('VerifierFlow', () => {
     context = initializeContext({
       providers: [
         mockVerifierMetadataStore,
-        mockCnonceProvider,
-        mockCnonceStoreProvider,
+        mockNonceProvider,
+        mockNonceStoreProvider,
         mockCredentialQueryProvider,
         mockRequestObjectStoreProvider,
         mockRequestObjectIdProvider,
@@ -268,6 +269,43 @@ describe('VerifierFlow', () => {
     })
   })
 
+  describe('findVerifierMetadata', () => {
+    it('should find verifier metadata', async () => {
+      const verifierId = ClientId('https://example.com')
+      const metadata = VerifierMetadata({
+        client_name: 'Test Verifier',
+        vp_formats: {
+          jwt_vc_json: { alg_values_supported: ['ES256'] },
+          jwt_vp_json: { alg_values_supported: ['ES256'] },
+        },
+      })
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async (id: ClientId) => {
+        assert.equal(id, verifierId)
+        return metadata
+      })
+
+      const found = await verifierFlow.findVerifierMetadata(verifierId)
+
+      assert.deepEqual(found, metadata)
+      assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
+    })
+
+    it('should return null if verifier metadata is not found', async () => {
+      const verifierId = ClientId('https://example.com/not-found')
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async (id: ClientId) => {
+        assert.equal(id, verifierId)
+        return null
+      })
+
+      const found = await verifierFlow.findVerifierMetadata(verifierId)
+
+      assert.strictEqual(found, null)
+      assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
+    })
+  })
+
   describe('createAuthzRequest', () => {
     it('creates request for Presentation Exchange', async () => {
       const metadata = VerifierMetadata({
@@ -305,8 +343,11 @@ describe('VerifierFlow', () => {
       }
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => {})
+      mock.method(mockNonceProvider, 'generate', async () => ({
+        nonce: 'nonce-123',
+        nonce_expires_in: 60000,
+      }))
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -369,8 +410,11 @@ describe('VerifierFlow', () => {
       }
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => {})
+      mock.method(mockNonceProvider, 'generate', async () => ({
+        nonce: 'nonce-123',
+        nonce_expires_in: 60000,
+      }))
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
         'generate',
@@ -403,7 +447,7 @@ describe('VerifierFlow', () => {
       assert.equal(req.nonce, 'nonce-123')
     })
 
-    it('should throw VERIFIER_NOT_FOUND if metadata missing', async () => {
+    it('should throw verifier_not_found if metadata missing', async () => {
       const presentationDefinition = {
         id: 'test-pd-id',
         input_descriptors: [
@@ -434,7 +478,7 @@ describe('VerifierFlow', () => {
           false,
           {}
         ),
-        { name: 'VERIFIER_NOT_FOUND' }
+        { name: 'verifier_not_found' }
       )
     })
 
@@ -501,13 +545,13 @@ describe('VerifierFlow', () => {
         'https://example.com/request.jwt/1234',
         'request_uri should be composed with base_url, verifierId, and generated requestObjectId'
       )
-      assert.equal(mockCnonceProvider.generate.mock.callCount(), 0)
-      assert.equal(mockCnonceStoreProvider.save.mock.callCount(), 0)
+      assert.equal(mockNonceProvider.generate.mock.callCount(), 0)
+      assert.equal(mockNonceStoreProvider.save.mock.callCount(), 0)
       assert.equal(mockRequestObjectIdProvider.generate.mock.callCount(), 1)
       assert.equal(mockRequestObjectStoreProvider.save.mock.callCount(), 1)
     })
 
-    it('should throw INVALID_REQUEST when request_uri is true and base_url is not present', async () => {
+    it('should throw invalid_request when request_uri is true and base_url is not present', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
         vp_formats: {
@@ -563,11 +607,11 @@ describe('VerifierFlow', () => {
           true,
           {}
         ),
-        { name: 'INVALID_REQUEST' }
+        { name: 'invalid_request' }
       )
     })
 
-    it('should throw INVALID_REQUEST when neither request_uri nor base_url is present', async () => {
+    it('should throw invalid_request when neither request_uri nor base_url is present', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
         vp_formats: {
@@ -623,7 +667,7 @@ describe('VerifierFlow', () => {
           true,
           {}
         ),
-        { name: 'INVALID_REQUEST' }
+        { name: 'invalid_request' }
       )
     })
   })
@@ -658,8 +702,11 @@ describe('VerifierFlow', () => {
       }
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
-      mock.method(mockCnonceProvider, 'generate', async () => 'nonce-123')
-      mock.method(mockCnonceStoreProvider, 'save', async () => {})
+      mock.method(mockNonceProvider, 'generate', async () => ({
+        nonce: 'nonce-123',
+        nonce_expires_in: 60000,
+      }))
+      mock.method(mockNonceStoreProvider, 'save', async () => {})
       mock.method(
         mockCredentialQueryProvider,
         'generate',

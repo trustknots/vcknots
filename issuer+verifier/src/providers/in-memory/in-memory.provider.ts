@@ -1,6 +1,10 @@
 import { inMemoryAuthzServerMetadata } from './in-memory-authz-metadata-store.provider'
+import { inMemoryAuthzOAuthClientStore } from './in-memory-authz-oauth-client-store.provider'
+import { inMemoryAuthzOAuthPolicyStore } from './in-memory-authz-oauth-policy-store.provider'
 import { inMemoryAuthzSignatureKeyStore } from './in-memory-authz-signature-key-store.provider'
-import { inMemoryCnonceStore } from './in-memory-cnonce-store.provider'
+import { inMemoryDpopProofJtiStore } from './in-memory-dpop-proof-jti-store.provider'
+import { inMemoryOAuthClientAssertionJtiStore } from './in-memory-oauth-client-assertion-jti-store.provider'
+import { inMemoryNonceStore } from './in-memory-nonce-store.provider'
 import { inMemoryIssuerMetadataStore } from './in-memory-issuer-metadata-store.provider'
 import { inMemoryIssuerSignatureKeyStore } from './in-memory-issuer-signature-key-store.provider'
 import { inMemoryPreAuthorizedCodeStore } from './in-memory-pre-authorized-code-store.provider'
@@ -16,8 +20,12 @@ export const inMemory = () => {
     inMemoryVerifierMetadataStore(),
     inMemoryIssuerSignatureKeyStore(),
     inMemoryAuthzServerMetadata(),
+    inMemoryAuthzOAuthPolicyStore(),
+    inMemoryAuthzOAuthClientStore(),
     inMemoryAuthzSignatureKeyStore(),
-    inMemoryCnonceStore(),
+    inMemoryOAuthClientAssertionJtiStore(),
+    inMemoryDpopProofJtiStore(),
+    inMemoryNonceStore(),
     inMemoryRequestObjectStore(),
     inMemoryVerifierSignatureKeyStore(),
     inMemoryVerifierCertificateStore(),

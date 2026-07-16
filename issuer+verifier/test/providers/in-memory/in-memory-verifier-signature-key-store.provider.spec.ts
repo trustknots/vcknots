@@ -71,7 +71,7 @@ describe('inMemoryVerifierSignatureKeyStore', () => {
 
   it('should reject save when pair algorithm does not match keyAlg', async () => {
     await assert.rejects(store.save(verifier, 'ES256', pair2), (error: Error) => {
-      assert.equal(error.name, 'ILLEGAL_ARGUMENT')
+      assert.equal(error.name, 'illegal_argument')
       assert.match(error.message, /does not match the requested key algorithm/)
       return true
     })

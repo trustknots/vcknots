@@ -102,7 +102,7 @@ func (d *ReceivingDispatcher) FetchAuthorizationServerMetadata(endpoint common.U
 }
 
 // FetchAccessToken fetches access token using the appropriate plugin
-func (d *ReceivingDispatcher) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string) (*types.CredentialIssuanceAccessToken, error) {
+func (d *ReceivingDispatcher) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, opts ...types.TokenRequestOption) (*types.CredentialIssuanceAccessToken, error) {
 	if authzCode == "" {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "fetch_access_token", types.ErrAuthorizationFailed)
 	}
@@ -112,7 +112,7 @@ func (d *ReceivingDispatcher) FetchAccessToken(receivingType types.SupportedRece
 		return nil, err
 	}
 
-	token, err := plugin.FetchAccessToken(receivingType, endpoint, authzCode)
+	token, err := plugin.FetchAccessToken(receivingType, endpoint, authzCode, txCode, opts...)
 	if err != nil {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "fetch_access_token", err)
 	}
@@ -120,16 +120,34 @@ func (d *ReceivingDispatcher) FetchAccessToken(receivingType types.SupportedRece
 	return token, nil
 }
 
+// FetchNonce fetches nonce using the appropriate plugin
+func (d *ReceivingDispatcher) FetchNonce(receivingType types.SupportedReceivingTypes, endpoint common.URIField) (*string, error) {
+	plugin, err := d.getPlugin(receivingType)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce, err := plugin.FetchNonce(receivingType, endpoint)
+	if err != nil {
+		return nil, types.NewReceiverError(receivingType, endpoint.String(), "fetch_nonce", err)
+	}
+
+	return nonce, nil
+}
+
 // ReceiveCredential receives credential using the appropriate plugin
 func (d *ReceivingDispatcher) ReceiveCredential(
 	receivingType types.SupportedReceivingTypes,
 	endpoint common.URIField,
-	format string,
+	credentialConfigurationID string,
+	credentialIdentifier *string,
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
+	options ...*types.CredentialRequestOptions,
 ) (*string, error) {
-	if format == "" {
+	hasCredentialIdentifier := credentialIdentifier != nil && *credentialIdentifier != ""
+	if credentialConfigurationID == "" && !hasCredentialIdentifier {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "receive_credential", types.ErrInvalidCredentialResponse)
 	}
 
@@ -138,7 +156,7 @@ func (d *ReceivingDispatcher) ReceiveCredential(
 		return nil, err
 	}
 
-	credential, err := plugin.ReceiveCredential(receivingType, endpoint, format, accessToken, credentialDefinition, jwtProof)
+	credential, err := plugin.ReceiveCredential(receivingType, endpoint, credentialConfigurationID, credentialIdentifier, accessToken, credentialDefinition, jwtProof, options...)
 	if err != nil {
 		return nil, types.NewReceiverError(receivingType, endpoint.String(), "receive_credential", err)
 	}

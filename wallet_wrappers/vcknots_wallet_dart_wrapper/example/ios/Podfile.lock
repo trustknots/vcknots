@@ -1,0 +1,22 @@
+PODS:
+  - Flutter (1.0.0)
+  - vcknots_wallet_dart_wrapper (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - vcknots_wallet_dart_wrapper (from `.symlinks/plugins/vcknots_wallet_dart_wrapper/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  vcknots_wallet_dart_wrapper:
+    :path: ".symlinks/plugins/vcknots_wallet_dart_wrapper/ios"
+
+SPEC CHECKSUMS:
+  Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
+  vcknots_wallet_dart_wrapper: 146f48cac7b97d3c2c82557672f694b7c267270a
+
+PODFILE CHECKSUM: 4305caec6b40dde0ae97be1573c53de1882a07e5
+
+COCOAPODS: 1.16.2

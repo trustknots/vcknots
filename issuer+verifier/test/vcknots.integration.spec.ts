@@ -8,15 +8,15 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
   ClientId,
+  Nonce,
   ClientIdentifier,
-  Cnonce,
   VerifierMetadata,
 } from '../src'
 import { CredentialConfigurationId, CredentialIssuerMetadata } from '../src/credential-issuer.types'
 import { PreAuthorizedCode } from '../src/pre-authorized-code.types'
 import { GrantType, TokenRequest, TokenResponse } from '../src/token-request.types'
 import { Vcknots, vcknots } from '../src/vcknots'
-import { inMemoryCnonceStore } from '../src/providers/in-memory/in-memory-cnonce-store.provider'
+import { inMemoryNonceStore } from '../src/providers/in-memory/in-memory-nonce-store.provider'
 
 type JwtHeader = {
   alg: 'ES256'
@@ -67,11 +67,12 @@ describe('Vcknots', () => {
     credential_issuer: 'https://example.com/issuer/1',
     credential_endpoint: 'https://example.com/issuer/1/offer',
     authorization_servers: ['https://example.com/authz'],
-    batch_credential_endpoint: 'https://example.com/issuer-full/batch_credential',
-    deferred_credential_endpoint: 'https://example.com/issuer-full/deferred_credential',
-    credential_response_encryption_alg_values_supported: ['ECDH-ES+A256KW'],
-    credential_response_encryption_enc_values_supported: ['A256GCM'],
-    require_credential_response_encryption: true,
+    nonce_endpoint: 'https://example.com/issuer/1/nonce',
+    credential_response_encryption: {
+      alg_values_supported: ['ECDH-ES+A256KW'],
+      enc_values_supported: ['A256GCM'],
+      encryption_required: true,
+    },
     credential_configurations_supported: {
       EmployeeID_jwt_vc_json: {
         format: 'jwt_vc_json',
@@ -80,12 +81,31 @@ describe('Vcknots', () => {
         cryptographic_suites_supported: ['ES256K'],
         credential_definition: {
           type: ['VerifiableCredential', 'EmployeeIDCredential'],
-          credentialSubject: {
-            employee_id: { mandatory: true, value_type: 'string' },
-            given_name: {
+        },
+        credential_metadata: {
+          claims: [
+            {
+              path: ['employee_id'],
+              mandatory: true,
+            },
+            {
+              path: ['given_name'],
               display: [{ name: 'Given Name', locale: 'en-US' }],
             },
-          },
+          ],
+          display: [
+            {
+              name: 'Employee ID',
+              locale: 'en-US',
+              logo: {
+                uri: 'https://example.com/logo.png',
+                alt_text: 'Employee ID Logo',
+              },
+              description: 'Digital Employee ID Card',
+              background_color: '#0000FF',
+              text_color: '#FFFFFF',
+            },
+          ],
         },
         proof_types_supported: {
           jwt: {
@@ -93,19 +113,6 @@ describe('Vcknots', () => {
           },
         },
         credential_signing_alg_values_supported: ['ES256'],
-        display: [
-          {
-            name: 'Employee ID',
-            locale: 'en-US',
-            logo: {
-              uri: 'https://example.com/logo.png',
-              alt_text: 'Employee ID Logo',
-            },
-            description: 'Digital Employee ID Card',
-            background_color: '#0000FF',
-            text_color: '#FFFFFF',
-          },
-        ],
       },
     },
   })
@@ -141,23 +148,23 @@ describe('Vcknots', () => {
       assert.deepEqual(found, issuerMetadata)
     })
 
-    it('should throw DUPLICATE_ISSUER when creating duplicate issuer metadata', async () => {
+    it('should throw duplicate_issuer when creating duplicate issuer metadata', async () => {
       // Since it has already been created in the before hook, a duplicate error should occur
       await assert.rejects(vk.issuer.createIssuerMetadata(issuerMetadata), {
-        name: 'DUPLICATE_ISSUER',
+        name: 'duplicate_issuer',
         message: `issuer ${issuerMetadata.credential_issuer} is already registered.`,
       })
     })
 
     it('should create credential offer with pre authorized code', async () => {
       const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
-      const offer = await vk.issuer.offerCredential(
+      const { offer, tx_code } = await vk.issuer.offerCredential(
         issuerMetadata.credential_issuer,
         configurations,
         {
           usePreAuth: true,
           txCode: {
-            inputMode: 'numeric',
+            input_mode: 'numeric',
             length: 4,
             description: 'PIN',
           },
@@ -178,13 +185,13 @@ describe('Vcknots', () => {
     it('should create access token when grant_type is urn:ietf:params:oauth:grant-type:pre-authorized_code', async () => {
       // Since the authzIssuer has already been created, remove the creation step
       const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
-      const offer = await vk.issuer.offerCredential(
+      const { offer, tx_code } = await vk.issuer.offerCredential(
         issuerMetadata.credential_issuer,
         configurations,
         {
           usePreAuth: true,
           txCode: {
-            inputMode: 'numeric',
+            input_mode: 'numeric',
             length: 4,
             description: 'PIN',
           },
@@ -200,11 +207,11 @@ describe('Vcknots', () => {
       const tokenRequest: TokenRequest = {
         grant_type: GrantType.PreAuthorizedCode,
         'pre-authorized_code': PreAuthorizedCode(code),
+        ...(tx_code !== undefined && { tx_code }),
       }
 
       const accessToken = await vk.authz.createAccessToken(authzIssuer, tokenRequest, {
         ttlSec: 3600,
-        c_nonce_expire_in: 300000,
       })
 
       const tokenResponse = accessToken as TokenResponse
@@ -213,11 +220,159 @@ describe('Vcknots', () => {
       assert.ok(typeof tokenResponse.access_token === 'string')
       assert.equal(tokenResponse.token_type, 'bearer')
       assert.ok(typeof tokenResponse.expires_in === 'number' && tokenResponse.expires_in > 0)
-      assert.ok(typeof tokenResponse.c_nonce === 'string')
-      assert.ok(typeof tokenResponse.c_nonce_expires_in === 'number')
-      assert.ok(
-        typeof tokenResponse.c_nonce_expires_in === 'number' && tokenResponse.c_nonce_expires_in > 0
+    })
+
+    it('should fail to create access token when wrong tx_code is provided', async () => {
+      const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
+      const { offer } = await vk.issuer.offerCredential(
+        issuerMetadata.credential_issuer,
+        configurations,
+        {
+          usePreAuth: true,
+          txCode: {
+            input_mode: 'numeric',
+            length: 4,
+            description: 'PIN',
+          },
+        }
       )
+
+      assert.ok(offer.grants)
+      const grant = offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']
+      assert.ok(grant)
+
+      const tokenRequest: TokenRequest = {
+        grant_type: GrantType.PreAuthorizedCode,
+        'pre-authorized_code': PreAuthorizedCode(grant['pre-authorized_code']),
+        tx_code: 0, // outside valid 4-digit range (1000–9999)
+      }
+
+      await assert.rejects(
+        vk.authz.createAccessToken(authzIssuer, tokenRequest, { ttlSec: 3600 }),
+        { name: 'invalid_grant' }
+      )
+    })
+
+    it('should fail to create access token when tx_code is omitted but required', async () => {
+      const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
+      const { offer } = await vk.issuer.offerCredential(
+        issuerMetadata.credential_issuer,
+        configurations,
+        {
+          usePreAuth: true,
+          txCode: {
+            input_mode: 'numeric',
+            length: 4,
+            description: 'PIN',
+          },
+        }
+      )
+
+      assert.ok(offer.grants)
+      const grant = offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']
+      assert.ok(grant)
+
+      const tokenRequest: TokenRequest = {
+        grant_type: GrantType.PreAuthorizedCode,
+        'pre-authorized_code': PreAuthorizedCode(grant['pre-authorized_code']),
+      }
+
+      await assert.rejects(
+        vk.authz.createAccessToken(authzIssuer, tokenRequest, { ttlSec: 3600 }),
+        { name: 'invalid_request' }
+      )
+    })
+
+    it('should create access token without tx_code when offer has no txCode', async () => {
+      const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
+      const { offer, tx_code } = await vk.issuer.offerCredential(
+        issuerMetadata.credential_issuer,
+        configurations,
+        { usePreAuth: true }
+      )
+
+      assert.equal(tx_code, undefined)
+      assert.ok(offer.grants)
+      const grant = offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']
+      assert.ok(grant)
+      assert.equal(grant.tx_code, undefined)
+
+      const tokenRequest: TokenRequest = {
+        grant_type: GrantType.PreAuthorizedCode,
+        'pre-authorized_code': PreAuthorizedCode(grant['pre-authorized_code']),
+      }
+
+      const accessToken = await vk.authz.createAccessToken(authzIssuer, tokenRequest, {
+        ttlSec: 3600,
+      })
+      const tokenResponse = accessToken as TokenResponse
+
+      assert.ok(typeof tokenResponse.access_token === 'string')
+      assert.equal(tokenResponse.token_type, 'bearer')
+    })
+
+    it('should fail to reuse pre-authorized code after successful token exchange', async () => {
+      const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
+      const { offer, tx_code } = await vk.issuer.offerCredential(
+        issuerMetadata.credential_issuer,
+        configurations,
+        { usePreAuth: true }
+      )
+
+      assert.ok(offer.grants)
+      const grant = offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']
+      assert.ok(grant)
+      const tokenRequest: TokenRequest = {
+        grant_type: GrantType.PreAuthorizedCode,
+        'pre-authorized_code': PreAuthorizedCode(grant['pre-authorized_code']),
+        ...(tx_code !== undefined && { tx_code }),
+      }
+
+      const accessToken = await vk.authz.createAccessToken(authzIssuer, tokenRequest, {
+        ttlSec: 3600,
+      })
+      assert.ok((accessToken as TokenResponse).access_token)
+
+      await assert.rejects(
+        vk.authz.createAccessToken(authzIssuer, tokenRequest, { ttlSec: 3600 }),
+        { name: 'invalid_grant' }
+      )
+    })
+
+    it('should create access token with text mode tx_code', async () => {
+      const configurations = [CredentialConfigurationId('EmployeeID_jwt_vc_json')]
+      const { offer, tx_code } = await vk.issuer.offerCredential(
+        issuerMetadata.credential_issuer,
+        configurations,
+        {
+          usePreAuth: true,
+          txCode: {
+            input_mode: 'text',
+            length: 8,
+            description: 'PIN',
+          },
+        }
+      )
+
+      assert.ok(typeof tx_code === 'string')
+      assert.ok(offer.grants)
+      const grant = offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code']
+      assert.ok(grant)
+      assert.equal(grant.tx_code?.input_mode, 'text')
+
+      const tokenRequest: TokenRequest = {
+        grant_type: GrantType.PreAuthorizedCode,
+        'pre-authorized_code': PreAuthorizedCode(grant['pre-authorized_code']),
+        tx_code,
+      }
+
+      const accessToken = await vk.authz.createAccessToken(authzIssuer, tokenRequest, {
+        ttlSec: 3600,
+      })
+      const tokenResponse = accessToken as TokenResponse
+
+      assert.ok(typeof tokenResponse.access_token === 'string')
+      assert.equal(tokenResponse.token_type, 'bearer')
     })
   })
 
@@ -231,10 +386,10 @@ describe('Vcknots', () => {
       assert.deepEqual(found, authzMetadata)
     })
 
-    it('should throw DUPLICATE_AUTHZ_SERVER when creating duplicate authz server metadata', async () => {
+    it('should throw duplicate_authz_server when creating duplicate authz server metadata', async () => {
       // Since it has already been created in the before hook, a duplicate error should occur
       await assert.rejects(vk.authz.createAuthzServerMetadata(authzMetadata), {
-        name: 'DUPLICATE_AUTHZ_SERVER',
+        name: 'duplicate_authz_server',
         message: `issuer ${authzIssuer} is already registered.`,
       })
     })
@@ -300,10 +455,10 @@ describe('Vcknots', () => {
       await vk.verifier.createVerifierMetadata(verifierId, metadata)
     })
 
-    it('should throw DUPLICATE_VERIFIER when creating duplicate verifier metadata', async () => {
+    it('should throw duplicate_verifier when creating duplicate verifier metadata', async () => {
       // Since it has already been created in the before hook, a duplicate error should occur
       await assert.rejects(vk.verifier.createVerifierMetadata(verifierId, metadata), {
-        name: 'DUPLICATE_VERIFIER',
+        name: 'duplicate_verifier',
         message: `verifier ${verifierId} is already registered.`,
       })
     })
@@ -507,14 +662,14 @@ describe('Vcknots', () => {
       mock.reset()
     })
     it('should verify presentations (dc+sd-jwt with kbjwt)', async () => {
-      const cnonceStore = inMemoryCnonceStore({ c_nonce_expire_in: 300000 })
+      const nonceStore = inMemoryNonceStore()
       const test_nonce = 'bcb201b7e186ed380127b9158a9d57a6'
-      await cnonceStore.save(Cnonce(test_nonce))
+      await nonceStore.save(Nonce({ nonce: test_nonce, nonce_expires_in: 300000 }))
       const sampleDcSdJwtVp =
         'eyJhbGciOiJFUzI1NiIsInR5cCI6ImRjK3NkLWp3dCIsIng1YyI6WyJNSUlDSGpDQ0FjT2dBd0lCQWdJVVpYOUJTNUNET0pSVzJ0MUZLMVVETXQvUXdNRXdDZ1lJS29aSXpqMEVBd0l3SVRFTE1Ba0dBMVVFQmhNQ1IwSXhFakFRQmdOVkJBTU1DVTlKUkVZZ1ZHVnpkREFlRncweU5ERXhNalV3T0RNMk1EUmFGdzB6TkRFeE1qTXdPRE0yTURSYU1DRXhDekFKQmdOVkJBWVRBa2RDTVJJd0VBWURWUVFEREFsUFNVUkdJRlJsYzNRd1dUQVRCZ2NxaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUVC9kTHNkNTFMTEJyR1Y2UjIzbzZ2eW1SeEhYZUZCb0k4eXEzMXk1a0ZWMlZWMGdpOXg1WnpFRmlxOERNaUFIdWNMQUNGbmR4THRab3JDaGE5enpuUW80SFlNSUhWTUIwR0ExVWREZ1FXQkJTNWNiZGdBZU1CaTV3eHBicHdJU0doU2hBV0VUQWZCZ05WSFNNRUdEQVdnQlM1Y2JkZ0FlTUJpNXd4cGJwd0lTR2hTaEFXRVRBUEJnTlZIUk1CQWY4RUJUQURBUUgvTUlHQkJnTlZIUkVFZWpCNGdoQjNkM2N1YUdWbGJtRnVMbTFsTG5WcmdoMWtaVzF2TG1ObGNuUnBabWxqWVhScGIyNHViM0JsYm1sa0xtNWxkSUlKYkc5allXeG9iM04wZ2hac2IyTmhiR2h2YzNRdVpXMXZZbWw0TG1OdkxuVnJnaUprWlcxdkxuQnBaQzFwYzNOMVpYSXVZblZ1WkdWelpISjFZMnRsY21WcExtUmxNQW9HQ0NxR1NNNDlCQU1DQTBrQU1FWUNJUUNQYm5MeENJK1dSMXZoT1crQThLem5BV3YxTUpvK1lFYjFNSTQ1TktXL1ZRSWhBTHpzcW94OFZ1QlJ3TjJkbDVMa3BueFA0b0g5cDZIMEFPWm1LUCtZN25YUyJdfQ.eyJfc2QiOlsiMDRVY1lqOEV1T1ExWWZHNzdWUDZQdWdPVWF1dnRNQ0tSU1RvdUR4aldidyIsIkgwdElaUGhWVFVqTnhCd1VzelFrMW95VlVQNU5zZGRLNWo2ZGcyb0NPemMiLCJXelV0Nkd2ZnJyVHlLWmFIRFhTcERYWHJGLUxURm1UME9WTFhvYmFpZnVNIiwiWGVuek44TVl1LU5fMXpGV3g1dVVYb0FWLWhwdG1MV2d5ekczbUVkR0tDZyIsImVMbVlqTGVLY0ZQS2dVN1YwQWlVOVVMeXZ3cWVKLWJ4ZWdDUGlMTWlTMFkiLCJsdmtZMVh3OFE5M1BUOERQRHhHSlhCMzlobHJTNFpOUVZCbkhmcFZOUVZBIiwibXY3T0tCMnRoUWpOV2lxU3ZBTDAxY2VOUG5wTDlDVmhlNGRmNHRSYUxGTSIsIm52Mm9rMjFXejVkN2lsenNkczE1Vk5tRXI1U0VPYlBzVWNxNmpjemxXaEUiXSwiaXNzIjoiaHR0cHM6Ly9pc3N1ZXIuZXVkaXcuZGV2IiwidmN0IjoidXJuOmV1LmV1cm9wYS5lYy5ldWRpOnBpZDoxIiwiX3NkX2FsZyI6InNoYS0yNTYiLCJjbmYiOnsiandrIjp7Imt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJ4IjoiZXpaZ0t3TXVlQXlaTEhVZ1Nwek5rYk9XRGdqSlhUQU9KbjhNZnRPbmF5USIsInkiOiJGeV9VNEt5WlFmLTlqS3BGSnRINk9GRlJYbXdBY3ZleWZ1b0RwMWhTT0ZvIn19LCJpYXQiOjE3NzIwMTU0NjV9.gseVu9AStknO-locvvCKcnj8PnUWSZtMF4wE-SqqXteI4xMOfUaA0zFpZR6hGfNBPUSZL3ROw4RYDLQIOQjsMQ~WyJkMTQ2V0NwTVg1MDZpZzY3UHoxVGtBIiwgImZhbWlseV9uYW1lIiwgIlRFU1QiXQ~WyJzQnE1aUY1dTFibVRfU2dYblF1UmtBIiwgImdpdmVuX25hbWUiLCAiVEFSTyJd~WyJRNG80UjFxdDhacENFSkhIWFRZRmpRIiwgImJpcnRoZGF0ZSIsICIyMDAwLTAzLTAzIl0~WyJHUDRwcXpKaVJ4RGN0TEVlcEZ5VzJBIiwgIm5hdGlvbmFsaXRpZXMiLCBbIkpQIl1d~WyJKX2pYUkZxT0poR18yRmFmOHl4bFBBIiwgImlzc3VpbmdfYXV0aG9yaXR5IiwgIlRlc3QgUElEIGlzc3VlciJd~WyJiNDk2UGotUDdXS05iWkFKMDJ3NVhnIiwgImlzc3VpbmdfY291bnRyeSIsICJGQyJd~WyJ4bGlVZlExX050Y3IyYnBJcGJCN1lnIiwgIjE4IiwgdHJ1ZV0~WyJ3dDJCRVFYVDBfUDNIQ0N4VVVoSmZBIiwgImFnZV9lcXVhbF9vcl9vdmVyIiwgeyJfc2QiOiBbInNDczNOZlNLYVRoR3pRbERVRTd5WnR4VmVBSm5lRGY2dS1nNFk1NVdRekUiXX1d~WyJxcm1aeGpLNUtPZXRGUHFOSGpWN0h3IiwgImxvY2FsaXR5IiwgIkpBUEFOIl0~WyJpc0ZDcF8xREhnUUpZLVBtZWYwRHV3IiwgInBsYWNlX29mX2JpcnRoIiwgeyJfc2QiOiBbIjF1LWszbEFKMHlPV2x4OUJLLWFSVEVaUUZyLXVPUFRrTGdEN3U5aTFlMEUiXX1d~eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJodHRwczovL3ZlcmlmaWVyLmV4YW1wbGUuY29tIiwiaWF0IjoxNzcyMDE1NDg4LCJub25jZSI6ImJjYjIwMWI3ZTE4NmVkMzgwMTI3YjkxNThhOWQ1N2E2Iiwic2RfaGFzaCI6IkdpNkkxZTFqdVgyU29QVmwwR3pXamZTZHBkaUVxOFowc2FKX3B4Y3poVVkifQ.bHaKF05dNqYM7jOlhgQGjqO958lTMTMM4Pu9YJVM9fjDW_zTVur5ZzDKHWxImq_8lPQ3euAJvXJlz6j7Yj2mtw'
 
       const vkWithPreSavedNonce = vcknots({
-        providers: [cnonceStore],
+        providers: [nonceStore],
       })
       await vkWithPreSavedNonce.verifier
         .createVerifierMetadata(verifierId, metadata)

@@ -12,7 +12,7 @@ export const certificate = (): CertificateProvider => {
       try {
         const certificates = cert
         if (certificates.length === 0) {
-          throw raise('INVALID_CERTIFICATE', {
+          throw raise('invalid_certificate', {
             message: 'Certificate chain is empty.',
           })
         }

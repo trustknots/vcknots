@@ -24,7 +24,7 @@ export const authzRequestJARKid = (): AuthzRequestJARProvider & WithProviderRegi
       const keyStore$ = this.providers.get('verifier-signature-key-store-provider')
       const verifierPubKey = await keyStore$.fetch(verifierId, alg)
       if (!verifierPubKey) {
-        throw raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+        throw raise('authz_verifier_key_not_found', {
           message: 'Verifier key not found.',
         })
       }

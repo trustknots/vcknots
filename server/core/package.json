@@ -30,6 +30,14 @@
 			"types": "./lib/utils/error-handler.d.ts",
 			"default": "./lib/utils/error-handler.js"
 		},
+		"./utils/www-authenticate": {
+			"types": "./lib/utils/www-authenticate.d.ts",
+			"default": "./lib/utils/www-authenticate.js"
+		},
+		"./utils/www-authenticate.js": {
+			"types": "./lib/utils/www-authenticate.d.ts",
+			"default": "./lib/utils/www-authenticate.js"
+		},
 		"./utils/direct-post-vp-aud-transaction-store": {
 			"types": "./lib/utils/direct-post-vp-aud-transaction-store.d.ts",
 			"default": "./lib/utils/direct-post-vp-aud-transaction-store.js"
@@ -44,6 +52,7 @@
 	"dependencies": {
 		"@hono/node-server": "2.0.6",
 		"@trustknots/vcknots": "workspace:*",
-		"hono": "4.12.27"
+		"hono": "4.12.27",
+		"zod": "4.3.6"
 	}
 }

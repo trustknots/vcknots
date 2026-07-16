@@ -2,8 +2,8 @@
 	"credential_issuer": "https://issuer.example.com",
 	"authorization_servers": ["https://authz.example.com"],
 	"credential_endpoint": "https://issuer.example.com/credential",
-	"batch_credential_endpoint": "https://issuer.example.com/batch_credential",
 	"deferred_credential_endpoint": "https://issuer.example.com/deferred_credential",
+	"nonce_endpoint": "https://issuer.example.com/nonce",
 	"credential_response_encryption": {
 		"alg_values_supported": ["ECDH-ES"],
 		"enc_values_supported": ["A128GCM"],
@@ -23,56 +23,191 @@
 		"UniversityDegreeCredential": {
 			"format": "jwt_vc_json",
 			"scope": "UniversityDegree",
-			"cryptographic_binding_methods_supported": ["did:example"],
+			"cryptographic_binding_methods_supported": ["did:key"],
 			"credential_signing_alg_values_supported": ["ES256"],
 			"credential_definition": {
-				"type": ["VerifiableCredential", "UniversityDegreeCredential"],
-				"credentialSubject": {
-					"given_name": {
-						"display": [
-							{
-								"name": "Given Name",
-								"locale": "en-US"
-							}
-						],
-						"mandatory": true,
-						"value_type": "string"
-					},
-					"family_name": {
-						"display": [
-							{
-								"name": "Surname",
-								"locale": "en-US"
-							}
-						]
-					},
-					"degree": {},
-					"gpa": {
-						"display": [
-							{
-								"name": "GPA"
-							}
-						]
-					}
-				}
+				"type": ["VerifiableCredential", "UniversityDegreeCredential"]
 			},
 			"proof_types_supported": {
 				"jwt": {
 					"proof_signing_alg_values_supported": ["ES256"]
 				}
 			},
-			"display": [
-				{
-					"name": "University Credential",
-					"locale": "en-US",
-					"logo": {
-						"uri": "https://university.example.edu/public/logo.png",
-						"alt_text": "a square logo of a university"
+			"credential_metadata": {
+				"display": [
+					{
+						"name": "University Credential",
+						"logo": {
+							"uri": "https://university.example.edu/public/logo.png",
+							"alt_text": "a square logo of a university"
+						},
+						"locale": "en-US",
+						"background_color": "#12107c",
+						"text_color": "#FFFFFF"
+					}
+				],
+				"claims": [
+					{
+						"path": ["credentialSubject", "given_name"],
+						"display": [
+							{
+								"name": "Given Name",
+								"locale": "en-US"
+							},
+							{
+								"name": "Given Name",
+								"locale": "ja-JP"
+							}
+						],
+						"mandatory": true
 					},
-					"background_color": "#12107c",
-					"text_color": "#FFFFFF"
+					{
+						"path": ["credentialSubject", "family_name"],
+						"display": [
+							{
+								"name": "Surname",
+								"locale": "en-US"
+							},
+							{
+								"name": "Surname",
+								"locale": "ja-JP"
+							}
+						]
+					},
+					{
+						"path": ["credentialSubject", "degree"],
+						"display": [
+							{
+								"name": "Degree",
+								"locale": "en-US"
+							},
+							{
+								"name": "Degree",
+								"locale": "ja-JP"
+							}
+						]
+					},
+					{
+						"path": ["credentialSubject", "gpa"],
+						"display": [
+							{
+								"name": "GPA",
+								"locale": "en-US"
+							},
+							{
+								"name": "GPA",
+								"locale": "ja-JP"
+							}
+						]
+					}
+				]
+			}
+		},
+		"UniversityDegreeCredentialSdJwt": {
+			"format": "dc+sd-jwt",
+			"scope": "UniversityDegreeSdJwt",
+			"credential_signing_alg_values_supported": ["ES256"],
+			"cryptographic_binding_methods_supported": ["jwk", "did:key"],
+			"proof_types_supported": {
+				"jwt": {
+					"proof_signing_alg_values_supported": ["ES256"]
 				}
-			]
+			},
+			"vct": "UniversityDegreeCredential",
+			"credential_metadata": {
+				"display": [
+					{
+						"name": "University Credential (SD-JWT)",
+						"logo": {
+							"uri": "https://university.example.edu/public/logo.png",
+							"alt_text": "a square logo of a university"
+						},
+						"locale": "en-US",
+						"background_color": "#12107c",
+						"text_color": "#FFFFFF"
+					}
+				],
+				"claims": [
+					{
+						"path": ["given_name"],
+						"display": [
+							{
+								"name": "Given Name",
+								"locale": "en-US"
+							},
+							{
+								"name": "Given Name",
+								"locale": "ja-JP"
+							}
+						]
+					},
+					{
+						"path": ["family_name"],
+						"display": [
+							{
+								"name": "Surname",
+								"locale": "en-US"
+							},
+							{
+								"name": "Surname",
+								"locale": "ja-JP"
+							}
+						]
+					},
+					{
+						"path": ["degree"],
+						"display": [
+							{
+								"name": "Degree",
+								"locale": "en-US"
+							},
+							{
+								"name": "Degree",
+								"locale": "ja-JP"
+							}
+						]
+					},
+					{
+						"path": ["gpa"],
+						"display": [
+							{
+								"name": "GPA",
+								"locale": "en-US"
+							},
+							{
+								"name": "GPA",
+								"locale": "ja-JP"
+							}
+						]
+					},
+					{
+						"path": ["address", "country"],
+						"display": [
+							{
+								"name": "Country",
+								"locale": "en-US"
+							},
+							{
+								"name": "Country",
+								"locale": "ja-JP"
+							}
+						]
+					},
+					{
+						"path": ["address", "region"],
+						"display": [
+							{
+								"name": "Region",
+								"locale": "en-US"
+							},
+							{
+								"name": "Region",
+								"locale": "ja-JP"
+							}
+						]
+					}
+				]
+			}
 		}
 	}
 }

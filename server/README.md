@@ -25,6 +25,13 @@ For details, see [single/README.md](./single/README.md).
 Single-tenant server implementation with Google Cloud integration.
 This package also uses `@trustknots/server-core` for shared app/routes/util logic.
 
+### `aws/`
+
+AWS Lambda server implementation. Handler sources live in `server/aws/src/handlers/` and vcknots context in `server/aws/src/context/` (`@trustknots/server-aws`).
+CDK infrastructure is under `server/aws/resources/`. AWS providers are in `aws/src/` (`@trustknots/aws`).
+
+For deploy and architecture details, see [aws/resources/README.md](./aws/resources/README.md).
+
 ### `multi/`
 
 Multi-tenant server implementation (work in progress). Endpoints are mounted with prefixes such as `/issuers`, `/authorizations`, `/verifiers`, etc.

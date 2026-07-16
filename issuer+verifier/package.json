@@ -54,7 +54,7 @@
 		"jose": "6.2.3",
 		"jsonwebtoken": "9.0.3",
 		"key-did-resolver": "4.0.0",
-		"zod": "4.4.3"
+		"zod": "4.3.6"
 	},
 	"devDependencies": {
 		"@types/jsonwebtoken": "9.0.10"

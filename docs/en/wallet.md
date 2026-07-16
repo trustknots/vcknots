@@ -99,7 +99,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/pkg/dispatcher/serializer"
 	"github.com/trustknots/vcknots/wallet/pkg/dispatcher/verifier"
 	"github.com/trustknots/vcknots/wallet/pkg/presenter"
-	oid4vp "github.com/trustknots/vcknots/wallet/pkg/presenter/oid4vp" // OID4VP plugin
+	oid4vp "github.com/trustknots/vcknots/wallet/pkg/presenter/oid4vp" // OpenID4VP plugin
 	"github.com/trustknots/vcknots/wallet/pkg/util"
 	
 	// Standard library for key generation and signing
@@ -128,7 +128,7 @@ func NewController() *vcknots_wallet.Controller {
     verificationDispatcher := verifier.NewVerificationDispatcher(verifier.WithDefaultConfig())
     idProfileDispatcher := idprof.NewIdentityProfileDispatcher(idprof.WithDefaultConfig())
 
-    // 2. Initialize the OID4VP plugin
+    // 2. Initialize the OpenID4VP plugin
     // (the presentation logic is implemented as a plugin)
     oid4vpPlugin, err := oid4vp.New(
         oid4vp.WithLogger(logger),
@@ -138,7 +138,7 @@ func NewController() *vcknots_wallet.Controller {
         panic(err)
     }
 
-    // 3. Register the OID4VP plugin with the presentation dispatcher
+    // 3. Register the OpenID4VP plugin with the presentation dispatcher
     presentationDispatcher := presenter.NewPresentationDispatcher(
         presenter.WithPlugin(presenter.Oid4vp, oid4vpPlugin),
     )
@@ -188,7 +188,7 @@ type IKeyEntry interface {
 For this tutorial, we use the in-memory mock implementation (`MockKeyEntry`) provided in `server_integration.go`.
 
 The `Sign` method of this `MockKeyEntry` is not just a simple wrapper around `ecdsa.Sign`.
-It includes the logic to generate ES256 signatures (SHA-256 hash) commonly required in OID4VP, and to serialize the result into IEEE P1363 format (a 64-byte byte string consisting of the concatenation of r and s).
+It includes the logic to generate ES256 signatures (SHA-256 hash) commonly required in OpenID4VP, and to serialize the result into IEEE P1363 format (a 64-byte byte string consisting of the concatenation of r and s).
 
 
 ```go
@@ -286,16 +286,16 @@ func receiveTestCredential(key *MockKeyEntry) (*vcknots_wallet.SavedCredential, 
 }
 ```
 
-### 3-3. Presenting a Credential (OID4VP)
+### 3-3. Presenting a Credential (OpenID4VP)
 
 - After receiving a request URI in the form `openid4vp://authorize?...` from the Verifier (Node.js server), the Controller’s `PresentCredential` method is called.
-- This method parses the `uriString` (OID4VP request), analyzes the request content (`presentation_definition`), searches the `credstore` for matching Credentials, uses `IKeyEntry` to sign a Verifiable Presentation (VP), and sends it to the Verifier’s `callback` endpoint via `HTTP POST`.
+- This method parses the `uriString` (OpenID4VP request), analyzes the request content (`presentation_definition`), searches the `credstore` for matching Credentials, uses `IKeyEntry` to sign a Verifiable Presentation (VP), and sends it to the Verifier’s `callback` endpoint via `HTTP POST`.
 - Based on the `presentation` function in `server_integration.go`, it processes the request URI obtained from the Node.js server (`/verifiers/test_verifier/request` endpoint).
 
 
 ```go
 func presentTestCredential(key *MockKeyEntry) error {
-    // 1. Obtain the OID4VP request URI from the Verifier (Node.js server)
+    // 1. Obtain the OpenID4VP request URI from the Verifier (Node.js server)
     // This URI is usually obtained by scanning a QR code
     // Here, we directly call /verifiers/test_verifier/request
     resp, err := http.Get("http://localhost:8080/verifiers/test_verifier/request")
@@ -434,8 +434,8 @@ This section explains the main Go type definitions used when interacting with th
     - `credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())` uses `go.etcd.io/bbolt` (an embedded KVS) by default and attempts to persist data to a local file such as `wallet.db`.
     - Make sure that you have write permissions for the execution directory.
 
-5. **Strict validation of OID4VP `client_id`:**
-    - This Wallet implements strict validation of `client_id` to conform to OID4VP conformance tests.
+5. **Strict validation of OpenID4VP `client_id`:**
+    - This Wallet implements strict validation of `client_id` to conform to OpenID4VP conformance tests.
     - Duplicate prefixes (for example, `x509_san_dns:x509_san_dns:...`) and malformed values are automatically rejected.
     - For the `x509_san_dns:` scheme, the certificate is extracted from the `x5c` header of the request JWT, and the Subject Alternative Name (SAN) DNS field of the certificate is matched against the `client_id` value.
     - See the `parseOID4VPClientID()` function and `x509_san_dns` validation logic in `wallet/presenter/plugins/oid4vp/oid4vp.go` for details.
@@ -469,12 +469,12 @@ This section explains the main Go type definitions used when interacting with th
 
 * **Q: `controller.ReceiveCredential` fails with `issuer metadata not found`.**  
   * **A:** The Node.js server may be running, but the `/.well-known/openid-credential-issuer` endpoint might not be functioning correctly. Run `curl http://localhost:8080/.well-known/openid-credential-issuer` (or the Issuer base URL specified in “4. Registering Wallet Metadata”) and confirm that JSON metadata is returned.
-* **Q: A `client_id` validation error occurs during OID4VP conformance testing.**
+* **Q: A `client_id` validation error occurs during OpenID4VP conformance testing.**
   * **A:** Conformance tests intentionally send malformed `client_id` values (such as duplicate prefixes or trailing whitespace) to test the Wallet's validation logic. The updated Wallet correctly rejects such invalid `client_id` values.
   * Example errors: `"invalid client_id: duplicate prefix detected"` or `"SAN of the certificate and client_id did not match"`
   * These errors are **expected behavior** and indicate that the Wallet is correctly enforcing its security checks.
 
-* **Q: An `x509: certificate is not standards compliant` error occurs during OID4VP conformance testing.**
+* **Q: An `x509: certificate is not standards compliant` error occurs during OpenID4VP conformance testing.**
   * **A:** Conformance test servers may use self-signed certificates or non-standard certificate structures for testing purposes.
   * **Solution:** Set `InsecureSkipX509Verify: true` only in test environments:
     ```go

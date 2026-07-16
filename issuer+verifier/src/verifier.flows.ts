@@ -96,8 +96,8 @@ const isPresentationExchange = (query: unknown): query is PresentationExchange =
   ('presentation_definition' in query || 'presentation_definition_uri' in query)
 
 export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow => {
-  const cnonce$ = context.providers.get('cnonce-provider')
-  const nonceStore$ = context.providers.get('cnonce-store-provider')
+  const cnonce$ = context.providers.get('nonce-provider')
+  const nonceStore$ = context.providers.get('nonce-store-provider')
   const query$ = context.providers.get('credential-query-provider')
   const verifierMetadata$ = context.providers.get('verifier-metadata-store-provider')
   const keyStore$ = context.providers.get('verifier-signature-key-store-provider')
@@ -119,7 +119,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
     async createVerifierMetadata(verifierId, metadata, options) {
       const current = await verifierMetadata$.fetch(verifierId)
       if (current) {
-        throw err('DUPLICATE_VERIFIER', {
+        throw err('duplicate_verifier', {
           message: `verifier ${verifierId} is already registered.`,
         })
       }
@@ -141,7 +141,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         await keyStore$.save(verifierId, keyAlg)
         const publicKey = await keyStore$.fetch(verifierId, keyAlg)
         if (!publicKey) {
-          throw err('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+          throw err('authz_verifier_key_not_found', {
             message: `Verifier public key for ${keyAlg} is not found.`,
           })
         }
@@ -151,7 +151,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       } else if ('publicKey' in options && options.publicKey !== undefined) {
         // use provided key pair (not support x509)
         if (!keyAlg) {
-          throw err('INTERNAL_SERVER_ERROR', {
+          throw err('internal_server_error', {
             message: 'alg is required in the provided publicKey.',
           })
         }
@@ -159,7 +159,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           verifierMetadata.jwks = { keys: [options.publicKey] }
           verifierMetadata.authorization_signed_response_alg = keyAlg
         } else if (options.format === 'jwk') {
-          throw err('INVALID_OPTIONS', {
+          throw err('invalid_options', {
             message: 'publicKey must be a JWK when format is jwk.',
           })
         } else if (options.format === 'pem' && typeof options.publicKey === 'string') {
@@ -168,7 +168,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           verifierMetadata.jwks = { keys: [{ ...jwk }] }
           verifierMetadata.authorization_signed_response_alg = keyAlg
         } else {
-          throw err('INVALID_OPTIONS', {
+          throw err('invalid_options', {
             message: 'publicKey must be a PEM string when format is pem.',
           })
         }
@@ -183,7 +183,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         // use provided key pair and x509 certificate
         // password protected private key is not supported
         if (!keyAlg) {
-          throw err('INTERNAL_SERVER_ERROR', {
+          throw err('internal_server_error', {
             message: 'alg is required in the provided privateKey.',
           })
         }
@@ -192,7 +192,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         const certificates = Certificate(certificateChain)
         const certValid = await certificate$.validate(certificates)
         if (!certValid) {
-          throw err('INVALID_CERTIFICATE', {
+          throw err('invalid_certificate', {
             message: 'The provided certificate is not valid.',
           })
         }
@@ -231,20 +231,20 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       const client_id_scheme = client_id.split(':')[0]
       const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_scheme)
       if (!authzRequestJAR) {
-        throw err('UNSUPPORTED_CLIENT_ID_SCHEME', {
+        throw err('unsupported_client_id_scheme', {
           message: 'client_id_scheme is not supported.',
         })
       }
       if (client_id_scheme === 'x509_san_dns' || client_id_scheme === 'x509_san_uri') {
         const certificate = await certificateStore$.fetch(verifierId)
         if (!certificate) {
-          throw err('CERTIFICATE_NOT_FOUND', {
+          throw err('certificate_not_found', {
             message: 'verifier certificate is not found.',
           })
         }
       }
 
-      const metadata = (await verifierMetadata$.fetch(verifierId)) ?? raise('VERIFIER_NOT_FOUND')
+      const metadata = (await verifierMetadata$.fetch(verifierId)) ?? raise('verifier_not_found')
 
       const args: CredentialQueryGenerationOptions = isPresentationExchange(query)
         ? {
@@ -268,7 +268,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
               if (descriptor.format) {
                 for (const format of Object.keys(descriptor.format)) {
                   if (!vpFormats.includes(format)) {
-                    throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
+                    throw err('verifier_vp_formats_not_supported', {
                       message: `The vp_format ${format} is not supported by the verifier.`,
                     })
                   }
@@ -293,7 +293,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           for (const credential of credentials) {
             if (credential.format) {
               if (!vpFormats.includes(credential.format)) {
-                throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
+                throw err('verifier_vp_formats_not_supported', {
                   message: `The vp_format ${credential.format} is not supported by the verifier.`,
                 })
               }
@@ -316,7 +316,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       // when using request_uri
       if (isRequestUri ?? true) {
         if (!options.base_url) {
-          throw err('INVALID_REQUEST', {
+          throw err('invalid_request', {
             message: 'base_url is required when is_request_uri is true',
           })
         }
@@ -356,18 +356,18 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         response_mode: response_mode || 'direct_post',
         client_id_scheme: client_id_scheme,
         client_metadata: metadata,
-        nonce,
+        nonce: nonce.nonce,
         ...parsedQuery,
         ...(transaction_data.length > 0 ? { transaction_data } : {}),
       })
     },
     async findRequestObject(verifierId, objectId) {
-      const metadata = (await verifierMetadata$.fetch(verifierId)) ?? raise('VERIFIER_NOT_FOUND')
+      const metadata = (await verifierMetadata$.fetch(verifierId)) ?? raise('verifier_not_found')
       const keyAlg = metadata.authorization_signed_response_alg ?? 'ES256'
 
       const requestObject = await requestObjectStore$.fetch(objectId)
       if (!requestObject) {
-        throw raise('REQUEST_OBJECT_NOT_FOUND', {
+        throw raise('request_object_not_found', {
           message: 'Request object is not found.',
         })
       }
@@ -379,7 +379,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       const client_id_scheme = clientId.split(':')[0]
       const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_scheme)
       if (!authzRequestJAR) {
-        throw raise('PROVIDER_NOT_FOUND', {
+        throw raise('provider_not_found', {
           message: 'Authorization request JAR provider is not found.',
         })
       }
@@ -390,19 +390,19 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         verifierId,
         requestObject,
         keyAlg,
-        nonce,
+        nonce.nonce,
         walletNonce
       )
 
       // const keyProvider = selectProvider(key$, keyAlg)
       // if (!keyProvider) {
-      //   throw raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+      //   throw raise('authz_verifier_key_not_found', {
       //     message: `Verifier signature key provider for ${keyAlg} is not found.`,
       //   })
       // }
       const signature = await keyStore$.sign(verifierId, keyAlg, payload, header)
       if (!signature) {
-        throw err('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+        throw err('authz_verifier_key_not_found', {
           message: `Verifier signing key for ${keyAlg} is not found.`,
         })
       }
@@ -416,13 +416,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
     async verifyPresentations(id, response, options) {
       const verifier = await verifierMetadata$.fetch(id)
       if (!verifier) {
-        throw raise('VERIFIER_NOT_FOUND', {
+        throw raise('verifier_not_found', {
           message: 'verifier is not found.',
         })
       }
 
       if (Array.isArray(response.vp_token) && response.vp_token.length === 1) {
-        throw err('UNSUPPORTED_VP_TOKEN', {
+        throw err('unsupported_vp_token', {
           message:
             'When a single Verifiable Presentation is returned, the array syntax MUST NOT be used.',
         })
@@ -430,17 +430,17 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       // TODO: Implement
       if (!response.presentation_submission) {
-        throw err('ILLEGAL_ARGUMENT', {
+        throw err('illegal_argument', {
           message: 'DQCL is not supported yet',
         })
       }
       if (Array.isArray(response.vp_token) && response.vp_token.length !== 1) {
-        throw err('UNSUPPORTED_VP_TOKEN', {
+        throw err('unsupported_vp_token', {
           message: 'Submitting multiple verifiable presentations are not supported yet',
         })
       }
       if (typeof response.vp_token !== 'string') {
-        throw err('UNSUPPORTED_VP_TOKEN', {
+        throw err('unsupported_vp_token', {
           message: 'vp_token object is not supported yet',
         })
       }

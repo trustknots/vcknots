@@ -15,13 +15,13 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
 
     async verify(vc): Promise<boolean> {
       if (typeof vc !== 'string') {
-        throw err('ILLEGAL_ARGUMENT', {
+        throw err('illegal_argument', {
           message: 'VC represented as object is not supported.',
         })
       }
       const decodedJwtVc = jwt.decode(vc, { complete: true })
       if (!decodedJwtVc) {
-        throw err('INVALID_CREDENTIAL')
+        throw err('invalid_credential')
       }
 
       let iss: string | undefined
@@ -37,7 +37,7 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
       if (iss && typeof iss === 'string') {
         const issUri = new URL(iss)
         if (issUri.hostname !== 'localhost' && issUri.protocol !== 'https:') {
-          throw err('INVALID_CREDENTIAL', {
+          throw err('invalid_credential', {
             message: 'Issuer URI must use https scheme',
           })
         }
@@ -52,13 +52,13 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
         }
         const metadataResponse = await fetch(metadataUrl)
         if (!metadataResponse.ok) {
-          throw err('INVALID_CREDENTIAL', {
+          throw err('invalid_credential', {
             message: `Failed to fetch issuer metadata: ${metadataResponse.statusText}`,
           })
         }
         const metadata = await metadataResponse.json()
         if (metadata.issuer !== iss) {
-          throw err('INVALID_CREDENTIAL', {
+          throw err('invalid_credential', {
             message: 'Issuer in metadata does not match VC issuer',
           })
         }
@@ -66,7 +66,7 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
         if (metadata.jwks_uri && typeof metadata.jwks_uri === 'string') {
           const jwksResponse = await fetch(metadata.jwks_uri)
           if (!jwksResponse.ok) {
-            throw err('JWKS_NOT_FOUND', {
+            throw err('jwks_not_found', {
               message: `Failed to fetch JWKS: ${jwksResponse.statusText}`,
             })
           }
@@ -74,13 +74,13 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
         } else if (metadata.jwks && typeof metadata.jwks === 'object') {
           jwks = metadata.jwks as jose.JSONWebKeySet
         } else {
-          throw err('JWKS_NOT_FOUND', {
+          throw err('jwks_not_found', {
             message: 'No JWKS or JWKS URI found in issuer metadata',
           })
         }
         publicJwk = jwks.keys[0]
         if (!publicJwk) {
-          throw err('JWKS_NOT_FOUND', {
+          throw err('jwks_not_found', {
             message: `Empty JWKS keys in jwt-vc-issuer for: ${issUri}`,
           })
         }
@@ -95,7 +95,7 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
         })
         console.log('Verified claims:', decode.payload)
       } else {
-        throw err('INVALID_CREDENTIAL')
+        throw err('invalid_credential')
       }
       return true
     },

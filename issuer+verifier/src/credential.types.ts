@@ -15,7 +15,7 @@ export const jwtVcJsonSchema = <T extends z.ZodType>(t: T) =>
   z.object({
     credentialSubject: z
       .object({
-        id: z.string().url(),
+        id: z.string().url().optional(),
       })
       .and(t)
       .optional(),
@@ -30,8 +30,8 @@ const jwtVcJsonHeaderSchema = z.object({
 const jwtVcJsonBodySchema = <T extends z.ZodType>(t: T) =>
   z.object({
     vc: verifiableCredentialSchema(jwtVcJsonSchema(t)),
-    iss: z.string(), // issuer
-    sub: z.string(), // id contained in the credentialSubject
+    iss: z.string().optional(), // issuer
+    sub: z.string().optional(), // id contained in the credentialSubject
     nbf: z.number().optional(), // issuanceDate
     exp: z.number().optional(), // expirationDate
     jti: z.string().optional(), // id of the verifiable credential
@@ -47,51 +47,6 @@ export type JwtVcJsonHeader = z.infer<typeof jwtVcJsonHeaderSchema>
 export type JwtVcJsonBody<T extends Record<string, unknown> = Record<string, unknown>> = z.infer<
   ReturnType<typeof jwtVcJsonBodySchema<z.ZodType<T>>>
 >
-
-enum CredentialFormats {
-  JWT_VC_JSON = 'jwt_vc_json',
-  JWT_VC_JSON_LD = 'jwt_vc_json-ld',
-  LDP_VC = 'ldp_vc',
-}
-
-interface ProofTypeJwt {
-  jwt: {
-    proof_signing_alg_values_supported: string[]
-  }
-}
-// https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-credential-issuer-metadata
-export interface IssuerCredentialConfiguration {
-  format: CredentialFormats
-  scope?: string
-  cryptographic_binding_methods_supported?: string[]
-  credential_signing_alg_values_supported?: string[]
-  proof_types_supported?: ProofTypeJwt
-  display?: {
-    name: string
-    locale?: string
-    logo?: {
-      uri?: string
-      alt_text?: string
-    }
-    description?: string
-    background_color?: string
-    background_image?: string
-    text_color?: string
-  }[]
-
-  // Custom implementation for jwt_vc_json
-  credential_definition: {
-    type: string[]
-    credentialSubject?: {
-      [name: string]: {
-        mandatory?: boolean
-        value_type?: string
-        display?: { name?: string; locale?: string }[]
-      }
-    }
-  }
-  order?: string[]
-}
 
 const jwkSchema = z
   .object({

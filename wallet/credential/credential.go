@@ -41,6 +41,7 @@ type Credential struct {
 	Claims      *CredentialClaim
 	ValidPeriod *CredentialValidPeriod
 	Proof       *CredentialProof
+	SDJwt       *SDJwtCredentialMetadata
 }
 
 type CredentialPresentation struct {
@@ -63,4 +64,18 @@ type CredentialProof struct {
 	Algorithm jose.SignatureAlgorithm `json:"alg"`
 	Signature []byte                  `json:"signature"`
 	Payload   []byte                  `json:"payload"`
+}
+
+type SDJwtCredentialMetadata struct {
+	SD          []string
+	SDAlg       string
+	Disclosures []SDJwtDisclosure
+}
+
+type SDJwtDisclosure struct {
+	Name           string
+	Value          any
+	Digest         string
+	EncodedValue   string
+	IsArrayElement bool
 }

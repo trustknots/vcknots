@@ -8,11 +8,11 @@ This guide explains how to set up and use the Issuer feature of VCKnots.
 
 ## 1. Prerequisites
 
-- Supports OpenID for Verifiable Credential Issuance - draft 13 ([OpenID for Verifiable Credential Issuance - draft 13](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html))  
+- Supports OpenID for Verifiable Credential Issuance 1.0 ([OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html))  
 The following items are not implemented yet and are planned for future support:
   - Only the Pre-Authorized Code Flow is supported at this time.
-  - `tx_code` in the Credential Offer is not supported yet.
   - `credential_response_encryption` in the Credential Request is not supported yet.
+  - The Credential Request supports the `jwt` proof type (`di_vp` and `attestation` is not supported yet.).
 - Node.js v14 or later is installed
 - TypeScript is configured
 - This document is based on the sample implementation of the server
@@ -46,6 +46,126 @@ const context = initializeContext({
 const issuerFlow = initializeIssuerFlow(context);
 const authzFlow = initializeAuthzFlow(context);
 ```
+
+## VcknotsContext
+
+`VcknotsContext` is the core runtime context shared across VCKnots features.
+
+It manages the following settings. Each configuration is provided through `VcknotsOptions`.
+
+- providers
+- extensions
+- debug
+- OAuth-related settings
+
+## VcknotsOptions
+
+Configuration options passed to `initializeContext()`.
+
+```typescript
+type VcknotsOptions = {
+  providers?: Providers
+  extensions?: Extensions
+  debug?: boolean
+  oauth?: OAuthOptions
+}
+```
+
+### providers
+
+Adds custom providers.
+
+```typescript
+const context = initializeContext({
+  providers: [
+    myProvider,
+  ],
+})
+```
+
+---
+
+### extensions
+
+Adds VCKnots extensions.
+
+```typescript
+const context = initializeContext({
+  extensions: [
+    myExtension,
+  ],
+})
+```
+
+### debug
+
+Development option.
+
+```typescript
+const context = initializeContext({
+  debug: true,
+})
+```
+
+When `debug: true`:
+
+- insecure `http://` endpoints are allowed
+- localhost development workflows are enabled
+
+When `debug: false` or not set(undefined):
+
+- using `http://` URLs in the following `CredentialIssuerMetadata` endpoints will throw an `insecure_http_not_allowed` error:
+  - `credential_endpoint`
+  - `deferred_credential_endpoint`
+
+```json
+{
+  "error": "insecure_http_not_allowed",
+  "error_description": "CredentialIssuerMetadata contains insecure http url in credential_endpoint: http://localhost:8080/credentials"
+}
+```
+
+Use HTTPS endpoints in production environments.
+
+---
+
+### oauth
+
+Specifies Access Token related settings.
+
+```typescript
+const context = initializeContext({
+  oauth: {
+    senderConstrainedAccessToken: {
+      method: 'dpop',
+      dpop: {
+        mode: 'required',
+      },
+    },
+  },
+})
+```
+
+#### method
+
+Specifies the sender constraint method for Access Tokens.
+
+```typescript
+type SenderConstraintMethod = 'none' | 'dpop' | 'mtls'
+```
+
+| Value | Description |
+|---|---|
+| `none` | Sender-constrained access tokens are not used |
+| `dpop` | Uses DPoP-bound access tokens |
+| `mtls` | Uses mTLS sender-constrained access tokens (planned) |
+
+---
+
+#### dpop.mode
+
+Specifies the DPoP enforcement level.
+For details, see [5. Access Token Issuance](#5-access-token-issuance).
 
 ## 3. Sample Implementation of the Issuer Feature
 
@@ -95,9 +215,9 @@ serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, a
     ...issuerMetadataConfig,
     credential_issuer: CredentialIssuer(baseUrl),
     authorization_servers: [baseUrl],
-    credential_endpoint: `${baseUrl}/issue/credentials`,
-    batch_credential_endpoint: `${baseUrl}/batch_credential`,
+    credential_endpoint: `${baseUrl}/credentials`,
     deferred_credential_endpoint: `${baseUrl}/deferred_credential`,
+    nonce_endpoint: `${baseUrl}/nonce`,
   })
 
   await initializeIssuerMetadata(issuerMetadata);
@@ -164,88 +284,265 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
 
 ```json
 {
-	"credential_issuer": "http://localhost:8080",
-	"authorization_servers": [
-		"http://localhost:8080"
-	],
-	"credential_endpoint": "http://localhost:8080/issue/credentials",
-	"batch_credential_endpoint": "http://localhost:8080/issue/batch_credential",
-	"deferred_credential_endpoint": "http://localhost:8080/issue/deferred_credential",
-	"credential_configurations_supported": {
-		"UniversityDegreeCredential": {
-			"format": "jwt_vc_json",
-			"scope": "UniversityDegree",
-			"cryptographic_binding_methods_supported": [
-				"did:example"
-			],
-			"credential_definition": {
-				"type": [
-					"VerifiableCredential",
-					"UniversityDegreeCredential"
-				],
-				"credentialSubject": {
-					"given_name": {
-						"mandatory": true,
-						"value_type": "string",
-						"display": [
-							{
-								"name": "Given Name",
-								"locale": "en-US"
-							}
-						]
-					},
-					"family_name": {
-						"display": [
-							{
-								"name": "Surname",
-								"locale": "en-US"
-							}
-						]
-					},
-					"degree": {},
-					"gpa": {
-						"display": [
-							{
-								"name": "GPA"
-							}
-						]
-					}
-				}
-			},
-			"proof_types_supported": {
-				"jwt": {
-					"proof_signing_alg_values_supported": [
-						"ES256"
-					]
-				}
-			},
-			"credential_signing_alg_values_supported": [
-				"ES256"
-			],
-			"display": [
-				{
-					"name": "University Credential",
-					"locale": "en-US",
-					"logo": {
-						"uri": "https://university.example.edu/public/logo.png",
-						"alt_text": "a square logo of a university"
-					},
-					"background_color": "#12107c",
-					"text_color": "#FFFFFF"
-				}
-			]
-		}
-	},
-	"display": [
-		{
-			"name": "Example University",
-			"locale": "en-US"
-		},
-		{
-			"name": "Example Université",
-			"locale": "fr-FR"
-		}
-	]
+    "credential_issuer": "http://localhost:8080",
+    "authorization_servers": [
+        "http://localhost:8080"
+    ],
+    "credential_endpoint": "http://localhost:8080/credentials",
+    "nonce_endpoint": "http://localhost:8080/nonce",
+    "deferred_credential_endpoint": "http://localhost:8080/deferred_credential",
+    "credential_response_encryption": {
+        "alg_values_supported": [
+            "ECDH-ES"
+        ],
+        "enc_values_supported": [
+            "A128GCM"
+        ],
+        "encryption_required": false
+    },
+    "credential_configurations_supported": {
+        "UniversityDegreeCredential": {
+            "format": "jwt_vc_json",
+            "scope": "UniversityDegree",
+            "cryptographic_binding_methods_supported": [
+                "did:key"
+            ],
+            "proof_types_supported": {
+                "jwt": {
+                    "proof_signing_alg_values_supported": [
+                        "ES256"
+                    ]
+                }
+            },
+            "credential_signing_alg_values_supported": [
+                "ES256"
+            ],
+            "credential_metadata": {
+                "display": [
+                    {
+                        "name": "University Credential",
+                        "locale": "en-US",
+                        "logo": {
+                            "uri": "https://university.example.edu/public/logo.png",
+                            "alt_text": "a square logo of a university"
+                        },
+                        "background_color": "#12107c",
+                        "text_color": "#FFFFFF"
+                    }
+                ],
+                "claims": [
+                    {
+                        "path": [
+                            "credentialSubject",
+                            "given_name"
+                        ],
+                        "mandatory": true,
+                        "display": [
+                            {
+                                "name": "Given Name",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Given Name",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "credentialSubject",
+                            "family_name"
+                        ],
+                        "display": [
+                            {
+                                "name": "Surname",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Surname",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "credentialSubject",
+                            "degree"
+                        ],
+                        "display": [
+                            {
+                                "name": "Degree",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Degree",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "credentialSubject",
+                            "gpa"
+                        ],
+                        "display": [
+                            {
+                                "name": "GPA",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "GPA",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "credential_definition": {
+                "type": [
+                    "VerifiableCredential",
+                    "UniversityDegreeCredential"
+                ]
+            }
+        },
+        "UniversityDegreeCredentialSdJwt": {
+            "format": "dc+sd-jwt",
+            "scope": "UniversityDegreeSdJwt",
+            "cryptographic_binding_methods_supported": [
+                "jwk",
+                "did:key"
+            ],
+            "proof_types_supported": {
+                "jwt": {
+                    "proof_signing_alg_values_supported": [
+                        "ES256"
+                    ]
+                }
+            },
+            "credential_signing_alg_values_supported": [
+                "ES256"
+            ],
+            "credential_metadata": {
+                "display": [
+                    {
+                        "name": "University Credential (SD-JWT)",
+                        "locale": "en-US",
+                        "logo": {
+                            "uri": "https://university.example.edu/public/logo.png",
+                            "alt_text": "a square logo of a university"
+                        },
+                        "background_color": "#12107c",
+                        "text_color": "#FFFFFF"
+                    }
+                ],
+                "claims": [
+                    {
+                        "path": [
+                            "given_name"
+                        ],
+                        "display": [
+                            {
+                                "name": "Given Name",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Given Name",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "family_name"
+                        ],
+                        "display": [
+                            {
+                                "name": "Surname",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Surname",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "degree"
+                        ],
+                        "display": [
+                            {
+                                "name": "Degree",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Degree",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "gpa"
+                        ],
+                        "display": [
+                            {
+                                "name": "GPA",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "GPA",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "address",
+                            "country"
+                        ],
+                        "display": [
+                            {
+                                "name": "Country",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Country",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    },
+                    {
+                        "path": [
+                            "address",
+                            "region"
+                        ],
+                        "display": [
+                            {
+                                "name": "Region",
+                                "locale": "en-US"
+                            },
+                            {
+                                "name": "Region",
+                                "locale": "ja-JP"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "vct": "UniversityDegreeCredential"
+        }
+    },
+    "display": [
+        {
+            "name": "Example University",
+            "locale": "en-US"
+        },
+        {
+            "name": "Example Université",
+            "locale": "fr-FR"
+        }
+    ]
 }
 ```
 
@@ -254,15 +551,45 @@ curl http://localhost:8080/.well-known/openid-credential-issuer
 Endpoint to create a credential offer:
 
 ```typescript
-app.post('issue/configurations/:configuration/offer', async (c) => {
+app.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
-      const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
+      const parseResult = CredentialConfigurationId.schema.safeParse(c.req.param('configuration'))
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid credential configuration ID.',
+          },
+          400
+        )
+      }
+      const configurations = [parseResult.data]
+      const rawBody = await c.req.text()
 
-      const offer = await issuerFlow.offerCredential(issuer, configurations, {
+      let options: OfferOptions | undefined
+      if (rawBody.trim().length > 0) {
+        try {
+          options = JSON.parse(rawBody) as OfferOptions
+        } catch {
+          return c.json(
+            {
+              error: 'invalid_request',
+              error_description: 'Request body must be valid JSON.',
+            },
+            400
+          )
+        }
+      }
+
+      const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
+        txCode: options?.tx_code,
+        authorizationServer: options?.authorization_server,
       })
+
       console.log('offer:', offer)
+      console.log('tx_code:', tx_code)
 
       return c.text(
         `openid-credential-offer://?credential_offer=${encodeURIComponent(JSON.stringify(offer))}`
@@ -279,14 +606,27 @@ app.post('issue/configurations/:configuration/offer', async (c) => {
 
 **Request**
 
+Include a request body (JSON) only when specifying optional parameters.
+
+- `tx_code` can be used to include a transaction code in the Credential Offer.
+- `authorization_server` can be included only when the Issuer Metadata contains multiple entries in `authorization_servers`.
+
 ```bash
-curl -X POST http://localhost:8080/issue/configurations/UniversityDegreeCredential/offer
+curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tx_code": {
+      "input_mode": "numeric",
+      "length": 6,
+      "description": "Please enter the one-time code."
+    }
+  }'
 ```
 
 **Response**
 
 ```raw
-openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%3A8080%22%2C%22credential_configuration_ids%22%3A%5B%22UniversityDegreeCredential%22%5D%2C%22grants%22%3A%7B%22urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code%22%3A%7B%22pre-authorized_code%22%3A%22343ce17f1d274aa8bb3d19c140484889%22%7D%7D%7D
+openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%3A8080%22%2C%22credential_configuration_ids%22%3A%5B%22UniversityDegreeCredentialSdJwt%22%5D%2C%22grants%22%3A%7B%22urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code%22%3A%7B%22pre-authorized_code%22%3A%2268baf35e74ae430684662d85ea87160e%22%2C%22tx_code%22%3A%7B%22input_mode%22%3A%22numeric%22%2C%22length%22%3A6%2C%22description%22%3A%22Please%20enter%20the%20one-time%20code.%22%7D%7D%7D%7D
 ```
 
 
@@ -326,8 +666,8 @@ curl  http://localhost:8080/.well-known/oauth-authorization-server
 {
   "pre-authorized_grant_anonymous_access_supported": true,
   "issuer": "http://localhost:8080",
-  "authorization_endpoint": "http://localhost:8080/authz/authorize",
-  "token_endpoint": "http://localhost:8080/authz/token",
+  "authorization_endpoint": "http://localhost:8080/authorize",
+  "token_endpoint": "http://localhost:8080/token",
   "scopes_supported": [
       "openid"
   ],
@@ -342,30 +682,107 @@ curl  http://localhost:8080/.well-known/oauth-authorization-server
 Endpoint to issue an access token:
 
 ```typescript
-app.post("authz/token", async (c) => {
-  const request = await c.req.formData();
-  const tokenRequest = AuthzTokenRequest(Object.fromEntries(request.entries()));
-  console.log("tokenRequest:", tokenRequest);
-  const issuer = AuthorizationServerIssuer(issuerId);
+app.post('/token', async (c) => {
+  const request = await c.req.formData()
+  const requestData = Object.fromEntries(request.entries())
+  const issuer = AuthorizationServerIssuer(baseUrl)
 
-  const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest);
-  return c.json(accessToken);
-});
+  const clientResolution = await authzFlow.resolveTokenRequestClientPolicy(
+    issuer,
+    requestData
+  )
+  if (!clientResolution.ok) {
+    return c.json(
+      {
+        error: clientResolution.error,
+        error_description: clientResolution.error_description,
+      },
+      400
+    )
+  }
 
+  const dpopMode = clientResolution.dpopMode
+  const dpopProof = parseDpopHeader(c.req.header('DPoP'))
 
+  if (
+    (dpopMode === 'required' && !dpopProof.ok) ||
+    (dpopMode !== 'off' && !dpopProof.ok && dpopProof.reason !== 'missing')
+  ) {
+    return c.json(
+      {
+        error: 'invalid_request',
+        error_description:
+          dpopProof.reason === 'missing'
+            ? 'DPoP proof JWT is required.'
+            : dpopProof.reason === 'duplicate'
+              ? 'DPoP header must appear exactly once.'
+              : 'DPoP header must contain a compact JWT.',
+      },
+      400
+    )
+  }
+
+  const parseResult = AuthzTokenRequest.schema.safeParse(requestData)
+  if (!parseResult.success) {
+    return c.json(
+      {
+        error: 'invalid_request',
+        error_description: 'Invalid token request parameters.',
+      },
+      400
+    )
+  }
+  const tokenRequest = parseResult.data
+  const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
+    clientId: clientResolution.clientId,
+    ...(dpopMode !== 'off' && dpopProof.ok
+      ? {
+          dpopProof: {
+            proofJwt: dpopProof.proofJwt,
+            htm: c.req.method,
+            htu: `${baseUrl}/token`,
+            nonceRequired: true,
+          },
+        }
+      : {}),
+  })
+  return c.json(accessToken)
+})
 ```
+
+The **request body is `application/x-www-form-urlencoded`** (`AuthzTokenRequest` is built from form fields). For the full handler—including branches such as **`invalid_dpop_proof`** (`invalid_dpop_proof`) and **`use_dpop_nonce`** (with a **`DPoP-Nonce`** header)—see [server/core/src/routes/authz.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts).
+
+#### Client authentication with private_key_jwt
+
+At the token endpoint, registered OAuth clients from `server/samples/oauth-clients.json` are used to verify RFC 7523 JWT bearer client authentication when `token_endpoint_auth_method` is `private_key_jwt`.
+
+For field-level documentation of `oauth-server.json` and `oauth-clients.json`, see "OAuth policy / OAuth client configuration files" in [server/single/README.md](https://github.com/trustknots/vcknots/blob/main/server/single/README.md).
+
+The client is resolved in this order:
+
+1. If the token request body contains `client_id`, that value is used first.
+2. If `client_id` is omitted, the client id is derived from the `client_assertion` JWT `iss` / `sub`.
+3. If neither source yields a client id, the request is treated as an anonymous token request.
+
+For an anonymous Pre-Authorized Code token request, the `anonymous_client` policy is applied only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. If it is omitted or `false`, anonymous access is not allowed and the request fails with `invalid_client`.
+
+If a client id can be resolved but no registered client exists, the request fails with `invalid_client`. For clients registered with `token_endpoint_auth_method: "private_key_jwt"`, the server verifies that `client_assertion_type` is `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`, that `client_assertion` is a compact JWT, that `iss` / `sub` match the registered `client_id`, and that `aud` matches the registered `client_assertion_audience` or the Authorization Server token endpoint / issuer.
+
+The server also requires and validates `exp`, `iat`, and `jti`; if `nbf` is present, it must be within the allowed clock-skew window. `iat` / `nbf` are constrained according to the FAPI 2.0 Security Profile clock-skew requirements. The `jti` is stored per client and reused client assertions are rejected.
+
+The JOSE header `alg` must not be `none` or an `HS*` algorithm. If the Authorization Server metadata has `token_endpoint_auth_signing_alg_values_supported`, the assertion algorithm must be included in that list. If the client registration has `token_endpoint_auth_signing_alg`, the JWT header `alg` must match it. The signature is verified with a public key from the registered client's `jwks.keys`.
+
+The authenticated client id is included in the issued access token payload as `client_id`. When DPoP is also used, private_key_jwt client authentication and DPoP Proof verification are performed independently.
 
 **Example**:
 
 **Request**
 
 ```bash
-curl -X POST http://localhost:8080/authz/token \
-  -H "Content-Type: application/json" \
-  -d ' {
-    "grant_type": "urn:ietf:params:oauth:grant-type:pre-authorized_code",
-    "pre-authorized_code": "343ce17f1d274aa8bb3d19c140484889"
-  }'
+curl -X POST http://localhost:8080/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:pre-authorized_code" \
+  --data-urlencode "pre-authorized_code=343ce17f1d274aa8bb3d19c140484889"
 ```
 
 **Response**
@@ -374,65 +791,87 @@ curl -X POST http://localhost:8080/authz/token \
 {
   "access_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjgwODAiLCJzdWIiOiIzNDNjZTE3ZjFkMjc0YWE4YmIzZDE5YzE0MDQ4NDg4OSIsImV4cCI6MTc2MTk3NjE1NiwiaWF0IjoxNzYxODg5NzU2fQ.vsV71EEtAo36jcb9N8un2cn36Oo_H1qtKuIp0uerdvI2jNcBhN7ltGeqmk1AVZhpk5kQZcfbkSiHje-j1Iv1zg",
   "token_type": "bearer",
-  "expires_in": 86400,
-  "c_nonce": "3ccc7973abef4102ad70a871e200304b",
-  "c_nonce_expires_in": 300000
+  "expires_in": 86400
 }
 ```
 
-### 6. Issuing a Credential
+#### Token requests with DPoP Proof
 
-Endpoint to issue a credential:
+The Authorization Server OAuth policy controls DPoP Proof verification at the token endpoint.
+
+| mode | Token endpoint behavior |
+|------|--------------------------|
+| `off` | DPoP is not used. The server issues a Bearer access token. |
+| `optional` | If the DPoP header is absent, the server issues a Bearer access token. If the DPoP header is present, the server verifies the proof and issues a DPoP-bound access token. |
+| `required` | The DPoP header is required. A missing or malformed DPoP header results in `invalid_request`. |
+
+If the DPoP Proof has no `nonce`, or the nonce is invalid, the Authorization Server returns `use_dpop_nonce` with a `DPoP-Nonce` response header. The Wallet retries the token request with this nonce in the DPoP Proof JWT `nonce` claim.
+
+```http
+HTTP/1.1 400 Bad Request
+DPoP-Nonce: 9288f7b2dffb42c2b08f2f4d4d8635d8
+Content-Type: application/json
+
+{
+  "error": "use_dpop_nonce",
+  "error_description": "Authorization server requires nonce in DPoP proof."
+}
+```
+
+When DPoP Proof verification succeeds, the response `token_type` is `DPoP`. The issued access token also contains `cnf.jkt`, the JWK Thumbprint of the public key from the DPoP Proof JOSE header.
+
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "DPoP",
+  "expires_in": 86400
+}
+```
+
+Subsequent requests using a DPoP-bound access token must present a DPoP Proof signed with the private key corresponding to the same public key.
+
+#### Differences in error responses between the token endpoint (AS) and credential endpoint (RS)
+
+In [server/core](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/authz.ts), the HTTP status and challenge behavior differ by role:
+
+- **`POST /token` (Authorization Server):** Most DPoP / request errors are returned as **HTTP 400** with a JSON body (`invalid_request` / `invalid_dpop_proof` / `use_dpop_nonce`). For `use_dpop_nonce`, the response includes a **`DPoP-Nonce`** header; **`WWW-Authenticate` is not sent** in the current implementation.
+- **`POST /credentials` (Resource Server):** Failures in access token or DPoP verification are mostly **HTTP 401**. For **`invalid_token`**, the response includes **`WWW-Authenticate: Bearer`** (`realm`, `error`, `error_description`). For **`invalid_dpop_proof`** and **`use_dpop_nonce`** (credential-side message), the response includes **`WWW-Authenticate: DPoP`**, and in the latter case often a **`DPoP-Nonce`** header as well. When the Credential Request body is not JSON or does not match the schema, the response is **HTTP 400** with **`invalid_credential_request`**.
+
+### 6. Nonce Endpoint
+
+This endpoint corresponds to the OpenID4VCI [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint). It is used when a Wallet obtains a c_nonce before sending a credential request. 
+
+When `nonce_endpoint` is set in the Issuer metadata, the Wallet references the nonce endpoint URL via the metadata obtained from `/.well-known/openid-credential-issuer`.
+
+Configure the DPoP mode using both the OAuth policy in `server/samples/oauth-server.json` and sender constraint settings on registered OAuth clients. Pre-Authorized Code token requests without `client_id` / `client_assertion` are treated as anonymous token requests and use the `anonymous_client` policy only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. Registered clients without sender constraint settings use the `default_client` policy.
+
+When the OAuth policy DPoP mode is not `off`, `POST /nonce` returns a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values.
+
+`c_nonce` is used for credential proofs. `DPoP-Nonce` is used for DPoP Proofs presented to the token endpoint. Since they have different purposes, their TTLs can be configured separately.
+
+#### POST /nonce - Create nonce (c_nonce)
 
 ```typescript
-app.post('issue/credentials', async (c) => {
+app.post('/nonce', async (c) => {
   try {
-    const issuer = AuthorizationServerIssuer(baseUrl)
-
-    const request = await c.req.json()
-    const parsedReq = CredentialRequest(request)
-
-    // Access token validation
-    const accessToken = c.req.header('Authorization')?.replace('Bearer ', '')
-    if (!accessToken) {
-      return c.json(
-        {
-          error: 'invalid_token',
-          error_description: 'Access token is required.',
-        },
-        401
-      )
+    const C_NONCE_TTL_MS = 2 * 60 * 1000  // 2 minutes
+    const DPOP_NONCE_TTL_MS = 5 * 60 * 1000  // 5 minutes
+    const cnonce = await issuerFlow.createNonce(C_NONCE_TTL_MS)
+    const dpopMode = await resolveAuthzPolicyDpopMode(
+      authzFlow,
+      AuthorizationServerIssuer(baseUrl),
+      'default_client'
+    )
+    c.header('Cache-Control', 'no-store')
+    if (dpopMode !== 'off') {
+      const dpopNonce = await issuerFlow.createNonce(DPOP_NONCE_TTL_MS)
+      c.header('DPoP-Nonce', dpopNonce)
     }
-    const isValid = await authzFlow.verifyAccessToken(issuer, accessToken)
-    console.log('isValid:', isValid)
-    if (!isValid) {
-      return c.json(
-        {
-          error: 'invalid_token',
-          error_description: 'Access token is invalid.',
-        },
-        401
-      )
-    }
-    // Credential Issuance
-    const credential = await issuerFlow.issueCredential(CredentialIssuer(baseUrl), parse, {
-      alg: 'ES256',
-      cnonce: {
-        c_nonce_expires_in: 60 * 5 * 1000,
-      },
-      claims: {
-        given_name: 'Test',
-        family_name: 'Smith',
-        degree: '5',
-        gpa: 'test',
-      }
-,
-    })
-
-    return c.json(credential)
+    return c.json({ c_nonce: cnonce }, 200)
   } catch (err) {
     const errorResponse = handleError(err)
-    return c.json(errorResponse, 400)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
   }
 })
 ```
@@ -442,27 +881,280 @@ app.post('issue/credentials', async (c) => {
 **Request**
 
 ```bash
-curl -X POST http://localhost:8080/issue/credentials \
-  -H "Authorization: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjgwODAiLCJzdWIiOiJmZGMzMzIzYmM3MTg0ZmJkYWE0NTc2YTgwODU2OGE0MSIsImV4cCI6MTc2MTk3ODAwNSwiaWF0IjoxNzYxODkxNjA1fQ.PBKg31GJbIIKqtQL6gpZYoIM_PGlY681u4Rjjhxek38Kzl3prEBggXcqjUq3l-cBRYC1KS1fcJY6jUiUllwyJw" \
-  -H "Content-Type: application/json" \
-  --data '{
-  "format": "jwt_vc_json",
-  "credential_definition": {
-    "type": ["VerifiableCredential", "UniversityDegreeCredential"]
-  },
-  "proof": {
-    "proof_type": "jwt",
-    "jwt": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMiwiYXVkIjoiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZS5jb20ifQ.zgj0A19Zo9EMMYtvGJtIehcq6eSmr_VEmiCMz-1ZM0yepvh8pqaSBdU83jXWr7Mgy2BRzVuGQL3WcY55GljjlQ"
+curl -i -X POST http://localhost:8080/nonce
+```
+
+**Response**
+
+```http
+HTTP/1.1 200 OK
+Cache-Control: no-store
+DPoP-Nonce: 9288f7b2dffb42c2b08f2f4d4d8635d8
+Content-Type: application/json
+
+{
+  "c_nonce": "3ccc7973abef4102ad70a871e200304b"
+}
+```
+
+If the OAuth policy DPoP mode is `off`, the `DPoP-Nonce` header is not returned.
+
+**Implementation example**:
+
+- [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts)
+
+#### GET /nonce/:nonce - Validate nonce
+
+```typescript
+app.get('/nonce/:nonce', async (c) => {
+  try {
+    const nonce = c.req.param('nonce')
+    const valid = await issuerFlow.validateNonce(nonce)
+    return c.json({ valid })
+  } catch (err) {
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
   }
-}'
+})
+```
+
+**Example**:
+
+**Request**
+
+```bash
+curl http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
 ```
 
 **Response**
 
 ```json
 {
-  "credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2YyI6eyJAY29udGV4dCI6WyJodHRwczovL3d3dy53My5vcmcvMjAxOC9jcmVkZW50aWFscy92MSJdLCJpZCI6IjM4YzEwMWQ2LTEwZDktNGU0Mi05MDlkLWY1N2Y0OWIyMTZjNiIsInR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJVbml2ZXJzaXR5RGVncmVlQ3JlZGVudGlhbCJdLCJpc3N1ZXIiOiJodHRwOi8vbG9jYWxob3N0OjgwODAiLCJpc3N1YW5jZURhdGUiOiIyMDI1LTEwLTMxVDA3OjAzOjA4LjUzN1oiLCJjcmVkZW50aWFsU3ViamVjdCI6eyJpZCI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSIsImdpdmVuX25hbWUiOiJ0ZXN0IiwiZmFtaWx5X25hbWUiOiJ0YXJvIiwiZGVncmVlIjoiNSIsImdwYSI6InRlc3QifX0sImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA4MCIsInN1YiI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSJ9.LwcUtOS0b2sEEKp-c1CpLZorqDF0heRUuJm_zPSuZVSa7XRWkghkvzq7olr2E4BOcoZryn-QCbGVugcZTPs4LA",
-  "c_nonce_expires_in": 300000
+  "valid": true
+}
+```
+
+#### DELETE /nonce/:nonce - Revoke nonce
+
+Revokes (deletes) the specified nonce. Returns 404 if the nonce does not exist.
+
+```typescript
+app.delete('/nonce/:nonce', async (c) => {
+  try {
+    const nonce = c.req.param('nonce')
+    const deleted = await issuerFlow.revokeNonce(nonce)
+    if (!deleted) {
+      return c.json(
+        { error: 'not_found', error_description: 'Nonce not found.' },
+        404
+      )
+    }
+    return c.json({ deleted: true }, 200)
+  } catch (err) {
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
+  }
+})
+```
+
+**Example**:
+
+**Request**
+
+```bash
+curl -X DELETE http://localhost:8080/nonce/3ccc7973abef4102ad70a871e200304b
+```
+
+**Response (200)**
+
+```json
+{
+  "deleted": true
+}
+```
+
+**Response (404 - nonce not found)**
+
+```json
+{
+  "error": "not_found",
+  "error_description": "Nonce not found."
+}
+```
+
+### 7. Issuing a Credential
+
+Endpoint to issue a credential:
+
+#### DPoP-bound access token verification at the credential endpoint
+
+The OAuth policy DPoP mode controls how the access token and DPoP Proof are handled at the credential endpoint.
+
+| mode | Credential endpoint behavior |
+|------|------------------------------|
+| `off` | DPoP is not used. Requests that send `Authorization: DPoP <access_token>` or a `DPoP` header are rejected. |
+| `optional` | DPoP is not required at the credential endpoint. Access tokens without sender binding may be presented with **`Authorization: Bearer` only**. If the token includes **`cnf.jkt`** (sender-constrained / DPoP-bound), **`Authorization: Bearer` alone is rejected**; you must use **`Authorization: DPoP <access_token>`** together with the **`DPoP`** header (DPoP Proof JWT). |
+| `required` | Every request must include **`Authorization: DPoP <access_token>`** and the **`DPoP`** header (DPoP Proof JWT). **`Authorization: Bearer` only** is rejected. |
+
+Because the credential endpoint acts as a resource server, when a DPoP-bound access token is used, the DPoP Proof is validated per RFC 9449.
+
+- The **`DPoP`** header must be a single compact JWT (the implementation rejects values that contain a **comma**, treating them as merged duplicate headers).
+- The DPoP Proof JOSE header **`typ`** must be **`dpop+jwt`**.
+- **`alg`** must not be **`none`** or an HMAC family algorithm; an asymmetric signing algorithm must be used.
+- The **`jwk`** header must contain a public key and must **not** include private-key material.
+- The DPoP Proof JWT signature must verify with the **`jwk`** public key.
+- The payload must include **`jti`**, **`iat`**, **`htm`**, and **`htu`**.
+- **`htm`** must match the actual HTTP method.
+- **`htu`** must match the credential endpoint URI excluding query string and fragment.
+- At the credential endpoint, **`ath`** is required and must equal the SHA-256 hash of the presented access token, base64url-encoded.
+- **`cnf.jkt`** on the access token must match the JWK thumbprint from the DPoP Proof **`jwk`**.
+- **`jti`** values are tracked to reject replay of the same DPoP Proof.
+- By default **`iat`** is considered valid within **`maxTokenAge` 300 seconds** and **`clockTolerance` 60 seconds** (issuer+verifier DPoP proof provider; factory options can change this).
+
+For credential proof JWTs, `iss` is not always omitted just because the access token was obtained through the Pre-Authorized Code Flow. When the token endpoint issues an access token through anonymous access, the access token has no `client_id`, so the proof JWT must omit `iss`. When the access token was obtained as a registered OAuth client, the access token carries `client_id`. Pass the result of `authorizeCredentialEndpointAccess` as `options.authorizationContext` to `issueCredential`; the library uses the `client_id` from the access token internally for proof verification. If the proof JWT includes `iss`, it must match that `client_id`. You do not need to set `proofJwt.clientId` separately.
+
+If the DPoP Proof is invalid, the credential endpoint responds with **`401 Unauthorized`** and **`WWW-Authenticate: DPoP`**. For **`invalid_token`** issues (JWT shape/signature/`issuer` mismatch, etc.), the response is also **401**, with **`WWW-Authenticate: Bearer`** (`realm`, `error="invalid_token"`, etc.).
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: DPoP realm="http://localhost:8080", error="invalid_dpop_proof", error_description="DPoP proof JWT ath claim does not match the access token."
+Content-Type: application/json
+
+{
+  "error": "invalid_dpop_proof",
+  "error_description": "DPoP proof JWT ath claim does not match the access token."
+}
+```
+
+If **`use_dpop_nonce`** is returned, the credential endpoint responds with **`401 Unauthorized`** and includes **`DPoP-Nonce`** in the response headers. The Wallet retries the credential request putting the **`DPoP-Nonce`** header value into the **`nonce`** claim of the DPoP Proof JWT.
+
+```http
+HTTP/1.1 401 Unauthorized
+DPoP-Nonce: 9288f7b2dffb42c2b08f2f4d4d8635d8
+WWW-Authenticate: DPoP realm="http://localhost:8080", error="use_dpop_nonce", error_description="Credential issuer requires nonce in DPoP proof."
+Content-Type: application/json
+
+{
+  "error": "use_dpop_nonce",
+  "error_description": "Credential issuer requires nonce in DPoP proof."
+}
+```
+
+The following code excerpt matches [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts) in ordering (**call `authorizeCredentialEndpointAccess` to verify the access token and DPoP first, then read the JSON body**), **`nonceRequired: true`**, **`invalid_credential_request`** for invalid Credential Request bodies, and **401 with `WWW-Authenticate`**. Imports, **`Context` (Hono)**, **`VcknotsError`**, **`buildBearerAuthenticateHeader` / `buildDpopAuthenticateHeader`**, and production logging are omitted.
+
+```typescript
+const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
+
+app.post('/credentials', async (c) => {
+  try {
+    const issuer = CredentialIssuer(baseUrl)
+    const authz = AuthorizationServerIssuer(baseUrl)
+
+    let authorizationContext: CredentialEndpointAuthorizationContext
+    try {
+      authorizationContext = await authzFlow.authorizeCredentialEndpointAccess(authz, {
+        authorizationHeader: c.req.header('Authorization'),
+        dpopHeader: c.req.header('DPoP'),
+        htm: c.req.method,
+        htu: `${baseUrl}/credentials`,
+        nonceRequired: true,
+      })
+    } catch (err) {
+      if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
+        return unauthorized(
+          c,
+          { error: 'invalid_token', error_description: err.message },
+          { error: 'invalid_token' }
+        )
+      }
+      if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
+        return invalidDpopProof(c, err.message)
+      }
+      if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
+        return dpopNonceResponse(c)
+      }
+      throw err
+    }
+
+    const request = await c.req.json().catch(() => null)
+    if (!request) {
+      return c.json(
+        {
+          error: 'invalid_credential_request',
+          error_description: 'Request body must be a valid JSON.',
+        },
+        400
+      )
+    }
+    let parse: CredentialRequest
+    try {
+      parse = CredentialRequest(request)
+    } catch (err) {
+      if (err instanceof Error && err.name === 'ZodError') {
+        return c.json(
+          {
+            error: 'invalid_credential_request',
+            error_description: 'Request body does not conform to CredentialRequest schema.',
+          },
+          400
+        )
+      }
+      throw err
+    }
+
+    const credential = await issuerFlow.issueCredential(issuer, parse, {
+      authorizationContext,
+      alg: 'ES256',
+      cnonce: {
+        c_nonce_expires_in: 60 * 5 * 1000,
+      },
+      claims: {
+        given_name: 'Test',
+        family_name: 'Smith',
+        degree: '5',
+        gpa: 'test',
+      },
+      proofJwt: {
+        usePreAuth: true,
+      },
+    })
+    return c.json(credential)
+  } catch (err) {
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
+  }
+})
+```
+
+**Example**:
+
+**Request**
+
+```bash
+curl -X POST http://localhost:8080/credentials \
+  -H "Authorization: Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  --data '{
+  "credential_configuration_id": "UniversityDegreeCredential",
+  "proofs": {
+    "jwt": [
+      "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMiwiYXVkIjoiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZS5jb20ifQ.zgj0A19Zo9EMMYtvGJtIehcq6eSmr_VEmiCMz-1ZM0yepvh8pqaSBdU83jXWr7Mgy2BRzVuGQL3WcY55GljjlQ"
+    ]
+  }'
+```
+
+**Response**
+
+```json
+{
+  "credentials": [
+    {
+      "credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2YyI6eyJAY29udGV4dCI6WyJodHRwczovL3d3dy53My5vcmcvMjAxOC9jcmVkZW50aWFscy92MSJdLCJpZCI6IjM4YzEwMWQ2LTEwZDktNGU0Mi05MDlkLWY1N2Y0OWIyMTZjNiIsInR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJVbml2ZXJzaXR5RGVncmVlQ3JlZGVudGlhbCJdLCJpc3N1ZXIiOiJodHRwOi8vbG9jYWxob3N0OjgwODAiLCJpc3N1YW5jZURhdGUiOiIyMDI1LTEwLTMxVDA3OjAzOjA4LjUzN1oiLCJjcmVkZW50aWFsU3ViamVjdCI6eyJpZCI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSIsImdpdmVuX25hbWUiOiJ0ZXN0IiwiZmFtaWx5X25hbWUiOiJ0YXJvIiwiZGVncmVlIjoiNSIsImdwYSI6InRlc3QifX0sImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA4MCIsInN1YiI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSJ9.LwcUtOS0b2sEEKp-c1CpLZorqDF0heRUuJm_zPSuZVSa7XRWkghkvzq7olr2E4BOcoZryn-QCbGVugcZTPs4LA"
+    }
+  ]
 }
 ```
 
@@ -534,8 +1226,47 @@ createIssuerMetadata(issuer: CredentialIssuerMetadata): Promise<void>
 **Return value**: None
 
 **Error cases**:
-- `PROVIDER_NOT_FOUND`: An unsupported `alg` is configured
+- `provider_not_found`: An unsupported `alg` is configured
 
+
+### createNonce
+
+Creates a nonce (c_nonce). Used for the OpenID4VCI nonce endpoint.
+
+```typescript
+createNonce(ttlMs?: number): Promise<string>
+```
+
+**Parameters**:
+- `ttlMs`: Validity period of the nonce in milliseconds. Uses the provider's default when omitted.
+
+**Return value**: The generated nonce string.
+
+### validateNonce
+
+Validates whether the specified nonce is valid.
+
+```typescript
+validateNonce(nonce: string): Promise<boolean>
+```
+
+**Parameters**:
+- `nonce`: The nonce value to validate.
+
+**Return value**: `true` if the nonce is valid; `false` if invalid or not found.
+
+### revokeNonce
+
+Revokes (deletes) the specified nonce.
+
+```typescript
+revokeNonce(nonce: string): Promise<boolean>
+```
+
+**Parameters**:
+- `nonce`: The nonce value to revoke.
+
+**Return value**: `true` if the nonce was successfully revoked; `false` if the nonce was not found.
 
 ### offerCredential
 Creates a credential offer.
@@ -559,8 +1290,8 @@ For the type definition of the credential offer, see [issuer+verifier/src/creden
 
 
 **Error cases**:
-- `FEATURE_NOT_IMPLEMENTED_YET`: An unsupported flow is configured (the authorization code flow is not supported)
-- `ISSUER_NOT_FOUND`: An unregistered Issuer is configured
+- `unsupported_grant_type`: An unsupported flow is configured (the authorization code flow is not supported)
+- `issuer_not_found`: An unregistered Issuer is configured
 
 #### CredentialConfigurationId{#CredentialConfigurationId}
 Defines the type for credential configuration IDs.
@@ -576,14 +1307,17 @@ type OfferOptions =
   | {
       usePreAuth: false
       state?: unknown
+      authorizationServer?: string
     }
   | {
       usePreAuth: true
       txCode?: {
-        inputMode?: 'numeric' | 'text'
+        input_mode?: 'numeric' | 'text'
         length?: number
         description?: string
       }
+      ttlSec?: number
+      authorizationServer?: string
     }
 ```
 
@@ -594,48 +1328,94 @@ Issues a credential.
 issueCredential(
   issuer: CredentialIssuer,
   credentialRequest: CredentialRequest,
-  options?: IssueOptions
+  options: IssueOptions
 ): Promise<CredentialResponse>
 ```
 
 **Parameters**:
 - `issuer`: Identifier of the Issuer ([CredentialIssuer](#CredentialIssuer))
 - `credentialRequest`: Credential request ([CredentialRequest](#CredentialRequest))
-- `options`: Issuance options ([IssueOptions](#IssueOptions))
+- `options`: Issuance options ([IssueOptions](#IssueOptions)), including a verified `authorizationContext` from the credential endpoint
 
 **Return value**: Returns a credential response.
 
 For the type definition of the credential response, see [issuer+verifier/src/credential-response.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-response.types.ts).
 
-**Error cases**:
-- `ISSUER_NOT_FOUND`: An unregistered Issuer is configured
-- `PROVIDER_NOT_FOUND`: An unsupported `format` is configured
-- `INVALID_REQUEST`: `format` is not set
-- `UNSUPPORTED_CREDENTIAL_TYPE`: The specified `credential_definition` or `proof_type` is not supported
-- `INVALID_CREDENTIAL_REQUES`: The `proof` is missing or not supported
-- `INVALID_PROOF`: The `proof` cannot be verified, an unsupported header is set, or a `nonce` is missing
-- `UNSUPPORTED_ISSUER_KEY_ALG`: The Issuer’s signing algorithm is not supported
-- `AUTHZ_ISSUER_KEY_NOT_FOUND`: The Issuer’s key cannot be found
-- `INTERNAL_SERVER_ERROR`: Signing failed
+**JWT credential proofs (`proofs.jwt`)**
 
-#### CredentialRequest{#CredentialRequest}
+- **Pre-authorized code flow with an anonymous access token** (access token has no `client_id`): use `proofJwt: { usePreAuth: true }`. The proof JWT must **not** carry an **`iss`** claim.
+- **Pre-authorized code flow with an access token obtained as a registered OAuth client** (access token has `client_id`): use `proofJwt: { usePreAuth: true }`. If the proof JWT includes `iss`, it must match the access token’s `client_id` (omitting `iss` is also allowed). The `client_id` is read internally via `options.authorizationContext`; callers do not pass it in `proofJwt`.
+- **Authorization code flow**: Not supported.
+
+#### JWT proof JOSE protected header
+
+For protected-header validation behavior, see [credential-proof-jwt.provider.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/providers/credential-proof-jwt.provider.ts). The normative description is in [OpenID for Verifiable Credential Issuance 1.0 — JWT proof type](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-jwt-proof-type) (chapter and section numbers may change in revised specifications).
+
+- **`typ`**: Must be `openid4vci-proof+jwt` (explicit typing per RFC 8725).
+- **`alg`**: `none` and symmetric signatures (MAC, IANA JWA identifiers starting with `HS*`) are rejected.
+- **`kid` / `jwk` / `x5c`**: **Must not appear more than one at a time.** **At least one** of them is required (if none are present, the result is `invalid_proof`).
+- **`trust_chain`**: Not currently supported.
+
+Per-header behavior:
+
+| Header | Behavior |
+|--------|----------|
+| **`kid`** | Resolved as a DID URL (`did:…` with an optional `#fragment`) via **`did-provider`**; the signature is verified with the public key of the matching `verificationMethod`. |
+| **`jwk`** | Verification uses the JWK in the header. JWKs that include **private key material (e.g. `d`)** are rejected. |
+| **`x5c`** | The certificate chain is validated with **`certificate-provider`**, then the signature is verified with the public key of the leaf certificate. When using `x5c`, register **`certificate-provider`** in the provider list when initializing Vcknots. |
+
+**Error cases**:
+- `issuer_not_found`: An unregistered Issuer is configured
+- `unknown_credential_configuration`: `credential_configuration_id` is not supported
+- `unsupported_credential_type`: The specified `credential_definition` or `proof_type` is not supported
+- `invalid_credential_request`: Invalid Credential Request body, disallowed `credential_configuration_id`, missing or unsupported `proof`, invalid configuration id, etc.
+- `invalid_proof`: The `proof` cannot be verified, the header does not conform to OpenID4VCI JWT proof rules (e.g. `typ` / `alg` / combinations of `kid`, `jwk`, and `x5c`), an unsupported header is set, or a `nonce` is missing
+- `unsupported_issuer_key_alg`: The Issuer’s signing algorithm is not supported
+- `authz_issuer_key_not_found`: The Issuer’s key cannot be found
+- `internal_server_error`: Signing failed
+
+#### CredentialRequest {#CredentialRequest}
 Defines the type for a credential issuance request. You can configure items such as the credential identifier.
 
 For the definition, see [issuer+verifier/src/credential-request.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/credential-request.types.ts).
 
-#### IssueOptions{#IssueOptions}
-Defines the type for credential issuance options. You can configure items such as algorithms and claims.
-The definition is as follows.
+#### IssueOptions {#IssueOptions}
+Defines the type for credential issuance options. You can configure algorithms, claims, hints for JWT proof verification, and more.
+The definition is as follows (see [issuer.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/issuer.flows.ts) for the implementation).
 
 ```typescript
 type IssueOptions = {
+  /** Verified context returned by `authorizeCredentialEndpointAccess` at the credential endpoint */
+  authorizationContext: CredentialEndpointAuthorizationContext
   alg: string
   cnonce?: {
     c_nonce_expires_in: number
   }
   claims?: Record<string, unknown>
+  subject?: string
+  /** Whether the grant type is pre-authorized_code. Whether the access token has client_id is represented in authorizationContext and used internally for proof verification. */
+  proofJwt?: {
+    usePreAuth: boolean
+  }
 }
 ```
+
+#### CredentialEndpointAuthorizationContext {#CredentialEndpointAuthorizationContext}
+
+The result of verifying the access token (and DPoP Proof when required) at the credential endpoint. Returned by `authorizeCredentialEndpointAccess` and passed to `issueCredential` as `options.authorizationContext`.
+
+```typescript
+type CredentialEndpointAuthorizationContext = {
+  /** Opaque key for the allowed credential configuration entry bound to the presented access token */
+  allowedCredentialConfigurationKey: string
+  /** OAuth client id from the access token payload; omitted for anonymous access tokens */
+  clientId?: string
+  /** How the credential endpoint accepted the access token */
+  tokenType: 'bearer' | 'dpop'
+}
+```
+
+`allowedCredentialConfigurationKey` is the SHA-256 hash of the compact access token string (same algorithm as RFC 9449 `ath`). Callers do not need to compute the hash or parse the access token payload themselves.
 
 ## 6. Methods of AuthzFlow
 
@@ -695,13 +1475,31 @@ createAccessToken<T extends GrantType>(
   type TokenRequestOptions = {
     [GrantType.AuthorizationCode]: {
       // The authorization code flow is not supported yet
+      alg?: string
+      clientId?: string
+      dpopProof?: {
+        proofJwt: string
+        htm: string
+        htu: string
+        nonceRequired?: boolean
+      }
     }
     [GrantType.PreAuthorizedCode]: {
       ttlSec?: number
-      c_nonce_expire_in?: number
+      alg?: string
+      clientId?: string
+      dpopProof?: {
+        proofJwt: string
+        htm: string
+        htu: string
+        nonceRequired?: boolean
+      }
     }
   }
   ```
+
+  - `clientId`: Authenticated OAuth client id. When set, it is included in the issued access token payload as `client_id`.
+  - `dpopProof`: DPoP Proof verification data used to issue a DPoP-bound access token. When verification succeeds, the access token payload includes `cnf.jkt` and the response `token_type` is `DPoP`.
 
 **Return value**: The access token is returned in the following format:
 ```typescript
@@ -709,18 +1507,20 @@ createAccessToken<T extends GrantType>(
 {
   access_token: `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`,
   token_type: 'bearer',
-  expires_in: option?.ttlSec ?? 86400,
-  c_nonce: cnonce,
-  c_nonce_expires_in: option?.c_nonce_expire_in ?? 60 * 5 * 1000, // 5 minutes
+  expires_in: option?.ttlSec ?? 86400
 }
 ```
 
+When `clientId` is set, the access token payload includes `client_id`. When `dpopProof` is provided and verification succeeds, the payload includes `cnf.jkt` and `token_type` becomes `DPoP`.
+
+In the Pre-Authorized Code flow, `credential_configuration_ids` linked to the pre-authorized code are stored in **`allowed-credential-configuration-store-provider`** at token issuance. The key is the SHA-256 hash of the compact access token (base64url, same as `calculateAccessTokenHash`), and the TTL follows `ttlSec` (the same seconds as the access token `expires_in`). At the credential endpoint, `issueCredential` reads this store and checks that the requested `credential_configuration_id` was allowed when the token was issued.
+
 **Error cases**:
-- `PROVIDER_NOT_FOUND`: An unsupported algorithm is configured for the private key
-- `PRE_AUTHORIZED_CODE_NOT_FOUND`: An invalid pre-authorized code is provided
-- `INVALID_REQUEST`: The authorization server key is not registered, the algorithm is not set, or the grant type is not supported
-- `INTERNAL_SERVER_ERROR`: Signing failed
-- `FEATURE_NOT_IMPLEMENTED_YET`: The authorization code flow is configured (currently not supported)
+- `provider_not_found`: An unsupported algorithm is configured for the private key
+- `invalid_grant`: An invalid pre-authorized code is provided
+- `invalid_request`: The authorization server key is not registered, the algorithm is not set, or the grant type is not supported
+- `internal_server_error`: Signing failed
+- `unsupported_grant_type`: The authorization code flow is configured (currently not supported)
 
 #### TokenRequest{#TokenRequest}
 Defines the type for a credential issuance request. You can configure items such as the credential identifier.
@@ -734,15 +1534,68 @@ The definition is as follows.
 ```typescript
 type TokenRequestOptions = {
   [GrantType.AuthorizationCode]: {
-    //TODO: Implement options for authorization code flow
+    // The authorization code flow is not supported yet
+    alg?: string
+    clientId?: string
+    dpopProof?: {
+      proofJwt: string
+      htm: string
+      htu: string
+      nonceRequired?: boolean
+    }
   }
   [GrantType.PreAuthorizedCode]: {
     ttlSec?: number
-    c_nonce_expire_in?: number
+    alg?: string
+    clientId?: string
+    dpopProof?: {
+      proofJwt: string
+      htm: string
+      htu: string
+      nonceRequired?: boolean
+    }
   }
 }
 ```
 
+- `clientId`: Authenticated OAuth client id. When set, it is included in the issued access token payload as `client_id`.
+- `dpopProof`: DPoP Proof verification data used to issue a DPoP-bound access token. When verification succeeds, the access token payload includes `cnf.jkt` and the response `token_type` is `DPoP`.
+- `ttlSec`: Access token lifetime in seconds for the Pre-Authorized Code flow. When omitted, the default value is used.
+
+
+### authorizeCredentialEndpointAccess
+Verifies the access token for the credential endpoint and returns the context required for credential issuance. Parses `Authorization` / `DPoP` headers, applies sender-constrained OAuth policy, and verifies DPoP Proof when the DPoP scheme is used.
+
+```typescript
+authorizeCredentialEndpointAccess(
+  authz: AuthorizationServerIssuer,
+  options: CredentialEndpointAuthorizationOptions
+): Promise<CredentialEndpointAuthorizationContext>
+```
+
+**Parameters**:
+- `authz`: Identifier of the authorization server ([AuthorizationServerIssuer](#AuthorizationServerIssuer))
+- `options`: Request headers and HTTP context
+
+```typescript
+type CredentialEndpointAuthorizationOptions = {
+  authorizationHeader?: string | null
+  dpopHeader?: string | null
+  htm: string
+  htu: string
+  nonceRequired?: boolean
+  alg?: string
+}
+```
+
+**Return value**: [CredentialEndpointAuthorizationContext](#CredentialEndpointAuthorizationContext)
+
+**Error cases** (main ones):
+- `invalid_access_token`: Invalid Authorization header, JWT verification failure, policy mismatch, etc.
+- `invalid_dpop_proof`: DPoP Proof verification failure
+- `use_dpop_nonce`: DPoP Proof requires a nonce
+
+In server implementations, call this method **before** reading the credential request body.
 
 ### verifyAccessToken
 Verifies the access token.
@@ -757,14 +1610,14 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 **Return value**: Returns a boolean indicating whether the access token is valid.
 
 **Error cases**:
-- `INVALID_ACCESS_TOKEN`: The access token is not a valid JWT, or the `authz` claim is not as expected
-- `AUTHZ_ISSUER_KEY_NOT_FOUND`: The authorization server’s key cannot be found
-- `PROVIDER_NOT_FOUND`: The signing algorithm is not supported
+- `invalid_access_token`: The access token is not a valid JWT, or the `authz` claim is not as expected
+- `authz_issuer_key_not_found`: The authorization server’s key cannot be found
+- `provider_not_found`: The signing algorithm is not supported
 
 
 ## 7. Notes
 
-1. **Access token validation**: Always validate the access token when issuing credentials.
+1. **Access token validation**: When issuing credentials, verify the access token (and DPoP Proof when required) with `AuthzFlow.authorizeCredentialEndpointAccess`, then pass the returned `authorizationContext` to `issueCredential` as `options.authorizationContext`.
 
 2. **Security**: In production environments, be sure to implement proper authentication and authorization.
    - Pay particular attention to managing private keys.
@@ -777,14 +1630,11 @@ verifyAccessToken(authz: AuthorizationServerIssuer, accessToken: string): Promis
 
 ### Common issues
 
-- **Q: Metadata validation error**  
+- **Q: Metadata validation error**
   - **A:** Check that the provided metadata conforms to the CredentialIssuerMetadata schema and the AuthorizationServerMetadata schema.
 
-- **Q: Error when creating credential offer**: `FEATURE_NOT_IMPLEMENTED_YET`  
+- **Q: Error when creating credential offer**: `unsupported_grant_type`
   - **A:** Make sure you are not calling an unimplemented flow. Currently, only the pre-authorized code flow is supported.
 
-- **Q: Error when issuing credential**: `INVALID_PROOF`  
-  - **A:** Check that the header of prooj.jwt in the credential request includes a kid.
-
-
-
+- **Q: Error when issuing credential**: `invalid_proof`
+  - **A:** Check that the header of proof.jwt in the credential request includes a kid. Also verify that the `nonce` in the proof is valid.

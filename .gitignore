@@ -2,6 +2,7 @@
 /dist
 
 node_modules/
+.pnpm-store/
 
 # Logs
 logs
@@ -59,3 +60,12 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 GEMINI.md
+CLAUDE.md
+.claude
+
+# Cursor - commit project rules only
+.cursor/*
+
+/server/samples/pki/
+/server/core/test/
+/server/multi/test/
