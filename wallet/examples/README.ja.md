@@ -3,10 +3,10 @@
 このディレクトリには、vcknots-walletの2つの主要なテストシナリオを実演するサンプルコードが含まれています：
 
 1. **サーバー統合テスト**: ローカルのvcknotsサーバーとの統合をテスト
-2. **コンフォーマンステスト**: 外部のOID4VPコンフォーマンステストサービスとの統合をテスト
+2. **コンフォーマンステスト**: 外部のOpenID4VPコンフォーマンステストサービスとの統合をテスト
 
 どちらのモードも、同じプログラム（`server_integration_sdjwt.go`）でコマンドライン引数の有無により切り替わります。
-両モードとも同一のフロー（クレデンシャルのシード → ウォレット構築 → OID4VPリクエストURI取得 → プレゼンテーション）に従います。
+両モードとも同一のフロー（クレデンシャルのシード → ウォレット構築 → OpenID4VPリクエストURI取得 → プレゼンテーション）に従います。
 
 ## 前提条件
 
@@ -184,7 +184,7 @@ time=2025-11-27T14:03:25.174+09:00 level=INFO msg="Credential presented successf
 
 ### モード2: コンフォーマンステスト（外部URL使用）
 
-外部のOID4VPコンフォーマンステストサービスに対してテストを実行します。
+外部のOpenID4VPコンフォーマンステストサービスに対してテストを実行します。
 コンフォーマンステスト用のURLは、[OIDF Conformance Testing for OpenID for Verifiable Presentations](https://openid.net/certification/conformance-testing-for-openid-for-verifiable-presentations/) ページから取得できます。
 `Testing a wallet` ボタンをクリックしてください。
 
@@ -195,7 +195,7 @@ cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_uri=..."
 ```
 
-**重要**: OID4VP URIを引数に指定すると、自動的にコンフォーマンステストモードで動作します。
+**重要**: OpenID4VP URIを引数に指定すると、自動的にコンフォーマンステストモードで動作します。
 
 #### 動作の違い
 
@@ -227,15 +227,15 @@ go run server_integration_sdjwt.go --credential-offer-uri "$OFFER_URI" --tx-code
 - ローカルのvcknotsサーバーとの統合をテスト
 - 厳格な証明書検証（特定の証明書ファイルを使用）
 - サーバーは http://localhost:8080 で起動している必要があります
-- `--tx-code` は任意で、OID4VCI の token request に `tx_code` として渡されます
-- `--credential-offer-uri` を指定すると、新しい offer を取得せず、指定した OID4VCI offer URI を使います
+- `--tx-code` は任意で、OpenID4VCI の token request に `tx_code` として渡されます
+- `--credential-offer-uri` を指定すると、新しい offer を取得せず、指定した OpenID4VCI offer URI を使います
 
-**モード2: コンフォーマンステスト（OID4VP URI引数あり）**
+**モード2: コンフォーマンステスト（OpenID4VP URI引数あり）**
 ```bash
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go "openid4vp://authorize?..."
 ```
-- 外部のOID4VPコンフォーマンステストサービスに対してテスト
+- 外部のOpenID4VPコンフォーマンステストサービスに対してテスト
 - システムルート証明書プールを使用
 - `InsecureSkipX509Verify: true` を自動設定（非標準証明書に対応）
 

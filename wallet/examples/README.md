@@ -3,10 +3,10 @@
 This directory contains sample code that demonstrates two key testing scenarios for vcknots-wallet:
 
 1. **Server Integration Test**: Tests integration with a local vcknots server
-2. **Conformance Test**: Tests against external OID4VP conformance test services
+2. **Conformance Test**: Tests against external OpenID4VP conformance test services
 
 Both modes are supported by the same program (`server_integration_sdjwt.go`) and are selected based on command-line arguments.
-Both follow the same flow: seed credential → build wallet → get OID4VP request URI → present.
+Both follow the same flow: seed credential → build wallet → get OpenID4VP request URI → present.
 
 ## Prerequisites
 
@@ -184,7 +184,7 @@ If `Credential presented successfully` appears, the sample succeeded.
 
 ### Mode 2: Conformance Test (External URL)
 
-Tests against external OID4VP conformance test services.
+Tests against external OpenID4VP conformance test services.
 The conformance test URI can be obtained from the [OIDF Conformance Testing for OpenID for Verifiable Presentations](https://openid.net/certification/conformance-testing-for-openid-for-verifiable-presentations/) page.
 Click the `Testing a wallet` button to proceed.
 
@@ -195,7 +195,7 @@ cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_uri=..."
 ```
 
-**Important**: Providing an OID4VP URI as an argument automatically uses Conformance Test mode.
+**Important**: Providing an OpenID4VP URI as an argument automatically uses Conformance Test mode.
 
 #### Differences in Behavior
 
@@ -227,15 +227,15 @@ go run server_integration_sdjwt.go --credential-offer-uri "$OFFER_URI" --tx-code
 - Tests integration with a local vcknots server
 - Strict certificate verification (uses a specific certificate file)
 - Server must be running on http://localhost:8080
-- `--tx-code` is optional and is forwarded to the OID4VCI token request as `tx_code`
-- `--credential-offer-uri` skips fetching a new offer and uses the provided OID4VCI offer URI
+- `--tx-code` is optional and is forwarded to the OpenID4VCI token request as `tx_code`
+- `--credential-offer-uri` skips fetching a new offer and uses the provided OpenID4VCI offer URI
 
-**Mode 2: Conformance Test (with OID4VP URI argument)**
+**Mode 2: Conformance Test (with OpenID4VP URI argument)**
 ```bash
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go "openid4vp://authorize?..."
 ```
-- Tests against external OID4VP conformance test services
+- Tests against external OpenID4VP conformance test services
 - Uses system root certificate pool
 - `InsecureSkipX509Verify: true` is automatically set (supports non-standard certificates)
 

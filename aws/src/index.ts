@@ -18,3 +18,11 @@ export {
   DynamoDbRequestObjectStoreOptions,
   dynamodbRequestObjectStore,
 } from './providers/dynamodb-request-object-store.provider'
+export {
+  DynamoDbPreAuthorizedCodeStoreOptions,
+  dynamodbPreAuthorizedCodeStore,
+} from './providers/dynamodb-pre-authorized-code-store.provider'
+export {
+  DynamoDbNonceStoreOptions,
+  dynamodbNonceStore,
+} from './providers/dynamodb-nonce-store.provider'
