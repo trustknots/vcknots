@@ -108,6 +108,36 @@ describe('dynamodbRequestObjectStore', () => {
     assert.equal(item?.ttl, Math.ceil(item?.expires_at / 1000))
   })
 
+  it('should fall back to the default ttl when expiresIn is NaN', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    const before = Date.now()
+
+    const provider = createProvider(Number.NaN)
+    await provider.save(requestObjectId, requestObject)
+
+    const after = Date.now()
+    const item = ddbMock.commandCalls(PutCommand)[0]?.args[0].input.Item
+    assert.ok(Number.isFinite(item?.expires_at))
+    assert.ok(Number.isFinite(item?.ttl))
+    assert.ok(item?.expires_at >= before + 300 * 1000)
+    assert.ok(item?.expires_at <= after + 300 * 1000)
+  })
+
+  it('should fall back to the default ttl when expiresIn is Infinity', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    const before = Date.now()
+
+    const provider = createProvider(Number.POSITIVE_INFINITY)
+    await provider.save(requestObjectId, requestObject)
+
+    const after = Date.now()
+    const item = ddbMock.commandCalls(PutCommand)[0]?.args[0].input.Item
+    assert.ok(Number.isFinite(item?.expires_at))
+    assert.ok(Number.isFinite(item?.ttl))
+    assert.ok(item?.expires_at >= before + 300 * 1000)
+    assert.ok(item?.expires_at <= after + 300 * 1000)
+  })
+
   it('should delete a request object', async () => {
     ddbMock.on(DeleteCommand).resolves({})
 

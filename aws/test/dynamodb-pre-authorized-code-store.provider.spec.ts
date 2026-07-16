@@ -299,27 +299,35 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
     assert.ok(expiresAt <= after + 300 * 1000)
   })
 
-  // A non-finite expiresIn is the fallback that save() itself relies on, so it has to
-  // resolve to the default — otherwise NaN reaches DynamoDB as `expires_at` / `ttl`.
-  for (const [label, value] of [
-    ['NaN', Number.NaN],
-    ['Infinity', Number.POSITIVE_INFINITY],
-  ] as const) {
-    it(`should fall back to the default ttl when expiresIn is ${label}`, async () => {
-      ddbMock.on(PutCommand).resolves({})
-      const before = Date.now()
+  it('should fall back to the default ttl when expiresIn is NaN', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    const before = Date.now()
 
-      const provider = createProvider(value)
-      await provider.save(PreAuthorizedCode(`exp-${label}`), configurations, undefined)
+    const provider = createProvider(Number.NaN)
+    await provider.save(PreAuthorizedCode('exp-nan'), configurations, undefined)
 
-      const after = Date.now()
-      const item = lastPutItem()
-      assert.ok(Number.isFinite(item?.expires_at), 'expires_at must never be NaN')
-      assert.ok(Number.isFinite(item?.ttl), 'ttl must never be NaN')
-      assert.ok(item?.expires_at >= before + 300 * 1000)
-      assert.ok(item?.expires_at <= after + 300 * 1000)
-    })
-  }
+    const after = Date.now()
+    const item = lastPutItem()
+    assert.ok(Number.isFinite(item?.expires_at))
+    assert.ok(Number.isFinite(item?.ttl))
+    assert.ok(item?.expires_at >= before + 300 * 1000)
+    assert.ok(item?.expires_at <= after + 300 * 1000)
+  })
+
+  it('should fall back to the default ttl when expiresIn is Infinity', async () => {
+    ddbMock.on(PutCommand).resolves({})
+    const before = Date.now()
+
+    const provider = createProvider(Number.POSITIVE_INFINITY)
+    await provider.save(PreAuthorizedCode('exp-inf'), configurations, undefined)
+
+    const after = Date.now()
+    const item = lastPutItem()
+    assert.ok(Number.isFinite(item?.expires_at))
+    assert.ok(Number.isFinite(item?.ttl))
+    assert.ok(item?.expires_at >= before + 300 * 1000)
+    assert.ok(item?.expires_at <= after + 300 * 1000)
+  })
 
   it('should floor a fractional ttlSec', async () => {
     ddbMock.on(PutCommand).resolves({})
@@ -445,28 +453,39 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
       assert.equal(ddbMock.commandCalls(DeleteCommand).length, 0)
     })
 
-    // A non-finite limit would otherwise reach DynamoDB as `:max` and fail every consume.
-    for (const [label, value] of [
-      ['NaN', Number.NaN],
-      ['Infinity', Number.POSITIVE_INFINITY],
-    ] as const) {
-      it(`falls back to the default limit when maxTxCodeAttempts is ${label}`, async () => {
-        ddbMock.on(PutCommand).resolves({})
+    it('falls back to the default limit when maxTxCodeAttempts is NaN', async () => {
+      ddbMock.on(PutCommand).resolves({})
 
-        const provider = createProvider(undefined, value)
-        await saveWithTxCode(provider, `bf-${label}`)
-        armConsumeFromLastPut(1)
+      const provider = createProvider(undefined, Number.NaN)
+      await saveWithTxCode(provider, 'bf-nan')
+      armConsumeFromLastPut(1)
 
-        await assert.rejects(provider.consume(PreAuthorizedCode(`bf-${label}`), 9999), {
-          name: 'invalid_grant',
-          message: INVALID_TX_CODE_MESSAGE,
-        })
-        assert.equal(
-          ddbMock.commandCalls(UpdateCommand)[0]?.args[0].input.ExpressionAttributeValues?.[':max'],
-          5
-        )
+      await assert.rejects(provider.consume(PreAuthorizedCode('bf-nan'), 9999), {
+        name: 'invalid_grant',
+        message: INVALID_TX_CODE_MESSAGE,
       })
-    }
+      assert.equal(
+        ddbMock.commandCalls(UpdateCommand)[0]?.args[0].input.ExpressionAttributeValues?.[':max'],
+        5
+      )
+    })
+
+    it('falls back to the default limit when maxTxCodeAttempts is Infinity', async () => {
+      ddbMock.on(PutCommand).resolves({})
+
+      const provider = createProvider(undefined, Number.POSITIVE_INFINITY)
+      await saveWithTxCode(provider, 'bf-inf')
+      armConsumeFromLastPut(1)
+
+      await assert.rejects(provider.consume(PreAuthorizedCode('bf-inf'), 9999), {
+        name: 'invalid_grant',
+        message: INVALID_TX_CODE_MESSAGE,
+      })
+      assert.equal(
+        ddbMock.commandCalls(UpdateCommand)[0]?.args[0].input.ExpressionAttributeValues?.[':max'],
+        5
+      )
+    })
 
     it('clamps a maxTxCodeAttempts below 1 up to a single attempt', async () => {
       ddbMock.on(PutCommand).resolves({})
@@ -506,10 +525,8 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
 
       const provider = createProvider()
       await saveWithTxCode(provider, 'bf-under')
-      // 1st of the 5 allowed attempts.
       armConsumeFromLastPut(1)
 
-      // Attempts remain, so the holder is told what was actually wrong and can retry.
       await assert.rejects(provider.consume(PreAuthorizedCode('bf-under'), 9999), {
         name: 'invalid_grant',
         message: INVALID_TX_CODE_MESSAGE,
@@ -523,16 +540,12 @@ describe('dynamodbPreAuthorizedCodeStore', () => {
 
       const provider = createProvider()
       await saveWithTxCode(provider, 'bf-exhaust')
-      // The gate admits the 5th (final) attempt, which then fails the tx_code check.
       armConsumeFromLastPut(5)
 
-      // The lockout is reported on the attempt that trips it — not `Invalid tx_code`,
-      // which would invite a retry that can no longer succeed.
       await assert.rejects(provider.consume(PreAuthorizedCode('bf-exhaust'), 9999), {
         name: 'invalid_grant',
         message: LOCKED_MESSAGE,
       })
-      // A locked-out code is removed rather than left to linger until its TTL.
       assert.equal(ddbMock.commandCalls(DeleteCommand).length, 1)
       const del = ddbMock.commandCalls(DeleteCommand)[0]?.args[0].input
       assert.deepEqual(del?.Key, { id: 'bf-exhaust' })

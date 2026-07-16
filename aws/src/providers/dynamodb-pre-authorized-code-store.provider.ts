@@ -20,10 +20,6 @@ const DEFAULT_EXPIRES_IN_MS = 60 * 5 * 1000
 const DEFAULT_TTL_SEC = DEFAULT_EXPIRES_IN_MS / 1000
 const DEFAULT_MAX_TX_CODE_ATTEMPTS = 5
 
-/**
- * Returned for every code that can no longer be exchanged — unknown, already consumed,
- * or locked out. The three cases are deliberately indistinguishable to the caller.
- */
 const LOCKED_MESSAGE = 'Pre-authorized code is invalid, consumed, or locked'
 
 /**
@@ -57,14 +53,10 @@ export const dynamodbPreAuthorizedCodeStore = (
 ): PreAuthorizedCodeStoreProvider => {
   const client = resolveDynamoDbDocumentClient(options)
   const { tableName, expiresIn = DEFAULT_EXPIRES_IN_MS } = options
-  // save() falls back to this value, so a non-finite expiresIn has to be resolved here —
-  // otherwise NaN flows straight through that fallback into `expires_at` and `ttl`.
   const defaultTtlSecRaw = Math.floor(expiresIn / 1000)
   const defaultTtlSec = Number.isFinite(defaultTtlSecRaw)
     ? Math.max(1, defaultTtlSecRaw)
     : DEFAULT_TTL_SEC
-  // A non-finite limit would reach DynamoDB as the gate's `:max` and fail every consume,
-  // so fall back to the default rather than propagating it.
   const maxTxCodeAttemptsRaw = options.maxTxCodeAttempts ?? DEFAULT_MAX_TX_CODE_ATTEMPTS
   const maxTxCodeAttempts = Number.isFinite(maxTxCodeAttemptsRaw)
     ? Math.max(1, Math.floor(maxTxCodeAttemptsRaw))
@@ -167,14 +159,6 @@ export const dynamodbPreAuthorizedCodeStore = (
         throw error
       }
 
-      /**
-       * Called before failing an attempt that the gate admitted. When the attempt
-       * exhausted the per-code limit, the code is deleted and the lockout is reported
-       * right away: the holder learns the code is dead on the attempt that killed it,
-       * rather than being told only that the tx_code was wrong — which would invite a
-       * retry that can no longer succeed. Attempts that leave the limit intact fall
-       * through, so the holder still gets the specific `Invalid tx_code` error.
-       */
       const lockoutIfExhausted = async (): Promise<void> => {
         if ((item.attempts ?? 0) >= maxTxCodeAttempts) {
           await deleteCode(code)
