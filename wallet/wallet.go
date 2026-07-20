@@ -691,8 +691,8 @@ func (w *Wallet) parseAuthorizationRequest(uriString string) (*oid4vp.Credential
 		}
 	}
 
-	if req.PresentationDefinition == nil {
-		return nil, nil, fmt.Errorf("presentation definition is not specified")
+	if req.DcqlQuery == nil {
+		return nil, nil, fmt.Errorf("dcql_query is not specified")
 	}
 
 	return req, endpoint, nil
@@ -851,9 +851,10 @@ func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentat
 		return "", fmt.Errorf("failed to serialize presentation: %w", err)
 	}
 
+	// Temporary: presentation_submission is a Presentation Exchange artifact and
+	// will be removed when the response flow is reorganized around DCQL.
 	presentationSubmission := presenterTypes.PresentationSubmission{
 		ID:            uuid.New().String(),
-		DefinitionID:  req.PresentationDefinition.ID,
 		DescriptorMap: descriptorMap,
 	}
 

@@ -271,9 +271,8 @@ type requestBuilder struct {
 func NewRequestBuilder() *requestBuilder {
 	return &requestBuilder{
 		req: &CredentialPresentationRequest{
-			OAuthAuthzRequest:      &OAuthAuthzRequest{},
-			ClientMetadata:         &VerifierMetadata{},
-			PresentationDefinition: &PresentationDefinition{},
+			OAuthAuthzRequest: &OAuthAuthzRequest{},
+			ClientMetadata:    &VerifierMetadata{},
 		},
 		x509TrustChainRoots:    nil,
 		insecureSkipX509Verify: false,
@@ -285,8 +284,8 @@ func (b *requestBuilder) validate() error {
 		return b.errValidation
 	}
 
-	if b.req.PresentationDefinition == nil || b.req.PresentationDefinition.ID == "" {
-		return fmt.Errorf("presentation_definition is required")
+	if b.req.DcqlQuery == nil || len(b.req.DcqlQuery.Credentials) == 0 {
+		return newAuthorizationRequestError(InvalidRequestError, "dcql_query is required")
 	}
 
 	if b.req.ResponseType == "" {
@@ -350,6 +349,23 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 		params = filteredParams
 	}
 
+	// Presentation Exchange based parameters were removed in OID4VP 1.0 in
+	// favor of dcql_query; this wallet does not accept them (Issue #606).
+	for _, unsupported := range []string{"presentation_definition", "presentation_definition_uri", "presentation_submission"} {
+		if _, exists := params[unsupported]; exists {
+			b.errValidation = newAuthorizationRequestError(InvalidRequestError, "%s is not supported; use dcql_query instead", unsupported)
+			return
+		}
+	}
+
+	// Requesting Credentials via the scope parameter is not supported by this wallet.
+	if scope, exists := params["scope"]; exists {
+		if scopeStr, ok := scope.(string); !ok || scopeStr != "" {
+			b.errValidation = newAuthorizationRequestError(InvalidScopeError, "scope parameter is not supported; use dcql_query instead")
+			return
+		}
+	}
+
 	missing := []string{}
 
 	getParam := func(key string, required bool) string {
@@ -393,7 +409,6 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 	}
 
 	b.req.RedirectURI = redirectURIFromClientID
-	b.req.Scope = getParam("scope", false)
 	b.req.State = getParam("state", false)
 	b.req.Nonce = getParam("nonce", true)
 
@@ -408,20 +423,15 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 
 	b.req.ResponseURI = responseURIFromParam
 
-	if pd := getParam("presentation_definition", true); pd != "" {
-		// Handle presentation_definition as either string (JSON) or map
-		var presDef PresentationDefinition
-		if pdMap, ok := params["presentation_definition"].(map[string]any); ok {
-			if id, exists := pdMap["id"]; exists {
-				presDef.ID = fmt.Sprintf("%v", id)
-			}
-		} else {
-			if err := json.Unmarshal([]byte(pd), &presDef); err != nil {
-				b.errValidation = fmt.Errorf("invalid presentation_definition: %w", err)
-				return
-			}
+	if rawDcqlQuery, exists := params["dcql_query"]; exists {
+		dcqlQuery, err := parseDcqlQuery(rawDcqlQuery)
+		if err != nil {
+			b.errValidation = err
+			return
 		}
-		b.req.PresentationDefinition = &presDef
+		b.req.DcqlQuery = dcqlQuery
+	} else {
+		missing = append(missing, "dcql_query")
 	}
 
 	if cm, exists := params["client_metadata"]; exists && cm != nil {
@@ -451,7 +461,7 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 	}
 
 	if len(missing) > 0 {
-		b.errValidation = fmt.Errorf("missing required parameters: %s", strings.Join(missing, ", "))
+		b.errValidation = newAuthorizationRequestError(InvalidRequestError, "missing required parameters: %s", strings.Join(missing, ", "))
 	}
 
 	if td, exists := params["transaction_data"]; exists && td != nil {

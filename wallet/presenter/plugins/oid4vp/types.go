@@ -6,11 +6,6 @@ import (
 	"github.com/go-jose/go-jose/v4"
 )
 
-// PresentationDefinition represents a presentation definition
-type PresentationDefinition struct {
-	ID string `json:"id"`
-}
-
 // OAuthAuthzRequest represents a OAuth 2.0 Authorization Request
 // These fields are defined in RFC6749 and OIDC.
 type OAuthAuthzRequest struct {
@@ -73,16 +68,16 @@ const (
 )
 
 // CredentialPresentationRequest represents a OAuth 2.0 Authorization Request
-// with a presentation definition for OID4VP.
+// with a DCQL query for OID4VP.
 // These fields are defined in the OID4VP specification and RFC6749.
 type CredentialPresentationRequest struct {
 	*OAuthAuthzRequest
-	PresentationDefinition   *PresentationDefinition `json:"presentation_definition"`               // required
-	ClientMetadata           *VerifierMetadata       `json:"client_metadata,omitempty"`             // optional
-	TransactionData          []string                `json:"transaction_data,omitempty"`            // optional, to be implemented
-	TransactionDataHashesAlg string                  `json:"transaction_data_hashes_alg,omitempty"` // optional, hash algorithm for transaction_data_hashes
-	VerifierInfo             []any                   `json:"verifier_info,omitempty"`               // optional, to be implemented
-	ResponseURI              string                  `json:"response_uri,omitempty"`                // optional
+	DcqlQuery                *DcqlQuery        `json:"dcql_query"`                            // required
+	ClientMetadata           *VerifierMetadata `json:"client_metadata,omitempty"`             // optional
+	TransactionData          []string          `json:"transaction_data,omitempty"`            // optional, to be implemented
+	TransactionDataHashesAlg string            `json:"transaction_data_hashes_alg,omitempty"` // optional, hash algorithm for transaction_data_hashes
+	VerifierInfo             []any             `json:"verifier_info,omitempty"`               // optional, to be implemented
+	ResponseURI              string            `json:"response_uri,omitempty"`                // optional
 }
 
 type RequestURIMethod string
