@@ -844,6 +844,45 @@ func TestOid4vpPresenter_SendsErrorAuthorizationResponse(t *testing.T) {
 		}
 	})
 
+	// A Request Object's validation fails before its signature is verified,
+	// so its response_uri is unauthenticated and must not receive the error
+	// authorization response.
+	t.Run("no error response for request object path", func(t *testing.T) {
+		server, captured := newErrorCapturingServer(t)
+		defer server.Close()
+
+		verifierServer := mockserver.NewOID4VPVerifierServer(nil)
+		defer verifierServer.Close()
+		keyPair := verifierServer.GetKeyPair()
+
+		claims := map[string]any{
+			"aud":           "test-client",
+			"nonce":         "n",
+			"client_id":     "redirect_uri:http://example.com/cb",
+			"response_type": "vp_token",
+			"response_mode": "direct_post",
+			"state":         "err-state",
+			"dcql_query":    map[string]any{"credentials": []any{}},
+			"response_uri":  server.URL,
+			"client_metadata": map[string]any{
+				"client_name": "Test Client",
+				"jwks":        keyPair.CreateJWKS(),
+			},
+		}
+		jwtStr, err := verifierServer.CreateSignedJWT(claims)
+		if err != nil {
+			t.Fatalf("failed to create signed JWT: %v", err)
+		}
+
+		_, err = p.ParsePresentationRequest("openid4vp://present?request=" + url.QueryEscape(jwtStr))
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if len(*captured) != 0 {
+			t.Fatalf("expected no error response for request object path, got %v", *captured)
+		}
+	})
+
 	t.Run("send failure is reported alongside the original error", func(t *testing.T) {
 		server, _ := newErrorCapturingServer(t)
 		server.Close() // unreachable response_uri

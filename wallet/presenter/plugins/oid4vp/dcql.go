@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+
+	"github.com/trustknots/vcknots/wallet/credential"
 )
 
 // DcqlQuery represents the dcql_query Authorization Request parameter
@@ -52,12 +54,19 @@ func newAuthorizationRequestError(code OAuthAuthzError, format string, args ...a
 }
 
 // supportedCredentialFormats are the OID4VP Credential Format Identifiers this
-// wallet can serialize presentations for. They must stay in sync with
-// credential.SupportedSerializationFlavor.OID4VPFormatIdentifier.
-var supportedCredentialFormats = map[string]bool{
-	"jwt_vc_json": true,
-	"dc+sd-jwt":   true,
-}
+// wallet can serialize presentations for, derived from
+// credential.SupportedSerializationFlavor.OID4VPFormatIdentifier (the mock
+// flavor is excluded as it is for testing only).
+var supportedCredentialFormats = func() map[string]bool {
+	formats := make(map[string]bool)
+	for _, flavor := range []credential.SupportedSerializationFlavor{credential.JwtVc, credential.SDJwtVC} {
+		vcFormat, _, err := flavor.OID4VPFormatIdentifier()
+		if err == nil {
+			formats[vcFormat] = true
+		}
+	}
+	return formats
+}()
 
 // credentialQueryIDPattern is the allowed syntax for Credential Query ids:
 // a non-empty string consisting of alphanumeric, underscore and hyphen characters.

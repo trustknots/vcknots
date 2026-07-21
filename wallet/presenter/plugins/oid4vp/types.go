@@ -12,7 +12,6 @@ type OAuthAuthzRequest struct {
 	ResponseType string                    `json:"response_type"`          // required
 	ClientID     string                    `json:"client_id"`              // required
 	RedirectURI  string                    `json:"redirect_uri,omitempty"` // optional
-	Scope        string                    `json:"scope,omitempty"`        // optional
 	State        string                    `json:"state,omitempty"`        // conditional required in OID4VP
 	Nonce        string                    `json:"nonce"`                  // required in OIDC
 	ResponseMode OAuthAuthzReqResponseMode `json:"response_mode"`          // required in OID4VP, but optional in OIDC

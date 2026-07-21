@@ -79,9 +79,12 @@ func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*Credentia
 	if err != nil {
 		// OID4VP: when the Authorization Request is rejected with an OAuth
 		// error code and response_mode=direct_post, deliver the error
-		// authorization response to the Verifier's response_uri.
+		// authorization response to the Verifier's response_uri. Requests
+		// received as Request Objects are excluded: their validation fails
+		// before the signature is verified, so the response_uri is not yet
+		// trustworthy (see requestBuilder.errorResponseAllowed).
 		var authzErr *AuthorizationRequestError
-		if errors.As(err, &authzErr) {
+		if errors.As(err, &authzErr) && builder.errorResponseAllowed {
 			if sendErr := p.sendAuthorizationErrorResponse(builder.req, authzErr); sendErr != nil {
 				return nil, fmt.Errorf("failed to build CredentialPresentationRequest: %w (also failed to send error authorization response: %v)", err, sendErr)
 			}
@@ -101,12 +104,9 @@ func (p *Oid4vpPresenter) sendAuthorizationErrorResponse(req *CredentialPresenta
 		return nil
 	}
 
-	responseURI, err := url.Parse(req.ResponseURI)
+	responseURI, err := parseResponseURI(req.ResponseURI)
 	if err != nil {
-		return fmt.Errorf("response_uri must be URI: %w", err)
-	}
-	if !env.IsHTTPAllowed() && !strings.EqualFold(responseURI.Scheme, "https") {
-		return fmt.Errorf("response_uri must use https scheme")
+		return err
 	}
 
 	formData := url.Values{}
@@ -118,21 +118,50 @@ func (p *Oid4vpPresenter) sendAuthorizationErrorResponse(req *CredentialPresenta
 		formData.Set("state", req.State)
 	}
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	resp, err := client.Post(responseURI.String(), "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
-	if err != nil {
+	if _, err := postAuthorizationResponse(responseURI.String(), formData); err != nil {
 		return fmt.Errorf("failed to send error authorization response: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("verifier returned non-200 status for error authorization response: %d, body: %s", resp.StatusCode, string(respBody))
 	}
 
 	return nil
+}
+
+// parseResponseURI parses a response_uri and enforces the https scheme unless
+// http is explicitly allowed for testing.
+func parseResponseURI(responseURI string) (*url.URL, error) {
+	parsed, err := url.Parse(responseURI)
+	if err != nil {
+		return nil, fmt.Errorf("response_uri must be URI: %w", err)
+	}
+	if !env.IsHTTPAllowed() && !strings.EqualFold(parsed.Scheme, "https") {
+		return nil, fmt.Errorf("response_uri must use https scheme")
+	}
+	return parsed, nil
+}
+
+// maxVerifierResponseBodySize bounds how much of a verifier response body the
+// wallet reads; the endpoint is derived from request input.
+const maxVerifierResponseBodySize = 1 << 20 // 1 MiB
+
+// postAuthorizationResponse form-POSTs an authorization response (or error
+// response) to the verifier and returns the response body on HTTP 200.
+func postAuthorizationResponse(endpoint string, formData url.Values) ([]byte, error) {
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	resp, err := client.Post(endpoint, "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxVerifierResponseBodySize))
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("verifier returned non-200 status: %d, body: %s", resp.StatusCode, string(body))
+	}
+	if readErr != nil {
+		return nil, fmt.Errorf("failed to read verifier response: %w", readErr)
+	}
+	return body, nil
 }
 
 // Present sends the presentation to the verifier.
@@ -190,23 +219,9 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 		}
 	}
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	resp, err := client.Post(endpoint.String(), "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
+	respBody, err := postAuthorizationResponse(endpoint.String(), formData)
 	if err != nil {
 		return "", fmt.Errorf("failed to send presentation to verifier: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("verifier returned non-200 status: %d, body: %s", resp.StatusCode, string(respBody))
-	}
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read verifier response: %w", err)
 	}
 	if len(respBody) == 0 {
 		return "", nil
@@ -325,6 +340,12 @@ type requestBuilder struct {
 	x509TrustChainRoots    *x509.CertPool
 	insecureSkipX509Verify bool
 	errValidation          error
+	// errorResponseAllowed marks that the request parameters came from plain
+	// query parameters (user-initiated URI). Validation failures on the
+	// Request Object paths occur before the object's signature is verified,
+	// so their response_uri is unauthenticated and must not receive an error
+	// authorization response (unauthenticated outbound POST / SSRF primitive).
+	errorResponseAllowed bool
 }
 
 func NewRequestBuilder() *requestBuilder {
@@ -364,12 +385,8 @@ func (b *requestBuilder) validate() error {
 	}
 
 	if b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost {
-		responseURI, err := url.Parse(b.req.ResponseURI)
-		if err != nil {
-			return fmt.Errorf("response_uri must be URI: %w", err)
-		}
-		if !env.IsHTTPAllowed() && !strings.EqualFold(responseURI.Scheme, "https") {
-			return fmt.Errorf("response_uri must use https scheme")
+		if _, err := parseResponseURI(b.req.ResponseURI); err != nil {
+			return err
 		}
 	}
 
@@ -549,6 +566,8 @@ func (b *requestBuilder) WithQueryParams(params map[string][]string) *requestBui
 	if b.errValidation != nil {
 		return b
 	}
+
+	b.errorResponseAllowed = true
 
 	singleParams := make(map[string]any)
 	for key, values := range params {
