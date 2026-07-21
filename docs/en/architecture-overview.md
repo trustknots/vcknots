@@ -1,10 +1,8 @@
----
-sidebar_position: 10
----
-
 # Architecture Overview
 
-VC Knots is a pluggable framework for building Verifiable Credentials ecosystems. The framework consists of reusable libraries, provider implementations, and sample server applications.
+VC Knots is a **pluggable framework** for building Verifiable Credentials (VC) ecosystems.
+
+It provides reusable core libraries that implement OpenID4VCI and OpenID4VP, while allowing infrastructure components such as cloud providers, databases, and key management services to be integrated through pluggable providers. This enables developers to build Issuer, Wallet, and Verifier applications in a flexible and extensible way.
 
 ---
 
@@ -20,8 +18,8 @@ flowchart TB
     end
 
     subgraph CORE["VC Knots Core Libraries"]
-        IV[issuer+verifier<br/>TypeScript]
-        W[wallet<br/>Go]
+        IV["issuer+verifier<br/>TypeScript"]
+        W["wallet<br/>Go"]
     end
 
     subgraph PROVIDER["Provider Implementations"]
@@ -49,25 +47,27 @@ flowchart TB
     AWS --> SECRET
 ```
 
-The architecture is divided into four layers:
+The architecture is organized into four logical layers.
 
-* **Applications** implement Issuer, Wallet, and Verifier services.
-* **Core Libraries** implement OpenID4VCI/OpenID4VP and wallet functionality.
-* **Providers** integrate cloud services and infrastructure.
-* **Infrastructure** provides storage, key management, and secrets.
+| Layer              | Responsibility                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| **Applications**   | Implement Issuer, Wallet, and Verifier applications.                                    |
+| **Core Libraries** | Provide OpenID4VCI/OpenID4VP protocol implementations and wallet functionality.         |
+| **Providers**      | Integrate external services such as databases, KMS, and cloud platforms.                |
+| **Infrastructure** | Consists of the actual databases, key management services, and other backend resources. |
 
 ---
 
 # Package Responsibilities
 
-| Package               | Language   | Responsibility                                                              |
-| --------------------- | ---------- | --------------------------------------------------------------------------- |
-| `issuer+verifier`     | TypeScript | OpenID4VCI/OpenID4VP implementation, Issuer, Verifier, Authorization Server |
-| `wallet`              | Go         | Wallet functionality, DID management, key management, credential operations |
-| `aws`                 | TypeScript | AWS integrations (DynamoDB, KMS, Secrets Manager)                           |
-| `server/single`       | TypeScript | Single-tenant reference server                                              |
-| `server/aws`          | TypeScript | AWS Lambda deployment                                                       |
-| `server/google-cloud` | TypeScript | Google Cloud deployment                                                     |
+| Package               | Language   | Responsibility                                                                            |
+| --------------------- | ---------- | ----------------------------------------------------------------------------------------- |
+| `issuer+verifier`     | TypeScript | Implements OpenID4VCI/OpenID4VP, Issuer, Verifier, and Authorization Server functionality |
+| `wallet`              | Go         | Provides wallet functionality, DID management, key management, and credential operations  |
+| `aws`                 | TypeScript | AWS provider implementations for DynamoDB, KMS, Secrets Manager, and related services     |
+| `server/single`       | TypeScript | Reference implementation for a single-tenant deployment                                   |
+| `server/aws`          | TypeScript | AWS Lambda and CDK deployment example                                                     |
+| `server/google-cloud` | TypeScript | Google Cloud deployment example                                                           |
 
 ---
 
@@ -78,8 +78,8 @@ flowchart LR
 
     APP[Applications]
 
-    IV[issuer+verifier]
-    W[wallet]
+    IV["issuer+verifier"]
+    W["wallet"]
 
     AWS[AWS Provider]
     CUSTOM[Custom Provider]
@@ -96,26 +96,30 @@ flowchart LR
     SERVER --> W
 ```
 
-Sample servers are reference implementations that compose the reusable libraries.
+The relationship between the packages is as follows:
+
+* Applications are built using the `issuer+verifier` and `wallet` libraries.
+* `issuer+verifier` communicates with external infrastructure through provider implementations.
+* `server/*` packages are reference implementations that compose the reusable libraries.
 
 ---
 
-# Credential Issuance Flow
+# Credential Issuance Flow (OpenID4VCI)
 
 ```mermaid
 sequenceDiagram
 
-    participant Holder as Wallet
+    participant Wallet
     participant Issuer
     participant Library as issuer+verifier
     participant Provider
     participant KMS
 
-    Holder->>Issuer: Credential Request (OpenID4VCI)
+    Wallet->>Issuer: Credential Request
 
     Issuer->>Library: Process Request
 
-    Library->>Provider: Store / Retrieve Data
+    Library->>Provider: Access Storage
 
     Provider->>KMS: Sign Credential
 
@@ -123,20 +127,20 @@ sequenceDiagram
 
     Provider-->>Library: Credential
 
-    Library-->>Holder: Verifiable Credential
+    Library-->>Wallet: Verifiable Credential
 ```
 
-### Steps
+### Flow
 
-1. The Wallet requests a credential.
+1. The Wallet sends an OpenID4VCI credential request.
 2. The Issuer delegates protocol processing to `issuer+verifier`.
-3. Providers access storage and key management.
+3. The provider accesses storage and key management services.
 4. The credential is signed.
-5. The Wallet receives the credential.
+5. The Wallet receives and stores the issued Verifiable Credential.
 
 ---
 
-# Presentation Verification Flow
+# Presentation Verification Flow (OpenID4VP)
 
 ```mermaid
 sequenceDiagram
@@ -144,9 +148,9 @@ sequenceDiagram
     participant Wallet
     participant Verifier
     participant Library as issuer+verifier
-    participant Trust as Trust Registry / DID Resolver
+    participant Trust as DID Resolver / Trust Registry
 
-    Wallet->>Verifier: Verifiable Presentation (OpenID4VP)
+    Wallet->>Verifier: Verifiable Presentation
 
     Verifier->>Library: Verify Presentation
 
@@ -157,16 +161,14 @@ sequenceDiagram
     Library->>Library: Verify Signature
 
     Library-->>Verifier: Verification Result
-
-    Verifier-->>Wallet: Accept / Reject
 ```
 
-### Steps
+### Flow
 
 1. The Wallet sends a Verifiable Presentation.
-2. The Verifier delegates validation to `issuer+verifier`.
-3. The framework resolves DIDs and verifies signatures.
-4. The verification result is returned.
+2. The Verifier delegates the verification process to `issuer+verifier`.
+3. The library resolves the DID, verifies the signature, and validates trust requirements.
+4. The verification result is returned to the Verifier.
 
 ---
 
@@ -180,27 +182,31 @@ flowchart TB
     end
 
     subgraph L2["Core Libraries"]
-        CORE[issuer+verifier<br/>wallet]
+        CORE["issuer+verifier<br/>wallet"]
     end
 
     subgraph L3["Provider Layer"]
-        P[AWS<br/>Google Cloud<br/>Custom Providers]
+        PROVIDER["AWS<br/>Google Cloud<br/>Custom Providers"]
     end
 
     subgraph L4["Infrastructure Layer"]
-        I[(Database / KMS / Storage)]
+        INFRA["Database<br/>KMS<br/>Storage"]
     end
 
     APP --> CORE
-    CORE --> P
-    P --> I
+    CORE --> PROVIDER
+    PROVIDER --> INFRA
 ```
+
+Applications are built on top of the core libraries, which interact with external infrastructure through provider implementations. This layered architecture separates protocol logic from infrastructure, making it easy to replace cloud platforms, storage backends, and key management services without affecting application logic.
 
 ---
 
 # Design Principles
 
-* **Protocol and infrastructure are separated.**
-* **Cloud providers are replaceable through provider interfaces.**
-* **Applications build on reusable libraries instead of implementing OpenID4VCI/OpenID4VP directly.**
-* **Sample servers demonstrate deployment patterns without being part of the framework core.**
+VC Knots is designed around the following principles:
+
+* **Separation of protocol logic and infrastructure**, allowing business logic to remain independent of cloud-specific implementations.
+* **Pluggable provider architecture**, enabling integration with AWS, Google Cloud, or custom environments.
+* **Reusable core libraries**, allowing applications to implement OpenID4VCI/OpenID4VP without reimplementing protocol logic.
+* **Reference server implementations**, demonstrating recommended deployment patterns while keeping the framework itself infrastructure-agnostic.

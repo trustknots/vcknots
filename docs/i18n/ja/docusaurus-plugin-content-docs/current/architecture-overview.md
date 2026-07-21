@@ -1,14 +1,12 @@
----
-sidebar_position: 10
----
+# アーキテクチャ概要
 
-# Architecture Overview
+VC Knots は、**Verifiable Credentials（VC）エコシステム**を構築するためのプラガブルなフレームワークです。
 
-VC Knots is a pluggable framework for building Verifiable Credentials ecosystems. The framework consists of reusable libraries, provider implementations, and sample server applications.
+OpenID4VCI / OpenID4VP を実装したコアライブラリを中心に、クラウドプロバイダーやデータストアなどのインフラをプラグインとして組み合わせることで、さまざまな構成の Issuer、Wallet、Verifier を構築できます。
 
 ---
 
-# Overall Architecture
+# 全体構成
 
 ```mermaid
 flowchart TB
@@ -20,8 +18,8 @@ flowchart TB
     end
 
     subgraph CORE["VC Knots Core Libraries"]
-        IV[issuer+verifier<br/>TypeScript]
-        W[wallet<br/>Go]
+        IV["issuer+verifier<br/>TypeScript"]
+        W["wallet<br/>Go"]
     end
 
     subgraph PROVIDER["Provider Implementations"]
@@ -49,37 +47,39 @@ flowchart TB
     AWS --> SECRET
 ```
 
-The architecture is divided into four layers:
+VC Knots は次の4つのレイヤーで構成されています。
 
-* **Applications** implement Issuer, Wallet, and Verifier services.
-* **Core Libraries** implement OpenID4VCI/OpenID4VP and wallet functionality.
-* **Providers** integrate cloud services and infrastructure.
-* **Infrastructure** provides storage, key management, and secrets.
-
----
-
-# Package Responsibilities
-
-| Package               | Language   | Responsibility                                                              |
-| --------------------- | ---------- | --------------------------------------------------------------------------- |
-| `issuer+verifier`     | TypeScript | OpenID4VCI/OpenID4VP implementation, Issuer, Verifier, Authorization Server |
-| `wallet`              | Go         | Wallet functionality, DID management, key management, credential operations |
-| `aws`                 | TypeScript | AWS integrations (DynamoDB, KMS, Secrets Manager)                           |
-| `server/single`       | TypeScript | Single-tenant reference server                                              |
-| `server/aws`          | TypeScript | AWS Lambda deployment                                                       |
-| `server/google-cloud` | TypeScript | Google Cloud deployment                                                     |
+| レイヤー               | 役割                                              |
+| ------------------ | ----------------------------------------------- |
+| **Applications**   | Issuer・Wallet・Verifier のアプリケーションを実装します。         |
+| **Core Libraries** | OpenID4VCI / OpenID4VP のプロトコルや Wallet 機能を提供します。 |
+| **Providers**      | データベースや KMS などの外部サービスとの接続を実装します。                |
+| **Infrastructure** | データベースや鍵管理サービスなどの実際のインフラです。                     |
 
 ---
 
-# Package Relationships
+# パッケージ構成
+
+| パッケージ                 | 言語         | 役割                                                              |
+| --------------------- | ---------- | --------------------------------------------------------------- |
+| `issuer+verifier`     | TypeScript | OpenID4VCI / OpenID4VP、Issuer、Verifier、Authorization Server の実装 |
+| `wallet`              | Go         | Wallet 機能、DID・鍵管理、Credential の管理                                |
+| `aws`                 | TypeScript | DynamoDB、KMS、Secrets Manager など AWS 向け Provider                 |
+| `server/single`       | TypeScript | シングルテナント構成のサンプルサーバー                                             |
+| `server/aws`          | TypeScript | AWS Lambda + CDK によるデプロイ例                                       |
+| `server/google-cloud` | TypeScript | Google Cloud 向けデプロイ例                                            |
+
+---
+
+# パッケージ間の関係
 
 ```mermaid
 flowchart LR
 
     APP[Applications]
 
-    IV[issuer+verifier]
-    W[wallet]
+    IV["issuer+verifier"]
+    W["wallet"]
 
     AWS[AWS Provider]
     CUSTOM[Custom Provider]
@@ -96,26 +96,30 @@ flowchart LR
     SERVER --> W
 ```
 
-Sample servers are reference implementations that compose the reusable libraries.
+各パッケージの関係は次のとおりです。
+
+* アプリケーションは `issuer+verifier` および `wallet` を利用して実装します。
+* `issuer+verifier` は Provider を介してデータベースや KMS などの外部サービスへアクセスします。
+* `server/*` はライブラリを組み合わせたリファレンス実装です。
 
 ---
 
-# Credential Issuance Flow
+# Credential 発行フロー（OpenID4VCI）
 
 ```mermaid
 sequenceDiagram
 
-    participant Holder as Wallet
+    participant Wallet
     participant Issuer
     participant Library as issuer+verifier
     participant Provider
     participant KMS
 
-    Holder->>Issuer: Credential Request (OpenID4VCI)
+    Wallet->>Issuer: Credential Request
 
     Issuer->>Library: Process Request
 
-    Library->>Provider: Store / Retrieve Data
+    Library->>Provider: Access Storage
 
     Provider->>KMS: Sign Credential
 
@@ -123,20 +127,20 @@ sequenceDiagram
 
     Provider-->>Library: Credential
 
-    Library-->>Holder: Verifiable Credential
+    Library-->>Wallet: Verifiable Credential
 ```
 
-### Steps
+### 処理の流れ
 
-1. The Wallet requests a credential.
-2. The Issuer delegates protocol processing to `issuer+verifier`.
-3. Providers access storage and key management.
-4. The credential is signed.
-5. The Wallet receives the credential.
+1. Wallet が Credential 発行要求（OpenID4VCI）を送信します。
+2. Issuer は `issuer+verifier` にプロトコル処理を委譲します。
+3. Provider がデータベースや KMS にアクセスします。
+4. Credential が署名されます。
+5. Wallet が Verifiable Credential を受け取り保存します。
 
 ---
 
-# Presentation Verification Flow
+# Presentation 検証フロー（OpenID4VP）
 
 ```mermaid
 sequenceDiagram
@@ -144,9 +148,9 @@ sequenceDiagram
     participant Wallet
     participant Verifier
     participant Library as issuer+verifier
-    participant Trust as Trust Registry / DID Resolver
+    participant Trust as DID Resolver / Trust Registry
 
-    Wallet->>Verifier: Verifiable Presentation (OpenID4VP)
+    Wallet->>Verifier: Verifiable Presentation
 
     Verifier->>Library: Verify Presentation
 
@@ -161,16 +165,16 @@ sequenceDiagram
     Verifier-->>Wallet: Accept / Reject
 ```
 
-### Steps
+### 処理の流れ
 
-1. The Wallet sends a Verifiable Presentation.
-2. The Verifier delegates validation to `issuer+verifier`.
-3. The framework resolves DIDs and verifies signatures.
-4. The verification result is returned.
+1. Wallet が Verifiable Presentation を送信します。
+2. Verifier は `issuer+verifier` に検証処理を委譲します。
+3. ライブラリは DID 解決、署名検証、信頼性検証を実施します。
+4. 検証結果を Verifier に返却します。
 
 ---
 
-# Layered Architecture
+# レイヤードアーキテクチャ
 
 ```mermaid
 flowchart TB
@@ -180,57 +184,31 @@ flowchart TB
     end
 
     subgraph L2["Core Libraries"]
-        CORE[issuer+verifier<br/>wallet]
+        CORE["issuer+verifier<br/>wallet"]
     end
 
     subgraph L3["Provider Layer"]
-        P[AWS<br/>Google Cloud<br/>Custom Providers]
+        PROVIDER["AWS<br/>Google Cloud<br/>Custom Providers"]
     end
 
     subgraph L4["Infrastructure Layer"]
-        I[(Database / KMS / Storage)]
+        INFRA["Database<br/>KMS<br/>Storage"]
     end
 
     APP --> CORE
-    CORE --> P
-    P --> I
+    CORE --> PROVIDER
+    PROVIDER --> INFRA
 ```
+
+アプリケーションはコアライブラリを利用して実装され、コアライブラリは Provider を介してインフラへアクセスします。この構造により、プロトコル実装とインフラ実装を分離し、クラウド環境やストレージを柔軟に差し替えることができます。
 
 ---
 
-# Design Principles
+# 設計方針
 
-* **Protocol and infrastructure are separated.**
-* **Cloud providers are replaceable through provider interfaces.**
-* **Applications build on reusable libraries instead of implementing OpenID4VCI/OpenID4VP directly.**
-* **Sample servers demonstrate deployment patterns without being part of the framework core.**
+VC Knots は以下の設計思想に基づいています。
 
----
-
-```mermaid
-flowchart TB
-
-    APP[Issuer]
-
-    CORE[issuer+verifier]
-
-    FORMAT["Credential Format Plugin"]
-    CRYPTO["Crypto Plugin"]
-    STORAGE["Storage Provider"]
-
-    APP --> CORE
-
-    CORE --> FORMAT
-    CORE --> CRYPTO
-    CORE --> STORAGE
-
-    FORMAT --> JWT
-    FORMAT --> SDJWT
-    FORMAT --> mdoc
-
-    CRYPTO --> ES256
-    CRYPTO --> EdDSA
-
-    STORAGE --> DynamoDB
-    STORAGE --> PostgreSQL
-```
+* **プロトコル実装とインフラ実装を分離**し、ビジネスロジックをクラウド環境から独立させます。
+* **Provider をプラグインとして実装**することで、AWS や Google Cloud など異なる環境へ容易に対応できます。
+* **アプリケーションはライブラリを組み合わせるだけ**で、OpenID4VCI / OpenID4VP を実装できます。
+* **サンプルサーバーはリファレンス実装**であり、ライブラリの利用方法やデプロイ構成の例を提供します。
