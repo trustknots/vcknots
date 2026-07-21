@@ -46,7 +46,10 @@ const config: Config = {
     },
     path: '../docs/i18n',
   },
-
+  themes: ['@docusaurus/theme-mermaid'],
+  markdown: {
+    mermaid: true,
+  },
   presets: [
     [
       'classic',
