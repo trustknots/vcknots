@@ -641,17 +641,12 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 	}
 	applyOID4VPRequestOptions(req, serializeOptions)
 
-	descriptorMap, err := w.buildDescriptorMap(credentials, flavor)
+	presentation, err := w.buildPresentation(credentials, key, req)
 	if err != nil {
 		return "", err
 	}
 
-	presentation, err := w.buildPresentation(credentials, flavor, descriptorMap, key, req)
-	if err != nil {
-		return "", err
-	}
-
-	redirectURI, err := w.submitPresentation(presentation, flavor, endpoint, descriptorMap, req, key, serializeOptions)
+	redirectURI, err := w.submitPresentation(presentation, flavor, endpoint, req, key, serializeOptions)
 	if err != nil {
 		return "", err
 	}
@@ -747,53 +742,8 @@ func (w *Wallet) validateSerializationFlavor(credentials []*SavedCredential) (*c
 	return serializationFlavor, nil
 }
 
-// buildDescriptorMap builds the presentation submission descriptor map.
-func (w *Wallet) buildDescriptorMap(credentials []*SavedCredential, flavor *credential.SupportedSerializationFlavor) ([]presenterTypes.DescriptorMapItem, error) {
-	vcFormat, vpFormat, err := flavor.OID4VPFormatIdentifier()
-	if err != nil {
-		return nil, fmt.Errorf("unsupported serialization format: %w", err)
-	}
-
-	var descriptorMap []presenterTypes.DescriptorMapItem
-	for i := range credentials {
-		descriptionItemID := uuid.New().String()
-		descriptorPath := "$"
-		if len(credentials) > 1 {
-			descriptorPath = fmt.Sprintf("$[%d]", i)
-		}
-		// Temporary compatibility workaround:
-		// the current verifier/request-object flow still requires
-		// presentation_submission.descriptor_map, and dc+sd-jwt must point to the
-		// combined vp_token itself with path "$" instead of JWT-VP style nested paths.
-		// This format-specific branching does not belong in wallet core long term and
-		// should be removed or moved once the verifier/request-object flow is
-		// reorganized around DCQL.
-		if vpFormat == "dc+sd-jwt" {
-			descriptorMap = append(descriptorMap, presenterTypes.DescriptorMapItem{
-				ID:     descriptionItemID,
-				Format: vpFormat,
-				Path:   descriptorPath,
-			})
-			continue
-		}
-
-		descriptorMap = append(descriptorMap, presenterTypes.DescriptorMapItem{
-			ID:     descriptionItemID,
-			Format: vpFormat,
-			Path:   descriptorPath,
-			PathNested: &presenterTypes.DescriptorMapItem{
-				ID:     descriptionItemID,
-				Format: vcFormat,
-				Path:   fmt.Sprintf("$.verifiableCredential[%d]", i),
-			},
-		})
-	}
-
-	return descriptorMap, nil
-}
-
 // buildPresentation builds the credential presentation.
-func (w *Wallet) buildPresentation(credentials []*SavedCredential, flavor *credential.SupportedSerializationFlavor, descriptorMap []presenterTypes.DescriptorMapItem, key IKeyEntry, req *oid4vp.CredentialPresentationRequest) (*credential.CredentialPresentation, error) {
+func (w *Wallet) buildPresentation(credentials []*SavedCredential, key IKeyEntry, req *oid4vp.CredentialPresentationRequest) (*credential.CredentialPresentation, error) {
 	did, err := w.GenerateDID(DIDCreateOptions{
 		TypeID:    "did:key",
 		PublicKey: key.PublicKey(),
@@ -827,7 +777,7 @@ func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, option
 }
 
 // submitPresentation serializes and submits the presentation to the verifier.
-func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentation, flavor *credential.SupportedSerializationFlavor, endpoint *url.URL, descriptorMap []presenterTypes.DescriptorMapItem, req *oid4vp.CredentialPresentationRequest, key IKeyEntry, options serializerTypes.SerializePresentationOptions) (string, error) {
+func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentation, flavor *credential.SupportedSerializationFlavor, endpoint *url.URL, req *oid4vp.CredentialPresentationRequest, key IKeyEntry, options serializerTypes.SerializePresentationOptions) (string, error) {
 	if len(req.TransactionData) > 0 {
 		if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok && sdOpts != nil {
 			transactionDataHashesAlg := req.TransactionDataHashesAlg
@@ -851,16 +801,12 @@ func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentat
 		return "", fmt.Errorf("failed to serialize presentation: %w", err)
 	}
 
-	// Temporary: presentation_submission is a Presentation Exchange artifact and
-	// will be removed when the response flow is reorganized around DCQL.
-	presentationSubmission := presenterTypes.PresentationSubmission{
-		ID:            uuid.New().String(),
-		DescriptorMap: descriptorMap,
-	}
-
+	// The presentation is fixed to answer the first Credential Query for now
+	// (Issue #606); its id becomes the key of the vp_token JSON object.
 	presentationRequest := &presenterTypes.PresentationRequest{
-		State:          req.State,
-		ClientMetadata: req.ClientMetadata,
+		State:             req.State,
+		CredentialQueryID: req.DcqlQuery.Credentials[0].ID,
+		ClientMetadata:    req.ClientMetadata,
 	}
 
 	if req.ClientMetadata != nil {
@@ -868,7 +814,7 @@ func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentat
 		presentationRequest.AuthorizationEncryptedRespEnc = req.ClientMetadata.AuthorizationEncryptedResponseEnc
 	}
 
-	redirectURI, err := w.presenter.Present(presenterTypes.Oid4vp, *endpoint, bytes, presentationSubmission, presentationRequest)
+	redirectURI, err := w.presenter.Present(presenterTypes.Oid4vp, *endpoint, bytes, presentationRequest)
 	if err != nil {
 		return "", err
 	}

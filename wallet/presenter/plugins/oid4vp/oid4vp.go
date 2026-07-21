@@ -82,15 +82,23 @@ func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*Credentia
 	return req, nil
 }
 
-// Present sends the presentation to the verifier
-func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission types.PresentationSubmission, request *types.PresentationRequest) (string, error) {
+// Present sends the presentation to the verifier.
+// The vp_token is a JSON object keyed by the DCQL Credential Query id, as
+// defined in OID4VP 1.0 Section 8.1:
+// {"<credential query id>": ["<presentation>"]}
+func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, request *types.PresentationRequest) (string, error) {
 	if protocol != types.Oid4vp {
 		return "", fmt.Errorf("plugin type mismatch")
 	}
 
-	presentationSubmissionJSON, err := json.Marshal(presentationSubmission)
+	if request == nil || request.CredentialQueryID == "" {
+		return "", fmt.Errorf("credential query id is required to build vp_token")
+	}
+	vpTokenJSON, err := json.Marshal(map[string][]string{
+		request.CredentialQueryID: {string(serializedPresentation)},
+	})
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal presentation_submission: %w", err)
+		return "", fmt.Errorf("failed to marshal vp_token: %w", err)
 	}
 
 	// Check if JARM (JWT-Secured Authorization Response Mode) is required
@@ -98,7 +106,7 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 	var encryptionAlg, encryptionEnc string
 	var verifierJWKS *jose.JSONWebKeySet
 
-	if request != nil && request.ClientMetadata != nil {
+	if request.ClientMetadata != nil {
 		if metadata, ok := request.ClientMetadata.(*VerifierMetadata); ok {
 			if metadata.AuthorizationEncryptedResponseAlg != "" {
 				useJARM = true
@@ -114,18 +122,17 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 
 	if useJARM {
 		// JARM: Create JWT with response parameters, encrypt it, and send as "response" parameter
-		jarmToken, err := p.createJARMResponse(string(serializedPresentation), string(presentationSubmissionJSON), request, encryptionAlg, encryptionEnc, verifierJWKS)
+		jarmToken, err := p.createJARMResponse(vpTokenJSON, request, encryptionAlg, encryptionEnc, verifierJWKS)
 		if err != nil {
 			return "", fmt.Errorf("failed to create JARM response: %w", err)
 		}
 		formData.Set("response", jarmToken)
 	} else {
-		// Standard response: Send vp_token and presentation_submission directly
-		formData.Set("vp_token", string(serializedPresentation))
-		formData.Set("presentation_submission", string(presentationSubmissionJSON))
+		// Standard response: Send the vp_token JSON object directly
+		formData.Set("vp_token", string(vpTokenJSON))
 
 		// Add state if present in the original request
-		if request != nil && request.State != "" {
+		if request.State != "" {
 			formData.Set("state", request.State)
 		}
 	}
@@ -162,11 +169,10 @@ func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, 
 }
 
 // createJARMResponse creates a JWT-Secured Authorization Response (JARM)
-func (p *Oid4vpPresenter) createJARMResponse(vpToken, presentationSubmission string, request *types.PresentationRequest, encAlg, encEnc string, verifierJWKS *jose.JSONWebKeySet) (string, error) {
-	// Create the response payload
+func (p *Oid4vpPresenter) createJARMResponse(vpTokenJSON []byte, request *types.PresentationRequest, encAlg, encEnc string, verifierJWKS *jose.JSONWebKeySet) (string, error) {
+	// Create the response payload; vp_token is embedded as a JSON object.
 	payload := map[string]interface{}{
-		"vp_token":                vpToken,
-		"presentation_submission": presentationSubmission,
+		"vp_token": json.RawMessage(vpTokenJSON),
 	}
 
 	// Add state if present

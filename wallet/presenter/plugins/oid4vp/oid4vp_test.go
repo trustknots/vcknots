@@ -30,12 +30,8 @@ const testDcqlQueryParam = "%7B%22credentials%22%3A%5B%7B%22id%22%3A%22cred1%22%
 
 func TestOid4vpPresenter_Present(t *testing.T) {
 	testPresentation := []byte("a.valid.jwt")
-	testSubmission := types.PresentationSubmission{
-		ID:           "12345",
-		DefinitionID: "example_jwt_vc",
-		DescriptorMap: []types.DescriptorMapItem{
-			{ID: "vp_token_jwt", Format: "jwt_vp_json", Path: "$"},
-		},
+	testRequest := &types.PresentationRequest{
+		CredentialQueryID: "cred1",
 	}
 
 	tests := []struct {
@@ -97,7 +93,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 				endpoint = *presenterURL
 			}
 			p := &Oid4vpPresenter{}
-			_, err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testSubmission, nil)
+			_, err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testRequest)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Oid4vpPresenter.Present() error = %v, wantErr %v", err, tt.wantErr)
@@ -119,7 +115,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		require.NoError(t, err)
 
 		p := &Oid4vpPresenter{}
-		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
+		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testRequest)
 		require.NoError(t, err)
 		assert.Equal(t, "https://example.com/callback", redirectURI)
 	})
@@ -139,9 +135,52 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		require.NoError(t, err)
 
 		p := &Oid4vpPresenter{}
-		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
+		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testRequest)
 		require.NoError(t, err)
 		assert.Empty(t, redirectURI)
+	})
+
+	// AC (Issue #606): vp_token must be a JSON object keyed by the DCQL
+	// Credential Query id, and presentation_submission must not be sent.
+	t.Run("Sends vp_token as DCQL JSON object", func(t *testing.T) {
+		var gotVPToken, gotSubmission, gotState string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("failed to parse form: %v", err)
+			}
+			gotVPToken = r.PostFormValue("vp_token")
+			gotSubmission = r.PostFormValue("presentation_submission")
+			gotState = r.PostFormValue("state")
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		endpoint, err := url.Parse(server.URL)
+		require.NoError(t, err)
+
+		p := &Oid4vpPresenter{}
+		req := &types.PresentationRequest{CredentialQueryID: "cred1", State: "test-state"}
+		_, err = p.Present(types.Oid4vp, *endpoint, testPresentation, req)
+		require.NoError(t, err)
+
+		assert.JSONEq(t, `{"cred1":["a.valid.jwt"]}`, gotVPToken)
+		assert.Empty(t, gotSubmission, "presentation_submission must not be sent")
+		assert.Equal(t, "test-state", gotState)
+	})
+
+	t.Run("Missing credential query id is rejected", func(t *testing.T) {
+		p := &Oid4vpPresenter{}
+		endpoint := *mustParseURL(t, "http://localhost:12345")
+
+		_, err := p.Present(types.Oid4vp, endpoint, testPresentation, &types.PresentationRequest{})
+		if err == nil || !strings.Contains(err.Error(), "credential query id is required") {
+			t.Fatalf("expected credential query id error, got: %v", err)
+		}
+
+		_, err = p.Present(types.Oid4vp, endpoint, testPresentation, nil)
+		if err == nil || !strings.Contains(err.Error(), "credential query id is required") {
+			t.Fatalf("expected credential query id error for nil request, got: %v", err)
+		}
 	})
 
 	// Test network error case with connection hijacking
@@ -161,7 +200,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		hijackURL, _ := url.Parse(hijackServer.URL() + "/present")
 
 		p := &Oid4vpPresenter{}
-		_, err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testSubmission, nil)
+		_, err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testRequest)
 
 		if err == nil {
 			t.Error("Expected error for hijacked connection, got nil")
