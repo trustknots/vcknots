@@ -4,6 +4,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,10 +77,62 @@ func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*Credentia
 
 	req, err := builder.Build()
 	if err != nil {
+		// OID4VP: when the Authorization Request is rejected with an OAuth
+		// error code and response_mode=direct_post, deliver the error
+		// authorization response to the Verifier's response_uri.
+		var authzErr *AuthorizationRequestError
+		if errors.As(err, &authzErr) {
+			if sendErr := p.sendAuthorizationErrorResponse(builder.req, authzErr); sendErr != nil {
+				return nil, fmt.Errorf("failed to build CredentialPresentationRequest: %w (also failed to send error authorization response: %v)", err, sendErr)
+			}
+		}
 		return nil, fmt.Errorf("failed to build CredentialPresentationRequest: %w", err)
 	}
 
 	return req, nil
+}
+
+// sendAuthorizationErrorResponse posts the OAuth 2.0 error authorization
+// response (error, error_description and state) to the Verifier's
+// response_uri when response_mode=direct_post. It is a no-op when the
+// partially parsed request has no usable direct_post response_uri.
+func (p *Oid4vpPresenter) sendAuthorizationErrorResponse(req *CredentialPresentationRequest, authzErr *AuthorizationRequestError) error {
+	if req == nil || req.ResponseMode != OAuthAuthzReqResponseModeDirectPost || req.ResponseURI == "" {
+		return nil
+	}
+
+	responseURI, err := url.Parse(req.ResponseURI)
+	if err != nil {
+		return fmt.Errorf("response_uri must be URI: %w", err)
+	}
+	if !env.IsHTTPAllowed() && !strings.EqualFold(responseURI.Scheme, "https") {
+		return fmt.Errorf("response_uri must use https scheme")
+	}
+
+	formData := url.Values{}
+	formData.Set("error", string(authzErr.Code))
+	if authzErr.Err != nil {
+		formData.Set("error_description", authzErr.Err.Error())
+	}
+	if req.State != "" {
+		formData.Set("state", req.State)
+	}
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	resp, err := client.Post(responseURI.String(), "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
+	if err != nil {
+		return fmt.Errorf("failed to send error authorization response: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("verifier returned non-200 status for error authorization response: %d, body: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
 }
 
 // Present sends the presentation to the verifier.
@@ -355,23 +408,6 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 		params = filteredParams
 	}
 
-	// Presentation Exchange based parameters were removed in OID4VP 1.0 in
-	// favor of dcql_query; this wallet does not accept them (Issue #606).
-	for _, unsupported := range []string{"presentation_definition", "presentation_definition_uri", "presentation_submission"} {
-		if _, exists := params[unsupported]; exists {
-			b.errValidation = newAuthorizationRequestError(InvalidRequestError, "%s is not supported; use dcql_query instead", unsupported)
-			return
-		}
-	}
-
-	// Requesting Credentials via the scope parameter is not supported by this wallet.
-	if scope, exists := params["scope"]; exists {
-		if scopeStr, ok := scope.(string); !ok || scopeStr != "" {
-			b.errValidation = newAuthorizationRequestError(InvalidScopeError, "scope parameter is not supported; use dcql_query instead")
-			return
-		}
-	}
-
 	missing := []string{}
 
 	getParam := func(key string, required bool) string {
@@ -428,6 +464,28 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 	}
 
 	b.req.ResponseURI = responseURIFromParam
+
+	// The checks below are performed after the response parameters
+	// (response_mode, response_uri, state) are populated, so that the
+	// resulting *AuthorizationRequestError can be delivered to the Verifier
+	// as an error authorization response when response_mode=direct_post.
+
+	// Presentation Exchange based parameters were removed in OID4VP 1.0 in
+	// favor of dcql_query; this wallet does not accept them (Issue #606).
+	for _, unsupported := range []string{"presentation_definition", "presentation_definition_uri", "presentation_submission"} {
+		if _, exists := params[unsupported]; exists {
+			b.errValidation = newAuthorizationRequestError(InvalidRequestError, "%s is not supported; use dcql_query instead", unsupported)
+			return
+		}
+	}
+
+	// Requesting Credentials via the scope parameter is not supported by this wallet.
+	if scope, exists := params["scope"]; exists {
+		if scopeStr, ok := scope.(string); !ok || scopeStr != "" {
+			b.errValidation = newAuthorizationRequestError(InvalidScopeError, "scope parameter is not supported; use dcql_query instead")
+			return
+		}
+	}
 
 	if rawDcqlQuery, exists := params["dcql_query"]; exists {
 		dcqlQuery, err := parseDcqlQuery(rawDcqlQuery)

@@ -752,6 +752,115 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 	}
 }
 
+// AC (Issue #606): when an Authorization Request is rejected with an OAuth
+// error code and response_mode=direct_post, the wallet posts the error
+// authorization response (error, error_description, state) to response_uri.
+func TestOid4vpPresenter_SendsErrorAuthorizationResponse(t *testing.T) {
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+	p := &Oid4vpPresenter{}
+
+	newErrorCapturingServer := func(t *testing.T) (*httptest.Server, *url.Values) {
+		t.Helper()
+		captured := &url.Values{}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("failed to parse form: %v", err)
+			}
+			*captured = r.PostForm
+			w.WriteHeader(http.StatusOK)
+		}))
+		return server, captured
+	}
+
+	baseURI := func(responseURI, extraParams string) string {
+		return "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&state=err-state&response_mode=direct_post&response_uri=" +
+			url.QueryEscape(responseURI) + extraParams
+	}
+
+	tests := []struct {
+		name        string
+		extraParams string
+		wantError   string
+	}{
+		{
+			name:        "invalid dcql_query posts invalid_request",
+			extraParams: "&dcql_query=%7B%22credentials%22%3A%5B%5D%7D",
+			wantError:   "invalid_request",
+		},
+		{
+			name:        "non-empty scope posts invalid_scope",
+			extraParams: "&scope=openid&dcql_query=" + testDcqlQueryParam,
+			wantError:   "invalid_scope",
+		},
+		{
+			name:        "unsupported format posts vp_formats_not_supported",
+			extraParams: "&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%22c1%22%2C%22format%22%3A%22mso_mdoc%22%2C%22meta%22%3A%7B%7D%7D%5D%7D",
+			wantError:   "vp_formats_not_supported",
+		},
+		{
+			name:        "presentation_definition posts invalid_request",
+			extraParams: "&presentation_definition=%7B%22id%22%3A%22def%22%7D&dcql_query=" + testDcqlQueryParam,
+			wantError:   "invalid_request",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, captured := newErrorCapturingServer(t)
+			defer server.Close()
+
+			_, err := p.ParsePresentationRequest(baseURI(server.URL, tt.extraParams))
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			if got := captured.Get("error"); got != tt.wantError {
+				t.Fatalf("expected error %q to be posted, got %q", tt.wantError, got)
+			}
+			if captured.Get("error_description") == "" {
+				t.Fatal("expected error_description to be posted")
+			}
+			if got := captured.Get("state"); got != "err-state" {
+				t.Fatalf("expected state %q to be posted, got %q", "err-state", got)
+			}
+			if got := captured.Get("vp_token"); got != "" {
+				t.Fatalf("expected no vp_token in error response, got %q", got)
+			}
+		})
+	}
+
+	t.Run("no error response without direct_post", func(t *testing.T) {
+		server, captured := newErrorCapturingServer(t)
+		defer server.Close()
+
+		uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&response_mode=fragment&dcql_query=%7B%22credentials%22%3A%5B%5D%7D"
+		_, err := p.ParsePresentationRequest(uri)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if len(*captured) != 0 {
+			t.Fatalf("expected no error response to be sent, got %v", *captured)
+		}
+	})
+
+	t.Run("send failure is reported alongside the original error", func(t *testing.T) {
+		server, _ := newErrorCapturingServer(t)
+		server.Close() // unreachable response_uri
+
+		_, err := p.ParsePresentationRequest(baseURI(server.URL, "&dcql_query=%7B%22credentials%22%3A%5B%5D%7D"))
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "invalid_request") {
+			t.Fatalf("expected original error to be preserved, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "failed to send error authorization response") {
+			t.Fatalf("expected send failure to be reported, got: %v", err)
+		}
+	})
+}
+
 func TestOid4vpPresenter_ParsePresentationRequest_AllowsNonHTTPSResponseURI_WhenValidationDisabled(t *testing.T) {
 	p := &Oid4vpPresenter{}
 	httpAllowed := env.IsHTTPAllowed()
