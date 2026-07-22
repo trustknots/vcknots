@@ -328,17 +328,18 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         })
       rejectInsecureIssuerMetadata(metadata)
 
-      if (
-        credentialRequest.credential_identifier &&
-        credentialRequest.credential_configuration_id
-      ) {
+      const hasCredentialIdentifier = credentialRequest.credential_identifier !== undefined
+      const hasCredentialConfigurationId =
+        credentialRequest.credential_configuration_id !== undefined
+
+      if (hasCredentialIdentifier && hasCredentialConfigurationId) {
         throw err('invalid_credential_request', {
           message:
             'credential_identifier and credential_configuration_id must not be used together.',
         })
       }
 
-      if (credentialRequest.credential_identifier) {
+      if (hasCredentialIdentifier) {
         // TODO: Resolve identifiers issued in the Token Response and verify that
         // the identifier is authorized for the presented access token.
         throw err('unknown_credential_identifier', {
