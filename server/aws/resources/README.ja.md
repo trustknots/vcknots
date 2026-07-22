@@ -42,7 +42,6 @@ server/aws/
         │   │   ├── authz-api.ts
         │   │   └── verifier-api.ts
         │   └── security/
-        │       ├── key-management.ts      （プレースホルダー、スタック未組み込み）
         │       └── secret-management.ts   （プレースホルダー、スタック未組み込み）
         ├── util/
         │   └── paths.ts

@@ -1,4 +1,5 @@
 import { Construct } from 'constructs';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import { DataStores } from '../data/data-stores';
 import { LambdaApi } from './lambda-api';
 
@@ -19,5 +20,26 @@ export class IssuerApi extends Construct {
         PRE_CODES_TABLE_NAME: dataStores.preCodesTable.tableName,
       },
     });
+
+    // The issuer creates and uses signing keys at runtime (kmsIssuerSignatureKeyStore),
+    // so keys cannot be provisioned here and referenced by ARN. kms:CreateKey only
+    // supports Resource "*"; the key-level actions could later be narrowed with an
+    // aws:RequestTag / kms:RequestAlias condition once alias-based scoping is needed.
+    this.lambdaApi.role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'kms:CreateKey',
+          'kms:CreateAlias',
+          'kms:UpdateAlias',
+          'kms:DescribeKey',
+          'kms:GetPublicKey',
+          'kms:Sign',
+          'kms:GetParametersForImport',
+          'kms:ImportKeyMaterial',
+          'kms:ScheduleKeyDeletion',
+        ],
+        resources: ['*'],
+      }),
+    );
   }
 }

@@ -42,7 +42,6 @@ server/aws/
         │   │   ├── authz-api.ts
         │   │   └── verifier-api.ts
         │   └── security/
-        │       ├── key-management.ts      (placeholder, not in stack yet)
         │       └── secret-management.ts   (placeholder, not in stack yet)
         ├── util/
         │   └── paths.ts
