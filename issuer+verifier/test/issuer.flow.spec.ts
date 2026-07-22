@@ -1347,7 +1347,7 @@ describe('IssuerFlow', () => {
       )
     })
 
-    it('should throw "invalid_credential_request" if proofs are missing', async () => {
+    it('should throw "invalid_proof" if proofs are missing', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
       const metadata = {
@@ -1376,7 +1376,7 @@ describe('IssuerFlow', () => {
           alg: 'ES256',
         }),
         {
-          name: 'invalid_credential_request',
+          name: 'invalid_proof',
           message: 'Proof is required to issue credential.',
         }
       )

@@ -440,7 +440,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         }
       }
       if (!verifyProof) {
-        throw err('invalid_credential_request', {
+        throw err('invalid_proof', {
           message: 'Proof is required to issue credential.',
         })
       }
