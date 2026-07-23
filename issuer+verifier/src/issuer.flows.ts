@@ -328,9 +328,10 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         })
       rejectInsecureIssuerMetadata(metadata)
 
-      const hasCredentialIdentifier = credentialRequest.credential_identifier !== undefined
-      const hasCredentialConfigurationId =
-        credentialRequest.credential_configuration_id !== undefined
+      const credentialIdentifier = credentialRequest.credential_identifier
+      const credentialConfigurationId = credentialRequest.credential_configuration_id
+      const hasCredentialIdentifier = credentialIdentifier !== undefined
+      const hasCredentialConfigurationId = credentialConfigurationId !== undefined
 
       if (hasCredentialIdentifier && hasCredentialConfigurationId) {
         throw err('invalid_credential_request', {
@@ -343,11 +344,11 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
         // TODO: Resolve identifiers issued in the Token Response and verify that
         // the identifier is authorized for the presented access token.
         throw err('unknown_credential_identifier', {
-          message: `Credential identifier ${credentialRequest.credential_identifier} is unknown.`,
+          message: `Credential identifier ${credentialIdentifier} is unknown.`,
         })
       }
 
-      if (!credentialRequest.credential_configuration_id) {
+      if (!hasCredentialConfigurationId) {
         throw err('invalid_credential_request', {
           message: 'Credential configuration id is not specified.',
         })
@@ -355,11 +356,10 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
 
       // https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html#name-credential-request-2
       const credentialConfigurationSupported = metadata.credential_configurations_supported
-      const configuration =
-        credentialConfigurationSupported[credentialRequest.credential_configuration_id]
+      const configuration = credentialConfigurationSupported[credentialConfigurationId]
       if (!configuration) {
         throw err('unknown_credential_configuration', {
-          message: `Credential configuration ${credentialRequest.credential_configuration_id} is not supported by issuer ${issuer}.`,
+          message: `Credential configuration ${credentialConfigurationId} is not supported by issuer ${issuer}.`,
         })
       }
       if (!authorizationContext.allowedCredentialConfigurationKey) {
@@ -375,9 +375,8 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
           message: 'Allowed credential configurations for this access token were not found',
         })
       }
-      const requestedCredentialConfigurationId = CredentialConfigurationId(
-        credentialRequest.credential_configuration_id
-      )
+      const requestedCredentialConfigurationId =
+        CredentialConfigurationId(credentialConfigurationId)
 
       if (!allowedCredentialConfigurationIds.includes(requestedCredentialConfigurationId)) {
         throw err('invalid_credential_request', {

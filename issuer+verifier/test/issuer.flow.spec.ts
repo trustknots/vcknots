@@ -1208,6 +1208,42 @@ describe('IssuerFlow', () => {
       )
     })
 
+    it('should throw "unknown_credential_configuration" if credential configuration id is empty', async () => {
+      // 1. Arrange
+      const issuer = CredentialIssuer('did:example:issuer')
+      const metadata: CredentialIssuerMetadata = {
+        credential_issuer: issuer,
+        credential_endpoint: 'https://example.com/credentials',
+        credential_configurations_supported: {
+          University_Degree: {
+            format: 'jwt_vc_json',
+            credential_definition: {
+              type: ['VCKnots'],
+              credentialSubject: {},
+            },
+            credential_signing_alg_values_supported: ['ES256'],
+          },
+        },
+      }
+      const credentialRequest = createCredentialRequest({
+        credential_configuration_id: '',
+      })
+
+      mock.method(mockIssuerMetadataProvider, 'fetch', async () => metadata)
+
+      // 2. Act & 3. Assert
+      await assert.rejects(
+        issuerFlow.issueCredential(issuer, credentialRequest, {
+          authorizationContext: createAuthorizationContext(),
+          alg: 'ES256',
+        }),
+        {
+          name: 'unknown_credential_configuration',
+          message: `Credential configuration  is not supported by issuer ${issuer}.`,
+        }
+      )
+    })
+
     it('should throw "invalid_credential_request" if both credential identifier and configuration id are specified', async () => {
       // 1. Arrange
       const issuer = CredentialIssuer('did:example:issuer')
