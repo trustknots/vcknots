@@ -133,6 +133,7 @@ var coseAlgToJWA = map[int64]jose.SignatureAlgorithm{
 	-258: jose.RS384,
 	-259: jose.RS512,
 	-7:   jose.ES256,
+	-9:   jose.ES256, // ESP256 (fully-specified ECDSA using P-256 and SHA-256)
 	-35:  jose.ES384,
 	-36:  jose.ES512,
 	-37:  jose.PS256,

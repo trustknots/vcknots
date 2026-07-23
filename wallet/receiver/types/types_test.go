@@ -30,6 +30,11 @@ func TestSignatureAlgorithmUnmarshalJSON(t *testing.T) {
 			expected: SignatureAlgorithm(jose.EdDSA),
 		},
 		{
+			name:     "COSE identifier for ESP256 (fully-specified ES256)",
+			raw:      `-9`,
+			expected: SignatureAlgorithm(jose.ES256),
+		},
+		{
 			name:     "COSE identifier for PS512",
 			raw:      `-39`,
 			expected: SignatureAlgorithm(jose.PS512),
@@ -69,7 +74,7 @@ func TestSignatureAlgorithmUnmarshalJSON(t *testing.T) {
 func TestCredentialConfigurationUnmarshalJSONMixedAlgValues(t *testing.T) {
 	raw := `{
 		"format": "mso_mdoc",
-		"credential_signing_alg_values_supported": ["ES256", -8, -257]
+		"credential_signing_alg_values_supported": ["ES256", -7, -9, -8, -257]
 	}`
 
 	var cfg CredentialConfiguration
@@ -78,6 +83,8 @@ func TestCredentialConfigurationUnmarshalJSONMixedAlgValues(t *testing.T) {
 	}
 
 	want := []SignatureAlgorithm{
+		SignatureAlgorithm(jose.ES256),
+		SignatureAlgorithm(jose.ES256),
 		SignatureAlgorithm(jose.ES256),
 		SignatureAlgorithm(jose.EdDSA),
 		SignatureAlgorithm(jose.RS256),
