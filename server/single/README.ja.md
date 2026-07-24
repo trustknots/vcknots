@@ -57,6 +57,8 @@ single/
 
    DPoP の mode（`off` / `optional` / `required`）は、`server/samples/oauth-server.json` の `authorization_server.default_client` / `authorization_server.anonymous_client` で設定します。
 
+   Credential Offer に `tx_code` が含まれる場合、in-memory の pre-authorized-code store がコードごとに誤った試行を制限します（既定 **5** 回）。上限を変える場合は `inMemoryPreAuthorizedCodeStore({ maxTxCodeAttempts: ... })` を指定してください（サンプルの `inMemory()` は既定値のまま。環境変数は未対応です）。上限到達後はコードが削除され、正しい `tx_code` でも以降の token request は `invalid_grant` になります。
+
 2. **依存関係のインストール**（ルートディレクトリで実行）
 
    ```bash
