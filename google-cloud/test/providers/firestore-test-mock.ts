@@ -35,6 +35,10 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
   const store = new Map<string, Record<string, unknown>>()
 
   // Fake Firestore instance backed by the in-memory store, injected via DI.
+  // Serialize runTransaction like Firestore's per-client contention handling so
+  // concurrent consume races in unit tests see a committed prior delete.
+  let transactionQueue: Promise<unknown> = Promise.resolve()
+
   const mockFirestore = {
     settings: () => {},
     doc: (path: string) => {
@@ -62,27 +66,35 @@ export const createFirestoreTestMock = (): FirestoreTestMock => {
     runTransaction: async <T>(
       updateFunction: (transaction: MockFirestoreTransaction) => Promise<T>
     ): Promise<T> => {
-      const transaction: MockFirestoreTransaction = {
-        get: async (docRef) => ({
-          exists: store.has(docRef.path),
-          data: () => store.get(docRef.path),
-          ref: docRef,
-        }),
-        set: (docRef, data, options) => {
-          if (options?.merge) {
-            const current = store.get(docRef.path) ?? {}
-            store.set(docRef.path, { ...current, ...data })
-          } else {
-            store.set(docRef.path, { ...data })
-          }
-          return transaction
-        },
-        delete: (docRef) => {
-          store.delete(docRef.path)
-          return transaction
-        },
-      }
-      return updateFunction(transaction)
+      const run = transactionQueue.then(async () => {
+        const transaction: MockFirestoreTransaction = {
+          get: async (docRef) => ({
+            exists: store.has(docRef.path),
+            data: () => store.get(docRef.path),
+            ref: docRef,
+          }),
+          set: (docRef, data, options) => {
+            if (options?.merge) {
+              const current = store.get(docRef.path) ?? {}
+              store.set(docRef.path, { ...current, ...data })
+            } else {
+              store.set(docRef.path, { ...data })
+            }
+            return transaction
+          },
+          delete: (docRef) => {
+            store.delete(docRef.path)
+            return transaction
+          },
+        }
+        return updateFunction(transaction)
+      })
+      // Keep the queue moving even when a transaction throws.
+      transactionQueue = run.then(
+        () => undefined,
+        () => undefined
+      )
+      return run
     },
   } as unknown as Firestore
 

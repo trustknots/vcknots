@@ -84,7 +84,34 @@ export const firestorePreAuthorizedCodeStore = (
       // per document, so even a highly concurrent burst admits at most `maxTxCodeAttempts`
       // guesses — once the limit is hit, every further attempt (including the correct PIN)
       // is rejected before the tx_code is ever compared.
+      // Successful consume uses a second conditional delete (parity with DynamoDB) so two
+      // concurrent correct-PIN requests cannot both return credential_configuration_ids.
       const docRef = firestore.doc(`${ns}/v1/preCodes/${code}`)
+
+      /**
+       * Deletes a stored code. When `conditional` is true the delete only succeeds if the
+       * document still exists; a lost race is surfaced as `invalid_grant` (DynamoDB parity).
+       */
+      const deleteCode = async (conditional = false): Promise<void> => {
+        if (!conditional) {
+          await docRef.delete()
+          return
+        }
+        const deleted = await firestore.runTransaction(async (transaction) => {
+          const doc = await transaction.get(docRef)
+          if (!doc.exists) {
+            return false
+          }
+          transaction.delete(docRef)
+          return true
+        })
+        if (!deleted) {
+          throw raise('invalid_grant', {
+            message: 'Pre-authorized code has already been consumed',
+          })
+        }
+      }
+
       const item = await firestore.runTransaction(async (transaction) => {
         const doc = await transaction.get(docRef)
         if (!doc.exists) {
@@ -103,13 +130,13 @@ export const firestorePreAuthorizedCodeStore = (
 
       const lockoutIfExhausted = async (): Promise<void> => {
         if ((item.attempts ?? 0) >= maxTxCodeAttempts) {
-          await docRef.delete()
+          await deleteCode()
           raise('invalid_grant', { message: LOCKED_MESSAGE })
         }
       }
 
       if (item.expires_at.toMillis() <= Date.now()) {
-        await docRef.delete()
+        await deleteCode()
         throw raise('invalid_grant', {
           message: 'Pre-authorized code has expired',
         })
@@ -146,8 +173,9 @@ export const firestorePreAuthorizedCodeStore = (
         })
       }
 
-      // Delete to prevent the code from being consumed twice.
-      await docRef.delete()
+      // Conditional delete to prevent the code from being consumed twice. A lost race
+      // means another request already consumed it (same idea as DynamoDB ConditionExpression).
+      await deleteCode(true)
 
       return item.credential_configuration_ids ?? null
     },

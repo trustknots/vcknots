@@ -495,6 +495,31 @@ describe('firestorePreAuthorizedCodeStore', () => {
       assert.ok(!store.has('vcknots/v1/preCodes/bf-ok'))
     })
 
+    it('allows only one concurrent successful consume of the same code', async () => {
+      const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+      await saveWithTxCode(provider, 'bf-race')
+
+      const outcomes = await Promise.allSettled([
+        provider.consume(PreAuthorizedCode('bf-race'), 1234),
+        provider.consume(PreAuthorizedCode('bf-race'), 1234),
+      ])
+
+      const fulfilled = outcomes.filter((o) => o.status === 'fulfilled')
+      const rejected = outcomes.filter((o) => o.status === 'rejected')
+      assert.equal(fulfilled.length, 1)
+      assert.equal(rejected.length, 1)
+      assert.deepStrictEqual(
+        (fulfilled[0] as PromiseFulfilledResult<typeof configurations>).value,
+        configurations
+      )
+      assert.equal((rejected[0] as PromiseRejectedResult).reason?.name, 'invalid_grant')
+      assert.equal(
+        (rejected[0] as PromiseRejectedResult).reason?.message,
+        'Pre-authorized code has already been consumed'
+      )
+      assert.ok(!store.has('vcknots/v1/preCodes/bf-race'))
+    })
+
     it('uses LOCKED_MESSAGE for unknown codes (parity with DynamoDB gate)', async () => {
       const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
       await assert.rejects(provider.consume(PreAuthorizedCode('bf-missing'), 1234), {
