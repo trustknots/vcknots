@@ -47,6 +47,27 @@ describe('firestorePreAuthorizedCodeStore', () => {
     assert.deepStrictEqual(valid, configurations)
   })
 
+  it('should throw invalid_tx_code when saving a non-numeric tx_code in numeric mode', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await assert.rejects(
+      provider.save(PreAuthorizedCode('save-invalid-numeric'), configurations, 'abc', {
+        tx_code_input_mode: 'numeric',
+      }),
+      { name: 'invalid_tx_code' }
+    )
+    assert.ok(!store.has('vcknots/v1/preCodes/save-invalid-numeric'))
+  })
+
+  it('should throw invalid_tx_code when saving a negative number in numeric mode', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await assert.rejects(
+      provider.save(PreAuthorizedCode('save-negative-numeric'), configurations, -1, {
+        tx_code_input_mode: 'numeric',
+      }),
+      { name: 'invalid_tx_code' }
+    )
+  })
+
   it('should throw invalid_grant for incorrect tx_code', async () => {
     const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
     await provider.save(PreAuthorizedCode('test-code-wrong'), configurations, 123, {
@@ -215,8 +236,56 @@ describe('firestorePreAuthorizedCodeStore', () => {
 
     await assert.rejects(provider.consume(PreAuthorizedCode('expiring-code'), undefined), {
       name: 'invalid_grant',
+      message: 'Pre-authorized code has expired',
     })
     assert.ok(!store.has('vcknots/v1/preCodes/expiring-code'))
+  })
+
+  it('should throw invalid_request when tx_code is required but missing', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('tx-required'), configurations, 1234, {
+      tx_code_input_mode: 'numeric',
+    })
+    await assert.rejects(provider.consume(PreAuthorizedCode('tx-required')), {
+      name: 'invalid_request',
+      message: 'tx_code is required for this pre-authorized code',
+    })
+    assert.equal(store.get('vcknots/v1/preCodes/tx-required')?.attempts, 1)
+  })
+
+  it('should lock out when tx_code is required but missing on the final attempt', async () => {
+    const LOCKED_MESSAGE = 'Pre-authorized code is invalid, consumed, or locked'
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp, maxTxCodeAttempts: 1 })
+    await provider.save(PreAuthorizedCode('tx-required-lock'), configurations, 1234, {
+      tx_code_input_mode: 'numeric',
+    })
+    await assert.rejects(provider.consume(PreAuthorizedCode('tx-required-lock')), {
+      name: 'invalid_grant',
+      message: LOCKED_MESSAGE,
+    })
+    assert.ok(!store.has('vcknots/v1/preCodes/tx-required-lock'))
+  })
+
+  it('should throw invalid_request when tx_code is provided for a code without tx_code', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('tx-unexpected'), configurations)
+    await assert.rejects(provider.consume(PreAuthorizedCode('tx-unexpected'), 1234), {
+      name: 'invalid_request',
+      message: 'tx_code should not be provided for this pre-authorized code',
+    })
+    assert.equal(store.get('vcknots/v1/preCodes/tx-unexpected')?.attempts, 1)
+  })
+
+  it('should throw invalid_grant for incorrect tx_code in text mode', async () => {
+    const provider = firestorePreAuthorizedCodeStore({ app: mockApp })
+    await provider.save(PreAuthorizedCode('text-wrong'), configurations, 'secret', {
+      tx_code_input_mode: 'text',
+    })
+    await assert.rejects(provider.consume(PreAuthorizedCode('text-wrong'), 'wrong'), {
+      name: 'invalid_grant',
+      message: 'Invalid tx_code provided',
+    })
+    assert.equal(store.get('vcknots/v1/preCodes/text-wrong')?.attempts, 1)
   })
 
   it('should use default expiration of 5 minutes', async () => {
@@ -432,6 +501,24 @@ describe('firestorePreAuthorizedCodeStore', () => {
         name: 'invalid_grant',
         message: LOCKED_MESSAGE,
       })
+    })
+
+    it('rejects before comparing tx_code when a remaining doc already has attempts >= max', async () => {
+      const provider = firestorePreAuthorizedCodeStore({ app: mockApp, maxTxCodeAttempts: 2 })
+      await saveWithTxCode(provider, 'bf-seeded-max')
+
+      const path = 'vcknots/v1/preCodes/bf-seeded-max'
+      const existing = store.get(path)
+      assert.ok(existing)
+      store.set(path, { ...existing, attempts: 2 })
+
+      await assert.rejects(provider.consume(PreAuthorizedCode('bf-seeded-max'), 1234), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+      // Gate rejects without deleting; attempts stay at the seeded max.
+      assert.ok(store.has(path))
+      assert.equal(store.get(path)?.attempts, 2)
     })
   })
 })
