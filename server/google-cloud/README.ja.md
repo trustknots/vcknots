@@ -72,9 +72,10 @@ google-cloud/
    既存データの `tx_code` 検証に失敗するようになります）。
 
    誤った `tx_code` の試行は、pre-authorized code ごとに `firestorePreAuthorizedCodeStore` が制限します（既定 **5** 回）。
-   上限を変える場合は、`firestore()` など Google Cloud provider 生成時に `maxTxCodeAttempts` を渡してください
-   （`server/google-cloud` のアプリ配線側。環境変数は未対応です）。上限到達後はコードが削除され、
-   正しい `tx_code` でも以降のリクエストは `invalid_grant` になります。
+   上限を変える場合は、`firestore()` のオプションではなく、その provider に直接
+   `firestorePreAuthorizedCodeStore({ app, databaseId, namespace, maxTxCodeAttempts })` のように渡し、
+   `firestore()` が返す pre-authorized-code store の代わりに登録してください（環境変数は未対応です）。
+   上限到達後はコードが削除され、正しい `tx_code` でも以降のリクエストは `invalid_grant` になります。
 
    任意の環境変数:
 
