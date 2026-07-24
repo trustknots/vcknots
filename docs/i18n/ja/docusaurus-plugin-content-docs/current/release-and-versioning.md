@@ -6,7 +6,7 @@ sidebar_position: 2
 
 このドキュメントでは、VC Knots ライブラリのリリース方法、バージョニング方針について説明します。
 
-## Scope
+## 対象範囲
 
 このドキュメントは、VC Knotsが公式に提供・サポートする次のライブラリに適用します。
 
@@ -17,7 +17,6 @@ sidebar_position: 2
 ## ライブラリのリリース
 
 Issuer および Verifier は、npmパッケージとして公開されます。
-バージョン更新および npm への公開には、GitHub Actions と Changesets を使用します。
 
 ## リリース頻度
 

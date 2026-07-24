@@ -18,8 +18,6 @@ This document applies to the following library officially provided and supported
 
 The Issuer and Verifier are published as an npm package.
 
-GitHub Actions and Changesets are used to update versions and publish the package to npm.
-
 ## Release Frequency
 
 Releases are made as needed for new features and bug fixes. There is no fixed release schedule.
