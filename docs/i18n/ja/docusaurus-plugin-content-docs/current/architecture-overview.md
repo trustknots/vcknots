@@ -11,27 +11,30 @@ OpenID4VCI / OpenID4VP を実装したコアライブラリを中心に、クラ
 ```mermaid
 flowchart TB
 
-    subgraph APP["Applications"]
+    subgraph APP["Applications built with VC Knots"]
         ISSUER[Issuer]
         WALLET[Wallet]
         VERIFIER[Verifier]
     end
 
-    subgraph CORE["VC Knots Core Libraries"]
-        IV["issuer+verifier<br/>TypeScript"]
-        W["wallet<br/>Go"]
+    subgraph VCKNOTS["VC Knots"]
+
+        subgraph CORE["Core Libraries"]
+            IV["vcknots<br/>(issuer+verifier)<br/>TypeScript"]
+            W["wallet<br/>Go"]
+        end
+
+        subgraph INFRA_INTEGRATION["Infrastructure Integrations"]
+            AWS[aws<br/>TypeScript]
+            GCP[google-cloud<br/>TypeScript ]
+        end
+    
     end
 
-    subgraph PROVIDER["Provider Implementations"]
-        AWS[AWS]
-        GCP[Google Cloud]
-        CUSTOM[Custom Providers]
-    end
-
-    subgraph INFRA["External Infrastructure"]
+    subgraph INFRA["Infrastructure"]
         DB[(Database)]
         KMS[(Key Management)]
-        SECRET[(Secrets Manager)]
+        DEVICE[(Devices)]
     end
 
     ISSUER --> IV
@@ -40,35 +43,46 @@ flowchart TB
 
     IV --> AWS
     IV --> GCP
-    IV --> CUSTOM
 
     AWS --> DB
     AWS --> KMS
-    AWS --> SECRET
+    GCP --> DB
+    GCP --> KMS
+    W --> DEVICE
 ```
 
-VC Knots は次の4つのレイヤーで構成されています。
+VC Knots には次のコンポーネントが存在します。
 
-| レイヤー               | 役割                                              |
-| ------------------ | ----------------------------------------------- |
-| **Applications**   | Issuer・Wallet・Verifier のアプリケーションを実装します。         |
-| **Core Libraries** | OpenID4VCI / OpenID4VP のプロトコルや Wallet 機能を提供します。 |
-| **Providers**      | データベースや KMS などの外部サービスとの接続を実装します。                |
-| **Infrastructure** | データベースや鍵管理サービスなどの実際のインフラです。                     |
+| コンポーネント      | 役割     |
+| --- | --- |
+| **Applications built with VC Knots**   | VC Knots を利用して Issuer・Wallet・Verifier のアプリケーションを実装します。    |
+| **VC Knots Core Libraries** | OpenID4VCI / OpenID4VP のプロトコルや Wallet 機能を提供します。 |
+| **VC Knots Infrastructure Integrations**      | データベースや KMS などの外部サービスとの接続を提供します。  |
+| **Infrastructure** | データベースや鍵管理サービスなどの実際のインフラです。(AWS/GCP)  |
 
 ---
 
 # パッケージ構成
 
-| パッケージ                 | 言語         | 役割                                                              |
-| --------------------- | ---------- | --------------------------------------------------------------- |
-| `issuer+verifier`     | TypeScript | OpenID4VCI / OpenID4VP、Issuer、Verifier、Authorization Server の実装 |
-| `wallet`              | Go         | Wallet 機能、DID・鍵管理、Credential の管理                                |
-| `aws`                 | TypeScript | DynamoDB、KMS、Secrets Manager など AWS 向け Provider                 |
-| `server/single`       | TypeScript | シングルテナント構成のサンプルサーバー                                             |
-| `server/aws`          | TypeScript | AWS Lambda + CDK によるデプロイ例                                       |
-| `server/google-cloud` | TypeScript | Google Cloud 向けデプロイ例                                            |
+## Core Libraries / Infrastructure Integrations
 
+| パッケージ    | 言語   | 役割   |
+| --- | --- | --- |
+| `issuer+verifier`  | TypeScript | OpenID4VCI / OpenID4VP、Issuer、Verifier、Authorization Server の実装 |
+| `wallet`        | Go  | Wallet 機能、DID・鍵管理、Credential の管理   |
+| `aws`    | TypeScript | DynamoDB、KMS、Secrets Manager など AWS サービスとの連携を提供   |
+| `google-cloud`    | TypeScript | Cloud Firestore、Cloud KMS、Secret Manager など GCP サービスとの連携を提供    |
+
+
+## Reference Applications
+
+| パッケージ  | 言語    | 役割  |
+| --- | --- | --- |
+| `server/core`  | TypeScript | サンプルサーバーで共通利用するフレームワークおよび共通コンポーネントを提供   |
+| `server/single` | TypeScript | シングルテナント構成のサンプルサーバー   |
+| `server/multi`  | TypeScript | マルチテナント構成のサンプルサーバー   |
+| `server/aws`    | TypeScript | サンプルサーバーを AWS（Lambda + CDK）へデプロイするための構成例  |
+| `server/google-cloud` | TypeScript | サンプルサーバーを Google Cloud へデプロイするための構成例  |
 ---
 
 # パッケージ間の関係
