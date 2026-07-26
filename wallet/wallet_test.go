@@ -1403,7 +1403,7 @@ func TestWallet_generateClientAssertion_ErrorsOnMissingInputs(t *testing.T) {
 
 	_, err = w.generateClientAssertion(key, "client-id", "  ")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "token endpoint URL is required")
+	assert.Contains(t, err.Error(), "audience is required")
 }
 
 func boolPtr(v bool) *bool { return &v }
@@ -1430,6 +1430,7 @@ func TestResolveClientAuthMethod(t *testing.T) {
 			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.PrivateKeyJwt),
 		}
 		method, ok := resolveClientAuthMethod(ClientAuthConfig{
+			Method:   receiverTypes.PrivateKeyJwt,
 			ClientID: "client-id",
 			Key:      key,
 		}, authMetadata)
@@ -1437,7 +1438,7 @@ func TestResolveClientAuthMethod(t *testing.T) {
 		assert.Equal(t, receiverTypes.PrivateKeyJwt, method)
 	})
 
-	t.Run("prefers none over private_key_jwt by default ordering", func(t *testing.T) {
+	t.Run("defaults to none even when private_key_jwt credentials are configured", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
 			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
@@ -1450,31 +1451,30 @@ func TestResolveClientAuthMethod(t *testing.T) {
 		assert.Equal(t, receiverTypes.None, method)
 	})
 
-	t.Run("honors explicit private_key_jwt priority", func(t *testing.T) {
+	t.Run("honors explicit private_key_jwt method", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
 			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
 		}
 		method, ok := resolveClientAuthMethod(ClientAuthConfig{
-			ClientID:         "client-id",
-			Key:              key,
-			PreferredMethods: []receiverTypes.TokenEndpointAuthMethod{receiverTypes.PrivateKeyJwt, receiverTypes.None},
+			Method:   receiverTypes.PrivateKeyJwt,
+			ClientID: "client-id",
+			Key:      key,
 		}, authMetadata)
 		require.True(t, ok)
 		assert.Equal(t, receiverTypes.PrivateKeyJwt, method)
 	})
 
-	t.Run("falls back to none when private_key_jwt not advertised", func(t *testing.T) {
+	t.Run("does not fall back to none when private_key_jwt is not advertised", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
 		}
-		method, ok := resolveClientAuthMethod(ClientAuthConfig{
-			ClientID:         "client-id",
-			Key:              key,
-			PreferredMethods: []receiverTypes.TokenEndpointAuthMethod{receiverTypes.PrivateKeyJwt, receiverTypes.None},
+		_, ok := resolveClientAuthMethod(ClientAuthConfig{
+			Method:   receiverTypes.PrivateKeyJwt,
+			ClientID: "client-id",
+			Key:      key,
 		}, authMetadata)
-		require.True(t, ok)
-		assert.Equal(t, receiverTypes.None, method)
+		assert.False(t, ok)
 	})
 
 	t.Run("returns false when no method is usable", func(t *testing.T) {
@@ -1491,6 +1491,7 @@ func TestResolveClientAuthMethod(t *testing.T) {
 			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.RS256},
 		}
 		_, ok := resolveClientAuthMethod(ClientAuthConfig{
+			Method:   receiverTypes.PrivateKeyJwt,
 			ClientID: "client-id",
 			Key:      key,
 		}, authMetadata)
@@ -1501,9 +1502,65 @@ func TestResolveClientAuthMethod(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.PrivateKeyJwt),
 		}
-		_, ok := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
+		_, ok := resolveClientAuthMethod(ClientAuthConfig{
+			Method: receiverTypes.PrivateKeyJwt,
+		}, authMetadata)
 		assert.False(t, ok)
 	})
+}
+
+func TestValidateClientAuthConfig(t *testing.T) {
+	key, _ := newClientAuthKeyEntry(t, "client-key-1")
+
+	assert.NoError(t, validateClientAuthConfig(ClientAuthConfig{}))
+	assert.NoError(t, validateClientAuthConfig(ClientAuthConfig{
+		Method:   receiverTypes.PrivateKeyJwt,
+		ClientID: "wallet-id",
+		Key:      key,
+	}))
+
+	err := validateClientAuthConfig(ClientAuthConfig{
+		Method: receiverTypes.PrivateKeyJwt,
+		Key:    key,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "client ID is required")
+
+	err = validateClientAuthConfig(ClientAuthConfig{
+		Method:   receiverTypes.PrivateKeyJwt,
+		ClientID: "wallet-id",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "key is required")
+
+	err = validateClientAuthConfig(ClientAuthConfig{
+		Method: receiverTypes.ClientSecretPost,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported client authentication method")
+}
+
+func TestResolveClientAssertionAudience(t *testing.T) {
+	tokenEndpoint := "https://as.example.com/token"
+	issuer, err := common.ParseURIField("https://as.example.com")
+	require.NoError(t, err)
+	authMetadata := &receiverTypes.AuthorizationServerMetadata{Issuer: *issuer}
+
+	assert.Equal(t, "https://registered-audience.example.com", resolveClientAssertionAudience(
+		ClientAuthConfig{AssertionAudience: "https://registered-audience.example.com"},
+		authMetadata,
+		tokenEndpoint,
+	))
+	assert.Equal(t, "https://as.example.com", resolveClientAssertionAudience(
+		ClientAuthConfig{},
+		authMetadata,
+		tokenEndpoint,
+	))
+	assert.Equal(t, tokenEndpoint, resolveClientAssertionAudience(
+		ClientAuthConfig{},
+		&receiverTypes.AuthorizationServerMetadata{},
+		tokenEndpoint,
+	))
 }
 
 type captureClientAuthReceiver struct {
@@ -1571,9 +1628,9 @@ func TestWallet_obtainAccessToken_PrivateKeyJwtAttachesAssertion(t *testing.T) {
 	w := &Wallet{
 		receiver: d,
 		clientAuth: ClientAuthConfig{
-			ClientID:         "wallet-id",
-			Key:              key,
-			PreferredMethods: []receiverTypes.TokenEndpointAuthMethod{receiverTypes.PrivateKeyJwt, receiverTypes.None},
+			Method:   receiverTypes.PrivateKeyJwt,
+			ClientID: "wallet-id",
+			Key:      key,
 		},
 	}
 
@@ -1674,9 +1731,9 @@ func TestWallet_obtainAccessToken_PrivateKeyJwtEndToEndWithMockServer(t *testing
 	w := &Wallet{
 		receiver: d,
 		clientAuth: ClientAuthConfig{
-			ClientID:         "wallet-id",
-			Key:              key,
-			PreferredMethods: []receiverTypes.TokenEndpointAuthMethod{receiverTypes.PrivateKeyJwt, receiverTypes.None},
+			Method:   receiverTypes.PrivateKeyJwt,
+			ClientID: "wallet-id",
+			Key:      key,
 		},
 	}
 
@@ -1724,6 +1781,7 @@ func TestWallet_fetchCredentialMetadata_AllowsPrivateKeyJwtWhenAnonymousNotSuppo
 	w := &Wallet{
 		receiver: d,
 		clientAuth: ClientAuthConfig{
+			Method:   receiverTypes.PrivateKeyJwt,
 			ClientID: "wallet-id",
 			Key:      key,
 		},
