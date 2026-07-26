@@ -21,8 +21,7 @@ type OID4VCIIssuerConfig struct {
 	EmptyAuthorizationServers   bool
 
 	// TokenEndpointAuthMethodsSupported is advertised in the authorization
-	// server metadata. When non-empty it also gates /token: a request must
-	// match RequireClientAssertion below.
+	// server metadata as token_endpoint_auth_methods_supported.
 	TokenEndpointAuthMethodsSupported []string
 	TokenEndpointAuthSigningAlgs      []string
 	// RequireClientAssertion, when true, makes /token require a valid
