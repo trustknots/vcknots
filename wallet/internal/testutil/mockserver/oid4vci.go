@@ -28,6 +28,9 @@ type OID4VCIIssuerConfig struct {
 	RequireClientAssertion bool
 	ClientAuthPublicKey    *jose.JSONWebKey
 	ExpectedClientID       string
+	// ClientAssertionAudience is the registered aud value. When empty, the
+	// authorization server issuer (the mock server base URL) is expected.
+	ClientAssertionAudience string
 }
 
 // DefaultOID4VCIIssuerConfig creates a default configuration for OID4VCI issuer
@@ -207,8 +210,12 @@ func (is *OID4VCIIssuerServer) validateClientAssertion(r *http.Request) error {
 	if claims.ISS != expectedID || claims.SUB != expectedID {
 		return fmt.Errorf("client_assertion iss/sub must match client_id")
 	}
-	if claims.AUD != "http://"+r.Host+"/token" {
-		return fmt.Errorf("client_assertion aud must match token endpoint")
+	expectedAudience := is.config.ClientAssertionAudience
+	if expectedAudience == "" {
+		expectedAudience = "http://" + r.Host
+	}
+	if claims.AUD != expectedAudience {
+		return fmt.Errorf("client_assertion aud must match registered authorization server audience")
 	}
 	if claims.EXP == 0 {
 		return fmt.Errorf("client_assertion exp is required")
