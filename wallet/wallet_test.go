@@ -1803,6 +1803,45 @@ func TestWallet_fetchCredentialMetadata_UsesCredentialIssuerAsAuthorizationServe
 	require.NotNil(t, authMetadata)
 }
 
+func TestWallet_fetchCredentialMetadata_RejectsEmptyAuthorizationServers(t *testing.T) {
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
+		KeyPair:                     mockserver.MustGenerateKeyPair("issuer-key-id"),
+		PreAuthorizedGrantAnonymous: true,
+		EmptyAuthorizationServers:   true,
+		CredentialConfigurations: map[string]interface{}{
+			"test-config": map[string]interface{}{
+				"format": "jwt_vc_json",
+				"credential_definition": map[string]interface{}{
+					"type": []string{"VerifiableCredential"},
+				},
+			},
+		},
+		CustomCredentials: make(map[string]string),
+	})
+	defer issuer.Close()
+
+	issuerURL, err := url.Parse(issuer.URL())
+	require.NoError(t, err)
+	dispatcher, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+	require.NoError(t, err)
+	w := &Wallet{receiver: dispatcher}
+
+	_, _, err = w.fetchCredentialMetadata(ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           issuerURL,
+			CredentialConfigurationIDs: []string{"test-config"},
+			Grants:                     map[string]*CredentialOfferGrant{},
+		},
+		Type: receiverTypes.Oid4vci,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "authorization_servers must not be an empty array")
+}
+
 func TestWallet_fetchCredentialMetadata_RejectsWhenNoUsableMethod(t *testing.T) {
 	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)

@@ -18,6 +18,7 @@ type OID4VCIIssuerConfig struct {
 	PreAuthorizedGrantAnonymous bool
 	CustomCredentials           map[string]string
 	OmitAuthorizationServers    bool
+	EmptyAuthorizationServers   bool
 
 	// TokenEndpointAuthMethodsSupported is advertised in the authorization
 	// server metadata. When non-empty it also gates /token: a request must
@@ -114,6 +115,9 @@ func (is *OID4VCIIssuerServer) handleCredentialIssuerMetadata(w http.ResponseWri
 	}
 	if !is.config.OmitAuthorizationServers {
 		metadata["authorization_servers"] = []string{baseURL}
+	}
+	if is.config.EmptyAuthorizationServers {
+		metadata["authorization_servers"] = []string{}
 	}
 
 	JSONResponse(w, http.StatusOK, metadata)
