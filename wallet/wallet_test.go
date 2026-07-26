@@ -1749,7 +1749,7 @@ func TestWallet_obtainAccessToken_PrivateKeyJwtEndToEndWithMockServer(t *testing
 	assert.Equal(t, "mock-access-token", token.Token)
 }
 
-func TestWallet_fetchCredentialMetadata_AllowsPrivateKeyJwtWhenAnonymousNotSupported(t *testing.T) {
+func TestWallet_fetchCredentialMetadata_UsesCredentialIssuerAsAuthorizationServerWhenOmitted(t *testing.T) {
 	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
 	env.SetHTTPAllowed(true)
@@ -1759,6 +1759,7 @@ func TestWallet_fetchCredentialMetadata_AllowsPrivateKeyJwtWhenAnonymousNotSuppo
 		KeyPair:                           mockserver.MustGenerateKeyPair("issuer-key-id"),
 		IssuerID:                          "test-issuer",
 		PreAuthorizedGrantAnonymous:       false,
+		OmitAuthorizationServers:          true,
 		TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
 		TokenEndpointAuthSigningAlgs:      []string{"ES256"},
 		CredentialConfigurations: map[string]interface{}{

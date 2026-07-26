@@ -18,6 +18,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/presenter"
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
 	"github.com/trustknots/vcknots/wallet/receiver"
+	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer"
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
@@ -48,7 +49,7 @@ func NewMockKeyEntry() *MockKeyEntry {
 	}
 
 	return &MockKeyEntry{
-		id:         "test-key-id",
+		id:         "client-key-1",
 		privateKey: privateKey,
 	}
 }
@@ -60,6 +61,7 @@ func (m *MockKeyEntry) ID() string {
 func (m *MockKeyEntry) PublicKey() jose.JSONWebKey {
 	return jose.JSONWebKey{
 		Key:       &m.privateKey.PublicKey,
+		KeyID:     m.id,
 		Algorithm: "ES256",
 		Use:       "sig",
 	}
@@ -138,6 +140,7 @@ func NewOID4VPRuntime(certPath string) (*Runtime, error) {
 		return nil, err
 	}
 
+	clientAuthKey := NewMockKeyEntry()
 	w, err := wallet.NewWalletWithConfig(wallet.Config{
 		CredStore:  credStore,
 		IDProfiler: idProf,
@@ -145,6 +148,16 @@ func NewOID4VPRuntime(certPath string) (*Runtime, error) {
 		Serializer: serializerDispatcher,
 		Verifier:   verifierDispatcher,
 		Presenter:  presenterDispatcher,
+		ClientAuth: wallet.ClientAuthConfig{
+			Method:            receiverTypes.PrivateKeyJwt,
+			ClientID:          "test-client-id",
+			Key:               clientAuthKey,
+			AssertionAudience: "https://authz.example.com",
+		},
+		DPoP: wallet.DPoPConfig{
+			Enabled: true,
+			Key:     clientAuthKey,
+		},
 	})
 	if err != nil {
 		return nil, err

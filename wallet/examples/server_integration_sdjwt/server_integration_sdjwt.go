@@ -419,21 +419,34 @@ func main() {
 		panic(err)
 	}
 
-	w, err := wallet.NewWalletWithConfig(wallet.Config{
+	mockKey := common.NewMockKeyEntry()
+	walletConfig := wallet.Config{
 		CredStore:  credStore,
 		IDProfiler: idProf,
 		Receiver:   receiverDisp,
 		Serializer: serializerDisp,
 		Verifier:   verifierDisp,
 		Presenter:  presenterDisp,
-	})
+	}
+	if !isConformanceMode {
+		walletConfig.ClientAuth = wallet.ClientAuthConfig{
+			Method:            receiver.PrivateKeyJwt,
+			ClientID:          "test-client-id",
+			Key:               mockKey,
+			AssertionAudience: "https://authz.example.com",
+		}
+		walletConfig.DPoP = wallet.DPoPConfig{
+			Enabled: true,
+			Key:     mockKey,
+		}
+	}
+
+	w, err := wallet.NewWalletWithConfig(walletConfig)
 	if err != nil {
 		panic(err)
 	}
 
 	logger.Info("Starting server integration check...")
-
-	mockKey := common.NewMockKeyEntry()
 
 	var savedCred *wallet.SavedCredential
 	var oid4vpURI string

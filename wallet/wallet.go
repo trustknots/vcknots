@@ -286,6 +286,9 @@ func validateClientAuthConfig(config ClientAuthConfig) error {
 		if config.Key == nil {
 			return fmt.Errorf("client authentication key is required for private_key_jwt client authentication")
 		}
+		if strings.TrimSpace(config.Key.PublicKey().KeyID) == "" {
+			return fmt.Errorf("client authentication key kid is required for private_key_jwt client authentication")
+		}
 		return nil
 	default:
 		return fmt.Errorf("unsupported client authentication method: %q", method)
@@ -1075,11 +1078,16 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 		return nil, nil, err
 	}
 
-	if len(issuerMetadata.AuthorizationServers) == 0 {
-		return nil, nil, fmt.Errorf("no authorization servers found in issuer metadata")
+	authorizationServers := issuerMetadata.AuthorizationServers
+	if len(authorizationServers) == 0 {
+		issuerAuthorizationServer, err := common.ParseURIField(req.CredentialOffer.CredentialIssuer.String())
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to use credential issuer as authorization server: %w", err)
+		}
+		authorizationServers = []common.URIField{*issuerAuthorizationServer}
 	}
 
-	authMetadata, err := w.receiver.FetchAuthorizationServerMetadata(issuerMetadata.AuthorizationServers[0], req.Type)
+	authMetadata, err := w.receiver.FetchAuthorizationServerMetadata(authorizationServers[0], req.Type)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to fetch authorization server metadata: %w", err)
 	}
