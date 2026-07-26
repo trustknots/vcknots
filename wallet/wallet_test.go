@@ -1428,7 +1428,8 @@ func TestResolveClientAuthMethod(t *testing.T) {
 
 	t.Run("selects private_key_jwt when configured and advertised", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.PrivateKeyJwt),
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
+			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.ES256},
 		}
 		method, ok := resolveClientAuthMethod(ClientAuthConfig{
 			Method:   receiverTypes.PrivateKeyJwt,
@@ -1456,6 +1457,7 @@ func TestResolveClientAuthMethod(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
 			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
+			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.ES256},
 		}
 		method, ok := resolveClientAuthMethod(ClientAuthConfig{
 			Method:   receiverTypes.PrivateKeyJwt,
@@ -1490,6 +1492,31 @@ func TestResolveClientAuthMethod(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
 			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.RS256},
+		}
+		_, ok := resolveClientAuthMethod(ClientAuthConfig{
+			Method:   receiverTypes.PrivateKeyJwt,
+			ClientID: "client-id",
+			Key:      key,
+		}, authMetadata)
+		assert.False(t, ok)
+	})
+
+	t.Run("private_key_jwt rejected when signing alg metadata is omitted", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.PrivateKeyJwt),
+		}
+		_, ok := resolveClientAuthMethod(ClientAuthConfig{
+			Method:   receiverTypes.PrivateKeyJwt,
+			ClientID: "client-id",
+			Key:      key,
+		}, authMetadata)
+		assert.False(t, ok)
+	})
+
+	t.Run("private_key_jwt rejected when signing alg metadata is empty", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
+			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{},
 		}
 		_, ok := resolveClientAuthMethod(ClientAuthConfig{
 			Method:   receiverTypes.PrivateKeyJwt,
@@ -1640,6 +1667,7 @@ func TestWallet_obtainAccessToken_PrivateKeyJwtAttachesAssertion(t *testing.T) {
 		TokenEndpointAuthMethodsSupported: authMethodsPtr(
 			receiverTypes.PrivateKeyJwt,
 		),
+		TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.ES256},
 	}
 
 	key, _ := newClientAuthKeyEntry(t, "client-key-1")

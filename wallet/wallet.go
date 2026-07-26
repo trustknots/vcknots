@@ -748,13 +748,13 @@ func asMetadataSupportsAuthMethod(authMetadata *receiverTypes.AuthorizationServe
 	return false
 }
 
-// asMetadataSupportsSigningAlg reports whether alg is accepted by the
-// authorization server. When the signing alg list is not advertised, all
-// algorithms are considered acceptable.
+// asMetadataSupportsSigningAlg reports whether alg is explicitly advertised by
+// the authorization server. RFC 8414 requires this metadata when JWT-based
+// client authentication is supported and defines no default signing algorithm.
 func asMetadataSupportsSigningAlg(authMetadata *receiverTypes.AuthorizationServerMetadata, alg jose.SignatureAlgorithm) bool {
 	if authMetadata == nil || authMetadata.TokenEndpointAuthSigningAlgValuesSupported == nil ||
 		len(*authMetadata.TokenEndpointAuthSigningAlgValuesSupported) == 0 {
-		return true
+		return false
 	}
 	for _, a := range *authMetadata.TokenEndpointAuthSigningAlgValuesSupported {
 		if a == alg {
