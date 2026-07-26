@@ -1341,11 +1341,12 @@ func newClientAuthKeyEntry(t *testing.T, keyID string) (*mockKeyEntry, jose.JSON
 		Algorithm: "ES256",
 		Use:       "sig",
 	}
+	publicJWK := privateJWK.Public()
 	return &mockKeyEntry{
 		id:         keyID,
-		key:        privateJWK,
+		key:        publicJWK,
 		privateKey: privKey,
-	}, privateJWK.Public()
+	}, publicJWK
 }
 
 func TestWallet_generateClientAssertion_HeaderAndPayload(t *testing.T) {
@@ -1538,6 +1539,26 @@ func TestValidateClientAuthConfig(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported client authentication method")
+
+	incompatiblePrivateKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	require.NoError(t, err)
+	incompatibleKey := &mockKeyEntry{
+		id: "client-key-1",
+		key: jose.JSONWebKey{
+			Algorithm: "ES384",
+			KeyID:     "client-key-1",
+			Use:       "sig",
+			Key:       &incompatiblePrivateKey.PublicKey,
+		},
+		privateKey: incompatiblePrivateKey,
+	}
+	err = validateClientAuthConfig(ClientAuthConfig{
+		Method:   receiverTypes.PrivateKeyJwt,
+		ClientID: "wallet-id",
+		Key:      incompatibleKey,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not compatible with ES256")
 }
 
 func TestResolveClientAssertionAudience(t *testing.T) {

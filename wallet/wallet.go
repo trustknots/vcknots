@@ -289,6 +289,14 @@ func validateClientAuthConfig(config ClientAuthConfig) error {
 		if strings.TrimSpace(config.Key.PublicKey().KeyID) == "" {
 			return fmt.Errorf("client authentication key kid is required for private_key_jwt client authentication")
 		}
+		if _, err := joseutil.NewJWKSigner(config.Key, jose.ES256); err != nil {
+			return fmt.Errorf("client authentication key is not compatible with ES256: %w", err)
+		}
+		publicKey, ok := config.Key.PublicKey().Key.(*ecdsa.PublicKey)
+		if !ok || publicKey.Curve == nil || publicKey.Curve.Params() == nil ||
+			publicKey.Curve.Params().Name != elliptic.P256().Params().Name {
+			return fmt.Errorf("client authentication key is not compatible with ES256")
+		}
 		return nil
 	default:
 		return fmt.Errorf("unsupported client authentication method: %q", method)
