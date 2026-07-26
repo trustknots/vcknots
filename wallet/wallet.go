@@ -1079,12 +1079,14 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 	}
 
 	authorizationServers := issuerMetadata.AuthorizationServers
-	if len(authorizationServers) == 0 {
+	if authorizationServers == nil {
 		issuerAuthorizationServer, err := common.ParseURIField(req.CredentialOffer.CredentialIssuer.String())
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to use credential issuer as authorization server: %w", err)
 		}
 		authorizationServers = []common.URIField{*issuerAuthorizationServer}
+	} else if len(authorizationServers) == 0 {
+		return nil, nil, fmt.Errorf("authorization_servers must not be an empty array")
 	}
 
 	authMetadata, err := w.receiver.FetchAuthorizationServerMetadata(authorizationServers[0], req.Type)
