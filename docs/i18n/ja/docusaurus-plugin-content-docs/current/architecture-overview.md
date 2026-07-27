@@ -165,9 +165,9 @@ sequenceDiagram
 Credential 発行（OpenID4VCI）の処理は、次の流れで実行されます。
 
 1. Wallet は OpenID4VCI の認可・トークン取得を経て、Issuer に Credential Request を送信します。
-2. Issuer は vcknots に Credential 発行処理を委譲します。
-3. vcknots は Infrastructure Integrations を利用して、Credential の発行に必要なデータの取得や鍵管理サービスへのアクセスを行います。
-4. vcknots は取得した情報を基に Verifiable Credential を生成・署名します。
+2. Issuer は `vcknots` に Credential 発行処理を委譲します。
+3. `vcknots` は Infrastructure Integrations を利用して、Credential の発行に必要なデータの取得や鍵管理サービスへのアクセスを行います。
+4. `vcknots` は取得した情報を基に Verifiable Credential を生成・署名します。
 5. 生成された Verifiable Credential が Wallet に返却されます。
 
 ---
@@ -198,6 +198,6 @@ Presentation 検証（OpenID4VP）の処理は、次の流れで実行されま�
 
 1. Verifier は Wallet に Authz Request を送信し、Presentation を要求します。
 2. Wallet は Verifiable Presentation を含む Authz Response を Verifier に返却します。
-3. Verifier は vcknots に Presentation の検証処理を委譲します。
-4. vcknots は DID Resolver や Trust Registry を利用して DID を解決し、Presentation の署名や Credential の妥当性を検証します。
+3. Verifier は `vcknots` に Presentation の検証処理を委譲します。
+4. `vcknots` は DID Resolver や Trust Registry を利用して DID を解決し、Presentation の署名や Credential の妥当性を検証します。
 5. 検証結果が Verifier に返却され、Verifier は検証結果に基づいて Presentation を受け入れるかどうかを判断します。

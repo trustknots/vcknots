@@ -1,8 +1,13 @@
 # Architecture Overview
 
-VC Knots is a **pluggable framework** for building Verifiable Credentials (VC) ecosystems.
+VC Knots is a **pluggable framework for building Verifiable Credentials (VC) ecosystems**.
 
-It provides reusable core libraries that implement OpenID4VCI and OpenID4VP, while allowing infrastructure components such as cloud providers, databases, and key management services to be integrated through pluggable providers. This enables developers to build Issuer, Wallet, and Verifier applications in a flexible and extensible way.
+VC Knots is designed based on the following principles:
+
+- **Separate protocol implementation from infrastructure implementation**, allowing OpenID4VCI and OpenID4VP to remain independent of cloud platforms.
+- Support multiple execution environments, such as AWS and Google Cloud, by adding **Infrastructure Integrations**.
+- Enable efficient implementation of Issuer, Wallet, and Verifier applications by composing reusable **Core Libraries**.
+- Provide **Reference Applications** that demonstrate how to use the libraries and recommended deployment architectures.
 
 ---
 
@@ -11,96 +16,122 @@ It provides reusable core libraries that implement OpenID4VCI and OpenID4VP, whi
 ```mermaid
 flowchart TB
 
-    subgraph APP["Applications"]
-        ISSUER[Issuer]
-        WALLET[Wallet]
-        VERIFIER[Verifier]
+    subgraph APP["Applications built with VC Knots"]
+        ISSUERAPP[Issuer]
+        WALLETAPP[Wallet]
+        VERIFIERAPP[Verifier]
     end
 
-    subgraph CORE["VC Knots Core Libraries"]
-        IV["issuer+verifier<br/>TypeScript"]
-        W["wallet<br/>Go"]
+    subgraph VCKNOTS["VC Knots"]
+
+        subgraph CORE["Core Libraries"]
+            vcknots["vcknots<br/>(issuer+verifier)<br/>TypeScript"]
+            wallet["wallet<br/>Go"]
+        end
+
+        subgraph INFRAINT["Infrastructure Integrations"]
+            aws[aws<br/>TypeScript]
+            gcp[google-cloud<br/>TypeScript]
+        end
+
     end
 
-    subgraph PROVIDER["Provider Implementations"]
-        AWS[AWS]
-        GCP[Google Cloud]
-        CUSTOM[Custom Providers]
-    end
-
-    subgraph INFRA["External Infrastructure"]
+    subgraph INFRA["Infrastructure"]
         DB[(Database)]
         KMS[(Key Management)]
-        SECRET[(Secrets Manager)]
+        DEVICE[(Devices)]
     end
 
-    ISSUER --> IV
-    VERIFIER --> IV
-    WALLET --> W
+    ISSUERAPP --> vcknots
+    VERIFIERAPP --> vcknots
+    WALLETAPP --> wallet
 
-    IV --> AWS
-    IV --> GCP
-    IV --> CUSTOM
+    vcknots --> aws
+    vcknots --> gcp
 
-    AWS --> DB
-    AWS --> KMS
-    AWS --> SECRET
+    aws --> DB
+    aws --> KMS
+    gcp --> DB
+    gcp --> KMS
+    wallet --> DEVICE
 ```
 
-The architecture is organized into four logical layers.
+VC Knots consists of the following components:
 
-| Layer              | Responsibility                                                                          |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| **Applications**   | Implement Issuer, Wallet, and Verifier applications.                                    |
-| **Core Libraries** | Provide OpenID4VCI/OpenID4VP protocol implementations and wallet functionality.         |
-| **Providers**      | Integrate external services such as databases, KMS, and cloud platforms.                |
-| **Infrastructure** | Consists of the actual databases, key management services, and other backend resources. |
+| Component | Responsibility |
+| --- | --- |
+| **Applications built with VC Knots** | Applications such as Issuer, Wallet, and Verifier built using VC Knots. |
+| **VC Knots Core Libraries** | Provide OpenID4VCI/OpenID4VP protocol implementations and wallet functionality. |
+| **VC Knots Infrastructure Integrations** | Provide integrations with external services such as databases and KMS. |
+| **Infrastructure** | External infrastructure accessed through Infrastructure Integrations, such as databases, storage services, and key management services. |
 
 ---
 
-# Package Responsibilities
+# Package Structure
 
-| Package               | Language   | Responsibility                                                                            |
-| --------------------- | ---------- | ----------------------------------------------------------------------------------------- |
-| `issuer+verifier`     | TypeScript | Implements OpenID4VCI/OpenID4VP, Issuer, Verifier, and Authorization Server functionality |
-| `wallet`              | Go         | Provides wallet functionality, DID management, key management, and credential operations  |
-| `aws`                 | TypeScript | AWS provider implementations for DynamoDB, KMS, Secrets Manager, and related services     |
-| `server/single`       | TypeScript | Reference implementation for a single-tenant deployment                                   |
-| `server/aws`          | TypeScript | AWS Lambda and CDK deployment example                                                     |
-| `server/google-cloud` | TypeScript | Google Cloud deployment example                                                           |
+## Core Libraries / Infrastructure Integrations
+
+| Package | Language | Responsibility |
+| --- | --- | --- |
+| `vcknots` | TypeScript | Implements OpenID4VCI, OpenID4VP, Issuer, Verifier, and Authorization Server |
+| `wallet` | Go | Provides wallet functionality, DID management, key management, and credential management |
+| `aws` | TypeScript | Provides integrations with AWS services such as DynamoDB, KMS, and Secrets Manager |
+| `google-cloud` | TypeScript | Provides integrations with Google Cloud services such as Cloud Firestore, Cloud KMS, and Secret Manager |
+
+## Reference Applications
+
+| Package | Language | Responsibility |
+| --- | --- | --- |
+| `server/core` | TypeScript | Provides the shared framework and common components used by the sample servers |
+| `server/single` | TypeScript | Sample server for a single-tenant deployment |
+| `server/multi` | TypeScript | Sample server for a multi-tenant deployment |
+| `server/aws` | TypeScript | Deployment example for AWS using Lambda and CDK |
+| `server/google-cloud` | TypeScript | Deployment example for Google Cloud |
 
 ---
 
 # Package Relationships
 
 ```mermaid
-flowchart LR
+flowchart TB
 
-    APP[Applications]
+    subgraph CORE["Core Libraries"]
+        vcknots["vcknots<br/>(issuer+verifier)"]
+        wallet["wallet"]
+    end
 
-    IV["issuer+verifier"]
-    W["wallet"]
+    subgraph INFRAINT["Infrastructure Integrations"]
+        aws["aws"]
+        gcp["google-cloud"]
+    end
 
-    AWS[AWS Provider]
-    CUSTOM[Custom Provider]
+    subgraph SERVER["Reference Applications"]
+        servercore["server/core"]
+        serversingle["server/single"]
+        servermulti["server/multi"]
+        serveraws["server/aws"]
+        servergcp["server/google-cloud"]
+    end
 
-    SERVER[Sample Servers]
+    aws --> vcknots
+    gcp --> vcknots
 
-    APP --> IV
-    APP --> W
+    servercore --> vcknots
 
-    IV --> AWS
-    IV --> CUSTOM
+    serversingle --> servercore
+    serversingle --> vcknots
 
-    SERVER --> IV
-    SERVER --> W
+    servermulti --> servercore
+    servermulti --> vcknots
+
+    serveraws --> servercore
+    serveraws --> aws
+    serveraws --> vcknots
+
+    servergcp --> servercore
+    servergcp --> gcp
+    servergcp --> vcknots
 ```
-
-The relationship between the packages is as follows:
-
-* Applications are built using the `issuer+verifier` and `wallet` libraries.
-* `issuer+verifier` communicates with external infrastructure through provider implementations.
-* `server/*` packages are reference implementations that compose the reusable libraries.
 
 ---
 
@@ -109,34 +140,35 @@ The relationship between the packages is as follows:
 ```mermaid
 sequenceDiagram
 
-    participant Wallet
-    participant Issuer
-    participant Library as issuer+verifier
-    participant Provider
-    participant KMS
+    participant wallet
+    participant issuer
+    participant vcknots as vcknots<br/>(issuer+verifier)
+    participant infra as Infrastructure Integrations
 
-    Wallet->>Issuer: Credential Request
+    wallet->>issuer: Authz Request
+    issuer->>vcknots: Process Authz Request
+    vcknots-->>wallet: Authz Response
 
-    Issuer->>Library: Process Request
+    wallet->>issuer: Token Request
+    issuer->>vcknots: Issue Token
+    vcknots-->>wallet: Token Response
 
-    Library->>Provider: Access Storage
+    wallet->>issuer: Credential Request
+    issuer->>vcknots: Issue Credential
 
-    Provider->>KMS: Sign Credential
+    vcknots->>infra: Access Data<br/>Access Signing Key
+    infra-->>vcknots: Result
 
-    KMS-->>Provider: Signature
-
-    Provider-->>Library: Credential
-
-    Library-->>Wallet: Verifiable Credential
+    vcknots-->>wallet: Credential Response
 ```
 
-### Flow
+Credential issuance using OpenID4VCI is performed as follows:
 
-1. The Wallet sends an OpenID4VCI credential request.
-2. The Issuer delegates protocol processing to `issuer+verifier`.
-3. The provider accesses storage and key management services.
-4. The credential is signed.
-5. The Wallet receives and stores the issued Verifiable Credential.
+1. The Wallet completes the OpenID4VCI authorization and token exchange flow, then sends a Credential Request to the Issuer.
+2. The Issuer delegates credential issuance to `vcknots`.
+3. `vcknots` uses the Infrastructure Integrations to access the data and key management services required for credential issuance.
+4. `vcknots` generates and signs the Verifiable Credential using the retrieved information.
+5. The generated Verifiable Credential is returned to the Wallet.
 
 ---
 
@@ -145,68 +177,27 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
 
-    participant Wallet
-    participant Verifier
-    participant Library as issuer+verifier
-    participant Trust as DID Resolver / Trust Registry
+    participant wallet
+    participant verifier
+    participant vcknots as vcknots<br/>(issuer+verifier)
 
-    Wallet->>Verifier: Verifiable Presentation
+    verifier->>wallet: Authz Request
 
-    Verifier->>Library: Verify Presentation
+    wallet->>verifier: Authz Response<br/>(Verifiable Presentation)
 
-    Library->>Trust: Resolve DID
+    verifier->>vcknots: Validate Presentation
 
-    Trust-->>Library: DID Document
+    vcknots->>vcknots: Resolve DID<br/>Validate Credential<br/>Verify Signature
 
-    Library->>Library: Verify Signature
+    vcknots-->>verifier: Verification Result
 
-    Library-->>Verifier: Verification Result
+    verifier-->>wallet: Accept / Reject
 ```
 
-### Flow
+Presentation verification using OpenID4VP is performed as follows:
 
-1. The Wallet sends a Verifiable Presentation.
-2. The Verifier delegates the verification process to `issuer+verifier`.
-3. The library resolves the DID, verifies the signature, and validates trust requirements.
-4. The verification result is returned to the Verifier.
-
----
-
-# Layered Architecture
-
-```mermaid
-flowchart TB
-
-    subgraph L1["Application Layer"]
-        APP[Issuer / Wallet / Verifier]
-    end
-
-    subgraph L2["Core Libraries"]
-        CORE["issuer+verifier<br/>wallet"]
-    end
-
-    subgraph L3["Provider Layer"]
-        PROVIDER["AWS<br/>Google Cloud<br/>Custom Providers"]
-    end
-
-    subgraph L4["Infrastructure Layer"]
-        INFRA["Database<br/>KMS<br/>Storage"]
-    end
-
-    APP --> CORE
-    CORE --> PROVIDER
-    PROVIDER --> INFRA
-```
-
-Applications are built on top of the core libraries, which interact with external infrastructure through provider implementations. This layered architecture separates protocol logic from infrastructure, making it easy to replace cloud platforms, storage backends, and key management services without affecting application logic.
-
----
-
-# Design Principles
-
-VC Knots is designed around the following principles:
-
-* **Separation of protocol logic and infrastructure**, allowing business logic to remain independent of cloud-specific implementations.
-* **Pluggable provider architecture**, enabling integration with AWS, Google Cloud, or custom environments.
-* **Reusable core libraries**, allowing applications to implement OpenID4VCI/OpenID4VP without reimplementing protocol logic.
-* **Reference server implementations**, demonstrating recommended deployment patterns while keeping the framework itself infrastructure-agnostic.
+1. The Verifier sends an Authorization Request to the Wallet requesting a Verifiable Presentation.
+2. The Wallet returns an Authorization Response containing the Verifiable Presentation.
+3. The Verifier delegates presentation validation to `vcknots`.
+4. `vcknots` resolves the DID using a DID Resolver or Trust Registry, then validates the credential and verifies the presentation signature.
+5. The verification result is returned to the Verifier, which determines whether to accept or reject the presented credentials.
