@@ -1,3 +1,7 @@
+---
+sidebar_position: 0
+---
+
 # アーキテクチャ概要
 
 VC Knots は、**Verifiable Credentials（VC）エコシステム**を構築するためのプラガブルなフレームワークです。

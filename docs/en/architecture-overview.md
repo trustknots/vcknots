@@ -1,3 +1,7 @@
+---
+sidebar_position: 0
+---
+
 # Architecture Overview
 
 VC Knots is a **pluggable framework for building Verifiable Credentials (VC) ecosystems**.
