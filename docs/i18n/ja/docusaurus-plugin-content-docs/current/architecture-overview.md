@@ -2,7 +2,12 @@
 
 VC Knots は、**Verifiable Credentials（VC）エコシステム**を構築するためのプラガブルなフレームワークです。
 
-OpenID4VCI / OpenID4VP を実装したコアライブラリを中心に、クラウドプロバイダーやデータストアなどのインフラをプラグインとして組み合わせることで、さまざまな構成の Issuer、Wallet、Verifier を構築できます。
+VC Knots は、次の設計方針に基づいて構成されています。
+
+- **プロトコル実装とインフラ実装を分離**し、OpenID4VCI / OpenID4VP の実装をクラウド環境から独立させます。
+- Infrastructure Integrations を追加することで、AWS や Google Cloud など異なる実行環境へ容易に対応できます。
+- Core Libraries を組み合わせることで、Issuer、Wallet、Verifier を効率的に実装できます。
+- Reference Applications を提供することで、ライブラリの利用方法や推奨されるデプロイ構成を理解できます。
 
 ---
 
@@ -12,21 +17,21 @@ OpenID4VCI / OpenID4VP を実装したコアライブラリを中心に、クラ
 flowchart TB
 
     subgraph APP["Applications built with VC Knots"]
-        ISSUER[Issuer]
-        WALLET[Wallet]
-        VERIFIER[Verifier]
+        ISSUERAPP[Issuer]
+        WALLETAPP[Wallet]
+        VERIFIERAPP[Verifier]
     end
 
     subgraph VCKNOTS["VC Knots"]
 
         subgraph CORE["Core Libraries"]
-            IV["vcknots<br/>(issuer+verifier)<br/>TypeScript"]
-            W["wallet<br/>Go"]
+            vcknots["vcknots<br/>(issuer+verifier)<br/>TypeScript"]
+            wallet["wallet<br/>Go"]
         end
 
-        subgraph INFRA_INTEGRATION["Infrastructure Integrations"]
-            AWS[aws<br/>TypeScript]
-            GCP[google-cloud<br/>TypeScript ]
+        subgraph INFRAINT["Infrastructure Integrations"]
+            aws[aws<br/>TypeScript]
+            gcp[google-cloud<br/>TypeScript ]
         end
     
     end
@@ -37,28 +42,28 @@ flowchart TB
         DEVICE[(Devices)]
     end
 
-    ISSUER --> IV
-    VERIFIER --> IV
-    WALLET --> W
+    ISSUERAPP --> vcknots
+    VERIFIERAPP --> vcknots
+    WALLETAPP --> wallet
 
-    IV --> AWS
-    IV --> GCP
+    vcknots --> aws
+    vcknots --> gcp
 
-    AWS --> DB
-    AWS --> KMS
-    GCP --> DB
-    GCP --> KMS
-    W --> DEVICE
+    aws --> DB
+    aws --> KMS
+    gcp --> DB
+    gcp --> KMS
+    wallet --> DEVICE
 ```
 
 VC Knots には次のコンポーネントが存在します。
 
 | コンポーネント      | 役割     |
 | --- | --- |
-| **Applications built with VC Knots**   | VC Knots を利用して Issuer・Wallet・Verifier のアプリケーションを実装します。    |
+| **Applications built with VC Knots**   | VC Knots を利用して作成される Issuer・Wallet・Verifier のアプリケーションです。    |
 | **VC Knots Core Libraries** | OpenID4VCI / OpenID4VP のプロトコルや Wallet 機能を提供します。 |
 | **VC Knots Infrastructure Integrations**      | データベースや KMS などの外部サービスとの接続を提供します。  |
-| **Infrastructure** | データベースや鍵管理サービスなどの実際のインフラです。(AWS/GCP)  |
+| **Infrastructure** | データベース、ストレージ、鍵管理サービスなど、Infrastructure Integrations が接続する外部インフラです。  |
 
 ---
 
@@ -68,7 +73,7 @@ VC Knots には次のコンポーネントが存在します。
 
 | パッケージ    | 言語   | 役割   |
 | --- | --- | --- |
-| `issuer+verifier`  | TypeScript | OpenID4VCI / OpenID4VP、Issuer、Verifier、Authorization Server の実装 |
+| `vcknots`  | TypeScript | OpenID4VCI / OpenID4VP、Issuer、Verifier、Authorization Server の実装 |
 | `wallet`        | Go  | Wallet 機能、DID・鍵管理、Credential の管理   |
 | `aws`    | TypeScript | DynamoDB、KMS、Secrets Manager など AWS サービスとの連携を提供   |
 | `google-cloud`    | TypeScript | Cloud Firestore、Cloud KMS、Secret Manager など GCP サービスとの連携を提供    |
@@ -88,33 +93,45 @@ VC Knots には次のコンポーネントが存在します。
 # パッケージ間の関係
 
 ```mermaid
-flowchart LR
+flowchart TB
 
-    APP[Applications]
+    subgraph CORE["Core Libraries"]
+        vcknots["vcknots<br/>(issuer+verifier)"]
+        wallet["wallet"]
+    end
 
-    IV["issuer+verifier"]
-    W["wallet"]
+    subgraph INFRAINT["Infra Integrations"]
+        aws["aws"]
+        gcp["google-cloud"]
+    end
 
-    AWS[AWS Provider]
-    CUSTOM[Custom Provider]
+    subgraph SERVER["Reference Applications"]
+        servercore["server/core"]
+        serversingle["server/single"]
+        servermulti["server/multi"]
+        serveraws["server/aws"]
+        servergcp["server/google-cloud"]
+    end
 
-    SERVER[Sample Servers]
+    aws --> vcknots
+    gcp --> vcknots
 
-    APP --> IV
-    APP --> W
+    servercore --> vcknots
 
-    IV --> AWS
-    IV --> CUSTOM
+    serversingle --> servercore
+    serversingle --> vcknots
 
-    SERVER --> IV
-    SERVER --> W
+    servermulti --> servercore
+    servermulti --> vcknots
+
+    serveraws --> servercore
+    serveraws --> aws
+    serveraws --> vcknots
+
+    servergcp --> servercore
+    servergcp --> gcp
+    servergcp --> vcknots
 ```
-
-各パッケージの関係は次のとおりです。
-
-* アプリケーションは `issuer+verifier` および `wallet` を利用して実装します。
-* `issuer+verifier` は Provider を介してデータベースや KMS などの外部サービスへアクセスします。
-* `server/*` はライブラリを組み合わせたリファレンス実装です。
 
 ---
 
@@ -123,34 +140,35 @@ flowchart LR
 ```mermaid
 sequenceDiagram
 
-    participant Wallet
-    participant Issuer
-    participant Library as issuer+verifier
-    participant Provider
-    participant KMS
+    participant wallet
+    participant issuer
+    participant vcknots as vcknots<br/>(issuer+verifier)
+    participant infra as Infrastructure Integrations
 
-    Wallet->>Issuer: Credential Request
+    wallet->>issuer: Authz Request
+    issuer->>vcknots: Process Authz Request
+    vcknots-->>wallet: Authz Response
 
-    Issuer->>Library: Process Request
+    wallet->>issuer: Token Request
+    issuer->>vcknots: Issue Token
+    vcknots-->>wallet: Token Response
 
-    Library->>Provider: Access Storage
+    wallet->>issuer: Credential Request
+    issuer->>vcknots: Issue Credential
 
-    Provider->>KMS: Sign Credential
+    vcknots->>infra: Access Data<br/>Access Signing Key
+    infra-->>vcknots: Result
 
-    KMS-->>Provider: Signature
-
-    Provider-->>Library: Credential
-
-    Library-->>Wallet: Verifiable Credential
+    vcknots-->>wallet: Credential Response
 ```
 
-### 処理の流れ
+Credential 発行（OpenID4VCI）の処理は、次の流れで実行されます。
 
-1. Wallet が Credential 発行要求（OpenID4VCI）を送信します。
-2. Issuer は `issuer+verifier` にプロトコル処理を委譲します。
-3. Provider がデータベースや KMS にアクセスします。
-4. Credential が署名されます。
-5. Wallet が Verifiable Credential を受け取り保存します。
+1. Wallet は OpenID4VCI の認可・トークン取得を経て、Issuer に Credential Request を送信します。
+2. Issuer は vcknots に Credential 発行処理を委譲します。
+3. vcknots は Infrastructure Integrations を利用して、Credential の発行に必要なデータの取得や鍵管理サービスへのアクセスを行います。
+4. vcknots は取得した情報を基に Verifiable Credential を生成・署名します。
+5. 生成された Verifiable Credential が Wallet に返却されます。
 
 ---
 
@@ -159,70 +177,27 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
 
-    participant Wallet
-    participant Verifier
-    participant Library as issuer+verifier
-    participant Trust as DID Resolver / Trust Registry
+    participant wallet
+    participant verifier
+    participant vcknots as vcknots<br/>(issuer+verifier)
 
-    Wallet->>Verifier: Verifiable Presentation
+    verifier->>wallet: Authz Request
 
-    Verifier->>Library: Verify Presentation
+    wallet->>verifier: Authz Response<br/>(Verifiable Presentation)
 
-    Library->>Trust: Resolve DID
+    verifier->>vcknots: Validate Presentation
 
-    Trust-->>Library: DID Document
+    vcknots->>vcknots: Resolve DID<br/>Validate Credential<br/>Verify Signature
 
-    Library->>Library: Verify Signature
+    vcknots-->>verifier: Verification Result
 
-    Library-->>Verifier: Verification Result
-
-    Verifier-->>Wallet: Accept / Reject
+    verifier-->>wallet: Accept / Reject
 ```
 
-### 処理の流れ
+Presentation 検証（OpenID4VP）の処理は、次の流れで実行されます。
 
-1. Wallet が Verifiable Presentation を送信します。
-2. Verifier は `issuer+verifier` に検証処理を委譲します。
-3. ライブラリは DID 解決、署名検証、信頼性検証を実施します。
-4. 検証結果を Verifier に返却します。
-
----
-
-# レイヤードアーキテクチャ
-
-```mermaid
-flowchart TB
-
-    subgraph L1["Application Layer"]
-        APP[Issuer / Wallet / Verifier]
-    end
-
-    subgraph L2["Core Libraries"]
-        CORE["issuer+verifier<br/>wallet"]
-    end
-
-    subgraph L3["Provider Layer"]
-        PROVIDER["AWS<br/>Google Cloud<br/>Custom Providers"]
-    end
-
-    subgraph L4["Infrastructure Layer"]
-        INFRA["Database<br/>KMS<br/>Storage"]
-    end
-
-    APP --> CORE
-    CORE --> PROVIDER
-    PROVIDER --> INFRA
-```
-
-アプリケーションはコアライブラリを利用して実装され、コアライブラリは Provider を介してインフラへアクセスします。この構造により、プロトコル実装とインフラ実装を分離し、クラウド環境やストレージを柔軟に差し替えることができます。
-
----
-
-# 設計方針
-
-VC Knots は以下の設計思想に基づいています。
-
-* **プロトコル実装とインフラ実装を分離**し、ビジネスロジックをクラウド環境から独立させます。
-* **Provider をプラグインとして実装**することで、AWS や Google Cloud など異なる環境へ容易に対応できます。
-* **アプリケーションはライブラリを組み合わせるだけ**で、OpenID4VCI / OpenID4VP を実装できます。
-* **サンプルサーバーはリファレンス実装**であり、ライブラリの利用方法やデプロイ構成の例を提供します。
+1. Verifier は Wallet に Authz Request を送信し、Presentation を要求します。
+2. Wallet は Verifiable Presentation を含む Authz Response を Verifier に返却します。
+3. Verifier は vcknots に Presentation の検証処理を委譲します。
+4. vcknots は DID Resolver や Trust Registry を利用して DID を解決し、Presentation の署名や Credential の妥当性を検証します。
+5. 検証結果が Verifier に返却され、Verifier は検証結果に基づいて Presentation を受け入れるかどうかを判断します。
