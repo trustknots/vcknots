@@ -8,7 +8,6 @@ VC Knots is a **pluggable framework for building Verifiable Credentials (VC) eco
 
 VC Knots is designed based on the following principles:
 
-- **Separate protocol implementation from infrastructure implementation**, allowing OpenID4VCI and OpenID4VP to remain independent of cloud platforms.
 - Support multiple execution environments, such as AWS and Google Cloud, by adding **Infrastructure Integrations**.
 - Enable efficient implementation of Issuer, Wallet, and Verifier applications by composing reusable **Core Libraries**.
 - Provide **Samples** that demonstrate how to use the libraries and recommended deployment architectures.

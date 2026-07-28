@@ -8,7 +8,6 @@ VC Knots は、**Verifiable Credentials（VC）エコシステム**を構築す�
 
 VC Knots は、次の設計方針に基づいて構成されています。
 
-- **プロトコル実装とインフラ実装を分離**し、OpenID4VCI / OpenID4VP の実装をクラウド環境から独立させます。
 - Infrastructure Integrations を追加することで、AWS や Google Cloud など異なる実行環境へ容易に対応できます。
 - Core Libraries を組み合わせることで、Issuer、Wallet、Verifier を効率的に実装できます。
 - Samples を提供することで、ライブラリの利用方法や推奨されるデプロイ構成を理解できます。
