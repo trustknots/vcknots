@@ -1,5 +1,9 @@
 ---
+<<<<<<< HEAD
 sidebar_position: 3
+=======
+sidebar_position: 11
+>>>>>>> b431cc6 (docs: sort pages)
 ---
 
 # Issuer機能のセットアップと使用方法

@@ -1,5 +1,9 @@
 ---
+<<<<<<< HEAD
 sidebar_position: 4
+=======
+sidebar_position: 12
+>>>>>>> b431cc6 (docs: sort pages)
 ---
 
 

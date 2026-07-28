@@ -1,5 +1,5 @@
 ---
-sidebar_position: 10
+sidebar_position: 45
 ---
 
 # 05. ProviderRegistry の役割と仕組み
