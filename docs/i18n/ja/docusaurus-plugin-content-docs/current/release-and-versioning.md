@@ -24,7 +24,7 @@ Issuer および Verifier は、npmパッケージとして公開されます。
 
 ## バージョニング方針
 
-Semantic Versioning 2.0.0 に従ってバージョンを管理します。
+[Semantic Versioning 2.0.0](https://semver.org/) に従ってバージョンを管理します。
 
 ### v1.0.0 より前の方針
 
