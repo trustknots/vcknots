@@ -11,7 +11,7 @@ VC Knots is designed based on the following principles:
 - **Separate protocol implementation from infrastructure implementation**, allowing OpenID4VCI and OpenID4VP to remain independent of cloud platforms.
 - Support multiple execution environments, such as AWS and Google Cloud, by adding **Infrastructure Integrations**.
 - Enable efficient implementation of Issuer, Wallet, and Verifier applications by composing reusable **Core Libraries**.
-- Provide **Reference Applications** that demonstrate how to use the libraries and recommended deployment architectures.
+- Provide **Samples** that demonstrate how to use the libraries and recommended deployment architectures.
 
 ---
 
@@ -82,7 +82,7 @@ VC Knots consists of the following components:
 | `aws` | TypeScript | Provides integrations with AWS services such as DynamoDB, KMS, and Secrets Manager |
 | `google-cloud` | TypeScript | Provides integrations with Google Cloud services such as Cloud Firestore, Cloud KMS, and Secret Manager |
 
-## Reference Applications
+## Samples
 
 | Package | Language | Responsibility |
 | --- | --- | --- |
@@ -109,7 +109,7 @@ flowchart TB
         gcp["google-cloud"]
     end
 
-    subgraph SERVER["Reference Applications"]
+    subgraph SERVER["Samples"]
         servercore["server/core"]
         serversingle["server/single"]
         servermulti["server/multi"]

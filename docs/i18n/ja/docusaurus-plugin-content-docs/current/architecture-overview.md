@@ -11,7 +11,7 @@ VC Knots は、次の設計方針に基づいて構成されています。
 - **プロトコル実装とインフラ実装を分離**し、OpenID4VCI / OpenID4VP の実装をクラウド環境から独立させます。
 - Infrastructure Integrations を追加することで、AWS や Google Cloud など異なる実行環境へ容易に対応できます。
 - Core Libraries を組み合わせることで、Issuer、Wallet、Verifier を効率的に実装できます。
-- Reference Applications を提供することで、ライブラリの利用方法や推奨されるデプロイ構成を理解できます。
+- Samples を提供することで、ライブラリの利用方法や推奨されるデプロイ構成を理解できます。
 
 ---
 
@@ -83,7 +83,7 @@ VC Knots には次のコンポーネントが存在します。
 | `google-cloud`    | TypeScript | Cloud Firestore、Cloud KMS、Secret Manager など GCP サービスとの連携を提供    |
 
 
-## Reference Applications
+## Samples
 
 | パッケージ  | 言語    | 役割  |
 | --- | --- | --- |
@@ -109,7 +109,7 @@ flowchart TB
         gcp["google-cloud"]
     end
 
-    subgraph SERVER["Reference Applications"]
+    subgraph SERVER["Samples"]
         servercore["server/core"]
         serversingle["server/single"]
         servermulti["server/multi"]
