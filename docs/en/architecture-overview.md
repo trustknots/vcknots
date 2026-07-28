@@ -59,9 +59,9 @@ flowchart TB
     wallet --> DEVICE
 ```
 
-VC Knots consists of the following components:
+VC Knots consists of the following layers:
 
-| Component | Responsibility |
+| Layer | Responsibility |
 | --- | --- |
 | **Applications built with VC Knots** | Applications such as Issuer, Wallet, and Verifier built using VC Knots. |
 | **VC Knots Core Libraries** | Provide OpenID4VCI/OpenID4VP protocol implementations and wallet functionality. |

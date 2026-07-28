@@ -59,9 +59,9 @@ flowchart TB
     wallet --> DEVICE
 ```
 
-VC Knots には次のコンポーネントが存在します。
+VC Knots には次のレイヤーが存在します。
 
-| コンポーネント      | 役割     |
+| レイヤー      | 役割     |
 | --- | --- |
 | **Applications built with VC Knots**   | VC Knots を利用して作成される Issuer・Wallet・Verifier のアプリケーションです。    |
 | **VC Knots Core Libraries** | OpenID4VCI / OpenID4VP のプロトコルや Wallet 機能を提供します。 |
