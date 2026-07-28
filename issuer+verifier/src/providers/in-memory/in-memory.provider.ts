@@ -8,6 +8,7 @@ import { inMemoryRequestObjectStore } from './in-memory-request-object-store.pro
 import { inMemoryVerifierCertificateStore } from './in-memory-verifier-certificate-store.provider'
 import { inMemoryVerifierMetadataStore } from './in-memory-verifier-metadata-store.provider'
 import { inMemoryVerifierSignatureKeyStore } from './in-memory-verifier-signature-key-store.provider'
+import { inMemoryVerifierTransactionDataStore } from './in-memory-verifier-transaction-store'
 
 export const inMemory = () => {
   return [
@@ -21,5 +22,6 @@ export const inMemory = () => {
     inMemoryRequestObjectStore(),
     inMemoryVerifierSignatureKeyStore(),
     inMemoryVerifierCertificateStore(),
+    inMemoryVerifierTransactionDataStore(),
   ]
 }

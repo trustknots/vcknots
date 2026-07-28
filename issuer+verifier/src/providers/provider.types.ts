@@ -24,6 +24,7 @@ import { VpTokenPayload } from '../presentation.types'
 import { RequestObjectId } from '../request-object-id.types'
 import { RequestObject } from '../request-object.types'
 import { Certificate, SignatureKeyPair, SignatureKeyEntry } from '../signature-key.types'
+import { Transaction, TransactionId, TransactionRecord } from '../transaction-id.types'
 import { DeepPartialUnknown } from '../type.utils'
 import { VerifierMetadata } from '../verifier-metadata.types'
 
@@ -406,6 +407,24 @@ export type TransactionDataProvider = {
   generate(type: string, credential_ids: string[], transaction_data_hashes_alg?: string[]): string
 }
 
+export type TransactionIdProvider = {
+  kind: 'transaction-id-provider'
+  name: string
+  single: true
+
+  generate(): Promise<TransactionId>
+}
+
+export type VerifierTransactionDataStoreProvider = {
+  kind: 'verifier-transaction-data-store-provider'
+  name: string
+  single: true
+
+  fetch(transactionId: TransactionId): Promise<Transaction | null>
+  save(transactionId: TransactionId, record: TransactionRecord): Promise<void>
+  delete(transactionId: TransactionId): Promise<void>
+}
+
 export type Provider =
   | IssuerMetadataStoreProvider
   | IssuerSignatureKeyStoreProvider
@@ -442,3 +461,5 @@ export type Provider =
   | VerifierCertificateStoreProvider
   | CertificateProvider
   | TransactionDataProvider
+  | VerifierTransactionDataStoreProvider
+  | TransactionIdProvider

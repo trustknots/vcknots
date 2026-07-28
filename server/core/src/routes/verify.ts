@@ -24,23 +24,20 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
   const normalizeContentType = (value: string) => value.split(';')[0]?.trim().toLowerCase() ?? ''
   const parseFormPayload = (form: FormData): PayloadResult => {
     const payload: Partial<VerifierAuthorizationResponse> = {}
-    const presentationSubmission = form.get('presentation_submission')
-    if (typeof presentationSubmission === 'string' && presentationSubmission.trim()) {
+    const vpTokenRaw = form.get('vp_token')
+    if (typeof vpTokenRaw === 'string' && vpTokenRaw.trim()) {
       try {
-        payload.presentation_submission = JSON.parse(presentationSubmission)
+        payload.vp_token = JSON.parse(vpTokenRaw)
       } catch {
         return {
           ok: false,
           error: {
             error: 'invalid_request',
-            error_description: 'presentation_submission must be JSON',
+            error_description: 'vp_token must be a JSON object',
           },
         }
       }
     }
-    const vpToken = form.getAll('vp_token').filter((v): v is string => typeof v === 'string')
-    payload.vp_token =
-      vpToken.length === 0 ? undefined : vpToken.length === 1 ? vpToken[0] : vpToken
     const state = form.get('state')
     if (typeof state === 'string') {
       payload.state = state
@@ -106,7 +103,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         },
       }
 
-      const request = await verifierFlow.createAuthzRequest(
+      const { request, transactionId: verifierTxId } = await verifierFlow.createAuthzRequest(
         verifierId,
         'vp_token',
         client_id,
@@ -118,7 +115,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           base_url: baseUrl,
         }
       )
-      const registered = vpAudTx.register(client_id, state)
+      const registered = vpAudTx.register(client_id, state, verifierTxId)
       if (!registered.ok) {
         return c.json(registered.error, 400)
       }
@@ -170,9 +167,14 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         return c.json(audResolved.error, 400)
       }
       console.log('[verify] expectedAud:', audResolved.aud)
-      const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
-        expectedAud: audResolved.aud,
-      })
+      const vpPayload = await verifierFlow.verifyPresentations(
+        verifierId,
+        authorizationResponse,
+        audResolved.verifierTransactionId,
+        {
+          expectedAud: audResolved.aud,
+        }
+      )
       if (authorizationResponse.state != null && authorizationResponse.state !== '') {
         vpAudTx.consume(audResolved.transactionId, authorizationResponse.state)
       }
@@ -214,10 +216,15 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         return c.json(audResolved.error, 400)
       }
       console.log('[verify] expectedAud (callback-kbjwt):', audResolved.aud)
-      const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, {
-        expectedAud: audResolved.aud,
-        isKbJwt: true,
-      })
+      const vpPayload = await verifierFlow.verifyPresentations(
+        verifierId,
+        authorizationResponse,
+        audResolved.verifierTransactionId,
+        {
+          expectedAud: audResolved.aud,
+          isKbJwt: true,
+        }
+      )
       if (authorizationResponse.state != null && authorizationResponse.state !== '') {
         vpAudTx.consume(audResolved.transactionId, authorizationResponse.state)
       }
@@ -305,7 +312,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
     try {
       const verifierId = VerifierClientId(baseUrl)
-      const request = await verifierFlow.createAuthzRequest(
+      const { request, transactionId: verifierTxId } = await verifierFlow.createAuthzRequest(
         verifierId,
         'vp_token',
         requestObject.client_id,
@@ -322,7 +329,11 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
             : {}),
         }
       )
-      const registered = vpAudTx.register(requestObject.client_id, requestObject.state)
+      const registered = vpAudTx.register(
+        requestObject.client_id,
+        requestObject.state,
+        verifierTxId
+      )
       if (!registered.ok) {
         return c.json(registered.error, 400)
       }

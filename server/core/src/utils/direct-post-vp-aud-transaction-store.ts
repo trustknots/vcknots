@@ -8,19 +8,21 @@ type DirectPostVpAudTransaction = {
   clientId: ClientIdentifier
   state: string
   expiresAt: number
+  verifierTransactionId: string
 }
 
 export type DirectPostVpAudTransactionStore = {
   register: (
     clientId: ClientIdentifier,
-    state: string
+    state: string,
+    verifierTransactionId: string
   ) =>
     | { ok: true; transactionId: string }
     | { ok: false; error: { error: string; error_description: string } }
   resolveExpectedAudFromWalletState: (
     state: string | undefined
   ) =>
-    | { ok: true; aud: ClientIdentifier; transactionId: string }
+    | { ok: true; aud: ClientIdentifier; transactionId: string; verifierTransactionId: string }
     | { ok: false; error: { error: string; error_description: string } }
   consume: (transactionId: string, state: string) => void
   deleteById: (transactionId: string) => { ok: true } | { ok: false; notFound: true }
@@ -50,7 +52,8 @@ export function createDirectPostVpAudTransactionStore(options?: {
 
   const register = (
     clientId: ClientIdentifier,
-    state: string
+    state: string,
+    verifierTransactionId: string
   ):
     | { ok: true; transactionId: string }
     | { ok: false; error: { error: string; error_description: string } } => {
@@ -74,7 +77,7 @@ export function createDirectPostVpAudTransactionStore(options?: {
     }
     const transactionId = randomUUID()
     const expiresAt = Date.now() + ttlMs
-    byId.set(transactionId, { clientId, state, expiresAt })
+    byId.set(transactionId, { clientId, state, expiresAt, verifierTransactionId })
     idByState.set(state, transactionId)
     return { ok: true, transactionId }
   }
@@ -82,7 +85,7 @@ export function createDirectPostVpAudTransactionStore(options?: {
   const resolveExpectedAudFromWalletState = (
     state: string | undefined
   ):
-    | { ok: true; aud: ClientIdentifier; transactionId: string }
+    | { ok: true; aud: ClientIdentifier; transactionId: string; verifierTransactionId: string }
     | { ok: false; error: { error: string; error_description: string } } => {
     if (state == null || state.trim() === '') {
       return {
@@ -135,12 +138,15 @@ export function createDirectPostVpAudTransactionStore(options?: {
         },
       }
     }
-    return { ok: true, aud: rec.clientId, transactionId }
+    return {
+      ok: true,
+      aud: rec.clientId,
+      transactionId,
+      verifierTransactionId: rec.verifierTransactionId,
+    }
   }
 
-  const deleteById = (
-    transactionId: string
-  ): { ok: true } | { ok: false; notFound: true } => {
+  const deleteById = (transactionId: string): { ok: true } | { ok: false; notFound: true } => {
     const rec = byId.get(transactionId)
     if (rec === undefined) {
       return { ok: false, notFound: true }

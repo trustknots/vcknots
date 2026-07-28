@@ -1,12 +1,16 @@
 import { z } from 'zod'
-import { PresentationSubmission } from './presentation-submission.types'
 import { DeepPartialUnknown } from './type.utils'
 
-// https://openid.net/specs/openid-4-verifiable-presentations-1_0-ID2.html#section-6.1
-const vpTokenSchema = z.string().or(z.record(z.string(), z.unknown()))
+// https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3
+// A single Verifiable Presentation: string (JWT/SD-JWT) or JSON object (JSON-LD/mdoc)
+const verifiablePresentationSchema = z.union([z.string(), z.record(z.string(), z.unknown())])
+
+// DCQL vp_token: JSON object mapping Credential Query IDs to arrays of VPs
+// https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.4
+const vpTokenSchema = z.record(z.string(), z.array(verifiablePresentationSchema))
+
 const authorizationResponseSchema = z.object({
-  vp_token: vpTokenSchema.or(z.array(vpTokenSchema)),
-  presentation_submission: PresentationSubmission.schema.optional(),
+  vp_token: vpTokenSchema,
   state: z.string().optional(),
 })
 export type AuthorizationResponse = z.infer<typeof authorizationResponseSchema>

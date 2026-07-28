@@ -164,18 +164,6 @@ importers:
         specifier: 13.6.1
         version: 13.6.1
 
-  server/multi:
-    dependencies:
-      '@hono/node-server':
-        specifier: 1.19.14
-        version: 1.19.14(hono@4.12.18)
-      '@trustknots/vcknots':
-        specifier: workspace:*
-        version: link:../../issuer+verifier
-      hono:
-        specifier: 4.12.18
-        version: 4.12.18
-
   server/single:
     dependencies:
       '@trustknots/server-core':

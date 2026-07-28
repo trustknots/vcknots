@@ -322,17 +322,20 @@ describe('Vcknots', () => {
       )
 
       assert.ok(authzRequest)
-      assert.equal(authzRequest.client_id, `redirect_uri:${verifierId}`)
-      assert.equal(authzRequest.response_type, 'vp_token')
-      assert.equal(authzRequest.response_mode, 'direct_post')
-      assert.equal(authzRequest.client_metadata?.client_name, metadata.client_name)
-      assert.deepEqual(authzRequest.client_metadata?.vp_formats, metadata.vp_formats)
-      assert.ok(authzRequest.client_metadata.jwks)
-      assert.ok(authzRequest.client_metadata.jwks.keys)
-      assert.ok(authzRequest.nonce)
-      assert.ok('dcql_query' in authzRequest && authzRequest.dcql_query)
-      assert.equal(authzRequest.dcql_query.credentials[0].id, dcqlQuery.credentials[0].id)
-      assert.equal(authzRequest.dcql_query.credentials[0].format, dcqlQuery.credentials[0].format)
+      assert.equal(authzRequest.request.client_id, `redirect_uri:${verifierId}`)
+      assert.equal(authzRequest.request.response_type, 'vp_token')
+      assert.equal(authzRequest.request.response_mode, 'direct_post')
+      assert.equal(authzRequest.request.client_metadata?.client_name, metadata.client_name)
+      assert.deepEqual(authzRequest.request.client_metadata?.vp_formats, metadata.vp_formats)
+      assert.ok(authzRequest.request.client_metadata.jwks)
+      assert.ok(authzRequest.request.client_metadata.jwks.keys)
+      assert.ok(authzRequest.request.nonce)
+      assert.ok('dcql_query' in authzRequest.request && authzRequest.request.dcql_query)
+      assert.equal(authzRequest.request.dcql_query.credentials[0].id, dcqlQuery.credentials[0].id)
+      assert.equal(
+        authzRequest.request.dcql_query.credentials[0].format,
+        dcqlQuery.credentials[0].format
+      )
     })
 
     it('should create authorization request with request_uri', async () => {
@@ -349,46 +352,37 @@ describe('Vcknots', () => {
       )
 
       assert.ok(authzRequest)
-      assert.equal(authzRequest.client_id, `redirect_uri:${verifierId}`)
-      assert.ok(authzRequest.request_uri)
+      assert.equal(authzRequest.request.client_id, `redirect_uri:${verifierId}`)
+      assert.ok(authzRequest.request.request_uri)
     })
 
     it('should verify presentations', async () => {
+      const jwtVcDcqlQuery = {
+        credentials: [
+          {
+            id: 'my_vp',
+            format: 'jwt_vc_json',
+            meta: { type_values: [['VerifiableCredential']] },
+          },
+        ],
+      }
       const authzRequest = await vk.verifier.createAuthzRequest(
         verifierId,
         'vp_token',
         `redirect_uri:${verifierId}`,
         'direct_post',
-        {
-          dcql_query: dcqlQuery,
-        },
+        { dcql_query: jwtVcDcqlQuery },
         false,
         {}
       )
-      const nonce = authzRequest.nonce
+      const nonce = authzRequest.request.nonce
       if (typeof nonce !== 'string') {
         assert.fail('nonce must be a string')
       }
       const vpJwt = await createJwt(nonce, ClientIdentifier(`redirect_uri:${verifierId}`))
 
       const response: AuthorizationResponse = AuthorizationResponse({
-        presentation_submission: {
-          id: '1',
-          definition_id: presentationDefinition.id,
-          descriptor_map: [
-            {
-              id: '2',
-              format: 'jwt_vp_json',
-              path: '$.vp',
-              path_nested: {
-                id: '2',
-                format: 'jwt_vc_json',
-                path: '$.verifiableCredential[0]',
-              },
-            },
-          ],
-        },
-        vp_token: vpJwt,
+        vp_token: { my_vp: [vpJwt] },
       })
 
       mock.method(globalThis, 'fetch', async () => {
@@ -412,7 +406,7 @@ describe('Vcknots', () => {
         }
       })
 
-      await vk.verifier.verifyPresentations(verifierId, response, {
+      await vk.verifier.verifyPresentations(verifierId, response, authzRequest.transactionId, {
         expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
       })
 
@@ -420,37 +414,26 @@ describe('Vcknots', () => {
     })
 
     it('should verify presentations (dc+sd-jwt not kbjwt)', async () => {
+      const sdJwtDcqlQuery = {
+        credentials: [{ id: 'my_credential', format: 'dc+sd-jwt' }],
+      }
       const authzRequest = await vk.verifier.createAuthzRequest(
         verifierId,
         'vp_token',
         `redirect_uri:${verifierId}`,
         'direct_post',
-        {
-          dcql_query: dcqlQuery,
-        },
+        { dcql_query: sdJwtDcqlQuery },
         false,
         {}
       )
-      const nonce = authzRequest.nonce
-      if (typeof nonce !== 'string') {
+      if (typeof authzRequest.request.nonce !== 'string') {
         assert.fail('nonce must be a string')
       }
       const sampleDcSdJwtVp =
         'eyJhbGciOiJFUzI1NiIsImtpZCI6Ik9GWV9kbVpuQnIxMUYxSkg5dzdNMUVPNEEweGU4VmpQQUl6YS02QzdfVUUiLCJ0eXBlIjoiZGMrc2Qtand0In0.eyJpc3MiOiJodHRwczovL3Zja25vdHMtYXBwLXNkLWp3dC0tdmNrbm90cy5hc2lhLWVhc3QxLmhvc3RlZC5hcHAiLCJpYXQiOjE3NjU1MjI1MDQsInZjdCI6InVybjpldWRpOnBpZDoxIiwiZXhwIjoxODgzMDAwMDAwLCJfc2QiOlsiMVBJdkhhVnM1SmN5V1h0QWNTakNFVUF3T1Radi1WZll3NV9vaUNBTHpkSSIsIkRNa2ZkWVIwOHVrX2kxSkx5Qzd4MmtaM2ZqXzNUdVdNM2huQ0tmQURiT0UiLCJGUlJWU3FnMXlLM1JObjhmS1VjaU1vV3ZQb25TdnhnMGV4MFhRcTRVa1VrIiwiWlhTTS1VRkRRVzZ1T00xalhFdkwyYld4RkxaenJyMlBHdHhkeWg4SVZNcyIsIm1HVWFxdWNaQlB5QzZBV0twS3NreDJTNXNWSzJpSTE5eS1kWHo3ODNnaFUiLCJ3c1JLY2RqanJ3ZnRtenU4R1V6THREdUtkZzNsSElZTmc5SnIwVEdiMENzIl0sIl9zZF9hbGciOiJzaGEtMjU2In0.HkshPJyBeptaVKSyoWl6-n1SeZ2-ZaHn_H4LUbj33pXCY-4aWwv2otXlUfOBp93QH8rXbNW_ZaJ1e1oij1pN1g~WyIzTHJnYjRMWmtzTjlwYVBQNGhfYWJRIiwiZ2l2ZW5fbmFtZSIsIkpvaG4iXQ~WyJyQ0NYZjRNSW5rakVTUGhqaEZ0alFRIiwiZmFtaWx5X25hbWUiLCJEb2UiXQ~WyJab1k2ZGdIUXVlRmFheE85REFDenpnIiwiZW1haWwiLCJqb2huZG9lQGV4YW1wbGUuY29tIl0~WyJsZjVYaEVObzZHNlZHdkZnSEdLNlJnIiwicGhvbmVfbnVtYmVyIiwiKzEtMjAyLTU1NS0wMTAxIl0~WyJGNjJoVlZnSEFQMXVOZ2pCVlNPd2RnIiwiYWRkcmVzcyIsIntcInN0cmVldF9hZGRyZXNzXCI6IFwiMTIzIE1haW4gU3RcIiwgXCJsb2NhbGl0eVwiOiBcIkFueXRvd25cIiwgXCJyZWdpb25cIjogXCJBbnlzdGF0ZVwiLCBcImNvdW50cnlcIjogXCJVU1wifSJd~WyJTc0VMNC1zTlFDQkprSXI0UXBqaFVRIiwiYmlydGhkYXRlIiwiMTk0MC0wMS0wMSJd~'
 
       const response: AuthorizationResponse = AuthorizationResponse({
-        presentation_submission: {
-          id: '1',
-          definition_id: presentationDefinition.id,
-          descriptor_map: [
-            {
-              id: '2',
-              format: 'dc+sd-jwt',
-              path: '$',
-            },
-          ],
-        },
-        vp_token: sampleDcSdJwtVp,
+        vp_token: { my_credential: [sampleDcSdJwtVp] },
       })
 
       mock.method(globalThis, 'fetch', async () => {
@@ -475,7 +458,7 @@ describe('Vcknots', () => {
           }),
         }
       })
-      await vk.verifier.verifyPresentations(verifierId, response, {
+      await vk.verifier.verifyPresentations(verifierId, response, authzRequest.transactionId, {
         expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
       })
 
@@ -495,26 +478,30 @@ describe('Vcknots', () => {
         .createVerifierMetadata(verifierId, metadata)
         .catch(() => {})
 
+      const kbAuthzRequest = await vkWithPreSavedNonce.verifier.createAuthzRequest(
+        verifierId,
+        'vp_token',
+        `redirect_uri:${verifierId}`,
+        'direct_post',
+        { dcql_query: { credentials: [{ id: 'my_credential', format: 'dc+sd-jwt' }] } },
+        false,
+        {}
+      )
+
       const response: AuthorizationResponse = AuthorizationResponse({
-        presentation_submission: {
-          id: '1',
-          definition_id: presentationDefinition.id,
-          descriptor_map: [
-            {
-              id: '2',
-              format: 'dc+sd-jwt',
-              path: '$',
-            },
-          ],
-        },
-        vp_token: sampleDcSdJwtVp,
+        vp_token: { my_credential: [sampleDcSdJwtVp] },
       })
 
       // KB-JWT payload in sampleDcSdJwtVp uses aud: https://verifier.example.com
-      await vkWithPreSavedNonce.verifier.verifyPresentations(verifierId, response, {
-        expectedAud: ClientIdentifier('https://verifier.example.com'),
-        isKbJwt: true,
-      })
+      await vkWithPreSavedNonce.verifier.verifyPresentations(
+        verifierId,
+        response,
+        kbAuthzRequest.transactionId,
+        {
+          expectedAud: ClientIdentifier('https://verifier.example.com'),
+          isKbJwt: true,
+        }
+      )
 
       mock.reset()
     })
