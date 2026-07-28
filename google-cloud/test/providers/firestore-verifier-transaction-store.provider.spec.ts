@@ -69,6 +69,24 @@ describe('firestoreVerifierTransactionDataStore', () => {
     assert.ok(!store.has(`vcknots/v1/verifierTransactions/${transactionId}`))
   })
 
+  it('should reject invalid transaction ids before save', async () => {
+    const provider = firestoreVerifierTransactionDataStore({ app: mockApp })
+    await assert.rejects(
+      provider.save('invalid/id' as TransactionId, transactionRecord),
+      /Invalid transaction ID/
+    )
+  })
+
+  it('should reject invalid transaction ids before fetch', async () => {
+    const provider = firestoreVerifierTransactionDataStore({ app: mockApp })
+    await assert.rejects(provider.fetch('invalid/id' as TransactionId), /Invalid transaction ID/)
+  })
+
+  it('should reject invalid transaction ids before delete', async () => {
+    const provider = firestoreVerifierTransactionDataStore({ app: mockApp })
+    await assert.rejects(provider.delete('invalid/id' as TransactionId), /Invalid transaction ID/)
+  })
+
   it('should use the correct Firestore document path', async () => {
     const provider = firestoreVerifierTransactionDataStore({ app: mockApp })
     await provider.save(transactionId, transactionRecord)

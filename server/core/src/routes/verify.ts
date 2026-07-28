@@ -26,8 +26,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     const payload: Partial<VerifierAuthorizationResponse> = {}
     const vpTokenRaw = form.get('vp_token')
     if (typeof vpTokenRaw === 'string' && vpTokenRaw.trim()) {
+      let parsedVpToken: unknown
       try {
-        payload.vp_token = JSON.parse(vpTokenRaw)
+        parsedVpToken = JSON.parse(vpTokenRaw)
       } catch {
         return {
           ok: false,
@@ -37,6 +38,20 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           },
         }
       }
+      if (
+        typeof parsedVpToken !== 'object' ||
+        parsedVpToken === null ||
+        Array.isArray(parsedVpToken)
+      ) {
+        return {
+          ok: false,
+          error: {
+            error: 'invalid_request',
+            error_description: 'vp_token must be a JSON object',
+          },
+        }
+      }
+      payload.vp_token = parsedVpToken as VerifierAuthorizationResponse['vp_token']
     }
     const state = form.get('state')
     if (typeof state === 'string') {

@@ -55,7 +55,7 @@ describe('inMemoryVerifierTransactionDataStore', () => {
     })
 
     it('delete should not throw for a non-existent transaction id', async () => {
-      await assert.doesNotThrow(async () => {
+      await assert.doesNotReject(async () => {
         await transactionStoreProvider.delete(TransactionId('non-existent-id'))
       })
     })

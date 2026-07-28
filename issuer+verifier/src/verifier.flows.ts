@@ -397,7 +397,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
       const transaction = await transactionDataStore$.fetch(TransactionId(transactionId))
       if (!transaction) {
-        throw err('INTERNAL_SERVER_ERROR', {
+        throw err('TRANSACTION_ID_NOT_FOUND', {
           message: 'Transaction is not found.',
         })
       }
@@ -494,6 +494,8 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           }
         }
       }
+
+      await transactionDataStore$.delete(TransactionId(transactionId))
 
       return results
     },

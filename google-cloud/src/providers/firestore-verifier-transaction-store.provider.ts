@@ -3,6 +3,13 @@ import { VerifierTransactionDataStoreProvider } from '@trustknots/vcknots/provid
 import { Timestamp } from 'firebase-admin/firestore'
 import { FirestoreProviderOptions, resolveFirestore } from './firestore.provider'
 
+const ensureSafeTransactionId = (transactionId: string): string => {
+  if (!/^[A-Za-z0-9_-]+$/.test(transactionId)) {
+    throw new Error('Invalid transaction ID')
+  }
+  return transactionId
+}
+
 export const firestoreVerifierTransactionDataStore = (
   options?: FirestoreProviderOptions & { transaction_data_expire_in?: number }
 ): VerifierTransactionDataStoreProvider => {
@@ -15,11 +22,12 @@ export const firestoreVerifierTransactionDataStore = (
     single: true,
 
     async save(transactionId, record) {
+      const safeTransactionId = ensureSafeTransactionId(transactionId)
       const expiresAt = Timestamp.fromMillis(
         new Date().getTime() + (options?.transaction_data_expire_in ?? 60 * 5 * 1000)
       )
 
-      const docRef = firestore.doc(`${ns}/v1/verifierTransactions/${transactionId}`)
+      const docRef = firestore.doc(`${ns}/v1/verifierTransactions/${safeTransactionId}`)
       await docRef.set({
         transaction_id: transactionId,
         transaction_data_expires_at: expiresAt,
@@ -28,7 +36,8 @@ export const firestoreVerifierTransactionDataStore = (
     },
 
     async fetch(transactionId) {
-      const doc = await firestore.doc(`${ns}/v1/verifierTransactions/${transactionId}`).get()
+      const safeTransactionId = ensureSafeTransactionId(transactionId)
+      const doc = await firestore.doc(`${ns}/v1/verifierTransactions/${safeTransactionId}`).get()
       if (!doc.exists) {
         return null
       }
@@ -52,7 +61,8 @@ export const firestoreVerifierTransactionDataStore = (
     },
 
     async delete(transactionId) {
-      await firestore.doc(`${ns}/v1/verifierTransactions/${transactionId}`).delete()
+      const safeTransactionId = ensureSafeTransactionId(transactionId)
+      await firestore.doc(`${ns}/v1/verifierTransactions/${safeTransactionId}`).delete()
     },
   }
 }
