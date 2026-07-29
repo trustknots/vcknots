@@ -12,7 +12,7 @@ sidebar_position: 3
 - OpenID for Verifiable Presentations 1.0 に対応（[OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)）　　
 以下は現時点では未実装ですが、今後対応予定です。
   - `response_mode`は`direct_post`は対応していますが、`direct_post.jwt`は未対応です（現時点では未実装／今後対応予定）。
-  - `vp_token`が単一のケースは対応していますが、複数含む検証は未対応です（現時点では未実装／今後対応予定）。
+  - 単一のcredential query IDを含む`vp_token`のみ対応していますが、複数のcredential query IDを含む`vp_token`は未対応です（現時点では未実装／今後対応予定）。
 - クロスデバイスフローを前提としています
 - Node.js v14以降がインストールされていること
 - TypeScriptが設定されていること
@@ -314,9 +314,13 @@ verifyApp.post('/verify/callback', async (c) => {
 
     const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
 
-    // transactionId は createAuthzRequest の戻り値から取得し、セッション等で保管したものを使用
+    // `lookupTransactionId` はサンプルです。
+    // `authorizationResponse.state`に対応する transaction ID を取得する処理は
+    // アプリケーション側で実装するプレースホルダーとして置き換えてください。
+    const transactionId = await lookupTransactionId(authorizationResponse.state)
+
     const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, transactionId, {
-      expectedAud: ClientIdentifier(`redirect_uri:${baseUrl}/callback`),
+      expectedAud: ClientIdentifier('x509_san_dns:localhost'),
     })
 
     return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
@@ -350,7 +354,7 @@ curl --location 'http://localhost:8080/verify/callback' \
 ```
 
 
-## 4. Verifierメタデータの登録{#initializeVerifierMetadata}
+## 4. Verifierメタデータの登録 {#initializeVerifierMetadata}
 
 - 本ガイドのコードは、起動時に本セクションの手順に従ってVerifierメタデータを登録します。実運用や各自の開発環境に合わせて、`BASE_URL`およびメタデータ／証明書ファイルを適宜調整してください。
 
@@ -475,7 +479,8 @@ createVerifierMetadata(
 - `INTERNAL_SERVER_ERROR`: `options.alg`が未指定（公開鍵/証明書を指定する場合は必須）
 - `INVALID_CERTIFICATE`: 提供された証明書が無効
 
-#### CreateVerifierMetadataOptions{#CreateVerifierMetadataOptions}
+#### CreateVerifierMetadataOptions {#CreateVerifierMetadataOptions}
+
 Verifierメタデータ作成時のオプションを定義する型です。証明書または公開鍵の設定が可能です。
 
 
@@ -556,7 +561,7 @@ createAuthzRequest(
 - `response_uri`が指定されない場合、デフォルトで`${verifierId}/post`が使用されます
 - `state`はセキュリティのため、ランダムで予測困難な値を使用することを推奨します
 
-#### AuthorizationRequest（createAuthzRequest のレスポンス型）{#AuthorizationRequest}
+#### AuthorizationRequest（createAuthzRequest のレスポンス型） {#AuthorizationRequest}
 
 `createAuthzRequest` が返すレスポンス型です。`request_uri` を用いる「Request URI 形式」か、パラメータを直接含める「直接形式」のいずれかで、DCQL のスキーマと結合されます。
 
@@ -597,13 +602,15 @@ findRequestObject(
 
 
 
-#### RequestObjectId{#RequestObjectId}
+#### RequestObjectId {#RequestObjectId}
+
 Request Object（認可リクエストJAR）の一意識別子です。
 
 詳細な型定義については、[request-object-id.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/request-object-id.types.ts)を参照してください。
 
 
-#### FindRequestObjectOptions{#FindRequestObjectOptions}
+#### FindRequestObjectOptions {#FindRequestObjectOptions}
+
 リクエストオブジェクト取得時のオプションを定義する型です。
 
 詳細な型定義については、[verifier.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts)を参照してください。
@@ -628,7 +635,7 @@ verifyPresentations(
 - `transactionId`: `createAuthzRequest` が返した `transactionId`。認可リクエスト時の DCQL クエリを照合するために使用します。
 - `options`: [VerifyPresentationOptions](#VerifyPresentationOptions)。`expectedAud` の指定が必須です。
 
-#### VerifyPresentationOptions{#VerifyPresentationOptions}
+#### VerifyPresentationOptions {#VerifyPresentationOptions}
 Verifier アプリから VP／クレデンシャル形式ごとの検査に渡すオプションです。型定義は [`verifier.flows.ts`](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts) を参照してください。
 
 | フィールド | 必須 | 説明 |
@@ -695,7 +702,8 @@ findVerifierCertificate(id: ClientId): Promise<Certificate | null>
 - 証明書オブジェクト（[Certificate](#Certificate)）、または存在しない場合は`null`
 
 
-#### Certificate{#Certificate}
+#### Certificate {#Certificate}
+
 Verifierが保持する証明書チェーンを表す型です（PEM形式の文字列配列）。各要素はPEMフォーマット検証を通過したものに限られます。
 
 詳細な型定義については、[signature-key.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/signature-key.types.ts)を参照してください。

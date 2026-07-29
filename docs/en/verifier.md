@@ -12,7 +12,7 @@ This guide explains how to set up and use the Verifier feature of VCKnots.
 - Supports OpenID for Verifiable Presentations 1.0 ([OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html))  
 The following items are not implemented yet and are planned for future support:
   - `response_mode` supports `direct_post`, but `direct_post.jwt` is not supported yet (planned for future support).
-  - Support is provided for cases with a single `vp_token`, but verification involving multiple tokens is not yet supported (not currently implemented; planned for future support).
+  - One credential query ID with an array of VPs is supported; multiple credential query IDs are not supported (not currently implemented; planned for future support).
 - Assumes the cross-device flow
 - Node.js v14 or later is installed
 - TypeScript is configured
@@ -313,9 +313,13 @@ verifyApp.post('/verify/callback', async (c) => {
 
     const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
 
-    // Retrieve transactionId from session/state store using authorizationResponse.state
+    // Look up the transaction ID associated with authorizationResponse.state
+    // using your application's transaction management.
+    // `lookupTransactionId` is a placeholder and must be implemented by your application.
+    const transactionId = await lookupTransactionId(authorizationResponse.state)
+
     const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, transactionId, {
-      expectedAud: ClientIdentifier(`redirect_uri:${baseUrl}/callback`),
+      expectedAud: ClientIdentifier('x509_san_dns:localhost'),
     })
 
     return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
@@ -351,7 +355,7 @@ curl --location 'http://localhost:8080/verify/callback' \
 (Exact `redirect_uri` depends on your verifier `baseUrl`.)
 
 
-## 4. Registering Verifier Metadata{#initializeVerifierMetadata}
+## 4. Registering Verifier Metadata {#initializeVerifierMetadata}
 
 - The code in this guide registers verifier metadata at startup according to the steps in this section. For production use or your own development environment, adjust `BASE_URL` and the metadata/certificate files as appropriate.
 
@@ -473,7 +477,8 @@ createVerifierMetadata(
 - `INTERNAL_SERVER_ERROR`: `options.alg` is not specified (required when specifying a public key/certificate)
 - `INVALID_CERTIFICATE`: The provided certificate is invalid
 
-#### CreateVerifierMetadataOptions{#CreateVerifierMetadataOptions}
+#### CreateVerifierMetadataOptions {#CreateVerifierMetadataOptions}
+
 Defines the options used when creating verifier metadata. It allows configuration of certificates or public keys.
 
 For detailed type definitions, see [verifier.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts).
@@ -591,13 +596,15 @@ findRequestObject(
 
 
 
-#### RequestObjectId{#RequestObjectId}
+#### RequestObjectId {#RequestObjectId}
+
 A unique identifier for a Request Object (authorization request JAR).
 
 For detailed type definitions, see [request-object-id.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/request-object-id.types.ts).
 
 
-#### FindRequestObjectOptions{#FindRequestObjectOptions}
+#### FindRequestObjectOptions {#FindRequestObjectOptions}
+
 Defines the options used when retrieving a Request Object.
 
 For detailed type definitions, see [verifier.flows.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts).
@@ -622,7 +629,8 @@ verifyPresentations(
 - `transactionId`: The `transactionId` returned by `createAuthzRequest`. Used to look up the original DCQL query for the authorization request.
 - `options`: [VerifyPresentationOptions](#VerifyPresentationOptions) — must include `expectedAud` (see below).
 
-#### VerifyPresentationOptions{#VerifyPresentationOptions}
+#### VerifyPresentationOptions {#VerifyPresentationOptions}
+
 Options passed from your verifier application into VP / credential-format–specific checks. Defined in [`verifier.flows.ts`](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts).
 
 | Field | Required | Description |
@@ -688,7 +696,8 @@ findVerifierCertificate(id: ClientId): Promise<Certificate | null>
 - Certificate object ([Certificate](#Certificate)), or `null` if it does not exist
 
 
-#### Certificate{#Certificate}
+#### Certificate {#Certificate}
+
 Type that represents the certificate chain held by the Verifier (an array of PEM-formatted strings). Each element must have passed PEM format validation.
 
 For detailed type definitions, see [signature-key.types.ts](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/signature-key.types.ts).
