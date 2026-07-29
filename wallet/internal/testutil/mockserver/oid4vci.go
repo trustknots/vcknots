@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"time"
 
 	"github.com/go-jose/go-jose/v4"
 )
@@ -208,6 +209,7 @@ func (is *OID4VCIIssuerServer) validateClientAssertion(r *http.Request) error {
 		SUB string `json:"sub"`
 		AUD string `json:"aud"`
 		EXP int64  `json:"exp"`
+		NBF int64  `json:"nbf"`
 	}
 	if err := json.Unmarshal(verified, &claims); err != nil {
 		return fmt.Errorf("failed to parse client_assertion claims: %w", err)
@@ -225,6 +227,13 @@ func (is *OID4VCIIssuerServer) validateClientAssertion(r *http.Request) error {
 	}
 	if claims.EXP == 0 {
 		return fmt.Errorf("client_assertion exp is required")
+	}
+	now := time.Now().Unix()
+	if claims.EXP <= now {
+		return fmt.Errorf("client_assertion has expired")
+	}
+	if claims.NBF > now {
+		return fmt.Errorf("client_assertion is not yet valid")
 	}
 
 	return nil
