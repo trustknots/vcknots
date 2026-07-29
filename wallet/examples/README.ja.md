@@ -6,9 +6,13 @@
 2. **コンフォーマンステスト**: 外部のOpenID4VPコンフォーマンステストサービスとの統合をテスト
 
 どちらのモードも、同じプログラム（`server_integration_sdjwt.go`）でコマンドライン引数の有無により切り替わります。
-両モードとも同一のフロー（クレデンシャルのシード → ウォレット構築 → OpenID4VPリクエストURI取得 → プレゼンテーション）に従います。
+ローカルサーバー統合モードでは、OpenID4VCI でクレデンシャルを取得した後、OpenID4VP で提示します。
+コンフォーマンステストモードでは、ローカルに用意したクレデンシャルを使い、OpenID4VP の提示フローだけをテストします。
 
 ## 前提条件
+
+ローカルサーバー統合テストでは、Go に加えて Node.js と pnpm が必要です。
+OpenID4VP コンフォーマンステストモードでは、ローカルの Node.js サーバーは必要ありません。
 
 ### 1. mise のインストール
 
@@ -33,8 +37,8 @@ cd /path/to/vcknots/wallet
 mise install
 ```
 
-これにより、`mise.toml`に基づいてGo 1.24.5が自動的にインストールされ、必要な環境変数が設定されます。
-miseを利用しない場合は、Go 1.24.5を手動でインストールし、`GOPRIVATE`環境変数を設定してください：
+これにより、`mise.toml`に基づいてGo 1.26.4が自動的にインストールされ、必要な環境変数が設定されます。
+miseを利用しない場合は、Go 1.26.4を手動でインストールし、`GOPRIVATE`環境変数を設定してください：
 
 ```bash
 export GOPRIVATE="github.com/trustknots/vcknots/wallet"
@@ -56,9 +60,9 @@ go mod download
 
 ローカルのvcknotsサーバーとの統合をテストします。
 
-#### ステップ1: Issuer、Verifierサーバーの起動
+#### ステップ1: Issuer、Authorization Server、Verifier の起動
 
-サンプルを実行するためには、verifierサーバーが動作している必要があります。サーバーディレクトリに移動してサーバーを起動します：
+ローカルサーバーは、サンプルに必要な3つの役割を提供します。リポジトリのルートへ移動して起動します：
 
 ```bash
 # walletディレクトリから、vcknotsルートディレクトリへ移動(/path/to/vcknots)
@@ -116,6 +120,19 @@ Authz metadata initialized
 
 サーバーはデフォルトで`http://localhost:8080`で起動します。
 テスト用スクリプトも上記のURLを使用します。
+
+#### ローカル統合モードのクライアント認証
+
+ローカルの各サンプルは、`ClientAuthConfig` に `PrivateKeyJwt` を設定し、DPoP も有効にします。そのため、Token Request には次の情報が含まれます。
+
+- `client_id=test-client-id`
+- `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`
+- ES256 で署名した `client_assertion`
+- DPoP Proof
+
+`examples/common.NewMockKeyEntry` が返す P-256 の固定鍵は、`server/samples/oauth-clients.json` の `test-client-id` に登録された公開 JWK と対応しています。また、`server/samples/authorization_metadata.json` では `private_key_jwt` と ES256 の両方を明示的に広告しています。Wallet は両方が広告されている場合にだけ、この認証方式を利用します。
+
+> ⚠️ **警告**: この固定秘密鍵はローカルサンプル専用です。実環境では別の鍵を生成して安全に保管し、対応する公開 JWK を認可サーバーへ登録してください。
 
 #### ステップ2: 統合テスト用のスクリプト実行（引数なし）
 
@@ -179,6 +196,7 @@ time=2025-11-27T14:03:25.174+09:00 level=INFO msg="Credential presented successf
 ```
 
 `Credential presented successfully`と表示されれば、成功です。
+ここまで成功した場合、アクセストークン取得時の Client Assertion と DPoP Proof も認可サーバーで受理されています。
 
 ---
 
@@ -206,6 +224,7 @@ go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_
 - **選択クレーム**: `given_name`と`family_name`を選択
 - **キーバインディング**: 必須（`RequireKeyBinding: true`）
 - **Audience/Nonce**: リクエストURIから自動的に抽出
+- **OID4VCI クライアント認証と DPoP**: 設定しない（このモードでは OpenID4VP の提示フローだけをテスト）
 
 > ⚠️ **警告**: `InsecureSkipX509Verify: true` はコンフォーマンステストやローカル開発時のみ有効です。本番環境では**絶対に**使用しないでください。
 

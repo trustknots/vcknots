@@ -6,9 +6,13 @@ This directory contains sample code that demonstrates two key testing scenarios 
 2. **Conformance Test**: Tests against external OpenID4VP conformance test services
 
 Both modes are supported by the same program (`server_integration_sdjwt.go`) and are selected based on command-line arguments.
-Both follow the same flow: seed credential → build wallet → get OpenID4VP request URI → present.
+In local server integration mode, the wallet obtains a credential through OpenID4VCI and then presents it through OpenID4VP.
+Conformance test mode seeds a local credential and tests only the OpenID4VP presentation flow.
 
 ## Prerequisites
+
+The local server integration test requires Node.js and pnpm in addition to Go.
+The OpenID4VP conformance test mode does not require the local Node.js server.
 
 ### 1. Install mise
 
@@ -33,8 +37,8 @@ cd /path/to/vcknots/wallet
 mise install
 ```
 
-This automatically installs Go 1.24.5 and configures the necessary environment variables based on `mise.toml`.
-If you prefer not to use mise, install Go 1.24.5 manually and set the `GOPRIVATE` environment variable:
+This automatically installs Go 1.26.4 and configures the necessary environment variables based on `mise.toml`.
+If you prefer not to use mise, install Go 1.26.4 manually and set the `GOPRIVATE` environment variable:
 
 ```bash
 export GOPRIVATE="github.com/trustknots/vcknots/wallet"
@@ -56,9 +60,9 @@ This sample program operates in two distinct modes:
 
 Tests integration with a local vcknots server.
 
-#### Step 1: Start the Issuer and Verifier servers
+#### Step 1: Start the Issuer, Authorization Server, and Verifier
 
-The verifier server must be running to execute the sample. Move to the server directory and start the server:
+The local server provides all three roles required by the sample. Move to the repository root and start it:
 
 ```bash
 # From the wallet directory, move to the vcknots root (/path/to/vcknots)
@@ -116,6 +120,19 @@ Authz metadata initialized
 
 By default the server listens on `http://localhost:8080`.
 The test scripts also use this URL.
+
+#### Client authentication in local integration mode
+
+The local examples configure `ClientAuthConfig` with `PrivateKeyJwt` and enable DPoP. The token request therefore includes:
+
+- `client_id=test-client-id`
+- `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`
+- An ES256-signed `client_assertion`
+- A DPoP proof
+
+The fixed P-256 key returned by `examples/common.NewMockKeyEntry` matches the public JWK registered for `test-client-id` in `server/samples/oauth-clients.json`. The authorization server metadata in `server/samples/authorization_metadata.json` explicitly advertises both `private_key_jwt` and ES256; the wallet uses this authentication method only when both are advertised.
+
+> ⚠️ **Warning**: The fixed private key is for this local sample only. Generate and protect a separate key, and register its public JWK with the authorization server, in a real deployment.
 
 #### Step 2: Run the integration test script (no arguments)
 
@@ -179,6 +196,7 @@ time=2025-11-27T14:03:25.174+09:00 level=INFO msg="Credential presented successf
 ```
 
 If `Credential presented successfully` appears, the sample succeeded.
+Reaching this point also means that the authorization server accepted the client assertion and DPoP proof used to obtain the access token.
 
 ---
 
@@ -206,6 +224,7 @@ Conformance Test mode automatically applies the following settings:
 - **Selected Claims**: Selects `given_name` and `family_name`
 - **Key Binding**: Required (`RequireKeyBinding: true`)
 - **Audience/Nonce**: Automatically extracted from the request URI
+- **OID4VCI Client Authentication and DPoP**: Not configured; this mode tests the OpenID4VP presentation flow only
 
 > ⚠️ **Warning**: `InsecureSkipX509Verify: true` should only be used in conformance tests and local development. **Never** use this in production environments.
 
