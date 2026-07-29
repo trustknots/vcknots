@@ -71,6 +71,13 @@ To start this server, follow the steps below.
    Use a sufficiently long random secret and keep it stable per environment (do not rotate casually, because
    previously stored `tx_code` hashes will no longer validate after changing it).
 
+   Failed `tx_code` attempts are limited per pre-authorized code (default **5**) by `firestorePreAuthorizedCodeStore`.
+   To change the limit, pass `maxTxCodeAttempts` to that provider directly, for example
+   `firestorePreAuthorizedCodeStore({ app, databaseId, namespace, maxTxCodeAttempts })`, and register it
+   in place of the pre-authorized-code store from `firestore()` (no environment variable yet).
+   After the limit is reached the code is deleted, and further requests fail with `invalid_grant`
+   even with the correct `tx_code`.
+
    Optional variables:
 
    - `FIRESTORE_DATABASE_ID`

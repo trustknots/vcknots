@@ -128,5 +128,208 @@ describe('inMemoryPreAuthorizedCode', () => {
       mock.timers.tick(2_000)
       await assert.rejects(provider.consume(sampleCode), { name: 'invalid_grant' })
     })
+
+    it('should throw invalid_tx_code when saving a non-numeric tx_code in numeric mode', async () => {
+      await assert.rejects(
+        provider.save(sampleCode, configurations, 'abc', { tx_code_input_mode: 'numeric' }),
+        { name: 'invalid_tx_code' }
+      )
+    })
+
+    it('should throw invalid_request when tx_code is required but missing', async () => {
+      await provider.save(sampleCode, configurations, 1234, { tx_code_input_mode: 'numeric' })
+      await assert.rejects(provider.consume(sampleCode), {
+        name: 'invalid_request',
+        message: 'tx_code is required for this pre-authorized code',
+      })
+    })
+
+    it('should throw invalid_request when tx_code is provided for a code without tx_code', async () => {
+      await provider.save(sampleCode, configurations)
+      await assert.rejects(provider.consume(sampleCode, 1234), {
+        name: 'invalid_request',
+        message: 'tx_code should not be provided for this pre-authorized code',
+      })
+    })
+
+    it('should throw invalid_grant for incorrect tx_code in text mode', async () => {
+      await provider.save(sampleCode, configurations, 'secret', { tx_code_input_mode: 'text' })
+      await assert.rejects(provider.consume(sampleCode, 'wrong'), {
+        name: 'invalid_grant',
+        message: 'Invalid tx_code provided',
+      })
+    })
+
+    it('should throw invalid_grant with expired message for an expired code', async () => {
+      mock.timers.enable({ apis: ['Date'] })
+      await provider.save(sampleCode, configurations, undefined, { ttlSec: 1 })
+      mock.timers.tick(1001)
+      await assert.rejects(provider.consume(sampleCode), {
+        name: 'invalid_grant',
+        message: 'Pre-authorized code has expired',
+      })
+    })
+  })
+
+  describe('tx_code brute-force lockout (count-first gate)', () => {
+    const LOCKED_MESSAGE = 'Pre-authorized code is invalid, consumed, or locked'
+    const INVALID_TX_CODE_MESSAGE = 'Invalid tx_code provided'
+
+    const saveWithTxCode = async (
+      store: ReturnType<typeof inMemoryPreAuthorizedCodeStore>,
+      code: PreAuthorizedCode
+    ) => {
+      await store.save(code, configurations, 1234, { tx_code_input_mode: 'numeric' })
+    }
+
+    it('increments attempts before comparing tx_code and keeps the code under the limit', async () => {
+      const store = inMemoryPreAuthorizedCodeStore()
+      await saveWithTxCode(store, sampleCode)
+
+      await assert.rejects(store.consume(sampleCode, 9999), {
+        name: 'invalid_grant',
+        message: INVALID_TX_CODE_MESSAGE,
+      })
+
+      // Still admit another attempt under the default limit.
+      await assert.rejects(store.consume(sampleCode, 9999), {
+        name: 'invalid_grant',
+        message: INVALID_TX_CODE_MESSAGE,
+      })
+    })
+
+    it('rejects a locked/exhausted code before comparing the tx_code', async () => {
+      const store = inMemoryPreAuthorizedCodeStore({ maxTxCodeAttempts: 2 })
+      await saveWithTxCode(store, sampleCode)
+
+      await assert.rejects(store.consume(sampleCode, 9999), {
+        name: 'invalid_grant',
+        message: INVALID_TX_CODE_MESSAGE,
+      })
+      await assert.rejects(store.consume(sampleCode, 9999), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+
+      // Even the correct PIN is rejected once the code is locked/gone.
+      await assert.rejects(store.consume(sampleCode, 1234), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+    })
+
+    it('falls back to the default limit when maxTxCodeAttempts is NaN', async () => {
+      const store = inMemoryPreAuthorizedCodeStore({ maxTxCodeAttempts: Number.NaN })
+      await saveWithTxCode(store, sampleCode)
+
+      for (let i = 0; i < 4; i++) {
+        await assert.rejects(store.consume(sampleCode, 9999), {
+          name: 'invalid_grant',
+          message: INVALID_TX_CODE_MESSAGE,
+        })
+      }
+
+      await assert.rejects(store.consume(sampleCode, 9999), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+      await assert.rejects(store.consume(sampleCode, 1234), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+    })
+
+    it('falls back to the default limit when maxTxCodeAttempts is Infinity', async () => {
+      const store = inMemoryPreAuthorizedCodeStore({
+        maxTxCodeAttempts: Number.POSITIVE_INFINITY,
+      })
+      await saveWithTxCode(store, sampleCode)
+
+      for (let i = 0; i < 4; i++) {
+        await assert.rejects(store.consume(sampleCode, 9999), {
+          name: 'invalid_grant',
+          message: INVALID_TX_CODE_MESSAGE,
+        })
+      }
+
+      await assert.rejects(store.consume(sampleCode, 9999), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+    })
+
+    it('clamps a maxTxCodeAttempts below 1 up to a single attempt', async () => {
+      const store = inMemoryPreAuthorizedCodeStore({ maxTxCodeAttempts: 0 })
+      await saveWithTxCode(store, sampleCode)
+
+      await assert.rejects(store.consume(sampleCode, 9999), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+      await assert.rejects(store.consume(sampleCode, 1234), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+    })
+
+    it('enforces a custom maxTxCodeAttempts and deletes when exhausted', async () => {
+      const store = inMemoryPreAuthorizedCodeStore({ maxTxCodeAttempts: 2 })
+      await saveWithTxCode(store, sampleCode)
+
+      await assert.rejects(store.consume(sampleCode, 9999), {
+        name: 'invalid_grant',
+        message: INVALID_TX_CODE_MESSAGE,
+      })
+      await assert.rejects(store.consume(sampleCode, 9999), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+    })
+
+    it('deletes the code once a failed attempt exhausts the default limit', async () => {
+      const store = inMemoryPreAuthorizedCodeStore()
+      await saveWithTxCode(store, sampleCode)
+
+      for (let i = 0; i < 4; i++) {
+        await assert.rejects(store.consume(sampleCode, 9999), {
+          name: 'invalid_grant',
+          message: INVALID_TX_CODE_MESSAGE,
+        })
+      }
+
+      await assert.rejects(store.consume(sampleCode, 9999), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+    })
+
+    it('admits and consumes the correct tx_code through the same gate', async () => {
+      const store = inMemoryPreAuthorizedCodeStore()
+      await saveWithTxCode(store, sampleCode)
+
+      const result = await store.consume(sampleCode, 1234)
+      assert.deepStrictEqual(result, configurations)
+      await assert.rejects(store.consume(sampleCode, 1234), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+    })
+
+    it('uses LOCKED_MESSAGE for unknown codes (parity with DynamoDB/Firestore)', async () => {
+      const store = inMemoryPreAuthorizedCodeStore()
+      await assert.rejects(store.consume(sampleCode, 1234), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+    })
+
+    it('locks out when tx_code is required but missing on the final attempt', async () => {
+      const store = inMemoryPreAuthorizedCodeStore({ maxTxCodeAttempts: 1 })
+      await saveWithTxCode(store, sampleCode)
+      await assert.rejects(store.consume(sampleCode), {
+        name: 'invalid_grant',
+        message: LOCKED_MESSAGE,
+      })
+    })
   })
 })

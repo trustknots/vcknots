@@ -59,6 +59,8 @@ To start this server, follow the steps below.
 
    Configure the DPoP mode (`off` / `optional` / `required`) in `authorization_server.default_client` / `authorization_server.anonymous_client` in `server/samples/oauth-server.json`.
 
+   When Credential Offers include `tx_code`, the in-memory pre-authorized-code store limits failed guesses per code (default **5**). Pass `maxTxCodeAttempts` to `inMemoryPreAuthorizedCodeStore({ ... })` if you need a different limit (the sample `inMemory()` wiring uses the default; no environment variable yet). After the limit is reached the code is removed, and further token requests fail with `invalid_grant` even with the correct `tx_code`.
+
 2. **Install Dependencies** (Run from root directory)
 
    ```bash
