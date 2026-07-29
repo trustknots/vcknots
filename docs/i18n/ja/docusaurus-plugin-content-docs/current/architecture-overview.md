@@ -4,13 +4,25 @@ sidebar_position: 31
 
 # アーキテクチャ概要
 
-VC Knots は、**Verifiable Credentials（VC）エコシステム**を構築するためのプラガブルなフレームワークです。
+VC Knots は、Verifiable Credentials（VC）エコシステムを構築するためのプラガブルなフレームワークです。
 
-VC Knots は、次の設計方針に基づいて構成されています。
+VC エコシステムでは、OpenID4VCI / OpenID4VP などの標準プロトコルによる相互運用性が重要である一方、実際のシステム構成は用途や環境によって異なります。
 
-- Infrastructure Integrations を追加することで、AWS や Google Cloud など異なる実行環境へ容易に対応できます。
-- Core Libraries を組み合わせることで、Issuer、Wallet、Verifier を効率的に実装できます。
-- Samples を提供することで、ライブラリの利用方法や推奨されるデプロイ構成を理解できます。
+例えば、利用するクラウド環境、ストレージ、鍵管理方式、Credential の発行ルールなどは、導入するシステムごとに異なる要件が存在します。
+
+VC Knots では、このような差異を吸収するため、以下の拡張ポイントを提供しています。
+
+- **Infrastructure Integrations**
+  - データストア、KMS など外部インフラへの接続を抽象化します。
+  - AWS や Google Cloud など異なる実行環境へ柔軟に対応できます。
+
+- **Provider**
+  - `issuer+verifier` 内部のコアロジックに対する拡張ポイントを提供します。
+  - 鍵生成、Nonce 生成、識別子管理、Credential 発行ポリシーなど、システム固有のビジネスロジックを差し替え可能にします。
+
+この設計により、OpenID4VCI / OpenID4VP などの標準プロトコル処理と、インフラ依存やシステム固有のビジネスロジックを分離できます。
+
+また、Core Libraries を組み合わせることで Issuer、Wallet、Verifier を効率的に実装でき、Samples により利用方法や推奨されるデプロイ構成を確認できます。
 
 ---
 
@@ -79,7 +91,7 @@ VC Knots には次のレイヤーが存在します。
 | `vcknots`  | TypeScript | OpenID4VCI / OpenID4VP、Issuer、Verifier、Authorization Server の実装 |
 | `wallet`        | Go  | Wallet 機能、DID・鍵管理、Credential の管理   |
 | `aws`    | TypeScript | DynamoDB、KMS、Secrets Manager など AWS サービスとの連携を提供   |
-| `google-cloud`    | TypeScript | Cloud Firestore、Cloud KMS、Secret Manager など GCP サービスとの連携を提供    |
+| `google-cloud`    | TypeScript | Cloud Firestore、Cloud KMS、Secret Manager など Google Cloud サービスとの連携を提供    |
 
 
 ## Samples
