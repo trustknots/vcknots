@@ -648,8 +648,8 @@ func (w *Wallet) generateDPoPProof(key IKeyEntry, method, targetURL, accessToken
 // parameter for private_key_jwt client authentication (RFC 7523).
 //
 // The resulting JWT contains the following claims: iss, sub (both equal to the
-// client_id), aud (the token endpoint URL), iat, nbf, exp, and jti. The header
-// carries the signing key's kid and the alg (ES256).
+// client_id), aud (the resolved authorization server audience), iat, nbf, exp,
+// and jti. The header carries the signing key's kid and the alg (ES256).
 func (w *Wallet) generateClientAssertion(key IKeyEntry, clientID, audience string) (string, error) {
 	if key == nil {
 		return "", fmt.Errorf("client auth key is required")
