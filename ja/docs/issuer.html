@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://www.googletagmanager.com">
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-8MTSNHBXG4"></script>
 <script>function gtag(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],gtag("js",new Date),gtag("config","G-8MTSNHBXG4",{anonymize_ip:!0})</script><link rel="stylesheet" href="/vcknots/ja/assets/css/styles.d5dea7be.css">
-<script src="/vcknots/ja/assets/js/runtime~main.31111cab.js" defer="defer"></script>
+<script src="/vcknots/ja/assets/js/runtime~main.35d0368c.js" defer="defer"></script>
 <script src="/vcknots/ja/assets/js/main.17de80a4.js" defer="defer"></script>
 </head>
 <body>
@@ -126,6 +126,7 @@
 <li class="">tx_code は、Credential Offer にトランザクションコードを含めるために使用できます。</li>
 <li class="">authorization_server は、Issuer Metadata の authorization_servers に複数のエントリーが含まれる場合にのみ指定できます。</li>
 </ul>
+<p><code>tx_code</code> 付きの Offer では、pre-authorized-code store（in-memory / DynamoDB / Firestore）がコードごとに誤った <code>tx_code</code> の試行回数を制限します（既定 <strong>5</strong> 回）。上限に達するとコードは無効化され、以降は正しい <code>tx_code</code> でも token request は <code>invalid_grant</code> になります。上限を変える場合は、各 provider 生成時の <code>maxTxCodeAttempts</code> オプションを指定してください（環境変数は未対応です）。</p>
 <div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#F8F8F2"><span class="token plain">curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer \</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">  -H &quot;Content-Type: application/json&quot; \</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">  -d &#x27;{</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">    &quot;tx_code&quot;: {</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">      &quot;input_mode&quot;: &quot;numeric&quot;,</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">      &quot;length&quot;: 6,</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">      &quot;description&quot;: &quot;Please enter the one-time code.&quot;</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">    }</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">  }&#x27;</span><br></div></code></pre></div></div>
 <p><strong>レスポンス</strong></p>
 <div class="language-raw codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-raw codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#F8F8F2"><span class="token plain">openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%3A8080%22%2C%22credential_configuration_ids%22%3A%5B%22UniversityDegreeCredentialSdJwt%22%5D%2C%22grants%22%3A%7B%22urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code%22%3A%7B%22pre-authorized_code%22%3A%2268baf35e74ae430684662d85ea87160e%22%2C%22tx_code%22%3A%7B%22input_mode%22%3A%22numeric%22%2C%22length%22%3A6%2C%22description%22%3A%22Please%20enter%20the%20one-time%20code.%22%7D%7D%7D%7D</span><br></div></code></pre></div></div>
@@ -425,8 +426,8 @@
 <p><strong>エラーケース</strong>:</p>
 <ul>
 <li class=""><code>provider_not_found</code>:  秘密鍵で未対応のアルゴリズムが設定された</li>
-<li class=""><code>invalid_grant</code>: 有効でない事前認可コードが設定された</li>
-<li class=""><code>invalid_request</code>: 認可サーバーの鍵が未登録、アルゴリズムが未設定、グラントタイプがサポートされていない</li>
+<li class=""><code>invalid_grant</code>: 無効・消費済み・期限切れ、または <code>tx_code</code> 試行上限超過でロックされた事前認可コードが指定された</li>
+<li class=""><code>invalid_request</code>: 認可サーバーの鍵が未登録、アルゴリズムが未設定、グラントタイプがサポートされていない、または保存済みコードに対して <code>tx_code</code> の有無が不正</li>
 <li class=""><code>internal_server_error</code>: 署名に失敗した</li>
 <li class=""><code>unsupported_grant_type</code>: 認可コードフローを設定（現在未対応）</li>
 </ul>

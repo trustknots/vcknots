@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://www.googletagmanager.com">
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-8MTSNHBXG4"></script>
 <script>function gtag(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],gtag("js",new Date),gtag("config","G-8MTSNHBXG4",{anonymize_ip:!0})</script><link rel="stylesheet" href="/vcknots/assets/css/styles.d5dea7be.css">
-<script src="/vcknots/assets/js/runtime~main.bbe4838c.js" defer="defer"></script>
+<script src="/vcknots/assets/js/runtime~main.d562e62a.js" defer="defer"></script>
 <script src="/vcknots/assets/js/main.edc469f0.js" defer="defer"></script>
 </head>
 <body>
@@ -127,6 +127,7 @@ For details, see <a href="#5-access-token-issuance" class="">5. Access Token Iss
 <li class=""><code>tx_code</code> can be used to include a transaction code in the Credential Offer.</li>
 <li class=""><code>authorization_server</code> can be included only when the Issuer Metadata contains multiple entries in <code>authorization_servers</code>.</li>
 </ul>
+<p>When the offer includes <code>tx_code</code>, the pre-authorized-code store (in-memory, DynamoDB, and Firestore) limits failed <code>tx_code</code> guesses per code (default: <strong>5</strong>). After the limit is reached the code is invalidated, and later token requests fail with <code>invalid_grant</code> even if the correct <code>tx_code</code> is supplied. Change the limit with the provider factory option <code>maxTxCodeAttempts</code> (there is no environment variable for this yet).</p>
 <div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#F8F8F2"><span class="token plain">curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer \</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">  -H &quot;Content-Type: application/json&quot; \</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">  -d &#x27;{</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">    &quot;tx_code&quot;: {</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">      &quot;input_mode&quot;: &quot;numeric&quot;,</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">      &quot;length&quot;: 6,</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">      &quot;description&quot;: &quot;Please enter the one-time code.&quot;</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">    }</span><br></div><div class="token-line" style="color:#F8F8F2"><span class="token plain">  }&#x27;</span><br></div></code></pre></div></div>
 <p><strong>Response</strong></p>
 <div class="language-raw codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-raw codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#F8F8F2"><span class="token plain">openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%3A8080%22%2C%22credential_configuration_ids%22%3A%5B%22UniversityDegreeCredentialSdJwt%22%5D%2C%22grants%22%3A%7B%22urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code%22%3A%7B%22pre-authorized_code%22%3A%2268baf35e74ae430684662d85ea87160e%22%2C%22tx_code%22%3A%7B%22input_mode%22%3A%22numeric%22%2C%22length%22%3A6%2C%22description%22%3A%22Please%20enter%20the%20one-time%20code.%22%7D%7D%7D%7D</span><br></div></code></pre></div></div>
@@ -426,8 +427,8 @@ The definition is as follows (see <a href="https://github.com/trustknots/vcknots
 <p><strong>Error cases</strong>:</p>
 <ul>
 <li class=""><code>provider_not_found</code>: An unsupported algorithm is configured for the private key</li>
-<li class=""><code>invalid_grant</code>: An invalid pre-authorized code is provided</li>
-<li class=""><code>invalid_request</code>: The authorization server key is not registered, the algorithm is not set, or the grant type is not supported</li>
+<li class=""><code>invalid_grant</code>: An invalid, consumed, expired, or locked (too many failed <code>tx_code</code> attempts) pre-authorized code is provided</li>
+<li class=""><code>invalid_request</code>: The authorization server key is not registered, the algorithm is not set, the grant type is not supported, or <code>tx_code</code> is missing/unexpected for the stored code</li>
 <li class=""><code>internal_server_error</code>: Signing failed</li>
 <li class=""><code>unsupported_grant_type</code>: The authorization code flow is configured (currently not supported)</li>
 </ul>
