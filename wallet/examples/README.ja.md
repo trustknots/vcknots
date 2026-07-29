@@ -9,6 +9,16 @@
 ローカルサーバー統合モードでは、OpenID4VCI でクレデンシャルを取得した後、OpenID4VP で提示します。
 コンフォーマンステストモードでは、ローカルに用意したクレデンシャルを使い、OpenID4VP の提示フローだけをテストします。
 
+## サンプルで確認できる機能
+
+| サンプル | OpenID4VCI によるクレデンシャル発行 | OpenID4VP による提示 | キーバインディング |
+| --- | --- | --- | --- |
+| `server_integration_jwtvc` | JWT-VC | JWT-VC | 対象外 |
+| `server_integration_sdjwt` | SD-JWT VC（`dc+sd-jwt`） | 選択的開示 | KB-JWT なし |
+| `server_integration_sdjwt+kbjwt` | SD-JWT VC（`dc+sd-jwt`） | 選択的開示 | KB-JWT あり |
+
+ローカル統合サンプルでは、クレデンシャル形式とは別に、`private_key_jwt` によるクライアント認証と DPoP を利用します。コンフォーマンステストモードでは、ローカルに用意した SD-JWT VC を使い、OpenID4VP による提示だけを確認します。
+
 ## 前提条件
 
 ローカルサーバー統合テストでは、Go に加えて Node.js と pnpm が必要です。

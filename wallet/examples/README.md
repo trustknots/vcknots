@@ -9,6 +9,16 @@ Both modes are supported by the same program (`server_integration_sdjwt.go`) and
 In local server integration mode, the wallet obtains a credential through OpenID4VCI and then presents it through OpenID4VP.
 Conformance test mode seeds a local credential and tests only the OpenID4VP presentation flow.
 
+## Features Covered by the Samples
+
+| Sample | OpenID4VCI credential issuance | OpenID4VP presentation | Key binding |
+| --- | --- | --- | --- |
+| `server_integration_jwtvc` | JWT-VC | JWT-VC | Not applicable |
+| `server_integration_sdjwt` | SD-JWT VC (`dc+sd-jwt`) | Selective disclosure | Without KB-JWT |
+| `server_integration_sdjwt+kbjwt` | SD-JWT VC (`dc+sd-jwt`) | Selective disclosure | With KB-JWT |
+
+The local integration samples use `private_key_jwt` client authentication and DPoP independently of the credential format. Conformance test mode uses a locally seeded SD-JWT VC and covers only its OpenID4VP presentation.
+
 ## Prerequisites
 
 The local server integration test requires Node.js and pnpm in addition to Go.
