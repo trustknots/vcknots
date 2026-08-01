@@ -184,8 +184,8 @@ importers:
   server/aws/src:
     dependencies:
       '@hono/node-server':
-        specifier: 1.19.13
-        version: 1.19.13(hono@4.12.32)
+        specifier: 2.0.10
+        version: 2.0.10(hono@4.12.32)
       '@trustknots/aws':
         specifier: workspace:*
         version: link:../../../aws
@@ -215,8 +215,8 @@ importers:
   server/core:
     dependencies:
       '@hono/node-server':
-        specifier: 2.0.6
-        version: 2.0.6(hono@4.12.32)
+        specifier: 2.0.10
+        version: 2.0.10(hono@4.12.32)
       '@trustknots/vcknots':
         specifier: workspace:*
         version: link:../../issuer+verifier
@@ -248,8 +248,8 @@ importers:
   server/multi:
     dependencies:
       '@hono/node-server':
-        specifier: 2.0.6
-        version: 2.0.6(hono@4.12.32)
+        specifier: 2.0.10
+        version: 2.0.10(hono@4.12.32)
       '@trustknots/server-core':
         specifier: workspace:*
         version: link:../core
@@ -1998,14 +1998,8 @@ packages:
   '@hapi/topo@5.1.0':
     resolution: {integrity: sha512-foQZKJig7Ob0BMAYBfcJk8d77QtOe7Wo4ox7ff1lQYoNNAb6jwcY1ncdoy2e9wQZzvNy7ODZCYJkK8kzmcAnAg==}
 
-  '@hono/node-server@1.19.13':
-    resolution: {integrity: sha512-TsQLe4i2gvoTtrHje625ngThGBySOgSK3Xo2XRYOdqGN1teR8+I7vchQC46uLJi8OF62YTYA3AhSpumtkhsaKQ==}
-    engines: {node: '>=18.14.1'}
-    peerDependencies:
-      hono: ^4
-
-  '@hono/node-server@2.0.6':
-    resolution: {integrity: sha512-7DeRlKG57JDBNZ5Qj2jwVdgwQy4b0tLubRLl3zCf91/rCf9i7p1V5FtW/yWibm1uUHE493ts9ZXH/7g/LQWl+g==}
+  '@hono/node-server@2.0.10':
+    resolution: {integrity: sha512-ZcnNVhKTmyDJeg0UlnZjvM73JBsTAuhrH/J4fjwGOw59PwOW51r4J+p6CsKZWXdKSme4MFqU62CZMOsdDrU4CA==}
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4
@@ -9799,11 +9793,7 @@ snapshots:
     dependencies:
       '@hapi/hoek': 9.3.0
 
-  '@hono/node-server@1.19.13(hono@4.12.32)':
-    dependencies:
-      hono: 4.12.32
-
-  '@hono/node-server@2.0.6(hono@4.12.32)':
+  '@hono/node-server@2.0.10(hono@4.12.32)':
     dependencies:
       hono: 4.12.32
 
