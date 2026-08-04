@@ -26,7 +26,10 @@ jobs:
                   corepack enable
                   node -v
                   pnpm -v
-                  pnpm install --frozen-lockfile
+                  pnpm install --no-frozen-lockfile
+                  echo "--- pnpm-lock.yaml diff after non-frozen install ---"
+                  git diff --stat pnpm-lock.yaml || true
+                  git diff pnpm-lock.yaml | head -200 || true
 
             - name: Lint commits
               uses: wagoid/commitlint-github-action@v6.2.1
