@@ -24,10 +24,10 @@ jobs:
             - name: Install
               run: |
                   corepack enable
+                  corepack prepare pnpm@11.20.0 --activate
                   node -v
                   pnpm -v
-                  pnpm config list
-                  pnpm install --frozen-lockfile --loglevel debug
+                  pnpm install --frozen-lockfile
 
             - name: Lint commits
               uses: wagoid/commitlint-github-action@v6.2.1
