@@ -20,7 +20,7 @@
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@10.30.3",
+	"packageManager": "pnpm@11.10.0",
 	"dependencies": {
 		"@aws-sdk/client-dynamodb": "^3.1064.0",
 		"@aws-sdk/client-kms": "^3.1089.0",
