@@ -12,75 +12,31 @@ VC エコシステムでは、OpenID4VCI / OpenID4VP などの標準プロトコ
 
 VC Knots では、このような差異を吸収するため、以下の拡張ポイントを提供しています。
 
+- **Provider**
+  - `issuer+verifier` 内部のコアロジックに対する拡張ポイントを提供します。
+  - 鍵生成、Nonce 生成、識別子管理、Credential 発行ポリシーなど、システム固有のビジネスロジックを差し替え可能にします。
+
 - **Infrastructure Integrations**
   - データストア、KMS など外部インフラへの接続を抽象化します。
   - AWS や Google Cloud など異なる実行環境へ柔軟に対応できます。
 
-- **Provider**
-  - `issuer+verifier` 内部のコアロジックに対する拡張ポイントを提供します。
-  - 鍵生成、Nonce 生成、識別子管理、Credential 発行ポリシーなど、システム固有のビジネスロジックを差し替え可能にします。
 
 この設計により、OpenID4VCI / OpenID4VP などの標準プロトコル処理と、インフラ依存やシステム固有のビジネスロジックを分離できます。
 
 また、Core Libraries を組み合わせることで Issuer、Wallet、Verifier を効率的に実装でき、Samples により利用方法や推奨されるデプロイ構成を確認できます。
 
----
-
 # 全体構成
-
-```mermaid
-flowchart TB
-
-    subgraph APP["Applications built with VC Knots"]
-        ISSUERAPP[Issuer]
-        WALLETAPP[Wallet]
-        VERIFIERAPP[Verifier]
-    end
-
-    subgraph VCKNOTS["VC Knots"]
-
-        subgraph CORE["Core Libraries"]
-            vcknots["vcknots<br/>(issuer+verifier)<br/>TypeScript"]
-            wallet["wallet<br/>Go"]
-        end
-
-        subgraph INFRAINT["Infrastructure Integrations"]
-            aws[aws<br/>TypeScript]
-            gcp[google-cloud<br/>TypeScript ]
-        end
-    
-    end
-
-    subgraph INFRA["Infrastructure"]
-        DB[(Database)]
-        KMS[(Key Management)]
-        DEVICE[(Devices)]
-    end
-
-    ISSUERAPP --> vcknots
-    VERIFIERAPP --> vcknots
-    WALLETAPP --> wallet
-
-    vcknots --> aws
-    vcknots --> gcp
-
-    aws --> DB
-    aws --> KMS
-    gcp --> DB
-    gcp --> KMS
-    wallet --> DEVICE
-```
 
 VC Knots には次のレイヤーが存在します。
 
 | レイヤー      | 役割     |
 | --- | --- |
-| **Applications built with VC Knots**   | VC Knots を利用して作成される Issuer・Wallet・Verifier のアプリケーションです。    |
-| **VC Knots Core Libraries** | OpenID4VCI / OpenID4VP のプロトコルや Wallet 機能を提供します。 |
-| **VC Knots Infrastructure Integrations**      | データベースや KMS などの外部サービスとの接続を提供します。  |
+| **App**   | VC Knots を利用して作成される Issuer・Wallet・Verifier のアプリケーションです。    |
+| **Feature** | OpenID4VCI / OpenID4VP のプロトコルや Wallet 機能を提供します。 |
+| **Infrastructure Integrations**      | データベースや KMS などの外部サービスとの接続を提供します。  |
 | **Infrastructure** | データベース、ストレージ、鍵管理サービスなど、Infrastructure Integrations が接続する外部インフラです。  |
 
----
+![overview](../../../../images/overview.drawio.svg)
 
 # パッケージ構成
 
@@ -105,60 +61,24 @@ VC Knots には次のレイヤーが存在します。
 | `server/google-cloud` | TypeScript | サンプルサーバーを Google Cloud へデプロイするための構成例  |
 ---
 
-# パッケージ間の関係
-
-```mermaid
-flowchart TB
-
-    subgraph CORE["Core Libraries"]
-        vcknots["vcknots<br/>(issuer+verifier)"]
-        wallet["wallet"]
-    end
-
-    subgraph INFRAINT["Infra Integrations"]
-        aws["aws"]
-        gcp["google-cloud"]
-    end
-
-    subgraph SERVER["Samples"]
-        servercore["server/core"]
-        serversingle["server/single"]
-        servermulti["server/multi"]
-        serveraws["server/aws"]
-        servergcp["server/google-cloud"]
-    end
-
-    aws --> vcknots
-    gcp --> vcknots
-
-    servercore --> vcknots
-
-    serversingle --> servercore
-    serversingle --> vcknots
-
-    servermulti --> servercore
-    servermulti --> vcknots
-
-    serveraws --> servercore
-    serveraws --> aws
-    serveraws --> vcknots
-
-    servergcp --> servercore
-    servergcp --> gcp
-    servergcp --> vcknots
-```
-
----
-
 # Credential 発行フロー（OpenID4VCI）
+
+Credential 発行（OpenID4VCI）の処理は、次の流れで実行されます。
+
+1. Wallet は OpenID4VCI の認可・トークン取得を経て、Issuer に Credential Request を送信します。
+2. Issuer は `vcknots` に Credential 発行処理を委譲します。
+3. `vcknots` は Infrastructure Integrations を利用して、Credential の発行に必要なデータの取得や鍵管理サービスへのアクセスを行います。
+4. `vcknots` は取得した情報を基に Verifiable Credential を生成・署名します。
+5. 生成された Verifiable Credential が Wallet に返却されます。
+
 
 ```mermaid
 sequenceDiagram
 
-    participant wallet
-    participant issuer
-    participant vcknots as vcknots<br/>(issuer+verifier)
-    participant infra as Infrastructure Integrations
+    participant wallet as App<br/>wallet
+    participant issuer as App<br/>wallet
+    participant vcknots as VC Knots<br/>Feature
+    participant infra as VC Knots<br/>Infrastructure Integrations
 
     wallet->>issuer: Authz Request
     issuer->>vcknots: Process Authz Request
@@ -177,24 +97,14 @@ sequenceDiagram
     vcknots-->>wallet: Credential Response
 ```
 
-Credential 発行（OpenID4VCI）の処理は、次の流れで実行されます。
-
-1. Wallet は OpenID4VCI の認可・トークン取得を経て、Issuer に Credential Request を送信します。
-2. Issuer は `vcknots` に Credential 発行処理を委譲します。
-3. `vcknots` は Infrastructure Integrations を利用して、Credential の発行に必要なデータの取得や鍵管理サービスへのアクセスを行います。
-4. `vcknots` は取得した情報を基に Verifiable Credential を生成・署名します。
-5. 生成された Verifiable Credential が Wallet に返却されます。
-
----
-
 # Presentation 検証フロー（OpenID4VP）
 
 ```mermaid
 sequenceDiagram
 
-    participant wallet
-    participant verifier
-    participant vcknots as vcknots<br/>(issuer+verifier)
+    participant wallet as App<br/>wallet
+    participant verifier as App<br/>verifier
+    participant vcknots as VC Knots<br/>issuer+verifier
 
     verifier->>wallet: Authz Request
 
