@@ -30,10 +30,20 @@ export class IssuerApi extends Construct {
     const issuerKeyAliasArn = `arn:${stack.partition}:kms:${stack.region}:${stack.account}:${ISSUER_KEY_ALIAS_PREFIX}*`;
 
     // kms:CreateKey has no target resource yet, so IAM requires Resource "*" for it.
+    // Conditions pin the request to the KeyUsage/KeySpec/Origin combinations the
+    // provider actually creates (see aws/src/providers/kms-provider.utils.ts),
+    // so a compromised Lambda can't mint unrelated key types under this role.
     this.lambdaApi.role.addToPolicy(
       new iam.PolicyStatement({
         actions: ['kms:CreateKey'],
         resources: ['*'],
+        conditions: {
+          StringEquals: {
+            'kms:KeyUsage': 'SIGN_VERIFY',
+            'kms:KeySpec': ['ECC_NIST_P256', 'ECC_NIST_P384', 'RSA_2048', 'RSA_4096'],
+            'kms:KeyOrigin': ['AWS_KMS', 'EXTERNAL'],
+          },
+        },
       }),
     );
 
