@@ -6,6 +6,8 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/trustknots/vcknots/wallet/keystore"
+	"golang.org/x/crypto/cryptobyte"
+	cryptobyte_asn1 "golang.org/x/crypto/cryptobyte/asn1"
 )
 
 // JWKSigner adapts KeyEntry to go-jose's signing interface
@@ -83,7 +85,7 @@ func (s *JWKSigner) SignPayload(payload []byte, alg jose.SignatureAlgorithm) ([]
 }
 
 // ConvertDERToRaw converts DER-encoded ECDSA signature to raw IEEE P1363 format
-// DER format: 0x30 [total-len] 0x02 [R-len] [R] 0x02 [S-len] [S]
+// DER format: SEQUENCE { INTEGER R, INTEGER S }
 // Raw format: [R-bytes][S-bytes] with fixed length per component
 //
 // keySize is the size in bytes of each component (r and s)
@@ -106,54 +108,29 @@ func ConvertDERToRaw(derSig []byte, keySize int) ([]byte, error) {
 		return nil, fmt.Errorf("signature is not in DER format and length (%d) doesn't match expected raw format (%d)", len(derSig), keySize*2)
 	}
 
-	// Parse DER format
-	offset := 2 // Skip sequence tag (0x30) and total length
-
-	// Parse R component
-	if offset >= len(derSig) || derSig[offset] != 0x02 {
-		return nil, fmt.Errorf("invalid DER format: expected integer tag for R at offset %d", offset)
+	// P-521 signatures exceed 127 bytes, so their SEQUENCE length is long-form.
+	// cryptobyte reads both length forms; a fixed 2-byte header skip cannot.
+	var r, s big.Int
+	var inner cryptobyte.String
+	input := cryptobyte.String(derSig)
+	if !input.ReadASN1(&inner, cryptobyte_asn1.SEQUENCE) || !input.Empty() ||
+		!inner.ReadASN1Integer(&r) || !inner.ReadASN1Integer(&s) || !inner.Empty() {
+		return nil, fmt.Errorf("invalid DER format: expected a SEQUENCE of exactly two INTEGERs")
 	}
-	offset++
 
-	if offset >= len(derSig) {
-		return nil, fmt.Errorf("invalid DER format: R length missing")
+	if r.Sign() <= 0 || s.Sign() <= 0 {
+		return nil, fmt.Errorf("invalid DER signature: R and S must be positive")
 	}
-	rLen := int(derSig[offset])
-	offset++
 
-	if offset+rLen > len(derSig) {
-		return nil, fmt.Errorf("invalid DER format: R length exceeds signature bounds")
+	// Get bytes (big.Int drops leading zeros) and pad with leading zeros if necessary
+	rRaw := r.Bytes()
+	sRaw := s.Bytes()
+	if len(rRaw) > keySize || len(sRaw) > keySize {
+		return nil, fmt.Errorf("DER signature components exceed key size %d: R=%d bytes, S=%d bytes", keySize, len(rRaw), len(sRaw))
 	}
-	rBytes := derSig[offset : offset+rLen]
-	offset += rLen
-
-	// Parse S component
-	if offset >= len(derSig) || derSig[offset] != 0x02 {
-		return nil, fmt.Errorf("invalid DER format: expected integer tag for S at offset %d", offset)
-	}
-	offset++
-
-	if offset >= len(derSig) {
-		return nil, fmt.Errorf("invalid DER format: S length missing")
-	}
-	sLen := int(derSig[offset])
-	offset++
-
-	if offset+sLen > len(derSig) {
-		return nil, fmt.Errorf("invalid DER format: S length exceeds signature bounds")
-	}
-	sBytes := derSig[offset : offset+sLen]
-
-	// Convert to big integers (removes leading zeros)
-	r := new(big.Int).SetBytes(rBytes)
-	s := new(big.Int).SetBytes(sBytes)
 
 	// Convert to fixed-length raw format
 	rawSig := make([]byte, keySize*2)
-
-	// Get bytes and pad with leading zeros if necessary
-	rRaw := r.Bytes()
-	sRaw := s.Bytes()
 
 	// Copy R to first half, S to second half (right-aligned with zero padding)
 	copy(rawSig[keySize-len(rRaw):keySize], rRaw)

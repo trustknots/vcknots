@@ -1,6 +1,7 @@
 package jose
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -173,6 +174,16 @@ func TestJWKSigner_SignPayload(t *testing.T) {
 	}
 }
 
+// derSignature encodes r and s as SEQUENCE { INTEGER, INTEGER }, short-form only.
+func derSignature(r, s []byte) []byte {
+	var body []byte
+	for _, component := range [][]byte{r, s} {
+		body = append(body, 0x02, byte(len(component)))
+		body = append(body, component...)
+	}
+	return append([]byte{0x30, byte(len(body))}, body...)
+}
+
 func TestConvertDERToRaw(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -221,6 +232,20 @@ func TestConvertDERToRaw(t *testing.T) {
 			expectedLen: 0,
 			wantErr:     true,
 		},
+		{
+			name:        "DER signature with trailing data",
+			input:       append(derSignature(bytes.Repeat([]byte{0x01}, 32), bytes.Repeat([]byte{0x02}, 32)), 0x00),
+			keySize:     32,
+			expectedLen: 0,
+			wantErr:     true,
+		},
+		{
+			name:        "DER component wider than the key size",
+			input:       derSignature(bytes.Repeat([]byte{0x01}, 33), bytes.Repeat([]byte{0x02}, 32)),
+			keySize:     32,
+			expectedLen: 0,
+			wantErr:     true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -232,6 +257,51 @@ func TestConvertDERToRaw(t *testing.T) {
 			}
 			if !tt.wantErr && len(rawSig) != tt.expectedLen {
 				t.Errorf("expected length %d, got %d", tt.expectedLen, len(rawSig))
+			}
+		})
+	}
+}
+
+func TestConvertDERToRawAcceptsASN1Signatures(t *testing.T) {
+	tests := []struct {
+		name    string
+		curve   elliptic.Curve
+		keySize int
+	}{
+		{"P-256 (ES256)", elliptic.P256(), 32},
+		{"P-384 (ES384)", elliptic.P384(), 48},
+		// P-521 DER runs past 127 bytes, so its SEQUENCE length is long-form.
+		{"P-521 (ES512)", elliptic.P521(), 66},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, err := ecdsa.GenerateKey(tt.curve, rand.Reader)
+			if err != nil {
+				t.Fatalf("GenerateKey() error = %v", err)
+			}
+			hash := sha256.Sum256([]byte("payload"))
+
+			// R and S differ per signature, so repeat to also hit short components.
+			for i := 0; i < 20; i++ {
+				derSig, err := ecdsa.SignASN1(rand.Reader, key, hash[:])
+				if err != nil {
+					t.Fatalf("SignASN1() error = %v", err)
+				}
+
+				rawSig, err := ConvertDERToRaw(derSig, tt.keySize)
+				if err != nil {
+					t.Fatalf("ConvertDERToRaw() error = %v (DER length %d)", err, len(derSig))
+				}
+				if len(rawSig) != tt.keySize*2 {
+					t.Fatalf("expected length %d, got %d", tt.keySize*2, len(rawSig))
+				}
+
+				r := new(big.Int).SetBytes(rawSig[:tt.keySize])
+				s := new(big.Int).SetBytes(rawSig[tt.keySize:])
+				if !ecdsa.Verify(&key.PublicKey, hash[:], r, s) {
+					t.Fatalf("converted signature failed verification")
+				}
 			}
 		})
 	}
