@@ -409,6 +409,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       if (existing.state) {
         vpAudTx.consume(existing.state)
       }
+      await verifierFlow.deleteTransaction(transactionId)
       return c.json({ ok: true }, 200)
     } catch (err) {
       const errorResponse = handleError(err)

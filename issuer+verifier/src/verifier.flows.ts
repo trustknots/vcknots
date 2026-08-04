@@ -87,6 +87,7 @@ export type VerifierFlow = {
     dcqlQuery: Dcql
     expiresAt: number
   }>
+  deleteTransaction(transactionId: string): Promise<void>
   verifyPresentations: (
     id: ClientId,
     response: AuthorizationResponse,
@@ -405,6 +406,9 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         dcqlQuery: transaction.dcqlQuery,
         expiresAt: transaction.transaction_data_expires_at,
       }
+    },
+    async deleteTransaction(transactionId) {
+      await transactionDataStore$.delete(TransactionId(transactionId))
     },
     async verifyPresentations(id, response, transactionId, options) {
       const verifier = await verifierMetadata$.fetch(id)
