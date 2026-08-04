@@ -7,7 +7,6 @@ import * as jose from 'jose'
 import { X509Certificate } from 'node:crypto'
 import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
 import { KbJwtJsonPayload } from '../keyBindingJwt.types'
-import { Cnonce } from '../cnonce.types'
 import { sdJwtPayloadSchema, VpTokenPayload } from '../presentation.types'
 
 export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentationProvider &
@@ -170,15 +169,14 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
           })
         }
       }
-      if (nonce) {
-        const nonceStore$ = this.providers.get('cnonce-store-provider')
-        const nonceValid = await nonceStore$.validate(Cnonce(nonce))
-        if (!nonceValid) {
-          throw err('INVALID_NONCE', {
-            message: 'nonce is not valid.',
-          })
-        }
-        await nonceStore$.revoke(Cnonce(nonce))
+      if (
+        nonce !== undefined &&
+        options.expectedNonce !== undefined &&
+        nonce !== options.expectedNonce
+      ) {
+        throw err('INVALID_NONCE', {
+          message: 'nonce does not match.',
+        })
       }
       const { payload: claims } = await sdJwtInst.verify(vp, {
         requiredClaimKeys: specifiedDisclosures,

@@ -192,7 +192,10 @@ describe('sd-jwt provider', () => {
     const sdJwt = await issueSdJwt(issuer)
 
     await assert.rejects(
-      provider.verify(sdJwt, { kind: 'jwt_vp_json', expectedAud: ClientIdentifier('https://dummy') }),
+      provider.verify(sdJwt, {
+        kind: 'jwt_vp_json',
+        expectedAud: ClientIdentifier('https://dummy'),
+      }),
       (err: VcknotsError) => {
         assert.equal(err.name, 'ILLEGAL_ARGUMENT')
         return true
@@ -281,10 +284,6 @@ describe('sd-jwt provider', () => {
       expectedAud: dcKbJwtExpectedAud,
     })
     assert.ok(result)
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    assert.equal((mockCnonceStore.validate as any).mock.callCount(), 1)
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    assert.equal((mockCnonceStore.revoke as any).mock.callCount(), 1)
   })
 
   it('reports supported format via canHandle', () => {

@@ -20,7 +20,7 @@ sidebar_position: 3
 - HonoのWebフレームワークを使用していますが、他のフレームワークでも利用可能です
 - 現在対応しているclient_id_schema:x509_san_dns、redirect_uriになります
 - 現在対応しているVPフォーマットについては、VPはjwt_vp_json、VCはjwt_vc_jsonに対応しています。また、dc+sd-jwtにも対応しています。
-- stateパラメータについては、実装者の責任での実装となります
+- `state` パラメータを `createAuthzRequest` に渡した場合、`verifyPresentations` 呼び出し時にライブラリ側でレスポンスの `state` と照合します。`state` を使用しないフロー（dc_api 等）では省略可能です
 
 ## 2. 初期設定
 
@@ -218,7 +218,7 @@ curl --location 'http://localhost:8080/verify/request-object' \
     "dcql_query": {
       "credentials": [
         {
-          "id": "University Degree Credentials",
+          "id": "example_sd_jwt",
           "format": "dc+sd-jwt",
           "meta": {
             "vct_values": ["urn:eudi:pid:1"]
@@ -300,7 +300,7 @@ Wallet から返送される `vp_token` を受け取り、Verifier 側で検証 
   - `200 OK`: JSON 本文 `{ "redirect_uri": "<baseUrl>/verified" }`（サンプルサーバの挙動。アプリに合わせて変更してください）。
   - `400 Bad Request` / `500 Internal Server Error`: バリデーションまたは VP 検証失敗時に `handleError` 由来の OAuth 形式 JSON（`error`, `error_description`）。
 
-- **関連エンドポイント**: `POST /verify/callback-kbjwt` — 認可リクエストが `x509_san_dns` かつ SD-JWT + Key Binding JWT を使うサンプル向け。`verifyPresentations` を `isKbJwt: true` と、ベース URL のホストから組み立てた `expectedAud`（`x509_san_dns:…`）で呼び出し、認可リクエストの `client_id` と KB-JWT の `aud` を一致させます。
+- **関連エンドポイント**: `POST /verify/callback-kbjwt` — 認可リクエストが `x509_san_dns` かつ SD-JWT + Key Binding JWT を使うサンプル向け。`verifyPresentations` を `isKbJwt: true` で呼び出します。`client_id`（KB-JWT の `aud` 検証に使用）はライブラリがトランザクションから自動的に取得します。
 
 - コード例
 ```typescript
@@ -319,9 +319,7 @@ verifyApp.post('/verify/callback', async (c) => {
     // アプリケーション側で実装するプレースホルダーとして置き換えてください。
     const transactionId = await lookupTransactionId(authorizationResponse.state)
 
-    const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, transactionId, {
-      expectedAud: ClientIdentifier('x509_san_dns:localhost'),
-    })
+    const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, transactionId, {})
 
     return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
   } catch (err) {
@@ -633,16 +631,16 @@ verifyPresentations(
 - `id`: Verifierの識別子（[VerifierClientId](#VerifierClientId)）
 - `response`: 検証に利用する情報（[Verifierauthorizationresponse](#Verifierauthorizationresponse)）
 - `transactionId`: `createAuthzRequest` が返した `transactionId`。認可リクエスト時の DCQL クエリを照合するために使用します。
-- `options`: [VerifyPresentationOptions](#VerifyPresentationOptions)。`expectedAud` の指定が必須です。
+- `options`: [VerifyPresentationOptions](#VerifyPresentationOptions)
 
 #### VerifyPresentationOptions {#VerifyPresentationOptions}
 Verifier アプリから VP／クレデンシャル形式ごとの検査に渡すオプションです。型定義は [`verifier.flows.ts`](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts) を参照してください。
 
+> **注意**: `expectedAud`（`client_id`）は `createAuthzRequest` 時に渡した値がトランザクション内に保存されており、`verifyPresentations` 内でライブラリが自動的に取得して検証します。呼び出し側から個別に渡す必要はありません。
+
 | フィールド | 必須 | 説明 |
 | ---------- | ---- | ---- |
-| `expectedAud` | はい | 認可リクエストで送った **OAuth / OpenID4VP の `client_id` と同一**である [`ClientIdentifier`](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/client-id-scheme.types.ts) 文字列。`jwt_vp_json` の VP JWT の `aud`、および `dc+sd-jwt` で Key Binding がある場合の KB-JWT の `aud` と突き合わせられます。 |
-| `isKbJwt` | いいえ | `dc+sd-jwt` 用。`true` のとき Key Binding JWT を検証（`nonce`、`aud`、`sd_hash` など）。省略時はプロバイダ既定（未指定は KB-JWT 検証なしに寄せる動き）。 |
-| `expectedNonce` | いいえ | `dc+sd-jwt` + KB-JWT 時。KB-JWT の `nonce` 期待値（通常は認可リクエストの `nonce`）。 |
+| `isKbJwt` | いいえ | `dc+sd-jwt` 用。`true` のとき Key Binding JWT を検証（`nonce`、`aud`、`sd_hash` など）。省略時は KB-JWT 検証なし。 |
 | `expectedTransactionDataHashes` | いいえ | `transaction_data` 利用時。KB-JWT に含まれるハッシュ列の期待値。 |
 
 **戻り値**:
@@ -677,13 +675,15 @@ Verifier アプリから VP／クレデンシャル形式ごとの検査に渡�
 - `TRANSACTION_ID_NOT_FOUND`: 指定した `transactionId` に対応するトランザクションが存在しない（既に使用済みまたは無効）
 - `ILLEGAL_ARGUMENT`: 引数不備（例: 未知のクレデンシャルクエリ ID、プロバイダがオプションを拒否）
 - `UNSUPPORTED_VP_TOKEN`: `vp_token` の形式が未対応（非文字列形式など）
-- `INVALID_VP_TOKEN`: DCQL の必須クレデンシャルが不足、VP 構造または `aud` が `expectedAud` と一致しないなど
+- `INVALID_REQUEST`: レスポンスの `state` がトランザクションに保存された `state` と一致しない
+- `INVALID_VP_TOKEN`: DCQL の必須クレデンシャルが不足、または VP 構造が不正
 - `INVALID_NONCE`: 認可リクエストの `nonce` が VP に無い、または一致しない
 - `INVALID_CREDENTIAL`: 内包 VC が無効（`jwt_vp_json` 経路）、発行者メタデータ／JWKS 取得失敗など
 - `INVALID_SD_JWT` / `HOLDER_BINDING_FAILED`: SD-JWT または Key Binding の検証失敗
 
 **注意事項**:
-- 認可リクエストで使った **`client_id` と同じ文字列**（`redirect_uri:` や `x509_san_dns:` などスキーム接頭辞込み）を `expectedAud` に渡してください。Wallet が設定する `aud` と一致させる必要があります。
+- `client_id`（`expectedAud`）はトランザクションから自動的に取得されます。Wallet が VP／KB-JWT に設定する `aud` は、`createAuthzRequest` に渡した `client_id` と一致している必要があります。
+- `state` を `createAuthzRequest` の `options.state` に渡した場合、ライブラリはコールバックの `response.state` が一致することを自動的に検証します。不一致の場合は `INVALID_REQUEST` エラーになります。
 - `transactionId` は検証成功後に自動で削除されます。同じ `transactionId` で複数回呼び出すとエラーになります。
 
 

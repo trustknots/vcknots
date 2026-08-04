@@ -17,6 +17,9 @@ export const inMemoryVerifierTransactionDataStore = (option?: {
         transaction_id: transactionId,
         transaction_data_expires_at: expiresAt,
         dcqlQuery: record.dcqlQuery,
+        clientId: record.clientId,
+        state: record.state,
+        nonce: record.nonce,
       })
       return
     },

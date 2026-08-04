@@ -9,7 +9,6 @@ import {
   AuthorizationServerMetadata,
   ClientId,
   ClientIdentifier,
-  Cnonce,
   VerifierMetadata,
 } from '../src'
 import { CredentialConfigurationId, CredentialIssuerMetadata } from '../src/credential-issuer.types'
@@ -26,15 +25,16 @@ type JwtHeader = {
 type JwtPayload = {
   [key: string]: unknown
 }
+const holderPrivateJwk: JWK = {
+  kty: 'EC',
+  crv: 'P-256',
+  x: 'ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ',
+  y: 'Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo',
+  d: 'jAfOh_53IRxqpEsFojZK8iHP--L8ol3ePEo3DnwiIyM',
+}
+
 async function createJwt(nonce: string, aud: string): Promise<string> {
-  const privateJwk: JWK = {
-    kty: 'EC',
-    crv: 'P-256',
-    x: 'ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ',
-    y: 'Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo',
-    d: 'jAfOh_53IRxqpEsFojZK8iHP--L8ol3ePEo3DnwiIyM',
-  }
-  const privateKey = await importJWK(privateJwk, 'ES256')
+  const privateKey = await importJWK(holderPrivateJwk, 'ES256')
 
   const header: JwtHeader = {
     alg: 'ES256',
@@ -58,6 +58,32 @@ async function createJwt(nonce: string, aud: string): Promise<string> {
   const jwt = await new SignJWT(payload).setProtectedHeader(header).sign(privateKey)
 
   return jwt
+}
+
+async function createSdJwtVpWithNewKbJwt(
+  sdJwtVp: string,
+  newAud: string,
+  nonce: string
+): Promise<string> {
+  const { createHash } = await import('node:crypto')
+  const privateKey = await importJWK(holderPrivateJwk, 'ES256')
+
+  // SD-JWT VP: <issuer-signed-jwt>~<disc1>~...~<discN>~<kb-jwt>
+  // presentation to hash = everything except the last segment (the kb-jwt), ending with ~
+  const parts = sdJwtVp.split('~')
+  const presentation = parts.slice(0, -1).join('~') + '~'
+  const sdHash = createHash('sha256').update(presentation).digest('base64url')
+
+  const kbJwt = await new SignJWT({
+    aud: newAud,
+    iat: Math.floor(Date.now() / 1000),
+    nonce,
+    sd_hash: sdHash,
+  })
+    .setProtectedHeader({ alg: 'ES256', typ: 'kb+jwt' })
+    .sign(privateKey)
+
+  return presentation + kbJwt
 }
 
 describe('Vcknots', () => {
@@ -323,6 +349,9 @@ describe('Vcknots', () => {
 
       assert.ok(authzRequest)
       assert.equal(authzRequest.request.client_id, `redirect_uri:${verifierId}`)
+      if (!('response_type' in authzRequest.request)) {
+        assert.fail('Expected inline DCQL flow')
+      }
       assert.equal(authzRequest.request.response_type, 'vp_token')
       assert.equal(authzRequest.request.response_mode, 'direct_post')
       assert.equal(authzRequest.request.client_metadata?.client_name, metadata.client_name)
@@ -353,6 +382,9 @@ describe('Vcknots', () => {
 
       assert.ok(authzRequest)
       assert.equal(authzRequest.request.client_id, `redirect_uri:${verifierId}`)
+      if (!('request_uri' in authzRequest.request)) {
+        assert.fail('Expected request_uri flow')
+      }
       assert.ok(authzRequest.request.request_uri)
     })
 
@@ -375,6 +407,9 @@ describe('Vcknots', () => {
         false,
         {}
       )
+      if (!('nonce' in authzRequest.request)) {
+        assert.fail('Expected inline DCQL flow')
+      }
       const nonce = authzRequest.request.nonce
       if (typeof nonce !== 'string') {
         assert.fail('nonce must be a string')
@@ -406,9 +441,7 @@ describe('Vcknots', () => {
         }
       })
 
-      await vk.verifier.verifyPresentations(verifierId, response, authzRequest.transactionId, {
-        expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
-      })
+      await vk.verifier.verifyPresentations(verifierId, response, authzRequest.transactionId, {})
 
       mock.reset()
     })
@@ -426,6 +459,9 @@ describe('Vcknots', () => {
         false,
         {}
       )
+      if (!('response_type' in authzRequest.request)) {
+        assert.fail('Expected inline DCQL flow')
+      }
       if (typeof authzRequest.request.nonce !== 'string') {
         assert.fail('nonce must be a string')
       }
@@ -458,27 +494,21 @@ describe('Vcknots', () => {
           }),
         }
       })
-      await vk.verifier.verifyPresentations(verifierId, response, authzRequest.transactionId, {
-        expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
-      })
+      await vk.verifier.verifyPresentations(verifierId, response, authzRequest.transactionId, {})
 
       mock.reset()
     })
     it('should verify presentations (dc+sd-jwt with kbjwt)', async () => {
       const cnonceStore = inMemoryCnonceStore({ c_nonce_expire_in: 300000 })
-      const test_nonce = 'bcb201b7e186ed380127b9158a9d57a6'
-      await cnonceStore.save(Cnonce(test_nonce))
-      const sampleDcSdJwtVp =
+      const baseKbJwtFixture =
         'eyJhbGciOiJFUzI1NiIsInR5cCI6ImRjK3NkLWp3dCIsIng1YyI6WyJNSUlDSGpDQ0FjT2dBd0lCQWdJVVpYOUJTNUNET0pSVzJ0MUZLMVVETXQvUXdNRXdDZ1lJS29aSXpqMEVBd0l3SVRFTE1Ba0dBMVVFQmhNQ1IwSXhFakFRQmdOVkJBTU1DVTlKUkVZZ1ZHVnpkREFlRncweU5ERXhNalV3T0RNMk1EUmFGdzB6TkRFeE1qTXdPRE0yTURSYU1DRXhDekFKQmdOVkJBWVRBa2RDTVJJd0VBWURWUVFEREFsUFNVUkdJRlJsYzNRd1dUQVRCZ2NxaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUVC9kTHNkNTFMTEJyR1Y2UjIzbzZ2eW1SeEhYZUZCb0k4eXEzMXk1a0ZWMlZWMGdpOXg1WnpFRmlxOERNaUFIdWNMQUNGbmR4THRab3JDaGE5enpuUW80SFlNSUhWTUIwR0ExVWREZ1FXQkJTNWNiZGdBZU1CaTV3eHBicHdJU0doU2hBV0VUQWZCZ05WSFNNRUdEQVdnQlM1Y2JkZ0FlTUJpNXd4cGJwd0lTR2hTaEFXRVRBUEJnTlZIUk1CQWY4RUJUQURBUUgvTUlHQkJnTlZIUkVFZWpCNGdoQjNkM2N1YUdWbGJtRnVMbTFsTG5WcmdoMWtaVzF2TG1ObGNuUnBabWxqWVhScGIyNHViM0JsYm1sa0xtNWxkSUlKYkc5allXeG9iM04wZ2hac2IyTmhiR2h2YzNRdVpXMXZZbWw0TG1OdkxuVnJnaUprWlcxdkxuQnBaQzFwYzNOMVpYSXVZblZ1WkdWelpISjFZMnRsY21WcExtUmxNQW9HQ0NxR1NNNDlCQU1DQTBrQU1FWUNJUUNQYm5MeENJK1dSMXZoT1crQThLem5BV3YxTUpvK1lFYjFNSTQ1TktXL1ZRSWhBTHpzcW94OFZ1QlJ3TjJkbDVMa3BueFA0b0g5cDZIMEFPWm1LUCtZN25YUyJdfQ.eyJfc2QiOlsiMDRVY1lqOEV1T1ExWWZHNzdWUDZQdWdPVWF1dnRNQ0tSU1RvdUR4aldidyIsIkgwdElaUGhWVFVqTnhCd1VzelFrMW95VlVQNU5zZGRLNWo2ZGcyb0NPemMiLCJXelV0Nkd2ZnJyVHlLWmFIRFhTcERYWHJGLUxURm1UME9WTFhvYmFpZnVNIiwiWGVuek44TVl1LU5fMXpGV3g1dVVYb0FWLWhwdG1MV2d5ekczbUVkR0tDZyIsImVMbVlqTGVLY0ZQS2dVN1YwQWlVOVVMeXZ3cWVKLWJ4ZWdDUGlMTWlTMFkiLCJsdmtZMVh3OFE5M1BUOERQRHhHSlhCMzlobHJTNFpOUVZCbkhmcFZOUVZBIiwibXY3T0tCMnRoUWpOV2lxU3ZBTDAxY2VOUG5wTDlDVmhlNGRmNHRSYUxGTSIsIm52Mm9rMjFXejVkN2lsenNkczE1Vk5tRXI1U0VPYlBzVWNxNmpjemxXaEUiXSwiaXNzIjoiaHR0cHM6Ly9pc3N1ZXIuZXVkaXcuZGV2IiwidmN0IjoidXJuOmV1LmV1cm9wYS5lYy5ldWRpOnBpZDoxIiwiX3NkX2FsZyI6InNoYS0yNTYiLCJjbmYiOnsiandrIjp7Imt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJ4IjoiZXpaZ0t3TXVlQXlaTEhVZ1Nwek5rYk9XRGdqSlhUQU9KbjhNZnRPbmF5USIsInkiOiJGeV9VNEt5WlFmLTlqS3BGSnRINk9GRlJYbXdBY3ZleWZ1b0RwMWhTT0ZvIn19LCJpYXQiOjE3NzIwMTU0NjV9.gseVu9AStknO-locvvCKcnj8PnUWSZtMF4wE-SqqXteI4xMOfUaA0zFpZR6hGfNBPUSZL3ROw4RYDLQIOQjsMQ~WyJkMTQ2V0NwTVg1MDZpZzY3UHoxVGtBIiwgImZhbWlseV9uYW1lIiwgIlRFU1QiXQ~WyJzQnE1aUY1dTFibVRfU2dYblF1UmtBIiwgImdpdmVuX25hbWUiLCAiVEFSTyJd~WyJRNG80UjFxdDhacENFSkhIWFRZRmpRIiwgImJpcnRoZGF0ZSIsICIyMDAwLTAzLTAzIl0~WyJHUDRwcXpKaVJ4RGN0TEVlcEZ5VzJBIiwgIm5hdGlvbmFsaXRpZXMiLCBbIkpQIl1d~WyJKX2pYUkZxT0poR18yRmFmOHl4bFBBIiwgImlzc3VpbmdfYXV0aG9yaXR5IiwgIlRlc3QgUElEIGlzc3VlciJd~WyJiNDk2UGotUDdXS05iWkFKMDJ3NVhnIiwgImlzc3VpbmdfY291bnRyeSIsICJGQyJd~WyJ4bGlVZlExX050Y3IyYnBJcGJCN1lnIiwgIjE4IiwgdHJ1ZV0~WyJ3dDJCRVFYVDBfUDNIQ0N4VVVoSmZBIiwgImFnZV9lcXVhbF9vcl9vdmVyIiwgeyJfc2QiOiBbInNDczNOZlNLYVRoR3pRbERVRTd5WnR4VmVBSm5lRGY2dS1nNFk1NVdRekUiXX1d~WyJxcm1aeGpLNUtPZXRGUHFOSGpWN0h3IiwgImxvY2FsaXR5IiwgIkpBUEFOIl0~WyJpc0ZDcF8xREhnUUpZLVBtZWYwRHV3IiwgInBsYWNlX29mX2JpcnRoIiwgeyJfc2QiOiBbIjF1LWszbEFKMHlPV2x4OUJLLWFSVEVaUUZyLXVPUFRrTGdEN3U5aTFlMEUiXX1d~eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJodHRwczovL3ZlcmlmaWVyLmV4YW1wbGUuY29tIiwiaWF0IjoxNzcyMDE1NDg4LCJub25jZSI6ImJjYjIwMWI3ZTE4NmVkMzgwMTI3YjkxNThhOWQ1N2E2Iiwic2RfaGFzaCI6IkdpNkkxZTFqdVgyU29QVmwwR3pXamZTZHBkaUVxOFowc2FKX3B4Y3poVVkifQ.bHaKF05dNqYM7jOlhgQGjqO958lTMTMM4Pu9YJVM9fjDW_zTVur5ZzDKHWxImq_8lPQ3euAJvXJlz6j7Yj2mtw'
 
-      const vkWithPreSavedNonce = vcknots({
+      const vkWithCnonceStore = vcknots({
         providers: [cnonceStore],
       })
-      await vkWithPreSavedNonce.verifier
-        .createVerifierMetadata(verifierId, metadata)
-        .catch(() => {})
+      await vkWithCnonceStore.verifier.createVerifierMetadata(verifierId, metadata).catch(() => {})
 
-      const kbAuthzRequest = await vkWithPreSavedNonce.verifier.createAuthzRequest(
+      const kbAuthzRequest = await vkWithCnonceStore.verifier.createAuthzRequest(
         verifierId,
         'vp_token',
         `redirect_uri:${verifierId}`,
@@ -488,19 +518,29 @@ describe('Vcknots', () => {
         {}
       )
 
+      if (
+        !('nonce' in kbAuthzRequest.request) ||
+        typeof kbAuthzRequest.request.nonce !== 'string'
+      ) {
+        assert.fail('nonce must be a string in the authz request')
+      }
+      const nonce = kbAuthzRequest.request.nonce
+
+      const sampleDcSdJwtVp = await createSdJwtVpWithNewKbJwt(
+        baseKbJwtFixture,
+        `redirect_uri:${verifierId}`,
+        nonce
+      )
+
       const response: AuthorizationResponse = AuthorizationResponse({
         vp_token: { my_credential: [sampleDcSdJwtVp] },
       })
 
-      // KB-JWT payload in sampleDcSdJwtVp uses aud: https://verifier.example.com
-      await vkWithPreSavedNonce.verifier.verifyPresentations(
+      await vkWithCnonceStore.verifier.verifyPresentations(
         verifierId,
         response,
         kbAuthzRequest.transactionId,
-        {
-          expectedAud: ClientIdentifier('https://verifier.example.com'),
-          isKbJwt: true,
-        }
+        { isKbJwt: true }
       )
 
       mock.reset()

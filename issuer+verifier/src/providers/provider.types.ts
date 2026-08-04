@@ -149,6 +149,7 @@ export type VerifyVerifiablePresentationVerifyOptions =
       kind: 'jwt_vp_json'
       /** VP JWT `aud` must equal this or be included if `aud` is an array. */
       expectedAud: ClientIdentifier
+      expectedNonce?: string
     }
   | {
       kind: 'dc+sd-jwt'
@@ -384,7 +385,6 @@ export type AuthzRequestJARProvider = {
     verifierId: ClientId,
     requestObject: RequestObject,
     alg: string,
-    nonce?: string,
     wallet_nonce?: string
   ): Promise<JwtContent>
   canHandle(clientIdScheme: string): boolean

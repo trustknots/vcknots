@@ -127,8 +127,7 @@ describe('verifyVerifiablePresentation provider', () => {
       protectedHeader.kid = kid ?? `${holderDid}#${await jose.calculateJwkThumbprint(holderJwk)}`
     }
     const p = payload as Record<string, unknown>
-    const body =
-      options?.includeDefaultAud === false ? { ...p } : { aud: expectedAud, ...p }
+    const body = options?.includeDefaultAud === false ? { ...p } : { aud: expectedAud, ...p }
     return await new jose.SignJWT(body as jose.JWTPayload)
       .setProtectedHeader(protectedHeader)
       .sign(holderKeyPair.privateKey)
@@ -236,10 +235,13 @@ describe('verifyVerifiablePresentation provider', () => {
         verifiableCredential: [vcJwt],
       },
     })
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'INVALID_NONCE',
-      message: 'nonce is not valid.',
-    })
+    await assert.rejects(
+      provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud, expectedNonce: 'expected-nonce' }),
+      {
+        name: 'INVALID_NONCE',
+        message: 'nonce does not match.',
+      }
+    )
   })
 
   test('should throw an error if no verifiableCredential', async () => {

@@ -126,15 +126,16 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         query,
         false,
         {
+          state,
           response_uri: `${baseUrl}/callback`,
           base_url: baseUrl,
         }
       )
-      const registered = vpAudTx.register(client_id, state, verifierTxId)
+      const registered = vpAudTx.register(state, verifierTxId)
       if (!registered.ok) {
         return c.json(registered.error, 400)
       }
-      console.log('[verify] direct_post transaction_id:', registered.transactionId)
+      console.log('[verify] direct_post transaction_id:', verifierTxId)
 
       const encoded = Object.entries({ ...request, state })
         .map(([key, value]) => {
@@ -174,25 +175,19 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         return c.json(parsed.error, 400)
       }
 
-      // Validate it using the AuthorizationResponse
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
 
-      const audResolved = vpAudTx.resolveExpectedAudFromWalletState(authorizationResponse.state)
-      if (!audResolved.ok) {
-        return c.json(audResolved.error, 400)
+      const resolved = vpAudTx.resolve(authorizationResponse.state)
+      if (!resolved.ok) {
+        return c.json(resolved.error, 400)
       }
-      console.log('[verify] expectedAud:', audResolved.aud)
       const vpPayload = await verifierFlow.verifyPresentations(
         verifierId,
         authorizationResponse,
-        audResolved.verifierTransactionId,
-        {
-          expectedAud: audResolved.aud,
-        }
+        resolved.transactionId,
+        {}
       )
-      if (authorizationResponse.state != null && authorizationResponse.state !== '') {
-        vpAudTx.consume(audResolved.transactionId, authorizationResponse.state)
-      }
+      vpAudTx.consume(authorizationResponse.state ?? '')
       console.log('Verified VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
@@ -224,25 +219,18 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         return c.json(parsed.error, 400)
       }
 
-      // Validate it using the AuthorizationResponse
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-      const audResolved = vpAudTx.resolveExpectedAudFromWalletState(authorizationResponse.state)
-      if (!audResolved.ok) {
-        return c.json(audResolved.error, 400)
+      const resolved = vpAudTx.resolve(authorizationResponse.state)
+      if (!resolved.ok) {
+        return c.json(resolved.error, 400)
       }
-      console.log('[verify] expectedAud (callback-kbjwt):', audResolved.aud)
       const vpPayload = await verifierFlow.verifyPresentations(
         verifierId,
         authorizationResponse,
-        audResolved.verifierTransactionId,
-        {
-          expectedAud: audResolved.aud,
-          isKbJwt: true,
-        }
+        resolved.transactionId,
+        { isKbJwt: true }
       )
-      if (authorizationResponse.state != null && authorizationResponse.state !== '') {
-        vpAudTx.consume(audResolved.transactionId, authorizationResponse.state)
-      }
+      vpAudTx.consume(authorizationResponse.state ?? '')
       console.log('Verified KBJWT VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
@@ -344,18 +332,11 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
             : {}),
         }
       )
-      const registered = vpAudTx.register(
-        requestObject.client_id,
-        requestObject.state,
-        verifierTxId
-      )
+      const registered = vpAudTx.register(requestObject.state, verifierTxId)
       if (!registered.ok) {
         return c.json(registered.error, 400)
       }
-      console.log('[verify] direct_post transaction_id:', registered.transactionId)
-      // const params = requestObject.is_request_uri
-      //   ? request
-      //   : { ...request, state: requestObject.state }
+      console.log('[verify] direct_post transaction_id:', verifierTxId)
       const encoded = Object.entries(request)
         .map(([key, value]) => {
           const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
@@ -400,22 +381,19 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         400
       )
     }
-    const result = vpAudTx.getById(transactionId)
-    if (result.kind === 'not_found') {
-      return c.json(
-        { error: 'not_found', error_description: 'transaction_id is unknown or already removed' },
-        404
-      )
+    try {
+      const result = await verifierFlow.getTransaction(transactionId)
+      return c.json({
+        transaction_id: transactionId,
+        state: result.state,
+        client_id: result.clientId,
+        expires_at: result.expiresAt,
+      })
+    } catch (err) {
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
     }
-    if (result.kind === 'expired') {
-      return c.json({ error: 'not_found', error_description: 'transaction_id has expired' }, 404)
-    }
-    return c.json({
-      transaction_id: transactionId,
-      state: result.state,
-      client_id: result.clientId,
-      expires_at: result.expiresAt,
-    })
   })
 
   verifyApp.delete('/presentation-transaction/:transactionId', async (c) => {
@@ -426,14 +404,17 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         400
       )
     }
-    const result = vpAudTx.deleteById(transactionId)
-    if (!result.ok) {
-      return c.json(
-        { error: 'not_found', error_description: 'transaction_id is unknown or already removed' },
-        404
-      )
+    try {
+      const existing = await verifierFlow.getTransaction(transactionId)
+      if (existing.state) {
+        vpAudTx.consume(existing.state)
+      }
+      return c.json({ ok: true }, 200)
+    } catch (err) {
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
     }
-    return c.json({ ok: true }, 200)
   })
 
   return verifyApp

@@ -216,7 +216,7 @@ curl --location 'http://localhost:8080/verify/request-object' \
     "dcql_query": {
       "credentials": [
         {
-          "id": "University Degree Credentials",
+          "id": "example_sd_jwt",
           "format": "dc+sd-jwt",
           "meta": {
             "vct_values": ["urn:eudi:pid:1"]
@@ -637,7 +637,6 @@ Options passed from your verifier application into VP / credential-format–spec
 | ----- | -------- | ----------- |
 | `expectedAud` | Yes | [`ClientIdentifier`](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/client-id-scheme.types.ts) value that **must match the OAuth / OpenID4VP `client_id`** used in the authorization request. The VP’s JWT `aud` (`jwt_vp_json`) and the KB-JWT’s `aud` (`dc+sd-jwt` when Key Binding is used) are compared to this string. |
 | `isKbJwt` | No | For `dc+sd-jwt`: if `true`, validate the Key Binding JWT (nonce, `aud`, `sd_hash`, etc.). If omitted, KB-JWT validation follows the provider default (`false`). |
-| `expectedNonce` | No | For `dc+sd-jwt` + KB-JWT: expected `nonce` claim in the KB-JWT (usually the authorization request `nonce`). |
 | `expectedTransactionDataHashes` | No | For `dc+sd-jwt` + KB-JWT when `transaction_data` is used: expected hash list in the KB-JWT. |
 
 **Return value**:

@@ -15,6 +15,7 @@ import { Certificate } from './signature-key.types'
 import { Jwk } from './jwk.type'
 import { exportJWK, importSPKI } from 'jose'
 import { ClientIdentifier } from './client-id-scheme.types'
+import { Cnonce } from './cnonce.types'
 import { VpTokenPayload } from './presentation.types'
 import { TransactionId, TransactionRecord } from './transaction-id.types'
 
@@ -43,10 +44,7 @@ export type CreateAuthzRequestOptions = {
   transaction_data?: { type: string; transaction_data_hashes_alg?: string[] }
 }
 export type VerifyPresentationOptions = {
-  /** OAuth/OID4VP client_id value the VP / KB-JWT must bind to (e.g. JWT `aud`). */
-  expectedAud: ClientIdentifier
   isKbJwt?: boolean
-  expectedNonce?: string
   expectedTransactionDataHashes?: string[]
 }
 export type FindRequestObjectOptions = {
@@ -83,6 +81,12 @@ export type VerifierFlow = {
     objectId: RequestObjectId,
     options?: FindRequestObjectOptions
   ): Promise<string>
+  getTransaction(transactionId: string): Promise<{
+    clientId: ClientIdentifier
+    state?: string
+    dcqlQuery: Dcql
+    expiresAt: number
+  }>
   verifyPresentations: (
     id: ClientId,
     response: AuthorizationResponse,
@@ -227,12 +231,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       options
     ) {
       const client_id_scheme = client_id.split(':')[0]
-      const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_scheme)
-      if (!authzRequestJAR) {
-        throw err('UNSUPPORTED_CLIENT_ID_SCHEME', {
-          message: 'client_id_scheme is not supported.',
-        })
-      }
+
       if (client_id_scheme === 'x509_san_dns' || client_id_scheme === 'x509_san_uri') {
         const certificate = await certificateStore$.fetch(verifierId)
         if (!certificate) {
@@ -271,12 +270,28 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
 
       const transactionId = await transactionId$.generate()
-      await transactionDataStore$.save(transactionId, TransactionRecord({ dcqlQuery: parsedQuery }))
+      const nonce = await cnonce$.generate()
+      await nonceStore$.save(nonce)
+      await transactionDataStore$.save(
+        transactionId,
+        TransactionRecord({
+          dcqlQuery: parsedQuery,
+          clientId: client_id,
+          state: options.state,
+          nonce,
+        })
+      )
 
       const responseUri = options.response_uri ?? `${verifierId}/post`
 
       // when using request_uri
       if (isRequestUri ?? true) {
+        const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_scheme)
+        if (!authzRequestJAR) {
+          throw err('UNSUPPORTED_CLIENT_ID_SCHEME', {
+            message: 'client_id_scheme is not supported.',
+          })
+        }
         if (!options.base_url) {
           throw err('INVALID_REQUEST', {
             message: 'base_url is required when is_request_uri is true',
@@ -296,6 +311,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           aud: 'https://self-issued.me/v2',
           client_metadata: metadata,
           response_mode: response_mode || 'direct_post',
+          nonce,
           ...parsedQuery,
           ...(transaction_data.length > 0 ? { transaction_data } : {}),
         })
@@ -312,8 +328,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         }
       }
 
-      const nonce = await cnonce$.generate()
-      await nonceStore$.save(nonce)
       return {
         request: AuthorizationRequest({
           client_id: client_id,
@@ -341,9 +355,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         })
       }
 
-      const nonce = await cnonce$.generate()
-      await nonceStore$.save(nonce)
-
       const clientId = requestObject.client_id
       const client_id_scheme = clientId.split(':')[0]
       const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_scheme)
@@ -359,7 +370,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         verifierId,
         requestObject,
         keyAlg,
-        nonce,
         walletNonce
       )
 
@@ -382,6 +392,20 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       return `${encode(header)}.${encode(payload)}.${signature}`
     },
+    async getTransaction(transactionId) {
+      const transaction = await transactionDataStore$.fetch(TransactionId(transactionId))
+      if (!transaction) {
+        throw err('TRANSACTION_ID_NOT_FOUND', {
+          message: 'transaction_id is unknown or already removed',
+        })
+      }
+      return {
+        clientId: transaction.clientId,
+        state: transaction.state,
+        dcqlQuery: transaction.dcqlQuery,
+        expiresAt: transaction.transaction_data_expires_at,
+      }
+    },
     async verifyPresentations(id, response, transactionId, options) {
       const verifier = await verifierMetadata$.fetch(id)
       if (!verifier) {
@@ -401,6 +425,16 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           message: 'Transaction is not found.',
         })
       }
+      if (transaction.state !== undefined) {
+        if (response.state !== transaction.state) {
+          throw err('INVALID_REQUEST', {
+            message: 'unknown or expired state.',
+          })
+        }
+      }
+
+      const expectedAud = transaction.clientId
+      const expectedNonce = transaction.nonce
       const dcql_query = transaction.dcqlQuery.dcql_query
 
       const credentialQueryMap = new Map<string, string>(
@@ -445,18 +479,18 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
                   kind: 'dc+sd-jwt',
                   specifiedDisclosures,
                   isKbJwt: true,
-                  expectedAud: options.expectedAud,
-                  expectedNonce: options.expectedNonce,
+                  expectedAud,
+                  expectedNonce,
                   expectedTransactionDataHashes: options.expectedTransactionDataHashes,
                 }
               : {
                   kind: 'dc+sd-jwt',
                   specifiedDisclosures,
-                  expectedAud: options.expectedAud,
-                  expectedNonce: options.expectedNonce,
+                  expectedAud,
+                  expectedNonce,
                   expectedTransactionDataHashes: options.expectedTransactionDataHashes,
                 }
-            : { kind: 'jwt_vp_json', expectedAud: options.expectedAud }
+            : { kind: 'jwt_vp_json', expectedAud, expectedNonce }
 
         const payloads: VpTokenPayload[] = []
         for (const vp of vpArray) {
@@ -493,6 +527,16 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
             })
           }
         }
+      }
+
+      if (expectedNonce) {
+        const nonceValid = await nonceStore$.validate(Cnonce(expectedNonce))
+        if (!nonceValid) {
+          throw err('INVALID_NONCE', {
+            message: 'nonce is not valid.',
+          })
+        }
+        await nonceStore$.revoke(Cnonce(expectedNonce))
       }
 
       await transactionDataStore$.delete(TransactionId(transactionId))
