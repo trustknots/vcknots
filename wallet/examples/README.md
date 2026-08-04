@@ -47,8 +47,8 @@ cd /path/to/vcknots/wallet
 mise install
 ```
 
-This automatically installs Go 1.26.4 and configures the necessary environment variables based on `mise.toml`.
-If you prefer not to use mise, install Go 1.26.4 manually and set the `GOPRIVATE` environment variable:
+This automatically installs Go 1.26.5 and configures the necessary environment variables based on `mise.toml`.
+If you prefer not to use mise, install Go 1.26.5 manually and set the `GOPRIVATE` environment variable:
 
 ```bash
 export GOPRIVATE="github.com/trustknots/vcknots/wallet"
