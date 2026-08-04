@@ -12,7 +12,6 @@ sidebar_position: 3
 - OpenID for Verifiable Presentations 1.0 に対応（[OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)）　　
 以下は現時点では未実装ですが、今後対応予定です。
   - `response_mode`は`direct_post`は対応していますが、`direct_post.jwt`は未対応です（現時点では未実装／今後対応予定）。
-  - 単一のcredential query IDを含む`vp_token`のみ対応していますが、複数のcredential query IDを含む`vp_token`は未対応です（現時点では未実装／今後対応予定）。
 - クロスデバイスフローを前提としています
 - Node.js v14以降がインストールされていること
 - TypeScriptが設定されていること
@@ -86,7 +85,7 @@ app.post('/verify/request', async (c) => {
       dcql_query: {
         credentials: [
           {
-            id: credentialId,
+            id: 'sample-id',
             format: 'jwt_vc_json',
             meta: {
               type_values: [['UniversityDegreeCredential']],
@@ -337,7 +336,7 @@ verifyApp.post('/verify/callback', async (c) => {
 ```bash
 curl --location 'http://localhost:8080/verify/callback' \
 --header 'Content-Type: application/x-www-form-urlencoded' \
---data-urlencode 'vp_token={"UniversityDegreeCredential":["eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."]}' \
+--data-urlencode 'vp_token={"sample-id":["eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."]}' \
 --data-urlencode 'state=example-state'
 ```
 

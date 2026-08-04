@@ -12,7 +12,6 @@ This guide explains how to set up and use the Verifier feature of VCKnots.
 - Supports OpenID for Verifiable Presentations 1.0 ([OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html))  
 The following items are not implemented yet and are planned for future support:
   - `response_mode` supports `direct_post`, but `direct_post.jwt` is not supported yet (planned for future support).
-  - One credential query ID with an array of VPs is supported; multiple credential query IDs are not supported (not currently implemented; planned for future support).
 - Assumes the cross-device flow
 - Node.js v14 or later is installed
 - TypeScript is configured
@@ -338,7 +337,7 @@ verifyApp.post('/verify/callback', async (c) => {
 ```bash
 curl --location 'http://localhost:8080/verify/callback' \
 --header 'Content-Type: application/x-www-form-urlencoded' \
---data-urlencode 'vp_token={"UniversityDegreeCredential":["eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."]}'  \
+--data-urlencode 'vp_token={"sample-id":["eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."]}'  \
 --data-urlencode 'state=tEoHpMJo1896FnkXJxVu'
 ```
 
