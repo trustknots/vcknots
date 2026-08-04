@@ -1,7 +1,10 @@
 import { Construct } from 'constructs';
+import { Stack } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { DataStores } from '../data/data-stores';
 import { LambdaApi } from './lambda-api';
+
+const ISSUER_KEY_ALIAS_PREFIX = 'alias/vcknots/issuers/';
 
 export class IssuerApi extends Construct {
   public readonly lambdaApi: LambdaApi;
@@ -22,15 +25,32 @@ export class IssuerApi extends Construct {
     });
 
     // The issuer creates and uses signing keys at runtime (kmsIssuerSignatureKeyStore),
-    // so keys cannot be provisioned here and referenced by ARN. kms:CreateKey only
-    // supports Resource "*"; the key-level actions could later be narrowed with an
-    // aws:RequestTag / kms:RequestAlias condition once alias-based scoping is needed.
+    // so keys cannot be provisioned here and referenced by ARN.
+    const stack = Stack.of(this);
+    const issuerKeyAliasArn = `arn:${stack.partition}:kms:${stack.region}:${stack.account}:${ISSUER_KEY_ALIAS_PREFIX}*`;
+
+    // kms:CreateKey has no target resource yet, so IAM requires Resource "*" for it.
+    this.lambdaApi.role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['kms:CreateKey'],
+        resources: ['*'],
+      }),
+    );
+
+    // Alias create/update is scoped to the issuer's alias namespace.
+    this.lambdaApi.role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['kms:CreateAlias', 'kms:UpdateAlias'],
+        resources: [issuerKeyAliasArn],
+      }),
+    );
+
+    // Key-level actions target the key by alias at call time (no ARN available here),
+    // so Resource stays "*" and access is narrowed via the kms:ResourceAliases condition
+    // to keys carrying an alias/vcknots/issuers/* alias.
     this.lambdaApi.role.addToPolicy(
       new iam.PolicyStatement({
         actions: [
-          'kms:CreateKey',
-          'kms:CreateAlias',
-          'kms:UpdateAlias',
           'kms:DescribeKey',
           'kms:GetPublicKey',
           'kms:Sign',
@@ -39,6 +59,11 @@ export class IssuerApi extends Construct {
           'kms:ScheduleKeyDeletion',
         ],
         resources: ['*'],
+        conditions: {
+          'ForAnyValue:StringLike': {
+            'kms:ResourceAliases': `${ISSUER_KEY_ALIAS_PREFIX}*`,
+          },
+        },
       }),
     );
   }
