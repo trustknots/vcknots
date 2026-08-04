@@ -26,7 +26,7 @@ jobs:
                   corepack enable
                   node -v
                   corepack pnpm@11.20.0 -v
-                  corepack pnpm@11.20.0 install --frozen-lockfile
+                  corepack pnpm@11.20.0 install --frozen-lockfile --pm-on-fail=ignore
 
             - name: Lint commits
               uses: wagoid/commitlint-github-action@v6.2.1
