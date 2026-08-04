@@ -16,7 +16,7 @@ allowBuilds:
   esbuild: true
   protobufjs: true
 minimumReleaseAgeExclude:
-  - '@aws-sdk/client-kms@3.1089.0'
+  - '@aws-sdk/client-kms'
   - '@aws-sdk/credential-provider-ini@3.973.4'
   - '@aws-sdk/credential-provider-login@3.972.66'
   - '@aws-sdk/credential-provider-node@3.972.70'

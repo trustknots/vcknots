@@ -96,7 +96,13 @@ export const kmsIssuerSignatureKeyStore = (
       const alias = issuerKeyAlias(issuer, declaredAlg)
 
       if (!pair) {
-        if (await describeKey(alias)) {
+        const existing = await describeKey(alias)
+        if (existing) {
+          if (existing.KeyState !== KeyState.Enabled) {
+            raise('internal_server_error', {
+              message: `KMS key for the alias ${alias} is not usable: ${existing.KeyState}`,
+            })
+          }
           return
         }
         const created = await kms.send(
