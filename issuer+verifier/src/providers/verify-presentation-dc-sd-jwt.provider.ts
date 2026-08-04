@@ -169,11 +169,7 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
           })
         }
       }
-      if (
-        nonce !== undefined &&
-        options.expectedNonce !== undefined &&
-        nonce !== options.expectedNonce
-      ) {
+      if (isKbJwt && options.expectedNonce !== undefined && nonce !== options.expectedNonce) {
         throw err('INVALID_NONCE', {
           message: 'nonce does not match.',
         })
