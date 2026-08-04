@@ -22,7 +22,12 @@ jobs:
                   node-version-file: .nvmrc
 
             - name: Install
-              run: corepack enable && pnpm install --frozen-lockfile
+              run: |
+                  corepack enable
+                  node -v
+                  pnpm -v
+                  pnpm config list
+                  pnpm install --frozen-lockfile --loglevel debug
 
             - name: Lint commits
               uses: wagoid/commitlint-github-action@v6.2.1
