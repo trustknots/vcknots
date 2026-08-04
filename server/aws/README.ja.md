@@ -197,7 +197,7 @@ Issuer はクレデンシャル署名鍵を `kmsIssuerSignatureKeyStore()`（`@t
 
 - **エイリアス命名規則**: 各鍵はエイリアス `alias/vcknots/issuers/<md5(issuer)>-<alg>`（issuer 識別子の MD5 を base64url 化したもの + JOSE アルゴリズム名。例: `ES256`）で参照されます。鍵ペアを指定しない場合、鍵は一度だけ作成され、以降の `save` では同じエイリアスが再利用されます。外部生成の鍵ペアをインポートする場合は、`save` を呼ぶたびに新しい KMS 鍵が作成され、エイリアスがその鍵に付け替えられます（古い鍵は削除されず残ります）。いずれの場合も追加の環境変数は不要です。
 - **対応アルゴリズム**: `ES256`・`ES384`・`RS256`・`RS512`・`PS256`・`PS512`。KMS 内での鍵生成はすべてのアルゴリズムに対応しています。外部で生成した鍵ペアのインポートは EC 系（`ES256`/`ES384`）のみ対応です — RSA 秘密鍵は RSAES_OAEP_SHA_256 のラップ上限を超えるため `RSA_AES_KEY_WRAP` が必要になりますが、これは未実装です（Google Cloud プロバイダと同じ制限）。
-- **必要な IAM 権限**（CDK スタックが Issuer Lambda ロールに付与）: `kms:CreateKey`・`kms:CreateAlias`・`kms:UpdateAlias`・`kms:DescribeKey`・`kms:GetPublicKey`・`kms:Sign`・`kms:GetParametersForImport`・`kms:ImportKeyMaterial`・`kms:ScheduleKeyDeletion`。ローカル実行時は AWS プロファイルに同等の権限が必要です。
+- **必要な IAM 権限**（CDK スタックが Issuer Lambda ロールに付与）: `kms:CreateKey`・`kms:TagResource`・`kms:CreateAlias`・`kms:UpdateAlias`・`kms:DescribeKey`・`kms:GetPublicKey`・`kms:Sign`・`kms:GetParametersForImport`・`kms:ImportKeyMaterial`・`kms:ScheduleKeyDeletion`。ローカル実行時は AWS プロファイルに同等の権限が必要です。プロバイダが作成する鍵にはすべてタグ（`vcknots:issuer-signature-key=true`）が付与されます。新規作成直後の鍵にはまだエイリアスが無く、エイリアスによる権限の絞り込みができないため、CDK スタックはこのタグを使って鍵本体への`CreateAlias`/`UpdateAlias`を認可しています。
 
 ## 注意事項
 

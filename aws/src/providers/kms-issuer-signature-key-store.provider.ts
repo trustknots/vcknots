@@ -35,6 +35,12 @@ import {
   wrapPrivateKeyForImport,
 } from './kms-provider.utils'
 
+// CreateAlias/UpdateAlias require kms:CreateAlias/kms:UpdateAlias permission on the target
+// KMS key itself, not just the alias — and the key's ARN isn't known before CreateKey runs.
+// Tagging every key we create lets the CDK stack authorize the key side of those actions
+// via an aws:ResourceTag condition instead of a key ARN it can't know in advance.
+export const ISSUER_KEY_TAG_KEY = 'vcknots:issuer-signature-key'
+
 export const kmsIssuerSignatureKeyStore = (
   options?: KmsProviderOptions
 ): IssuerSignatureKeyStoreProvider => {
@@ -94,7 +100,11 @@ export const kmsIssuerSignatureKeyStore = (
           return
         }
         const created = await kms.send(
-          new CreateKeyCommand({ KeyUsage: KeyUsageType.SIGN_VERIFY, KeySpec: keySpec })
+          new CreateKeyCommand({
+            KeyUsage: KeyUsageType.SIGN_VERIFY,
+            KeySpec: keySpec,
+            Tags: [{ TagKey: ISSUER_KEY_TAG_KEY, TagValue: 'true' }],
+          })
         )
         const keyId = created.KeyMetadata?.KeyId
         if (!keyId) {
@@ -122,6 +132,7 @@ export const kmsIssuerSignatureKeyStore = (
           KeyUsage: KeyUsageType.SIGN_VERIFY,
           KeySpec: keySpec,
           Origin: OriginType.EXTERNAL,
+          Tags: [{ TagKey: ISSUER_KEY_TAG_KEY, TagValue: 'true' }],
         })
       )
       const keyId = created.KeyMetadata?.KeyId

@@ -25,7 +25,10 @@ import { mockClient } from 'aws-sdk-client-mock'
 import { derToJose } from 'ecdsa-sig-formatter'
 import { exportJWK } from 'jose'
 import { CredentialIssuer } from '@trustknots/vcknots/issuer'
-import { kmsIssuerSignatureKeyStore } from '../src/providers/kms-issuer-signature-key-store.provider'
+import {
+  ISSUER_KEY_TAG_KEY,
+  kmsIssuerSignatureKeyStore,
+} from '../src/providers/kms-issuer-signature-key-store.provider'
 
 const issuer = CredentialIssuer('https://example.com/issuer')
 const md5 = (value: string) => createHash('md5').update(value).digest('base64url')
@@ -98,6 +101,7 @@ describe('kmsIssuerSignatureKeyStore', () => {
       KeyUsage: 'SIGN_VERIFY',
       KeySpec: 'ECC_NIST_P256',
       Origin: 'EXTERNAL',
+      Tags: [{ TagKey: ISSUER_KEY_TAG_KEY, TagValue: 'true' }],
     })
     assert.deepEqual(kmsMock.commandCalls(GetParametersForImportCommand)[0]?.args[0].input, {
       KeyId: 'imported-key',
@@ -245,6 +249,7 @@ describe('kmsIssuerSignatureKeyStore', () => {
     assert.deepEqual(kmsMock.commandCalls(CreateKeyCommand)[0]?.args[0].input, {
       KeyUsage: 'SIGN_VERIFY',
       KeySpec: 'ECC_NIST_P256',
+      Tags: [{ TagKey: ISSUER_KEY_TAG_KEY, TagValue: 'true' }],
     })
     assert.deepEqual(kmsMock.commandCalls(CreateAliasCommand)[0]?.args[0].input, {
       AliasName: issuerKeyAlias('ES256'),
