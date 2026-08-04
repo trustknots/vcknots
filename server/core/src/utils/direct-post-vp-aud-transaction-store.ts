@@ -7,6 +7,9 @@ type StateTransaction = {
 }
 
 export type DirectPostVpAudTransactionStore = {
+  reserve: (
+    state: string
+  ) => { ok: true } | { ok: false; error: { error: string; error_description: string } }
   register: (
     state: string,
     transactionId: string
@@ -34,13 +37,34 @@ export function createDirectPostVpAudTransactionStore(options?: {
     byState.delete(state)
   }
 
+  const reserve = (
+    state: string
+  ): { ok: true } | { ok: false; error: { error: string; error_description: string } } => {
+    const existing = byState.get(state)
+    if (existing !== undefined) {
+      if (Date.now() <= existing.expiresAt) {
+        return {
+          ok: false,
+          error: {
+            error: 'invalid_request',
+            error_description: 'state is already in use for an active presentation transaction',
+          },
+        }
+      }
+      byState.delete(state)
+    }
+    byState.set(state, { transactionId: '', expiresAt: Date.now() + ttlMs })
+    return { ok: true }
+  }
+
   const register = (
     state: string,
     transactionId: string
   ): { ok: true } | { ok: false; error: { error: string; error_description: string } } => {
     const existing = byState.get(state)
     if (existing !== undefined) {
-      if (Date.now() <= existing.expiresAt) {
+      const isReservation = existing.transactionId === ''
+      if (!isReservation && Date.now() <= existing.expiresAt) {
         return {
           ok: false,
           error: {
@@ -86,5 +110,5 @@ export function createDirectPostVpAudTransactionStore(options?: {
     return { ok: true, transactionId: rec.transactionId }
   }
 
-  return { register, resolve, consume }
+  return { reserve, register, resolve, consume }
 }

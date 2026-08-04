@@ -118,23 +118,21 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         },
       }
 
-      const { request, transactionId: verifierTxId } = await verifierFlow.createAuthzRequest(
-        verifierId,
-        'vp_token',
-        client_id,
-        'direct_post',
-        query,
-        false,
-        {
+      const reserved = vpAudTx.reserve(state)
+      if (!reserved.ok) {
+        return c.json(reserved.error, 400)
+      }
+      const { request, transactionId: verifierTxId } = await verifierFlow
+        .createAuthzRequest(verifierId, 'vp_token', client_id, 'direct_post', query, false, {
           state,
           response_uri: `${baseUrl}/callback`,
           base_url: baseUrl,
-        }
-      )
-      const registered = vpAudTx.register(state, verifierTxId)
-      if (!registered.ok) {
-        return c.json(registered.error, 400)
-      }
+        })
+        .catch((err: unknown) => {
+          vpAudTx.consume(state)
+          throw err
+        })
+      vpAudTx.register(state, verifierTxId)
       console.log('[verify] direct_post transaction_id:', verifierTxId)
 
       const encoded = Object.entries({ ...request, state })
@@ -313,29 +311,35 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           : 'x509_san_dns:localhost',
     }
 
+    const reserved = vpAudTx.reserve(requestObject.state)
+    if (!reserved.ok) {
+      return c.json(reserved.error, 400)
+    }
     try {
       const verifierId = VerifierClientId(baseUrl)
-      const { request, transactionId: verifierTxId } = await verifierFlow.createAuthzRequest(
-        verifierId,
-        'vp_token',
-        requestObject.client_id,
-        'direct_post',
-        requestObject.query,
-        requestObject.is_request_uri,
-        {
-          state: requestObject.state,
-          base_url: baseUrl,
-          response_uri: requestObject.response_uri ?? `${baseUrl}/callback`,
-          request_uri: `${baseUrl}/request.jwt`,
-          ...(requestObject.is_transaction_data
-            ? { transaction_data: { type: 'sample_type' } }
-            : {}),
-        }
-      )
-      const registered = vpAudTx.register(requestObject.state, verifierTxId)
-      if (!registered.ok) {
-        return c.json(registered.error, 400)
-      }
+      const { request, transactionId: verifierTxId } = await verifierFlow
+        .createAuthzRequest(
+          verifierId,
+          'vp_token',
+          requestObject.client_id,
+          'direct_post',
+          requestObject.query,
+          requestObject.is_request_uri,
+          {
+            state: requestObject.state,
+            base_url: baseUrl,
+            response_uri: requestObject.response_uri ?? `${baseUrl}/callback`,
+            request_uri: `${baseUrl}/request.jwt`,
+            ...(requestObject.is_transaction_data
+              ? { transaction_data: { type: 'sample_type' } }
+              : {}),
+          }
+        )
+        .catch((err: unknown) => {
+          vpAudTx.consume(requestObject.state)
+          throw err
+        })
+      vpAudTx.register(requestObject.state, verifierTxId)
       console.log('[verify] direct_post transaction_id:', verifierTxId)
       const encoded = Object.entries(request)
         .map(([key, value]) => {
