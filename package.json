@@ -22,10 +22,10 @@
 		"issuer+verifier/"
 	],
 	"engines": {
-		"pnpm": "11.10.0",
+		"pnpm": "11.20.0",
 		"npm": "please_use_pnpm_instead"
 	},
-	"packageManager": "pnpm@11.10.0",
+	"packageManager": "pnpm@11.20.0",
 	"devDependencies": {
 		"@biomejs/biome": "2.5.1",
 		"@commitlint/cli": "21.2.0",
