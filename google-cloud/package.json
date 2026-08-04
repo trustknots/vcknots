@@ -1,6 +1,6 @@
 {
 	"name": "@trustknots/google-cloud",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "",
 	"main": "lib/index.js",
 	"private": true,
@@ -28,7 +28,7 @@
 		"@trustknots/vcknots": "workspace:*",
 		"ecdsa-sig-formatter": "1.0.11",
 		"firebase-admin": "14.1.0",
-		"jose": "6.2.3",
+		"jose": "6.2.4",
 		"zod": "4.4.3"
 	}
 }

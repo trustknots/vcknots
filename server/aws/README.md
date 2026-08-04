@@ -94,6 +94,8 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 
 **`TX_CODE_PEPPER` is required by every server.** It is a secret pepper used to HMAC-hash `tx_code` values before storing them in DynamoDB. Because `@trustknots/aws` evaluates it at import time, the Issuer, Authorization Server, and Verifier all fail at startup with `TX_CODE_PEPPER environment variable is required` when it is missing. Use a sufficiently long random secret and keep it stable per environment — rotating it invalidates previously stored `tx_code` hashes.
 
+Failed `tx_code` attempts are limited per pre-authorized code (default **5**) by `dynamodbPreAuthorizedCodeStore`. To change the limit, pass `maxTxCodeAttempts` when constructing the provider in `server/aws/src/apps` (no environment variable yet). After the limit is reached the code is deleted, and further requests fail with `invalid_grant` even with the correct `tx_code`.
+
 ## Start the Servers
 
 Run each server in a separate terminal from `server/aws/src`:

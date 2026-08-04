@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 # How to Set Up and Use the Issuer Feature
@@ -610,6 +610,8 @@ Include a request body (JSON) only when specifying optional parameters.
 
 - `tx_code` can be used to include a transaction code in the Credential Offer.
 - `authorization_server` can be included only when the Issuer Metadata contains multiple entries in `authorization_servers`.
+
+When the offer includes `tx_code`, the pre-authorized-code store (in-memory, DynamoDB, and Firestore) limits failed `tx_code` guesses per code (default: **5**). After the limit is reached the code is invalidated, and later token requests fail with `invalid_grant` even if the correct `tx_code` is supplied. Change the limit with the provider factory option `maxTxCodeAttempts` (there is no environment variable for this yet).
 
 ```bash
 curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer \
@@ -1517,8 +1519,8 @@ In the Pre-Authorized Code flow, `credential_configuration_ids` linked to the pr
 
 **Error cases**:
 - `provider_not_found`: An unsupported algorithm is configured for the private key
-- `invalid_grant`: An invalid pre-authorized code is provided
-- `invalid_request`: The authorization server key is not registered, the algorithm is not set, or the grant type is not supported
+- `invalid_grant`: An invalid, consumed, expired, or locked (too many failed `tx_code` attempts) pre-authorized code is provided
+- `invalid_request`: The authorization server key is not registered, the algorithm is not set, the grant type is not supported, or `tx_code` is missing/unexpected for the stored code
 - `internal_server_error`: Signing failed
 - `unsupported_grant_type`: The authorization code flow is configured (currently not supported)
 

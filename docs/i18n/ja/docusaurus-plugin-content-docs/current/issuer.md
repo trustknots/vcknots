@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 # Issuer機能のセットアップと使用方法
@@ -608,6 +608,8 @@ app.post('/configurations/:configuration/offer', async (c) => {
 
 - tx_code は、Credential Offer にトランザクションコードを含めるために使用できます。
 - authorization_server は、Issuer Metadata の authorization_servers に複数のエントリーが含まれる場合にのみ指定できます。
+
+`tx_code` 付きの Offer では、pre-authorized-code store（in-memory / DynamoDB / Firestore）がコードごとに誤った `tx_code` の試行回数を制限します（既定 **5** 回）。上限に達するとコードは無効化され、以降は正しい `tx_code` でも token request は `invalid_grant` になります。上限を変える場合は、各 provider 生成時の `maxTxCodeAttempts` オプションを指定してください（環境変数は未対応です）。
 
 ```bash
 curl -X POST http://localhost:8080/configurations/UniversityDegreeCredential/offer \
@@ -1517,8 +1519,8 @@ Pre-Authorized Code フローでは、token 発行時に pre-authorized code に
 
 **エラーケース**:
 - `provider_not_found`:  秘密鍵で未対応のアルゴリズムが設定された
-- `invalid_grant`: 有効でない事前認可コードが設定された
-- `invalid_request`: 認可サーバーの鍵が未登録、アルゴリズムが未設定、グラントタイプがサポートされていない
+- `invalid_grant`: 無効・消費済み・期限切れ、または `tx_code` 試行上限超過でロックされた事前認可コードが指定された
+- `invalid_request`: 認可サーバーの鍵が未登録、アルゴリズムが未設定、グラントタイプがサポートされていない、または保存済みコードに対して `tx_code` の有無が不正
 - `internal_server_error`: 署名に失敗した
 - `unsupported_grant_type`: 認可コードフローを設定（現在未対応）
 

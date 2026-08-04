@@ -5,16 +5,34 @@ import { FirestoreProviderOptions, resolveFirestore } from './firestore.provider
 import { hashTxCode } from './hash.utils'
 import { raise } from '@trustknots/vcknots/errors'
 
+export type FirestorePreAuthorizedCodeStoreOptions = FirestoreProviderOptions & {
+  /**
+   * Number of failed `tx_code` attempts allowed per pre-authorized code before it
+   * is invalidated (brute-force lockout). Defaults to 5.
+   */
+  maxTxCodeAttempts?: number
+}
+
 type FirestorePreAuthorizedCodeDoc = Omit<PreAuthorizedCodeStoreEntry, 'tx_code' | 'expires_at'> & {
   expires_at: Timestamp
   tx_code_hash?: string
+  /** Number of failed `tx_code` attempts so far (brute-force lockout counter). */
+  attempts?: number
 }
 
+const DEFAULT_MAX_TX_CODE_ATTEMPTS = 5
+const LOCKED_MESSAGE = 'Pre-authorized code is invalid, consumed, or locked'
+
 export const firestorePreAuthorizedCodeStore = (
-  options?: FirestoreProviderOptions
+  options?: FirestorePreAuthorizedCodeStoreOptions
 ): PreAuthorizedCodeStoreProvider => {
   const firestore = resolveFirestore(options)
   const ns = options?.namespace?.replace(/\//g, '') || 'vcknots'
+  const maxTxCodeAttemptsRaw = options?.maxTxCodeAttempts ?? DEFAULT_MAX_TX_CODE_ATTEMPTS
+  const maxTxCodeAttempts = Number.isFinite(maxTxCodeAttemptsRaw)
+    ? Math.max(1, Math.floor(maxTxCodeAttemptsRaw))
+    : DEFAULT_MAX_TX_CODE_ATTEMPTS
+
   const toDigitString = (value: string | number): string | null => {
     if (typeof value === 'number') {
       return Number.isSafeInteger(value) && value >= 0 ? value.toString() : null
@@ -60,66 +78,106 @@ export const firestorePreAuthorizedCodeStore = (
     },
 
     async consume(code, tx_code) {
+      // Count-first admission gate (brute-force lockout): atomically increment `attempts`
+      // only while the code still exists AND the per-code limit hasn't been reached, then
+      // read the item back to compare the tx_code. Firestore transactions serialize writes
+      // per document, so even a highly concurrent burst admits at most `maxTxCodeAttempts`
+      // guesses — once the limit is hit, every further attempt (including the correct PIN)
+      // is rejected before the tx_code is ever compared.
+      // Successful consume uses a second conditional delete (parity with DynamoDB) so two
+      // concurrent correct-PIN requests cannot both return credential_configuration_ids.
       const docRef = firestore.doc(`${ns}/v1/preCodes/${code}`)
-      const result = await firestore.runTransaction(async (transaction) => {
+
+      /**
+       * Deletes a stored code. When `conditional` is true the delete only succeeds if the
+       * document still exists; a lost race is surfaced as `invalid_grant` (DynamoDB parity).
+       */
+      const deleteCode = async (conditional = false): Promise<void> => {
+        if (!conditional) {
+          await docRef.delete()
+          return
+        }
+        const deleted = await firestore.runTransaction(async (transaction) => {
+          const doc = await transaction.get(docRef)
+          if (!doc.exists) {
+            return false
+          }
+          transaction.delete(docRef)
+          return true
+        })
+        if (!deleted) {
+          throw raise('invalid_grant', {
+            message: 'Pre-authorized code has already been consumed',
+          })
+        }
+      }
+
+      const item = await firestore.runTransaction(async (transaction) => {
         const doc = await transaction.get(docRef)
         if (!doc.exists) {
-          throw raise('invalid_grant', {
-            message: 'Pre-authorized code not found',
-          })
+          // Not found, already consumed, or locked out after too many tx_code attempts.
+          throw raise('invalid_grant', { message: LOCKED_MESSAGE })
         }
         const data = doc.data() as FirestorePreAuthorizedCodeDoc
-
-        if (data.expires_at.toMillis() <= Date.now()) {
-          transaction.delete(docRef)
-          return { expired: true, credential_configuration_ids: null }
+        const currentAttempts = data.attempts ?? 0
+        if (currentAttempts >= maxTxCodeAttempts) {
+          throw raise('invalid_grant', { message: LOCKED_MESSAGE })
         }
-        if (data.tx_code_hash) {
-          if (tx_code === undefined) {
-            throw raise('invalid_request', {
-              message: 'tx_code is required for this pre-authorized code',
-            })
-          }
-          const inputMode = data.tx_code_input_mode ?? 'numeric'
-          if (inputMode !== 'text') {
-            const actual = toDigitString(tx_code)
-            if (actual === null || data.tx_code_hash !== hashTxCode(actual)) {
-              throw raise('invalid_grant', {
-                message: 'Invalid tx_code provided',
-              })
-            }
-          } else {
-            if (typeof tx_code !== 'string' || data.tx_code_hash !== hashTxCode(tx_code)) {
-              throw raise('invalid_grant', {
-                message: 'Invalid tx_code provided',
-              })
-            }
-          }
-          transaction.delete(docRef)
-          return {
-            expired: false,
-            credential_configuration_ids: data.credential_configuration_ids ?? null,
-          }
-        }
-        if (tx_code !== undefined) {
-          throw raise('invalid_request', {
-            message: 'tx_code should not be provided for this pre-authorized code',
-          })
-        }
-
-        transaction.delete(docRef)
-        return {
-          expired: false,
-          credential_configuration_ids: data.credential_configuration_ids ?? null,
-        }
+        const attempts = currentAttempts + 1
+        transaction.set(docRef, { attempts }, { merge: true })
+        return { ...data, attempts }
       })
-      if (result.expired) {
+
+      const lockoutIfExhausted = async (): Promise<void> => {
+        if ((item.attempts ?? 0) >= maxTxCodeAttempts) {
+          await deleteCode()
+          raise('invalid_grant', { message: LOCKED_MESSAGE })
+        }
+      }
+
+      if (item.expires_at.toMillis() <= Date.now()) {
+        await deleteCode()
         throw raise('invalid_grant', {
           message: 'Pre-authorized code has expired',
         })
       }
 
-      return result.credential_configuration_ids
+      if (item.tx_code_hash) {
+        if (tx_code === undefined) {
+          await lockoutIfExhausted()
+          throw raise('invalid_request', {
+            message: 'tx_code is required for this pre-authorized code',
+          })
+        }
+        const inputMode = item.tx_code_input_mode ?? 'numeric'
+        if (inputMode !== 'text') {
+          const actual = toDigitString(tx_code)
+          if (actual === null || item.tx_code_hash !== hashTxCode(actual)) {
+            await lockoutIfExhausted()
+            throw raise('invalid_grant', {
+              message: 'Invalid tx_code provided',
+            })
+          }
+        } else {
+          if (typeof tx_code !== 'string' || item.tx_code_hash !== hashTxCode(tx_code)) {
+            await lockoutIfExhausted()
+            throw raise('invalid_grant', {
+              message: 'Invalid tx_code provided',
+            })
+          }
+        }
+      } else if (tx_code !== undefined) {
+        await lockoutIfExhausted()
+        throw raise('invalid_request', {
+          message: 'tx_code should not be provided for this pre-authorized code',
+        })
+      }
+
+      // Conditional delete to prevent the code from being consumed twice. A lost race
+      // means another request already consumed it (same idea as DynamoDB ConditionExpression).
+      await deleteCode(true)
+
+      return item.credential_configuration_ids ?? null
     },
   }
 }

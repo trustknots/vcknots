@@ -1,6 +1,6 @@
 {
 	"name": "@trustknots/server-aws",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "",
 	"type": "module",
 	"private": true,
@@ -18,12 +18,12 @@
 	"author": "",
 	"license": "Apache-2.0",
 	"dependencies": {
-		"@hono/node-server": "1.19.9",
+		"@hono/node-server": "1.19.13",
 		"@trustknots/aws": "workspace:*",
 		"@trustknots/server-core": "workspace:*",
 		"@trustknots/vcknots": "workspace:*",
 		"dotenv": "17.3.1",
-		"hono": "4.12.27"
+		"hono": "4.12.32"
 	},
 	"devDependencies": {
 		"@types/aws-lambda": "^8.10.161",

@@ -94,6 +94,8 @@ cp .env.example .env
 
 **`TX_CODE_PEPPER` は全サーバーで必須**です。`tx_code` を DynamoDB に保存する前に HMAC-SHA256 でハッシュ化するための秘密値（pepper）です。`@trustknots/aws` は import 時にこの値を評価するため、未設定の場合は Issuer・Authorization Server・Verifier のいずれも起動時に `TX_CODE_PEPPER environment variable is required` でエラーになります。十分に長いランダム文字列を設定し、環境ごとに固定して運用してください（変更すると既存データの `tx_code` 検証に失敗します）。
 
+誤った `tx_code` の試行は、pre-authorized code ごとに `dynamodbPreAuthorizedCodeStore` が制限します（既定 **5** 回）。上限を変える場合は、`server/aws/src/apps` で provider を生成するときに `maxTxCodeAttempts` を渡してください（環境変数は未対応です）。上限到達後はコードが削除され、正しい `tx_code` でも以降のリクエストは `invalid_grant` になります。
+
 ## サーバーの起動
 
 `server/aws/src` ディレクトリで、各サーバーを別々のターミナルで起動します：
