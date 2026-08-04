@@ -129,29 +129,40 @@ export const kmsIssuerSignatureKeyStore = (
         raise('internal_server_error', { message: 'KMS CreateKey response is missing KeyId' })
       }
 
-      const importParams = await kms.send(
-        new GetParametersForImportCommand({
-          KeyId: keyId,
-          WrappingAlgorithm: AlgorithmSpec.RSAES_OAEP_SHA_256,
-          WrappingKeySpec: WrappingKeySpec.RSA_4096,
-        })
-      )
-      if (!importParams.PublicKey || !importParams.ImportToken) {
-        raise('internal_server_error', {
-          message: 'KMS GetParametersForImport response is missing wrapping key or import token',
-        })
-      }
+      try {
+        const importParams = await kms.send(
+          new GetParametersForImportCommand({
+            KeyId: keyId,
+            WrappingAlgorithm: AlgorithmSpec.RSAES_OAEP_SHA_256,
+            WrappingKeySpec: WrappingKeySpec.RSA_4096,
+          })
+        )
+        if (!importParams.PublicKey || !importParams.ImportToken) {
+          raise('internal_server_error', {
+            message: 'KMS GetParametersForImport response is missing wrapping key or import token',
+          })
+        }
 
-      const privateKeyDer = toPkcs8Der(pair.privateKey)
-      const wrappedKey = wrapPrivateKeyForImport(privateKeyDer, importParams.PublicKey)
-      await kms.send(
-        new ImportKeyMaterialCommand({
-          KeyId: keyId,
-          ImportToken: importParams.ImportToken,
-          EncryptedKeyMaterial: wrappedKey,
-          ExpirationModel: ExpirationModelType.KEY_MATERIAL_DOES_NOT_EXPIRE,
-        })
-      )
+        const privateKeyDer = toPkcs8Der(pair.privateKey)
+        const wrappedKey = wrapPrivateKeyForImport(privateKeyDer, importParams.PublicKey)
+        await kms.send(
+          new ImportKeyMaterialCommand({
+            KeyId: keyId,
+            ImportToken: importParams.ImportToken,
+            EncryptedKeyMaterial: wrappedKey,
+            ExpirationModel: ExpirationModelType.KEY_MATERIAL_DOES_NOT_EXPIRE,
+          })
+        )
+      } catch (error) {
+        // Discard the orphan EXTERNAL key so a failed import doesn't leave an
+        // unaliased, unusable key (and its KMS-key-count/billing footprint) behind.
+        try {
+          await kms.send(new ScheduleKeyDeletionCommand({ KeyId: keyId, PendingWindowInDays: 7 }))
+        } catch (cleanupError) {
+          console.error(`Failed to discard the orphan KMS key ${keyId}: ${cleanupError}`)
+        }
+        throw error
+      }
 
       try {
         await kms.send(new CreateAliasCommand({ AliasName: alias, TargetKeyId: keyId }))

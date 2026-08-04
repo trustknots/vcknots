@@ -193,9 +193,9 @@ ISSUER_PORT=9081 ISSUER_BASE_URL=http://localhost:9081 pnpm start:issuer
 
 ## Issuer Signing Keys (AWS KMS)
 
-The Issuer stores its credential-signing keys in AWS KMS via `kmsIssuerSignatureKeyStore()` (`@trustknots/aws`). Private keys never leave KMS — signing is performed by the KMS `Sign` API.
+The Issuer stores its credential-signing keys in AWS KMS via `kmsIssuerSignatureKeyStore()` (`@trustknots/aws`). Signing is always performed by the KMS `Sign` API. For keys generated inside KMS, the private key never leaves KMS. For an externally generated key pair, the application receives the private key, wraps it, and sends it to KMS via `ImportKeyMaterial` — the private key exists outside KMS up to that point.
 
-- **Alias naming**: each key is referenced through the alias `alias/vcknots/issuers/<md5(issuer)>-<alg>` (base64url MD5 of the issuer identifier plus the JOSE algorithm, e.g. `ES256`). Keys are created at runtime on first `save`; no additional environment variables are required.
+- **Alias naming**: each key is referenced through the alias `alias/vcknots/issuers/<md5(issuer)>-<alg>` (base64url MD5 of the issuer identifier plus the JOSE algorithm, e.g. `ES256`). Without a key pair, the key is created once and the same alias is reused on subsequent `save` calls. When importing an externally generated key pair, every `save` call creates a brand-new KMS key and repoints the alias to it (the previous key is kept, not deleted). No additional environment variables are required.
 - **Supported algorithms**: `ES256`, `ES384`, `RS256`, `RS512`, `PS256`, `PS512`. Keys can be generated inside KMS for all of them. Importing an externally generated key pair is supported for EC algorithms (`ES256`/`ES384`) only — RSA private keys exceed the RSAES_OAEP_SHA_256 wrapping limit and would require `RSA_AES_KEY_WRAP`, which is not implemented (same limitation as the Google Cloud provider).
 - **Required IAM** (granted to the Issuer Lambda role by the CDK stack): `kms:CreateKey`, `kms:CreateAlias`, `kms:UpdateAlias`, `kms:DescribeKey`, `kms:GetPublicKey`, `kms:Sign`, `kms:GetParametersForImport`, `kms:ImportKeyMaterial`, `kms:ScheduleKeyDeletion`. When running locally, the AWS profile needs the same permissions.
 
