@@ -1,206 +1,147 @@
 ---
-sidebar_position: 13
+sidebar_position: 31
 ---
 
 # Architecture Overview
 
-VC Knots is a **pluggable framework for building Verifiable Credentials (VC) ecosystems**.
+VC Knots is a pluggable framework for building Verifiable Credentials (VC) ecosystems.
 
-VC Knots is designed based on the following principles:
+In VC ecosystems, interoperability based on standard protocols such as OpenID4VCI and OpenID4VP is important, while actual system configurations vary depending on the use case and environment.
 
-- Support multiple execution environments, such as AWS and Google Cloud, by adding **Infrastructure Integrations**.
-- Enable efficient implementation of Issuer, Wallet, and Verifier applications by composing reusable **Core Libraries**.
-- Provide **Samples** that demonstrate how to use the libraries and recommended deployment architectures.
+For example, requirements for cloud environments, storage, key management methods, and Credential issuance rules differ between systems.
 
----
+VC Knots provides the following extension points to accommodate these differences.
 
-# Overall Architecture
+- **Provider**
+  - Provides extension points for business logic within Features.
+  - Enables replacement of system-specific processing such as key generation, Nonce generation, identifier management, and Credential issuance policies.
+  - For details, see [Plugin Development - Creating a Custom Provider](./plugin-development/03-custom-provider.md).
 
-```mermaid
-flowchart TB
+- **Infrastructure Integrations**
+  - Abstracts connections to external infrastructure such as data stores and KMS.
+  - Enables flexible support for different execution environments such as AWS and Google Cloud.
 
-    subgraph APP["Applications built with VC Knots"]
-        ISSUERAPP[Issuer]
-        WALLETAPP[Wallet]
-        VERIFIERAPP[Verifier]
-    end
+This design separates standard protocol processing such as OpenID4VCI / OpenID4VP from infrastructure dependencies and system-specific business logic.
 
-    subgraph VCKNOTS["VC Knots"]
+By combining Features and Infrastructure Integrations, developers can efficiently implement Issuers, Wallets, and Verifiers.
 
-        subgraph CORE["Core Libraries"]
-            vcknots["vcknots<br/>(issuer+verifier)<br/>TypeScript"]
-            wallet["wallet<br/>Go"]
-        end
+Samples are also provided to demonstrate usage and recommended deployment configurations.
 
-        subgraph INFRAINT["Infrastructure Integrations"]
-            aws[aws<br/>TypeScript]
-            gcp[google-cloud<br/>TypeScript]
-        end
+# Architecture Layers
 
-    end
+VC Knots consists of the following layers.
 
-    subgraph INFRA["Infrastructure"]
-        DB[(Database)]
-        KMS[(Key Management)]
-        DEVICE[(Devices)]
-    end
-
-    ISSUERAPP --> vcknots
-    VERIFIERAPP --> vcknots
-    WALLETAPP --> wallet
-
-    vcknots --> aws
-    vcknots --> gcp
-
-    aws --> DB
-    aws --> KMS
-    gcp --> DB
-    gcp --> KMS
-    wallet --> DEVICE
-```
-
-VC Knots consists of the following layers:
-
-| Layer | Responsibility |
+| Layer | Description |
 | --- | --- |
-| **Applications built with VC Knots** | Applications such as Issuer, Wallet, and Verifier built using VC Knots. |
-| **VC Knots Core Libraries** | Provide OpenID4VCI/OpenID4VP protocol implementations and wallet functionality. |
-| **VC Knots Infrastructure Integrations** | Provide integrations with external services such as databases and KMS. |
-| **Infrastructure** | External infrastructure accessed through Infrastructure Integrations, such as databases, storage services, and key management services. |
+| **Applications** | Applications such as Issuers, Wallets, and Verifiers built using VC Knots. |
+| **Features** | Provides protocol implementations such as OpenID4VCI / OpenID4VP and Wallet functionality. |
+| **Infrastructure Integrations** | Provides connections to external services such as databases and KMS. |
+| **Infrastructure** | External infrastructure accessed through Infrastructure Integrations, such as databases, storage, and key management services. |
 
----
+![overview](/img/docs/overview.drawio.svg)
 
 # Package Structure
 
-## Core Libraries / Infrastructure Integrations
+## Features
 
-| Package | Language | Responsibility |
+| Package | Language | Description |
 | --- | --- | --- |
-| `vcknots` | TypeScript | Implements OpenID4VCI, OpenID4VP, Issuer, Verifier, and Authorization Server |
-| `wallet` | Go | Provides wallet functionality, DID management, key management, and credential management |
-| `aws` | TypeScript | Provides integrations with AWS services such as DynamoDB, KMS, and Secrets Manager |
-| `google-cloud` | TypeScript | Provides integrations with Google Cloud services such as Cloud Firestore, Cloud KMS, and Secret Manager |
+| `@trustknots/vcknots` | TypeScript | Implementation of OpenID4VCI / OpenID4VP, Issuer, Verifier, and Authorization Server functionality |
+| `github.com/trustknots/vcknots/wallet` | Go | Wallet functionality, DID and key management, and Credential management |
+
+## Infrastructure Integrations
+
+| Package | Language | Description |
+| --- | --- | --- |
+| `@trustknots/aws` | TypeScript | Integration with AWS services such as DynamoDB, KMS, and Secrets Manager |
+| `@trustknots/google-cloud` | TypeScript | Integration with Google Cloud services such as Cloud Firestore, Cloud KMS, and Secret Manager |
 
 ## Samples
 
-| Package | Language | Responsibility |
+| Package | Language | Description |
 | --- | --- | --- |
-| `server/core` | TypeScript | Provides the shared framework and common components used by the sample servers |
-| `server/single` | TypeScript | Sample server for a single-tenant deployment |
-| `server/multi` | TypeScript | Sample server for a multi-tenant deployment |
-| `server/aws` | TypeScript | Deployment example for AWS using Lambda and CDK |
-| `server/google-cloud` | TypeScript | Deployment example for Google Cloud |
+| `@trustknots/server-core` | TypeScript | Provides common frameworks and components shared by sample servers |
+| `@trustknots/server` | TypeScript | Sample server for a single-tenant configuration |
+| `@trustknots/multi-server` | TypeScript | Sample server for a multi-tenant configuration |
+| `@trustknots/server-aws` | TypeScript | Example configuration for deploying sample servers to AWS (Lambda + CDK) |
+| `@trustknots/server-google-cloud` | TypeScript | Example configuration for deploying sample servers to Google Cloud |
 
----
+# Verifiable Credentials Workflows and the Role of VC Knots
 
-# Package Relationships
+VC Knots provides standard protocol processing for OpenID4VCI / OpenID4VP as Features.
 
-```mermaid
-flowchart TB
+Applications use these capabilities to build Issuers, Wallets, and Verifiers.
 
-    subgraph CORE["Core Libraries"]
-        vcknots["vcknots<br/>(issuer+verifier)"]
-        wallet["wallet"]
-    end
+The following sections describe the role of each component in representative VC processing flows.
 
-    subgraph INFRAINT["Infrastructure Integrations"]
-        aws["aws"]
-        gcp["google-cloud"]
-    end
+## Credential Issuance Flow (OpenID4VCI)
 
-    subgraph SERVER["Samples"]
-        servercore["server/core"]
-        serversingle["server/single"]
-        servermulti["server/multi"]
-        serveraws["server/aws"]
-        servergcp["server/google-cloud"]
-    end
+The Credential issuance process (OpenID4VCI) consists of the following steps.
 
-    aws --> vcknots
-    gcp --> vcknots
-
-    servercore --> vcknots
-
-    serversingle --> servercore
-    serversingle --> vcknots
-
-    servermulti --> servercore
-    servermulti --> vcknots
-
-    serveraws --> servercore
-    serveraws --> aws
-    serveraws --> vcknots
-
-    servergcp --> servercore
-    servergcp --> gcp
-    servergcp --> vcknots
-```
-
----
-
-# Credential Issuance Flow (OpenID4VCI)
-
-```mermaid
-sequenceDiagram
-
-    participant wallet
-    participant issuer
-    participant vcknots as vcknots<br/>(issuer+verifier)
-    participant infra as Infrastructure Integrations
-
-    wallet->>issuer: Authz Request
-    issuer->>vcknots: Process Authz Request
-    vcknots-->>wallet: Authz Response
-
-    wallet->>issuer: Token Request
-    issuer->>vcknots: Issue Token
-    vcknots-->>wallet: Token Response
-
-    wallet->>issuer: Credential Request
-    issuer->>vcknots: Issue Credential
-
-    vcknots->>infra: Access Data<br/>Access Signing Key
-    infra-->>vcknots: Result
-
-    vcknots-->>wallet: Credential Response
-```
-
-Credential issuance using OpenID4VCI is performed as follows:
-
-1. The Wallet completes the OpenID4VCI authorization and token exchange flow, then sends a Credential Request to the Issuer.
-2. The Issuer delegates credential issuance to `vcknots`.
-3. `vcknots` uses the Infrastructure Integrations to access the data and key management services required for credential issuance.
-4. `vcknots` generates and signs the Verifiable Credential using the retrieved information.
+1. The Wallet sends a Credential Request to the Issuer after completing the authorization and token acquisition flows defined by OpenID4VCI.
+2. The Issuer delegates Credential issuance processing to VC Knots.
+3. VC Knots uses Infrastructure Integrations to retrieve required data for Credential issuance and access key management services.
+4. VC Knots generates and signs the Verifiable Credential based on the retrieved information.
 5. The generated Verifiable Credential is returned to the Wallet.
 
----
+```mermaid
+sequenceDiagram
 
-# Presentation Verification Flow (OpenID4VP)
+    participant wallet as Applications<br/>Wallet
+    participant issuer as Applications<br/>Issuer
+    participant vcknots as VC Knots<br/>Features
+    participant infraint as VC Knots<br/>Infrastructure Integrations
+    participant infra as Infrastructure
+
+    wallet->>issuer: Authorization Request
+    issuer->>vcknots: Process Authorization Request
+    vcknots-->>issuer: Authorization Response Data
+    issuer-->>wallet: Authorization Response
+
+    wallet->>issuer: Token Request
+    issuer->>vcknots: Process Token Request
+    vcknots-->>issuer: Token Response Data
+    issuer-->>wallet: Token Response
+
+    wallet->>issuer: Credential Request
+    issuer->>vcknots: Process Credential Request
+    vcknots->>infraint: Access Credential Data<br/>Access Key Management
+    infraint->>infra: Execute Operation
+    infra-->>infraint: Result
+    infraint-->>vcknots: Result
+    vcknots-->>issuer: Credential
+    issuer-->>wallet: Credential Response
+```
+
+## Presentation Verification Flow (OpenID4VP)
+
+The Presentation verification process (OpenID4VP) consists of the following steps.
+
+1. The Verifier sends an Authorization Request to the Wallet to request a Verifiable Presentation.
+2. The Wallet returns an Authorization Response containing the Verifiable Presentation to the Verifier.
+3. The Verifier delegates Presentation verification processing to VC Knots.
+4. VC Knots accesses external services such as DID Resolvers and Trust Registries through Infrastructure Integrations.
+5. VC Knots resolves DIDs and verifies Presentation signatures and Credential validity based on the retrieved information.
+6. The verification result is returned to the Verifier, which decides whether to accept the Presentation based on the result.
 
 ```mermaid
 sequenceDiagram
 
-    participant wallet
-    participant verifier
-    participant vcknots as vcknots<br/>(issuer+verifier)
+    participant wallet as Applications<br/>Wallet
+    participant verifier as Applications<br/>Verifier
+    participant vcknots as VC Knots<br/>Features
+    participant infraint as VC Knots<br/>Infrastructure Integrations
+    participant infra as Infrastructure
 
-    verifier->>wallet: Authz Request
-
-    wallet->>verifier: Authz Response<br/>(Verifiable Presentation)
+    verifier->>wallet: Authorization Request
+    wallet->>verifier: Authorization Response<br/>(Verifiable Presentation)
 
     verifier->>vcknots: Validate Presentation
-
-    vcknots->>vcknots: Resolve DID<br/>Validate Credential<br/>Verify Signature
-
+    vcknots->>infraint: Get DID Document<br/>Get Trust Information
+    infraint->>infra: Execute Operation
+    infra-->>infraint: Result
+    infraint-->>vcknots: Result
+    vcknots-->>vcknots: Verify Credential
     vcknots-->>verifier: Verification Result
-
     verifier-->>wallet: Accept / Reject
 ```
-
-Presentation verification using OpenID4VP is performed as follows:
-
-1. The Verifier sends an Authorization Request to the Wallet requesting a Verifiable Presentation.
-2. The Wallet returns an Authorization Response containing the Verifiable Presentation.
-3. The Verifier delegates presentation validation to `vcknots`.
-4. `vcknots` resolves the DID using a DID Resolver or Trust Registry, then validates the credential and verifies the presentation signature.
-5. The verification result is returned to the Verifier, which determines whether to accept or reject the presented credentials.
