@@ -317,9 +317,7 @@ verifyApp.post('/verify/callback', async (c) => {
     // `lookupTransactionId` is a placeholder and must be implemented by your application.
     const transactionId = await lookupTransactionId(authorizationResponse.state)
 
-    const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, transactionId, {
-      expectedAud: ClientIdentifier('x509_san_dns:localhost'),
-    })
+    const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, transactionId)
 
     return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
   } catch (err) {
@@ -618,7 +616,7 @@ verifyPresentations(
   id: ClientId,
   response: AuthorizationResponse,
   transactionId: string,
-  options: VerifyPresentationOptions
+  options?: VerifyPresentationOptions
 ): Promise<Record<string, VpTokenPayload[]>>
 ```
 
@@ -626,15 +624,16 @@ verifyPresentations(
 - `id`: Identifier of the Verifier ([VerifierClientId](#VerifierClientId))
 - `response`: Information used for verification ([Verifierauthorizationresponse](#Verifierauthorizationresponse))
 - `transactionId`: The `transactionId` returned by `createAuthzRequest`. Used to look up the original DCQL query for the authorization request.
-- `options`: [VerifyPresentationOptions](#VerifyPresentationOptions) — must include `expectedAud` (see below).
+- `options`: [VerifyPresentationOptions](#VerifyPresentationOptions)
 
 #### VerifyPresentationOptions {#VerifyPresentationOptions}
 
 Options passed from your verifier application into VP / credential-format–specific checks. Defined in [`verifier.flows.ts`](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/verifier.flows.ts).
 
+> **Note**: `expectedAud` (`client_id`) is stored in the transaction at `createAuthzRequest` time and automatically retrieved by the library inside `verifyPresentations`. You do not need to pass it separately.
+
 | Field | Required | Description |
 | ----- | -------- | ----------- |
-| `expectedAud` | Yes | [`ClientIdentifier`](https://github.com/trustknots/vcknots/blob/main/issuer%2Bverifier/src/client-id-scheme.types.ts) value that **must match the OAuth / OpenID4VP `client_id`** used in the authorization request. The VP’s JWT `aud` (`jwt_vp_json`) and the KB-JWT’s `aud` (`dc+sd-jwt` when Key Binding is used) are compared to this string. |
 | `isKbJwt` | No | For `dc+sd-jwt`: if `true`, validate the Key Binding JWT (nonce, `aud`, `sd_hash`, etc.). If omitted, KB-JWT validation follows the provider default (`false`). |
 | `expectedTransactionDataHashes` | No | For `dc+sd-jwt` + KB-JWT when `transaction_data` is used: expected hash list in the KB-JWT. |
 
@@ -670,13 +669,16 @@ Options passed from your verifier application into VP / credential-format–spec
 - `TRANSACTION_ID_NOT_FOUND`: No transaction found for the given `transactionId` (already consumed or invalid)
 - `ILLEGAL_ARGUMENT`: Missing/invalid arguments (for example, unknown credential query ID, or VP provider rejects options)
 - `UNSUPPORTED_VP_TOKEN`: Unsupported `vp_token` shape or format (for example, non-string VP)
-- `INVALID_VP_TOKEN`: Required DCQL credentials missing, VP structure invalid, or `aud` does not match `expectedAud`
+- `INVALID_REQUEST`: The `state` in the response does not match the `state` stored in the transaction
+- `INVALID_VP_TOKEN`: Required DCQL credentials missing, or VP structure invalid
 - `INVALID_NONCE`: The authorization request `nonce` is missing from the VP or does not match
 - `INVALID_CREDENTIAL`: Invalid embedded VC (for example, `jwt_vp_json` path) or issuer/JWKS resolution failure
 - `INVALID_SD_JWT` / `HOLDER_BINDING_FAILED`: SD-JWT or Key Binding verification failures
 
 **Notes**:
-- Pass the **same** value as the **`client_id`** from the authorization request (including the scheme prefix, e.g. `redirect_uri:` or `x509_san_dns:`) as `expectedAud`. It **must match** the `aud` claim the Wallet sets on the VP or KB-JWT.
+
+- `client_id` (`expectedAud`) is automatically retrieved from the transaction. The `aud` claim the Wallet sets on the VP or KB-JWT must match the `client_id` passed to `createAuthzRequest`.
+- If `state` was passed to `createAuthzRequest` via `options.state`, the library automatically validates that `response.state` matches. A mismatch results in an `INVALID_REQUEST` error.
 - The `transactionId` is consumed after a successful call. Calling with the same `transactionId` again will result in an error.
 
 

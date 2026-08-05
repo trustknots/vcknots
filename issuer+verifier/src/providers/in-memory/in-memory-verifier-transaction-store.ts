@@ -30,6 +30,7 @@ export const inMemoryVerifierTransactionDataStore = (option?: {
         return null
       }
       if (new Date().getTime() > transactionDataState.transaction_data_expires_at) {
+        transactionDataStates.delete(transactionId)
         return null
       }
       return transactionDataState

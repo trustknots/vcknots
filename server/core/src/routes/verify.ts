@@ -182,8 +182,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       const vpPayload = await verifierFlow.verifyPresentations(
         verifierId,
         authorizationResponse,
-        resolved.transactionId,
-        {}
+        resolved.transactionId
       )
       vpAudTx.consume(authorizationResponse.state ?? '')
       console.log('Verified VP Payload:', vpPayload)

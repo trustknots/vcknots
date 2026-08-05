@@ -92,7 +92,7 @@ export type VerifierFlow = {
     id: ClientId,
     response: AuthorizationResponse,
     transactionId: string,
-    options: VerifyPresentationOptions
+    options?: VerifyPresentationOptions
   ) => Promise<Record<string, VpTokenPayload[]>>
 }
 
@@ -478,21 +478,21 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
         const verifyOptions: VerifyVerifiablePresentationVerifyOptions =
           format === 'dc+sd-jwt'
-            ? options.isKbJwt
+            ? options?.isKbJwt
               ? {
                   kind: 'dc+sd-jwt',
                   specifiedDisclosures,
                   isKbJwt: true,
                   expectedAud,
                   expectedNonce,
-                  expectedTransactionDataHashes: options.expectedTransactionDataHashes,
+                  expectedTransactionDataHashes: options?.expectedTransactionDataHashes,
                 }
               : {
                   kind: 'dc+sd-jwt',
                   specifiedDisclosures,
                   expectedAud,
                   expectedNonce,
-                  expectedTransactionDataHashes: options.expectedTransactionDataHashes,
+                  expectedTransactionDataHashes: options?.expectedTransactionDataHashes,
                 }
             : { kind: 'jwt_vp_json', expectedAud, expectedNonce }
 

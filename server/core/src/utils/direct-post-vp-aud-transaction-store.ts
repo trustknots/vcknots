@@ -107,6 +107,12 @@ export function createDirectPostVpAudTransactionStore(options?: {
         error: { error: 'invalid_request', error_description: 'unknown or expired state' },
       }
     }
+    if (rec.transactionId === '') {
+      return {
+        ok: false,
+        error: { error: 'invalid_request', error_description: 'unknown or expired state' },
+      }
+    }
     return { ok: true, transactionId: rec.transactionId }
   }
 

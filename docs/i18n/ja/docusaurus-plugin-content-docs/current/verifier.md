@@ -318,7 +318,7 @@ verifyApp.post('/verify/callback', async (c) => {
     // アプリケーション側で実装するプレースホルダーとして置き換えてください。
     const transactionId = await lookupTransactionId(authorizationResponse.state)
 
-    const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, transactionId, {})
+    const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, transactionId)
 
     return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
   } catch (err) {
