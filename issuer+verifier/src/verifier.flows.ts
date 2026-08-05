@@ -269,20 +269,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         }
       }
 
-      const transactionId = await transactionId$.generate()
-      const nonce = await cnonce$.generate()
-      await nonceStore$.save(nonce)
-      await transactionDataStore$.save(
-        transactionId,
-        TransactionRecord({
-          dcqlQuery: parsedQuery,
-          clientId: client_id,
-          verifierId,
-          state: options.state,
-          nonce,
-        })
-      )
-
       const responseUri = options.response_uri ?? `${verifierId}/post`
 
       // when using request_uri
@@ -298,6 +284,21 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
             message: 'base_url is required when is_request_uri is true',
           })
         }
+
+        const transactionId = await transactionId$.generate()
+        const nonce = await cnonce$.generate()
+        await nonceStore$.save(nonce)
+        await transactionDataStore$.save(
+          transactionId,
+          TransactionRecord({
+            dcqlQuery: parsedQuery,
+            clientId: client_id,
+            verifierId,
+            state: options.state,
+            nonce,
+          })
+        )
+
         // create RequestObjectId
         const requestObjectId = await requestObjectId$.generate()
 
@@ -328,6 +329,20 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           transactionId,
         }
       }
+
+      const transactionId = await transactionId$.generate()
+      const nonce = await cnonce$.generate()
+      await nonceStore$.save(nonce)
+      await transactionDataStore$.save(
+        transactionId,
+        TransactionRecord({
+          dcqlQuery: parsedQuery,
+          clientId: client_id,
+          verifierId,
+          state: options.state,
+          nonce,
+        })
+      )
 
       return {
         request: AuthorizationRequest({

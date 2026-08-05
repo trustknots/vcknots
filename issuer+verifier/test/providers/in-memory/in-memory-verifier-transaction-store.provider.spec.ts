@@ -66,8 +66,8 @@ describe('inMemoryVerifierTransactionDataStore', () => {
       const oneMinuteInMs = 1 * 60 * 1000
       const mocks = test.mock.timers
       mocks.enable()
-      await transactionStoreProvider.save(testTransactionId, testTransactionRecord)
       try {
+        await transactionStoreProvider.save(testTransactionId, testTransactionRecord)
         mocks.tick(oneMinuteInMs)
         const transaction = await transactionStoreProvider.fetch(testTransactionId)
         assert.notStrictEqual(transaction, null)
@@ -80,8 +80,8 @@ describe('inMemoryVerifierTransactionDataStore', () => {
       const fiveMinutesInMs = 5 * 60 * 1000
       const mocks = test.mock.timers
       mocks.enable()
-      await transactionStoreProvider.save(testTransactionId, testTransactionRecord)
       try {
+        await transactionStoreProvider.save(testTransactionId, testTransactionRecord)
         mocks.tick(fiveMinutesInMs + 1000)
         const transaction = await transactionStoreProvider.fetch(testTransactionId)
         assert.strictEqual(transaction, null)
@@ -113,8 +113,8 @@ describe('inMemoryVerifierTransactionDataStore', () => {
       const oneMinuteInMs = 1 * 60 * 1000
       const mocks = test.mock.timers
       mocks.enable()
-      await transactionStoreProvider.save(testTransactionId, testTransactionRecord)
       try {
+        await transactionStoreProvider.save(testTransactionId, testTransactionRecord)
         mocks.tick(oneMinuteInMs)
         const transaction = await transactionStoreProvider.fetch(testTransactionId)
         assert.notStrictEqual(transaction, null)
@@ -124,12 +124,11 @@ describe('inMemoryVerifierTransactionDataStore', () => {
     })
 
     it('fetch should return null for an expired transaction after custom expiration (using mocked time)', async () => {
-      const fiveMinutesInMs = 5 * 60 * 1000
       const mocks = test.mock.timers
       mocks.enable()
-      await transactionStoreProvider.save(testTransactionId, testTransactionRecord)
       try {
-        mocks.tick(fiveMinutesInMs)
+        await transactionStoreProvider.save(testTransactionId, testTransactionRecord)
+        mocks.tick(testExpiryMs + 1000)
         const transaction = await transactionStoreProvider.fetch(testTransactionId)
         assert.strictEqual(transaction, null)
       } finally {
