@@ -13,22 +13,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@v6.4.0
         with:
-          node-version: 24.18.0
-          cache: npm
-          cache-dependency-path: ./docusaurus/package-lock.json
+          node-version-file: .nvmrc
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
-        working-directory: ./docusaurus
+        run: pnpm install --frozen-lockfile
 
-      - name: Build Docusaurus
-        run: npm run build
-        working-directory: ./docusaurus
+      - name: Build
+        run: pnpm --filter docusaurus build
