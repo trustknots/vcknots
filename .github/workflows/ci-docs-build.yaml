@@ -17,10 +17,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: pnpm/action-setup@v6.0.9
+
       - uses: actions/setup-node@v6.4.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
+
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
