@@ -64,9 +64,10 @@ jobs:
           git push origin --tags
 
       - name: Notify Slack on Workflow Failure
-        if: failure()
+        if: ${{ failure() }}
         uses: slackapi/slack-github-action@v4.0.0
         with:
+          errors: true
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
           payload: |
