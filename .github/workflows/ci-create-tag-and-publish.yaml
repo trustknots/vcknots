@@ -6,7 +6,6 @@ on:
       - main
   workflow_dispatch:
 
-
 permissions:
   contents: write
   id-token: write
@@ -63,3 +62,13 @@ jobs:
           git tag
           git show-ref --tags
           git push origin --tags
+
+      - name: Notify Slack on Workflow Failure
+        if: ${{ failure() }}
+        uses: slackapi/slack-github-action@v4.0.0
+        with:
+          errors: true
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "🚨 *GitHub Actions エラー発生*\n*リポジトリ:* ${{ github.repository }}\n*ワークフロー:* ${{ github.workflow }}\n*実行ログ:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|ログを確認する>"
