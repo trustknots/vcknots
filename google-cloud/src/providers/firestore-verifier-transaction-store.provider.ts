@@ -33,6 +33,7 @@ export const firestoreVerifierTransactionDataStore = (
         transaction_data_expires_at: expiresAt,
         dcqlQuery: record.dcqlQuery,
         clientId: record.clientId,
+        verifierId: record.verifierId,
         ...(record.state !== undefined ? { state: record.state } : {}),
         ...(record.nonce !== undefined ? { nonce: record.nonce } : {}),
       })
@@ -50,6 +51,7 @@ export const firestoreVerifierTransactionDataStore = (
         transaction_data_expires_at: Timestamp
         dcqlQuery: Transaction['dcqlQuery']
         clientId: Transaction['clientId']
+        verifierId: Transaction['verifierId']
         state?: string
         nonce?: string
       }
@@ -64,6 +66,7 @@ export const firestoreVerifierTransactionDataStore = (
         transaction_data_expires_at: data.transaction_data_expires_at.toMillis(),
         dcqlQuery: data.dcqlQuery,
         clientId: data.clientId,
+        verifierId: data.verifierId,
         state: data.state,
         nonce: data.nonce,
       })

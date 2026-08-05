@@ -441,7 +441,7 @@ describe('Vcknots', () => {
         }
       })
 
-      await vk.verifier.verifyPresentations(verifierId, response, authzRequest.transactionId, {})
+      await vk.verifier.verifyPresentations(response, authzRequest.transactionId)
 
       mock.reset()
     })
@@ -494,7 +494,7 @@ describe('Vcknots', () => {
           }),
         }
       })
-      await vk.verifier.verifyPresentations(verifierId, response, authzRequest.transactionId, {})
+      await vk.verifier.verifyPresentations(response, authzRequest.transactionId)
 
       mock.reset()
     })
@@ -536,12 +536,9 @@ describe('Vcknots', () => {
         vp_token: { my_credential: [sampleDcSdJwtVp] },
       })
 
-      await vkWithCnonceStore.verifier.verifyPresentations(
-        verifierId,
-        response,
-        kbAuthzRequest.transactionId,
-        { isKbJwt: true }
-      )
+      await vkWithCnonceStore.verifier.verifyPresentations(response, kbAuthzRequest.transactionId, {
+        isKbJwt: true,
+      })
 
       mock.reset()
     })

@@ -560,11 +560,12 @@ describe('VerifierFlow', () => {
       mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
         dcqlQuery: { dcql_query: { credentials: [{ id: 'my_vp_cred', format: 'jwt_vc_json' }] } },
         clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
+        verifierId,
       }))
       mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
       mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => vpPayload)
 
-      const result = await verifierFlow.verifyPresentations(verifierId, response, 'txn-123', {})
+      const result = await verifierFlow.verifyPresentations(response, 'txn-123')
       assert.deepEqual(result, { my_vp_cred: [vpPayload] })
 
       assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
@@ -598,6 +599,7 @@ describe('VerifierFlow', () => {
             ],
           },
         },
+        verifierId,
       }))
       mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
       mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({}))
@@ -605,7 +607,7 @@ describe('VerifierFlow', () => {
       const vpToken = makeJwt({ alg: 'ES256' }, { vp: {}, nonce: 'n' })
       const response = AuthorizationResponse({ vp_token: { cred_a: [vpToken] } })
 
-      await assert.rejects(verifierFlow.verifyPresentations(verifierId, response, 'txn-123', {}), {
+      await assert.rejects(verifierFlow.verifyPresentations(response, 'txn-123'), {
         name: 'INVALID_VP_TOKEN',
       })
     })
@@ -625,11 +627,12 @@ describe('VerifierFlow', () => {
             credentials: [{ id: 'cred_a', format: 'jwt_vc_json' }],
           },
         },
+        verifierId,
       }))
 
       const response = AuthorizationResponse({ vp_token: { cred_a: [] } })
 
-      await assert.rejects(verifierFlow.verifyPresentations(verifierId, response, 'txn-123', {}), {
+      await assert.rejects(verifierFlow.verifyPresentations(response, 'txn-123'), {
         name: 'INVALID_VP_TOKEN',
       })
     })
@@ -654,6 +657,7 @@ describe('VerifierFlow', () => {
             credential_sets: [{ options: [['cred_a'], ['cred_b', 'cred_c']], required: true }],
           },
         },
+        verifierId,
       }))
       mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
       mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({}))
@@ -662,7 +666,7 @@ describe('VerifierFlow', () => {
       const vpToken = makeJwt({ alg: 'ES256' }, { vp: {}, nonce: 'n' })
       const response = AuthorizationResponse({ vp_token: { cred_b: [vpToken] } })
 
-      await assert.rejects(verifierFlow.verifyPresentations(verifierId, response, 'txn-123', {}), {
+      await assert.rejects(verifierFlow.verifyPresentations(response, 'txn-123'), {
         name: 'INVALID_VP_TOKEN',
       })
     })
@@ -684,12 +688,13 @@ describe('VerifierFlow', () => {
       mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
         dcqlQuery: { dcql_query: { credentials: [{ id: 'cred_a', format: 'jwt_vc_json' }] } },
         clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
+        verifierId,
         state: 'expected-state',
       }))
       mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
       mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({}))
 
-      await verifierFlow.verifyPresentations(verifierId, response, 'txn-123', {})
+      await verifierFlow.verifyPresentations(response, 'txn-123')
     })
 
     it('should throw INVALID_REQUEST when response state does not match transaction state', async () => {
@@ -709,10 +714,11 @@ describe('VerifierFlow', () => {
       mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
         dcqlQuery: { dcql_query: { credentials: [{ id: 'cred_a', format: 'jwt_vc_json' }] } },
         clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
+        verifierId,
         state: 'expected-state',
       }))
 
-      await assert.rejects(verifierFlow.verifyPresentations(verifierId, response, 'txn-123', {}), {
+      await assert.rejects(verifierFlow.verifyPresentations(response, 'txn-123'), {
         name: 'INVALID_REQUEST',
       })
     })
@@ -731,10 +737,11 @@ describe('VerifierFlow', () => {
       mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
         dcqlQuery: { dcql_query: { credentials: [{ id: 'cred_a', format: 'jwt_vc_json' }] } },
         clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
+        verifierId,
         state: 'expected-state',
       }))
 
-      await assert.rejects(verifierFlow.verifyPresentations(verifierId, response, 'txn-123', {}), {
+      await assert.rejects(verifierFlow.verifyPresentations(response, 'txn-123'), {
         name: 'INVALID_REQUEST',
       })
     })

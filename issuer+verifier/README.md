@@ -178,7 +178,7 @@ Verify the response sent by the wallet.
 // req represents the HTTP request submitted by wallet
 const response = VerifierAuthorizationResponse(req.json())
 // transactionId was returned by createAuthzRequest and stored alongside the session
-await verifier.verifyPresentations(verifierId, response, transactionId)
+await verifier.verifyPresentations(response, transactionId)
 console.log('Verification Successful!')
 ```
 

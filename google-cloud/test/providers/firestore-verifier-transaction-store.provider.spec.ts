@@ -22,6 +22,7 @@ describe('firestoreVerifierTransactionDataStore', () => {
       },
     },
     clientId: 'redirect_uri:https://example.com',
+    verifierId: 'https://example.com',
   })
 
   afterEach(() => {

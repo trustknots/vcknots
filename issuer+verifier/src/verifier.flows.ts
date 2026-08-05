@@ -89,7 +89,6 @@ export type VerifierFlow = {
   }>
   deleteTransaction(transactionId: string): Promise<void>
   verifyPresentations: (
-    id: ClientId,
     response: AuthorizationResponse,
     transactionId: string,
     options?: VerifyPresentationOptions
@@ -278,6 +277,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         TransactionRecord({
           dcqlQuery: parsedQuery,
           clientId: client_id,
+          verifierId,
           state: options.state,
           nonce,
         })
@@ -410,14 +410,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
     async deleteTransaction(transactionId) {
       await transactionDataStore$.delete(TransactionId(transactionId))
     },
-    async verifyPresentations(id, response, transactionId, options) {
-      const verifier = await verifierMetadata$.fetch(id)
-      if (!verifier) {
-        throw raise('VERIFIER_NOT_FOUND', {
-          message: 'verifier is not found.',
-        })
-      }
-
+    async verifyPresentations(response, transactionId, options) {
       if (!transactionId) {
         throw err('ILLEGAL_ARGUMENT', {
           message: 'transaction_id is required.',
@@ -427,6 +420,11 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       if (!transaction) {
         throw err('TRANSACTION_ID_NOT_FOUND', {
           message: 'Transaction is not found.',
+        })
+      }
+      if (!(await verifierMetadata$.fetch(transaction.verifierId))) {
+        throw raise('VERIFIER_NOT_FOUND', {
+          message: 'verifier is not found.',
         })
       }
       if (transaction.state !== undefined) {

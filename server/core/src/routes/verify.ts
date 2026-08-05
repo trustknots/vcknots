@@ -153,7 +153,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
   // Receive the vp_token from the request and verify it
   verifyApp.post('/callback', async (c) => {
     try {
-      const verifierId = VerifierClientId(baseUrl)
       const contentType = normalizeContentType(c.req.header('content-type') ?? '')
 
       if (contentType !== 'application/x-www-form-urlencoded') {
@@ -180,7 +179,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         return c.json(resolved.error, 400)
       }
       const vpPayload = await verifierFlow.verifyPresentations(
-        verifierId,
         authorizationResponse,
         resolved.transactionId
       )
@@ -198,7 +196,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
   verifyApp.post('/callback-kbjwt', async (c) => {
     try {
       console.log('callback-kbjwt')
-      const verifierId = VerifierClientId(baseUrl)
       const contentType = normalizeContentType(c.req.header('content-type') ?? '')
 
       if (contentType !== 'application/x-www-form-urlencoded') {
@@ -222,7 +219,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         return c.json(resolved.error, 400)
       }
       const vpPayload = await verifierFlow.verifyPresentations(
-        verifierId,
         authorizationResponse,
         resolved.transactionId,
         { isKbJwt: true }

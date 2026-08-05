@@ -304,7 +304,6 @@ This is an endpoint where the Verifier receives the `vp_token` returned from the
 ```typescript
 verifyApp.post('/verify/callback', async (c) => {
   try {
-    const verifierId = VerifierClientId(baseUrl)
     const parsed = parseFormPayload(await c.req.formData())
     if (!parsed.ok) {
       return c.json(parsed.error, 400)
@@ -317,7 +316,7 @@ verifyApp.post('/verify/callback', async (c) => {
     // `lookupTransactionId` is a placeholder and must be implemented by your application.
     const transactionId = await lookupTransactionId(authorizationResponse.state)
 
-    const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, transactionId)
+    const vpPayload = await verifierFlow.verifyPresentations(authorizationResponse, transactionId)
 
     return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
   } catch (err) {
@@ -613,7 +612,6 @@ Verifies the VP token.
 
 ```typescript
 verifyPresentations(
-  id: ClientId,
   response: AuthorizationResponse,
   transactionId: string,
   options?: VerifyPresentationOptions
@@ -621,7 +619,7 @@ verifyPresentations(
 ```
 
 **Parameters**:
-- `id`: Identifier of the Verifier ([VerifierClientId](#VerifierClientId))
+
 - `response`: Information used for verification ([Verifierauthorizationresponse](#Verifierauthorizationresponse))
 - `transactionId`: The `transactionId` returned by `createAuthzRequest`. Used to look up the original DCQL query for the authorization request.
 - `options`: [VerifyPresentationOptions](#VerifyPresentationOptions)

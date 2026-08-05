@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { Dcql } from './dcql.type'
 import { ClientIdentifier } from './client-id-scheme.types'
+import { ClientId } from './client-id.types'
 
 const transactionIdSchema = z.string().brand('TransactionId')
 
@@ -9,6 +10,7 @@ const transactionSchema = z.object({
   dcqlQuery: Dcql.schema,
   transaction_data_expires_at: z.number(),
   clientId: ClientIdentifier.schema,
+  verifierId: ClientId.schema,
   state: z.string().optional(),
   nonce: z.string().optional(),
 })
@@ -16,6 +18,7 @@ const transactionSchema = z.object({
 const transactionRecordSchema = z.object({
   dcqlQuery: Dcql.schema,
   clientId: ClientIdentifier.schema,
+  verifierId: ClientId.schema,
   state: z.string().optional(),
   nonce: z.string().optional(),
 })

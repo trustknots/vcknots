@@ -305,7 +305,6 @@ Wallet から返送される `vp_token` を受け取り、Verifier 側で検証 
 ```typescript
 verifyApp.post('/verify/callback', async (c) => {
   try {
-    const verifierId = VerifierClientId(baseUrl)
     const parsed = parseFormPayload(await c.req.formData())
     if (!parsed.ok) {
       return c.json(parsed.error, 400)
@@ -318,7 +317,7 @@ verifyApp.post('/verify/callback', async (c) => {
     // アプリケーション側で実装するプレースホルダーとして置き換えてください。
     const transactionId = await lookupTransactionId(authorizationResponse.state)
 
-    const vpPayload = await verifierFlow.verifyPresentations(verifierId, authorizationResponse, transactionId)
+    const vpPayload = await verifierFlow.verifyPresentations(authorizationResponse, transactionId)
 
     return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
   } catch (err) {
@@ -619,15 +618,14 @@ VP Tokenを検証します。
 
 ```typescript
 verifyPresentations(
-  id: ClientId,
   response: AuthorizationResponse,
   transactionId: string,
-  options: VerifyPresentationOptions
+  options?: VerifyPresentationOptions
 ): Promise<Record<string, VpTokenPayload[]>>
 ```
 
 **パラメータ**:
-- `id`: Verifierの識別子（[VerifierClientId](#VerifierClientId)）
+
 - `response`: 検証に利用する情報（[Verifierauthorizationresponse](#Verifierauthorizationresponse)）
 - `transactionId`: `createAuthzRequest` が返した `transactionId`。認可リクエスト時の DCQL クエリを照合するために使用します。
 - `options`: [VerifyPresentationOptions](#VerifyPresentationOptions)
