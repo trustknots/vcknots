@@ -36,3 +36,7 @@ jobs:
 
       - name: Build
         run: pnpm --filter ...@trustknots/server-aws... build
+
+      - name: Run tests
+        run: |
+          pnpm --filter ...@trustknots/server-aws test

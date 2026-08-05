@@ -35,3 +35,7 @@ jobs:
 
       - name: Build
         run: pnpm --filter ...@trustknots/aws... build
+
+      - name: Run tests
+        run: |
+          pnpm --filter ...@trustknots/aws test:ci
