@@ -143,5 +143,5 @@ sequenceDiagram
     infraint-->>vcknots: Result
     vcknots-->>vcknots: Verify Credential
     vcknots-->>verifier: Verification Result
-    verifier-->>wallet: Accept / Reject
+    verifier-->>verifier: Apply Business Policy<br/>Accept / Reject
 ```

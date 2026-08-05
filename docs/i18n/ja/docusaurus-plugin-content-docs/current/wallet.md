@@ -1,9 +1,5 @@
 ---
-<<<<<<< HEAD
-sidebar_position: 5
-=======
 sidebar_position: 13
->>>>>>> b431cc6 (docs: sort pages)
 ---
 
 # Wallet機能のセットアップと使用方法
