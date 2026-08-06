@@ -476,6 +476,11 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
         const providerKey = format === 'jwt_vc_json' ? 'jwt_vp_json' : format
         const provider = selectProvider(verifiablePresentation$, providerKey)
+        if (!provider) {
+          throw err('UNSUPPORTED_VP_TOKEN', {
+            message: `VP format '${format}' is not supported.`,
+          })
+        }
 
         // Limitations (not yet supported):
         //   - claim_sets: represents OR conditions between alternative claim sets; when present,

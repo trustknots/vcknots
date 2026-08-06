@@ -37,9 +37,17 @@ export function createDirectPostVpAudTransactionStore(options?: {
     byState.delete(state)
   }
 
+  const sweepExpired = (): void => {
+    const now = Date.now()
+    for (const [key, val] of byState) {
+      if (now > val.expiresAt) byState.delete(key)
+    }
+  }
+
   const reserve = (
     state: string
   ): { ok: true } | { ok: false; error: { error: string; error_description: string } } => {
+    sweepExpired()
     const existing = byState.get(state)
     if (existing !== undefined) {
       if (Date.now() <= existing.expiresAt) {

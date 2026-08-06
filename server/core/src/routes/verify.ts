@@ -306,34 +306,30 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           : 'x509_san_dns:localhost',
     }
 
-    const reserved = vpAudTx.reserve(requestObject.state)
-    if (!reserved.ok) {
-      return c.json(reserved.error, 400)
-    }
+    let reserved: ReturnType<typeof vpAudTx.reserve> | undefined
     try {
+      reserved = vpAudTx.reserve(requestObject.state)
+      if (!reserved.ok) {
+        return c.json(reserved.error, 400)
+      }
       const verifierId = VerifierClientId(baseUrl)
-      const { request, transactionId: verifierTxId } = await verifierFlow
-        .createAuthzRequest(
-          verifierId,
-          'vp_token',
-          requestObject.client_id,
-          'direct_post',
-          requestObject.query,
-          requestObject.is_request_uri,
-          {
-            state: requestObject.state,
-            base_url: baseUrl,
-            response_uri: requestObject.response_uri ?? `${baseUrl}/callback`,
-            request_uri: `${baseUrl}/request.jwt`,
-            ...(requestObject.is_transaction_data
-              ? { transaction_data: { type: 'sample_type' } }
-              : {}),
-          }
-        )
-        .catch((err: unknown) => {
-          vpAudTx.consume(requestObject.state)
-          throw err
-        })
+      const { request, transactionId: verifierTxId } = await verifierFlow.createAuthzRequest(
+        verifierId,
+        'vp_token',
+        requestObject.client_id,
+        'direct_post',
+        requestObject.query,
+        requestObject.is_request_uri,
+        {
+          state: requestObject.state,
+          base_url: baseUrl,
+          response_uri: requestObject.response_uri ?? `${baseUrl}/callback`,
+          request_uri: `${baseUrl}/request.jwt`,
+          ...(requestObject.is_transaction_data
+            ? { transaction_data: { type: 'sample_type' } }
+            : {}),
+        }
+      )
       vpAudTx.register(requestObject.state, verifierTxId)
       console.log('[verify] direct_post transaction_id:', verifierTxId)
       const encoded = Object.entries(request)
@@ -345,6 +341,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
       return c.text(`openid4vp://authorize?${encoded}`)
     } catch (err) {
+      if (reserved?.ok) {
+        vpAudTx.consume(requestObject.state)
+      }
       const errorResponse = handleError(err)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400
       return c.json(errorResponse, status)
