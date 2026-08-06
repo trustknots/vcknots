@@ -100,7 +100,11 @@ go mod download
 The library exposes its top-level API in the `github.com/trustknots/vcknots/wallet` package. The simplest way to create a wallet is `wallet.NewWallet()`, which initializes every dispatcher component with its default plugin implementation:
 
 ```go
-import "github.com/trustknots/vcknots/wallet"
+import (
+    "log"
+
+    "github.com/trustknots/vcknots/wallet"
+)
 
 w, err := wallet.NewWallet()
 if err != nil {
@@ -124,6 +128,7 @@ package main
 
 import (
     "crypto/x509"
+    "fmt"
     "os"
 
     "github.com/trustknots/vcknots/wallet"
@@ -168,7 +173,9 @@ func newWallet(certPath string) (*wallet.Wallet, error) {
         return nil, err
     }
     certPool := x509.NewCertPool()
-    certPool.AppendCertsFromPEM(certFile)
+    if !certPool.AppendCertsFromPEM(certFile) {
+        return nil, fmt.Errorf("failed to parse certificate: %s", certPath)
+    }
 
     oid4vpPresenter := &oid4vp.Oid4vpPresenter{
         X509TrustChainRoots: certPool,
@@ -268,6 +275,9 @@ The offer URI has the form `openid-credential-offer://?credential_offer=...`. Pa
 
 ```go
 import (
+    "encoding/json"
+    "net/url"
+
     "github.com/trustknots/vcknots/wallet"
     "github.com/trustknots/vcknots/wallet/credential"
     "github.com/trustknots/vcknots/wallet/receiver"
@@ -323,7 +333,11 @@ Notes on `ReceiveCredentialRequest`:
 After receiving a request URI in the form `openid4vp://authorize?...` from the verifier (typically by scanning a QR code; with the local sample server, via `POST /request` or `POST /request-object`), call `PresentCredential`:
 
 ```go
-import sdjwtvc "github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
+import (
+    "log"
+
+    sdjwtvc "github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
+)
 
 func presentCredential(w *wallet.Wallet, key wallet.IKeyEntry, oid4vpURI string) error {
     // Options for SD-JWT VC presentations: selective disclosure and Key Binding JWT
@@ -343,10 +357,10 @@ func presentCredential(w *wallet.Wallet, key wallet.IKeyEntry, oid4vpURI string)
 }
 ```
 
-`PresentCredential` parses the OID4VP request (including JAR request objects referenced by `request_uri`, whose signatures are verified against `X509TrustChainRoots`), selects the most recently received credential from the store (matching against the presentation definition is not performed yet), serializes and signs the Verifiable Presentation with `key`, and posts it to the verifier's `response_uri` (for `response_mode=direct_post`) or `redirect_uri`. The returned string is the redirect URI provided by the verifier, or empty when there is none.
+`PresentCredential` parses the OID4VP request (including JAR request objects referenced by `request_uri`, whose signatures are verified against `X509TrustChainRoots`), selects the most recently received credential from the store (matching against the presentation definition is not performed yet), serializes and signs the Verifiable Presentation with `key`, and posts it to the verifier's `response_uri` (`response_mode=direct_post`). The wallet does not send anything to `redirect_uri`; when the verifier's response contains a `redirect_uri`, it is returned to the caller as the return value, or empty when there is none.
 
 * **Presentation options:** The third argument accepts a format-specific options value. For SD-JWT VC, `sdjwtvc.SdJwtVcPresentationOptions` controls which claims are disclosed (`SelectedClaims`) and whether a Key Binding JWT is attached (`RequireKeyBinding`). The KB-JWT audience and nonce are filled automatically from the OID4VP request (`client_id` and `nonce`), as are `transaction_data` hashes when the request contains transaction data. Pass `nil` to use the default options for the credential's format (for JWT-VC presentations, `nil` is typical).
-* **Redirect handling:** Use `PresentCredentialWithOptions` with `wallet.PresentCredentialOptions{OnRedirect: func(uri string) error {...}}` when you want a callback invoked with the verifier's redirect URI.
+* **Redirect handling:** Use `PresentCredentialWithOptions` with `&wallet.PresentCredentialOptions{OnRedirect: func(uri string) error {...}}` when you want a callback invoked with the verifier's redirect URI.
 
 ### 3-4. Referencing Saved Credentials
 
@@ -381,7 +395,12 @@ When receiving a credential, the wallet must access the issuer's `.well-known/op
 `ReceiveCredential` fetches this metadata implicitly, but you can also fetch it explicitly with `FetchCredentialIssuerMetadata` and pass the result via the `CachedIssuerMetadata` field of `ReceiveCredentialRequest`. This avoids re-fetching the metadata on every `ReceiveCredential` call.
 
 ```go
-import receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
+import (
+    "log"
+    "net/url"
+
+    receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
+)
 
 func fetchIssuerMetadata(w *wallet.Wallet) (*receiverTypes.CredentialIssuerMetadata, error) {
     // Note: pass the issuer's base URL; the /.well-known/... path is resolved internally
@@ -536,7 +555,7 @@ func (w *Wallet) GetCredentialEntry(id string) (*SavedCredential, error)
 - `id`: The credential entry ID
 
 **Return value**:
-- The stored credential ([SavedCredential](#SavedCredential)), or `nil` when not found
+- The stored credential ([SavedCredential](#SavedCredential)); with the default local store, an error is returned when the ID does not exist
 
 ### FetchCredentialIssuerMetadata
 

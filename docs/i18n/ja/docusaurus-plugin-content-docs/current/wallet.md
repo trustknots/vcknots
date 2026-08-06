@@ -104,7 +104,11 @@ go mod download
 最も簡単な初期化は `wallet.NewWallet()` で、すべてのディスパッチャコンポーネントをデフォルトのプラグイン実装で初期化します。
 
 ```go
-import "github.com/trustknots/vcknots/wallet"
+import (
+    "log"
+
+    "github.com/trustknots/vcknots/wallet"
+)
 
 w, err := wallet.NewWallet()
 if err != nil {
@@ -132,6 +136,7 @@ package main
 
 import (
     "crypto/x509"
+    "fmt"
     "os"
 
     "github.com/trustknots/vcknots/wallet"
@@ -176,7 +181,9 @@ func newWallet(certPath string) (*wallet.Wallet, error) {
         return nil, err
     }
     certPool := x509.NewCertPool()
-    certPool.AppendCertsFromPEM(certFile)
+    if !certPool.AppendCertsFromPEM(certFile) {
+        return nil, fmt.Errorf("failed to parse certificate: %s", certPath)
+    }
 
     oid4vpPresenter := &oid4vp.Oid4vpPresenter{
         X509TrustChainRoots: certPool,
@@ -282,6 +289,9 @@ offer URI は `openid-credential-offer://?credential_offer=...` という形式�
 
 ```go
 import (
+    "encoding/json"
+    "net/url"
+
     "github.com/trustknots/vcknots/wallet"
     "github.com/trustknots/vcknots/wallet/credential"
     "github.com/trustknots/vcknots/wallet/receiver"
@@ -339,7 +349,11 @@ func receiveSDJwtCredential(w *wallet.Wallet, key wallet.IKeyEntry, offerURI str
 Verifier から `openid4vp://authorize?...` 形式のリクエスト URI を受け取ったら（通常は QR コードのスキャンで取得します。ローカルのサンプルサーバーでは `POST /request` または `POST /request-object` で作成できます）、`PresentCredential` を呼び出します。
 
 ```go
-import sdjwtvc "github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
+import (
+    "log"
+
+    sdjwtvc "github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
+)
 
 func presentCredential(w *wallet.Wallet, key wallet.IKeyEntry, oid4vpURI string) error {
     // SD-JWT VC提示のオプション: 選択的開示とKey Binding JWT
@@ -359,14 +373,15 @@ func presentCredential(w *wallet.Wallet, key wallet.IKeyEntry, oid4vpURI string)
 }
 ```
 
-`PresentCredential` は、OID4VP リクエストをパースし（`request_uri` で参照される JAR Request Object も含み、その署名は `X509TrustChainRoots` に対して検証されます）、保存済みの Credential のうち最も新しく受領した 1 件を選択し（presentation definition との照合は現時点では行いません）、`key` で Verifiable Presentation をシリアライズして署名し、Verifier の `response_uri`（`response_mode=direct_post` の場合）または `redirect_uri` に POST します。
-戻り値の文字列は Verifier が提示したリダイレクト URI で、リダイレクトがない場合は空文字列です。
+`PresentCredential` は、OID4VP リクエストをパースし（`request_uri` で参照される JAR Request Object も含み、その署名は `X509TrustChainRoots` に対して検証されます）、保存済みの Credential のうち最も新しく受領した 1 件を選択し（presentation definition との照合は現時点では行いません）、`key` で Verifiable Presentation をシリアライズして署名し、Verifier の `response_uri`（`response_mode=direct_post`）に POST します。
+Wallet が `redirect_uri` に送信することはありません。
+Verifier の応答に `redirect_uri` が含まれる場合、その値が戻り値として呼び出し側に返されます（含まれない場合は空文字列です）。
 
 * **提示オプション:** 第 3 引数にはフォーマット固有のオプションを渡します。
 SD-JWT VC では `sdjwtvc.SdJwtVcPresentationOptions` により、開示するクレーム（`SelectedClaims`）と Key Binding JWT の付与（`RequireKeyBinding`）を制御します。
 KB-JWT の audience と nonce は OID4VP リクエスト（`client_id` と `nonce`）から自動的に設定されます。リクエストに transaction data が含まれる場合の `transaction_data` ハッシュも同様です。
 `nil` を渡すと、その Credential のフォーマットに応じたデフォルトのオプションが使われます（JWT-VC の提示では `nil` が典型的です）。
-* **リダイレクト処理:** Verifier のリダイレクト URI をコールバックで受け取りたい場合は、`PresentCredentialWithOptions` に `wallet.PresentCredentialOptions{OnRedirect: func(uri string) error {...}}` を渡します。
+* **リダイレクト処理:** Verifier のリダイレクト URI をコールバックで受け取りたい場合は、`PresentCredentialWithOptions` に `&wallet.PresentCredentialOptions{OnRedirect: func(uri string) error {...}}` を渡します。
 
 ### 3-4. 保存されたCredentialの参照
 
@@ -404,7 +419,12 @@ Credential を受領する際、wallet は Issuer の `.well-known/openid-creden
 これにより、`ReceiveCredential` を呼び出すたびにメタデータを再取得するオーバーヘッドを回避できます。
 
 ```go
-import receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
+import (
+    "log"
+    "net/url"
+
+    receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
+)
 
 func fetchIssuerMetadata(w *wallet.Wallet) (*receiverTypes.CredentialIssuerMetadata, error) {
     // 注意: IssuerのベースURLを渡します。/.well-known/... パスは内部で解決されます
@@ -559,7 +579,7 @@ func (w *Wallet) GetCredentialEntry(id string) (*SavedCredential, error)
 - `id`: Credential エントリの ID
 
 **戻り値**:
-- 保存された Credential（[SavedCredential](#SavedCredential)）。見つからない場合は `nil`
+- 保存された Credential（[SavedCredential](#SavedCredential)）。デフォルトのローカルストアでは、ID が存在しない場合はエラーを返します
 
 ### FetchCredentialIssuerMetadata
 
