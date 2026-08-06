@@ -46,7 +46,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
-// fetchOID4VPURIFromServer constructs a presentation definition from the credential,
+// fetchOID4VPURIFromServer constructs a DCQL query from the credential,
 // sends it to the local server, and returns the OID4VP authorization request URI.
 func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger *slog.Logger) string {
 	verifierURL := "http://localhost:8080"
@@ -86,46 +86,15 @@ func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger
 		specificType = "urn:eudi:pid:1"
 	}
 
-	type Field struct {
-		Path           []string               `json:"path"`
-		Filter         map[string]interface{} `json:"filter,omitempty"`
-		IntentToRetain *bool                  `json:"intent_to_retain,omitempty"`
-	}
-
-	fields := []Field{
-		{
-			Path: []string{"$.vct"},
-			Filter: map[string]interface{}{
-				"type":  "string",
-				"const": specificType,
-			},
-		},
-	}
-
-	for _, field := range subjectFields {
-		falseVal := false
-		fields = append(fields, Field{
-			Path:           []string{"$." + field},
-			IntentToRetain: &falseVal,
-		})
-	}
-
 	requestBody := map[string]interface{}{
 		"query": map[string]interface{}{
-			"presentation_definition": map[string]interface{}{
-				"id": "dynamic-presentation-sdjwt",
-				"input_descriptors": []map[string]interface{}{
+			"dcql_query": map[string]interface{}{
+				"credentials": []map[string]interface{}{
 					{
-						"id":      "credential-request",
-						"name":    "SD-JWT Credential",
-						"purpose": "Verify credential",
-						"format": map[string]interface{}{
-							"dc+sd-jwt": map[string]interface{}{
-								"alg": []string{"ES256"},
-							},
-						},
-						"constraints": map[string]interface{}{
-							"fields": fields,
+						"id":     "credential-request",
+						"format": "dc+sd-jwt",
+						"meta": map[string]interface{}{
+							"vct_values": []string{specificType},
 						},
 					},
 				},
@@ -142,7 +111,7 @@ func fetchOID4VPURIFromServer(receivedCredential *wallet.SavedCredential, logger
 	if err != nil {
 		panic(err)
 	}
-	logger.Info("Generated presentation definition:")
+	logger.Info("Generated DCQL query:")
 	fmt.Println(string(formattedJSON))
 
 	jsonBody, err := json.Marshal(requestBody)
