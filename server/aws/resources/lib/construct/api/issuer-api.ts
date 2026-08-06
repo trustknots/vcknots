@@ -2,7 +2,7 @@ import { Construct } from 'constructs';
 import { Stack } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { DataStores } from '../data/data-stores';
-import { LambdaApi } from './lambda-api';
+import { LambdaApi, requiredEnv } from './lambda-api';
 
 const ISSUER_KEY_ALIAS_PREFIX = 'alias/vcknots/issuers/';
 // Must match ISSUER_KEY_TAG_KEY in aws/src/providers/kms-issuer-signature-key-store.provider.ts.
@@ -23,6 +23,7 @@ export class IssuerApi extends Construct {
         ISSUERS_TABLE_NAME: dataStores.issuersTable.tableName,
         NONCES_TABLE_NAME: dataStores.noncesTable.tableName,
         PRE_CODES_TABLE_NAME: dataStores.preCodesTable.tableName,
+        TX_CODE_PEPPER: requiredEnv('TX_CODE_PEPPER'),
       },
     });
 
