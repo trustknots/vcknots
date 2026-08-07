@@ -61,11 +61,13 @@ export const secretsManagerVerifierCertificateStore = (
         await client.send(new CreateSecretCommand({ Name: name, SecretString: secretString }))
         return
       } catch (error) {
-        // A secret awaiting deletion blocks both create and update and only an operator can
-        // restore it, so say that instead of surfacing the raw SDK message.
+        // A secret awaiting deletion keeps its name reserved and rejects both create and
+        // update, so save() stays broken for the whole recovery window (up to 30 days) until
+        // an operator intervenes. InvalidRequestException covers other state conflicts too,
+        // hence the hedge and the appended SDK message.
         if (isSecretsManagerError(error, 'InvalidRequestException')) {
           raise('internal_server_error', {
-            message: `Verifier certificate secret ${name} is scheduled for deletion. Restore or purge it before saving again.`,
+            message: `Failed to create verifier certificate secret ${name}. It may be scheduled for deletion — restore it, or purge it with ForceDeleteWithoutRecovery, before saving again. Cause: ${(error as Error).message}`,
             cause: error instanceof Error ? error : undefined,
           })
         }
