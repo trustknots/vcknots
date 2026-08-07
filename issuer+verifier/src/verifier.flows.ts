@@ -10,13 +10,14 @@ import { RequestObject } from './request-object.types'
 import { DeepPartialUnknown } from './type.utils'
 import { VcknotsContext } from './vcknots.context'
 import { VerifierMetadata } from './verifier-metadata.types'
-
 import { RequestObjectId } from './request-object-id.types'
 import { Certificate } from './signature-key.types'
 import { Jwk } from './jwk.type'
 import { exportJWK, importSPKI } from 'jose'
 import { ClientIdentifier } from './client-id-scheme.types'
+import { Cnonce } from './cnonce.types'
 import { VpTokenPayload } from './presentation.types'
+import { TransactionId, TransactionRecord } from './transaction-id.types'
 
 type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
@@ -43,11 +44,7 @@ export type CreateAuthzRequestOptions = {
   transaction_data?: { type: string; transaction_data_hashes_alg?: string[] }
 }
 export type VerifyPresentationOptions = {
-  /** OAuth/OID4VP client_id value the VP / KB-JWT must bind to (e.g. JWT `aud`). */
-  expectedAud: ClientIdentifier
-  specifiedDisclosures?: string[]
   isKbJwt?: boolean
-  expectedNonce?: string
   expectedTransactionDataHashes?: string[]
 }
 export type FindRequestObjectOptions = {
@@ -55,6 +52,11 @@ export type FindRequestObjectOptions = {
   // https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.11 is not supported
   // wallet_metadata? :
   // wallet_nonce?: string
+}
+
+type CreateAuthzRequestResponse = {
+  request: AuthorizationRequest
+  transactionId: string
 }
 
 export type VerifierFlow = {
@@ -73,17 +75,24 @@ export type VerifierFlow = {
     query: DeepPartialUnknown<Dcql>,
     isRequestUri: boolean,
     options: CreateAuthzRequestOptions
-  ): Promise<AuthorizationRequest>
+  ): Promise<CreateAuthzRequestResponse>
   findRequestObject(
     verifierId: ClientId,
     objectId: RequestObjectId,
     options?: FindRequestObjectOptions
   ): Promise<string>
+  getTransaction(transactionId: string): Promise<{
+    clientId: ClientIdentifier
+    state?: string
+    dcqlQuery: Dcql
+    expiresAt: number
+  }>
+  deleteTransaction(transactionId: string): Promise<void>
   verifyPresentations: (
-    id: ClientId,
     response: AuthorizationResponse,
-    options: VerifyPresentationOptions
-  ) => Promise<VpTokenPayload>
+    transactionId: string,
+    options?: VerifyPresentationOptions
+  ) => Promise<Record<string, VpTokenPayload[]>>
 }
 
 export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow => {
@@ -99,6 +108,8 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   const certificate$ = context.providers.get('certificate-provider')
   const transactionData$ = context.providers.get('transaction-data-provider')
   const verifiablePresentation$ = context.providers.get('verify-verifiable-presentation-provider')
+  const transactionId$ = context.providers.get('transaction-id-provider')
+  const transactionDataStore$ = context.providers.get('verifier-transaction-store-provider')
 
   return {
     async findVerifierCertificate(id) {
@@ -220,12 +231,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       options
     ) {
       const client_id_scheme = client_id.split(':')[0]
-      const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_scheme)
-      if (!authzRequestJAR) {
-        throw err('UNSUPPORTED_CLIENT_ID_SCHEME', {
-          message: 'client_id_scheme is not supported.',
-        })
-      }
+
       if (client_id_scheme === 'x509_san_dns' || client_id_scheme === 'x509_san_uri') {
         const certificate = await certificateStore$.fetch(verifierId)
         if (!certificate) {
@@ -267,11 +273,32 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       // when using request_uri
       if (isRequestUri ?? true) {
+        const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_scheme)
+        if (!authzRequestJAR) {
+          throw err('UNSUPPORTED_CLIENT_ID_SCHEME', {
+            message: 'client_id_scheme is not supported.',
+          })
+        }
         if (!options.base_url) {
           throw err('INVALID_REQUEST', {
             message: 'base_url is required when is_request_uri is true',
           })
         }
+
+        const transactionId = await transactionId$.generate()
+        const nonce = await cnonce$.generate()
+        await nonceStore$.save(nonce)
+        await transactionDataStore$.save(
+          transactionId,
+          TransactionRecord({
+            dcqlQuery: parsedQuery,
+            clientId: client_id,
+            verifierId,
+            state: options.state,
+            nonce,
+          })
+        )
+
         // create RequestObjectId
         const requestObjectId = await requestObjectId$.generate()
 
@@ -286,32 +313,52 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           aud: 'https://self-issued.me/v2',
           client_metadata: metadata,
           response_mode: response_mode || 'direct_post',
+          nonce,
           ...parsedQuery,
           ...(transaction_data.length > 0 ? { transaction_data } : {}),
         })
         await requestObjectStore$.save(requestObjectId, requestObject)
 
-        return AuthorizationRequest({
-          client_id: client_id,
-          request_uri: options.request_uri
-            ? `${options.request_uri}/${encodeURIComponent(requestObjectId)}`
-            : `${options.base_url}/request.jwt/${encodeURIComponent(requestObjectId)}`,
-        })
+        return {
+          request: AuthorizationRequest({
+            client_id: client_id,
+            request_uri: options.request_uri
+              ? `${options.request_uri}/${encodeURIComponent(requestObjectId)}`
+              : `${options.base_url}/request.jwt/${encodeURIComponent(requestObjectId)}`,
+          }),
+          transactionId,
+        }
       }
 
+      const transactionId = await transactionId$.generate()
       const nonce = await cnonce$.generate()
       await nonceStore$.save(nonce)
-      return AuthorizationRequest({
-        client_id: client_id,
-        response_uri: responseUri,
-        response_type: response_type,
-        response_mode: response_mode || 'direct_post',
-        client_id_scheme: client_id_scheme,
-        client_metadata: metadata,
-        nonce,
-        ...parsedQuery,
-        ...(transaction_data.length > 0 ? { transaction_data } : {}),
-      })
+      await transactionDataStore$.save(
+        transactionId,
+        TransactionRecord({
+          dcqlQuery: parsedQuery,
+          clientId: client_id,
+          verifierId,
+          state: options.state,
+          nonce,
+        })
+      )
+
+      return {
+        request: AuthorizationRequest({
+          client_id: client_id,
+          response_uri: responseUri,
+          response_type: response_type,
+          response_mode: response_mode || 'direct_post',
+          client_id_scheme: client_id_scheme,
+          client_metadata: metadata,
+          nonce,
+          state: options.state,
+          ...parsedQuery,
+          ...(transaction_data.length > 0 ? { transaction_data } : {}),
+        }),
+        transactionId,
+      }
     },
     async findRequestObject(verifierId, objectId) {
       const metadata = (await verifierMetadata$.fetch(verifierId)) ?? raise('VERIFIER_NOT_FOUND')
@@ -323,9 +370,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           message: 'Request object is not found.',
         })
       }
-
-      const nonce = await cnonce$.generate()
-      await nonceStore$.save(nonce)
 
       const clientId = requestObject.client_id
       const client_id_scheme = clientId.split(':')[0]
@@ -342,7 +386,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         verifierId,
         requestObject,
         keyAlg,
-        nonce,
         walletNonce
       )
 
@@ -365,56 +408,162 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       return `${encode(header)}.${encode(payload)}.${signature}`
     },
-    async verifyPresentations(id, response, options) {
-      const verifier = await verifierMetadata$.fetch(id)
-      if (!verifier) {
+    async getTransaction(transactionId) {
+      const transaction = await transactionDataStore$.fetch(TransactionId(transactionId))
+      if (!transaction) {
+        throw err('TRANSACTION_ID_NOT_FOUND', {
+          message: 'transaction_id is unknown or already removed',
+        })
+      }
+      return {
+        clientId: transaction.clientId,
+        state: transaction.state,
+        dcqlQuery: transaction.dcqlQuery,
+        expiresAt: transaction.transaction_data_expires_at,
+      }
+    },
+    async deleteTransaction(transactionId) {
+      await transactionDataStore$.delete(TransactionId(transactionId))
+    },
+    async verifyPresentations(response, transactionId, options) {
+      if (!transactionId) {
+        throw err('ILLEGAL_ARGUMENT', {
+          message: 'transaction_id is required.',
+        })
+      }
+      const transaction = await transactionDataStore$.fetch(TransactionId(transactionId))
+      if (!transaction) {
+        throw err('TRANSACTION_ID_NOT_FOUND', {
+          message: 'Transaction is not found.',
+        })
+      }
+      if (!(await verifierMetadata$.fetch(transaction.verifierId))) {
         throw raise('VERIFIER_NOT_FOUND', {
           message: 'verifier is not found.',
         })
       }
-
-      if (Array.isArray(response.vp_token) && response.vp_token.length === 1) {
-        throw err('UNSUPPORTED_VP_TOKEN', {
-          message:
-            'When a single Verifiable Presentation is returned, the array syntax MUST NOT be used.',
-        })
+      if (transaction.state !== undefined) {
+        if (response.state !== transaction.state) {
+          throw err('INVALID_REQUEST', {
+            message: 'unknown or expired state.',
+          })
+        }
       }
 
-      // TODO: Implement
-      if (!response.presentation_submission) {
-        throw err('ILLEGAL_ARGUMENT', {
-          message: 'DCQL is not supported yet',
-        })
-      }
-      if (Array.isArray(response.vp_token) && response.vp_token.length !== 1) {
-        throw err('UNSUPPORTED_VP_TOKEN', {
-          message: 'Submitting multiple verifiable presentations are not supported yet',
-        })
-      }
-      if (typeof response.vp_token !== 'string') {
-        throw err('UNSUPPORTED_VP_TOKEN', {
-          message: 'vp_token object is not supported yet',
-        })
-      }
+      const expectedAud = transaction.clientId
+      const expectedNonce = transaction.nonce
+      const dcql_query = transaction.dcqlQuery.dcql_query
 
-      const format = response.presentation_submission.descriptor_map[0].format
-      const verifyOptions: VerifyVerifiablePresentationVerifyOptions =
-        format === 'dc+sd-jwt'
-          ? {
-              kind: 'dc+sd-jwt',
-              specifiedDisclosures: options.specifiedDisclosures,
-              isKbJwt: options.isKbJwt,
-              expectedAud: options.expectedAud,
-              expectedNonce: options.expectedNonce,
-              expectedTransactionDataHashes: options.expectedTransactionDataHashes,
-            }
-          : { kind: 'jwt_vp_json', expectedAud: options.expectedAud }
-      const responsePresentation = await selectProvider(verifiablePresentation$, format).verify(
-        response.vp_token,
-        verifyOptions
+      const credentialQueryMap = new Map<string, string>(
+        dcql_query.credentials.map((c: { id: string; format: string }) => [c.id, c.format])
       )
 
-      return responsePresentation
+      const results: Record<string, VpTokenPayload[]> = {}
+
+      for (const [credentialQueryId, vpArray] of Object.entries(response.vp_token)) {
+        const format = credentialQueryMap.get(credentialQueryId)
+        if (!format) {
+          throw err('ILLEGAL_ARGUMENT', {
+            message: `Unknown credential query id: ${credentialQueryId}`,
+          })
+        }
+
+        if (vpArray.length === 0) {
+          throw err('INVALID_VP_TOKEN', {
+            message: `Credential query '${credentialQueryId}' must have at least one presentation.`,
+          })
+        }
+
+        const providerKey = format === 'jwt_vc_json' ? 'jwt_vp_json' : format
+        const provider = selectProvider(verifiablePresentation$, providerKey)
+        if (!provider) {
+          throw err('UNSUPPORTED_VP_TOKEN', {
+            message: `VP format '${format}' is not supported.`,
+          })
+        }
+
+        // Limitations (not yet supported):
+        //   - claim_sets: represents OR conditions between alternative claim sets; when present,
+        //     requiredClaimKeys cannot express the OR logic and DCQL-level validation
+        //   - null / number path elements: act as wildcards or array indices and cannot be
+        //     mapped to a specific dot-notation key, so they are not handled here.
+        const credentialQuery = dcql_query.credentials.find(
+          (c: { id: string }) => c.id === credentialQueryId
+        ) as { claims?: { path: (string | number | null)[] }[]; claim_sets?: unknown[] } | undefined
+        const specifiedDisclosures = (credentialQuery?.claims ?? [])
+          .filter((c) => c.path.every((k) => typeof k === 'string'))
+          .map((c) => (c.path as string[]).join('.'))
+
+        const verifyOptions: VerifyVerifiablePresentationVerifyOptions =
+          format === 'dc+sd-jwt'
+            ? options?.isKbJwt
+              ? {
+                  kind: 'dc+sd-jwt',
+                  specifiedDisclosures,
+                  isKbJwt: true,
+                  expectedAud,
+                  expectedNonce,
+                  expectedTransactionDataHashes: options?.expectedTransactionDataHashes,
+                }
+              : {
+                  kind: 'dc+sd-jwt',
+                  specifiedDisclosures,
+                  expectedAud,
+                  expectedNonce,
+                  expectedTransactionDataHashes: options?.expectedTransactionDataHashes,
+                }
+            : { kind: 'jwt_vp_json', expectedAud, expectedNonce }
+
+        const payloads: VpTokenPayload[] = []
+        for (const vp of vpArray) {
+          if (typeof vp !== 'string') {
+            throw err('UNSUPPORTED_VP_TOKEN', {
+              message: 'Non-string VP format is not supported.',
+            })
+          }
+          payloads.push(await provider.verify(vp, verifyOptions))
+        }
+        results[credentialQueryId] = payloads
+      }
+
+      const presentedIds = new Set(Object.keys(results))
+      const credentialSets = dcql_query.credential_sets
+
+      if (!credentialSets) {
+        for (const cred of dcql_query.credentials) {
+          if (!presentedIds.has(cred.id)) {
+            throw err('INVALID_VP_TOKEN', {
+              message: `Required credential query '${cred.id}' was not included in the presentation.`,
+            })
+          }
+        }
+      } else {
+        for (const set of credentialSets) {
+          if (set.required === false) continue
+          const satisfied = set.options.some((option: string[]) =>
+            option.every((id: string) => presentedIds.has(id))
+          )
+          if (!satisfied) {
+            throw err('INVALID_VP_TOKEN', {
+              message: `No option of a required credential_set was fully presented. Options: ${JSON.stringify(set.options)}`,
+            })
+          }
+        }
+      }
+
+      if (expectedNonce) {
+        const nonceValid = await nonceStore$.validate(Cnonce(expectedNonce))
+        if (!nonceValid) {
+          throw err('INVALID_NONCE', {
+            message: 'nonce is not valid.',
+          })
+        }
+        await nonceStore$.revoke(Cnonce(expectedNonce))
+      }
+
+      await transactionDataStore$.delete(TransactionId(transactionId))
+
+      return results
     },
   }
 }

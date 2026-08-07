@@ -18,7 +18,6 @@ export const authzRequestJARKid = (): AuthzRequestJARProvider & WithProviderRegi
       verifierId: ClientId,
       requestObject: RequestObject,
       alg: string,
-      nonce?: string,
       wallet_nonce?: string
     ): Promise<JwtContent> {
       const keyStore$ = this.providers.get('verifier-signature-key-store-provider')
@@ -39,9 +38,6 @@ export const authzRequestJARKid = (): AuthzRequestJARProvider & WithProviderRegi
       const jwtPayload = {
         ...requestObject,
         iat: Math.floor(Date.now() / 1000),
-      }
-      if (nonce) {
-        jwtPayload.nonce = nonce
       }
       // https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.11
       if (wallet_nonce) {

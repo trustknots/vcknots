@@ -19,6 +19,8 @@ import {
   VerifierCertificateStoreProvider,
   CertificateProvider,
   VerifyVerifiablePresentationProvider,
+  TransactionIdProvider,
+  VerifierTransactionDataStoreProvider,
 } from '../src/providers'
 import { VcknotsContext, initializeContext } from '../src/vcknots.context'
 import { VerifierMetadata } from '../src/verifier-metadata.types'
@@ -148,6 +150,22 @@ describe('VerifierFlow', () => {
     getPublicKey: mock.fn(),
   } satisfies CertificateProvider
 
+  const mockTransactionIdProvider = {
+    kind: 'transaction-id-provider',
+    name: 'mock-transaction-id-provider',
+    single: true,
+    generate: mock.fn(),
+  } satisfies TransactionIdProvider
+
+  const mockVerifierTransactionDataStoreProvider = {
+    kind: 'verifier-transaction-store-provider',
+    name: 'mock-verifier-transaction-store-provider',
+    single: true,
+    fetch: mock.fn(),
+    save: mock.fn(),
+    delete: mock.fn(),
+  } satisfies VerifierTransactionDataStoreProvider
+
   beforeEach(() => {
     mock.reset()
   })
@@ -167,6 +185,8 @@ describe('VerifierFlow', () => {
         mockCertificateStoreProvider,
         mockCertificateProvider,
         mockVerifyVerifiablePresentationProvider,
+        mockTransactionIdProvider,
+        mockVerifierTransactionDataStoreProvider,
       ],
     })
     verifierFlow = initializeVerifierFlow(context)
@@ -315,6 +335,8 @@ describe('VerifierFlow', () => {
         }
         return base64url.encode(JSON.stringify(data))
       })
+      mock.method(mockTransactionIdProvider, 'generate', async () => 'txn-id-123')
+      mock.method(mockVerifierTransactionDataStoreProvider, 'save', async () => {})
 
       const req = await verifierFlow.createAuthzRequest(
         ClientId('did:key:verifier'),
@@ -326,11 +348,11 @@ describe('VerifierFlow', () => {
         {}
       )
 
-      AuthorizationRequest(req)
-      if ('request_uri' in req) throw new Error('unexpected request_uri flow')
-      assert.equal(req.response_type, 'vp_token')
-      assert.equal(req.response_mode, 'direct_post')
-      assert.equal(req.nonce, 'nonce-123')
+      AuthorizationRequest(req.request)
+      if ('request_uri' in req.request) throw new Error('unexpected request_uri flow')
+      assert.equal(req.request.response_type, 'vp_token')
+      assert.equal(req.request.response_mode, 'direct_post')
+      assert.equal(req.request.nonce, 'nonce-123')
     })
 
     it('should throw VERIFIER_NOT_FOUND if metadata missing', async () => {
@@ -361,11 +383,15 @@ describe('VerifierFlow', () => {
         },
       })
       mock.method(mockVerifierMetadataStore, 'fetch', async () => metadata)
+      mock.method(mockCnonceProvider, 'generate', async () => 'nonce-req-uri')
+      mock.method(mockCnonceStoreProvider, 'save', async () => {})
       mock.method(mockCredentialQueryProvider, 'generate', async (query: unknown) =>
         Dcql(query as Dcql)
       )
       mock.method(mockRequestObjectIdProvider, 'generate', async () => '1234')
       mock.method(mockRequestObjectStoreProvider, 'save', async () => {})
+      mock.method(mockTransactionIdProvider, 'generate', async () => 'txn-id-123')
+      mock.method(mockVerifierTransactionDataStoreProvider, 'save', async () => {})
 
       const req = await verifierFlow.createAuthzRequest(
         ClientId('https://example.com'),
@@ -388,16 +414,16 @@ describe('VerifierFlow', () => {
         { base_url: 'https://example.com' }
       )
 
-      AuthorizationRequest(req)
-      if (!('request_uri' in req)) throw new Error('expected request_uri flow')
-      assert.equal(typeof req.request_uri, 'string')
+      AuthorizationRequest(req.request)
+      if (!('request_uri' in req.request)) throw new Error('expected request_uri flow')
+      assert.equal(typeof req.request.request_uri, 'string')
       assert.equal(
-        req.request_uri,
+        req.request.request_uri,
         'https://example.com/request.jwt/1234',
         'request_uri should be composed with base_url, verifierId, and generated requestObjectId'
       )
-      assert.equal(mockCnonceProvider.generate.mock.callCount(), 0)
-      assert.equal(mockCnonceStoreProvider.save.mock.callCount(), 0)
+      assert.equal(mockCnonceProvider.generate.mock.callCount(), 1)
+      assert.equal(mockCnonceStoreProvider.save.mock.callCount(), 1)
       assert.equal(mockRequestObjectIdProvider.generate.mock.callCount(), 1)
       assert.equal(mockRequestObjectStoreProvider.save.mock.callCount(), 1)
     })
@@ -456,6 +482,8 @@ describe('VerifierFlow', () => {
         const data = { type, credential_ids: ids }
         return base64url.encode(JSON.stringify(data))
       })
+      mock.method(mockTransactionIdProvider, 'generate', async () => 'txn-id-123')
+      mock.method(mockVerifierTransactionDataStoreProvider, 'save', async () => {})
 
       const req = await verifierFlow.createAuthzRequest(
         ClientId('did:key:verifier'),
@@ -478,14 +506,14 @@ describe('VerifierFlow', () => {
         { transaction_data: { type: 'test_transaction' } }
       )
 
-      AuthorizationRequest(req)
-      if ('request_uri' in req) throw new Error('unexpected request_uri flow')
-      assert.equal(req.response_type, 'vp_token')
-      assert.equal(req.response_mode, 'direct_post')
-      assert.equal(req.nonce, 'nonce-123')
-      assert.ok(req.transaction_data)
-      assert.equal(req.transaction_data.length, 1)
-      const decoded = JSON.parse(base64url.decode(req.transaction_data[0]))
+      AuthorizationRequest(req.request)
+      if ('request_uri' in req.request) throw new Error('unexpected request_uri flow')
+      assert.equal(req.request.response_type, 'vp_token')
+      assert.equal(req.request.response_mode, 'direct_post')
+      assert.equal(req.request.nonce, 'nonce-123')
+      assert.ok(req.request.transaction_data)
+      assert.equal(req.request.transaction_data.length, 1)
+      const decoded = JSON.parse(base64url.decode(req.request.transaction_data[0]))
       assert.equal(decoded.type, 'test_transaction')
       assert.deepEqual(decoded.credential_ids, ['test_credential'])
     })
@@ -504,10 +532,7 @@ describe('VerifierFlow', () => {
             verifiableCredential: [
               makeJwt(
                 { alg: 'ES256', kid: 'did:example:issuer#key-1' },
-                {
-                  vc: minimalVc,
-                  sub: holderDid,
-                }
+                { vc: minimalVc, sub: holderDid }
               ),
             ],
           },
@@ -515,51 +540,33 @@ describe('VerifierFlow', () => {
         }
       )
       const response = AuthorizationResponse({
-        vp_token: vpToken,
-        presentation_submission: {
-          id: 'ps-id',
-          definition_id: 'pd-id',
-          descriptor_map: [
-            {
-              id: '2',
-              format: 'jwt_vp_json',
-              path: '$.vp',
-            },
-          ],
-        },
+        vp_token: { my_vp_cred: [vpToken] },
       })
+      const vpPayload = {
+        vp: {
+          '@context': ['https://www.w3.org/2018/credentials/v1'],
+          type: ['VerifiablePresentation'],
+          verifiableCredential: [makeJwt({ alg: 'ES256', typ: 'JWT' }, minimalVc)],
+        },
+        nonce: 'nonce-123',
+      }
 
       mock.method(mockVerifierMetadataStore, 'fetch', async () =>
         VerifierMetadata({
           client_name: 'test',
-          vp_formats: {
-            jwt_vp_json: {
-              alg_values_supported: ['ES256'],
-            },
-          },
+          vp_formats: { jwt_vc_json: { alg_values_supported: ['ES256'] } },
         })
       )
-      mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
-      mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({
-        vp: {
-          '@context': ['https://www.w3.org/2018/credentials/v1'],
-          type: ['VerifiablePresentation'],
-          verifiableCredential: [makeJwt({ alg: 'ES256', typ: 'JWT' }, minimalVc)],
-        },
-        nonce: 'nonce-123',
+      mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
+        dcqlQuery: { dcql_query: { credentials: [{ id: 'my_vp_cred', format: 'jwt_vc_json' }] } },
+        clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
+        verifierId,
       }))
+      mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
+      mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => vpPayload)
 
-      const result = await verifierFlow.verifyPresentations(verifierId, response, {
-        expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
-      })
-      assert.deepEqual(result, {
-        vp: {
-          '@context': ['https://www.w3.org/2018/credentials/v1'],
-          type: ['VerifiablePresentation'],
-          verifiableCredential: [makeJwt({ alg: 'ES256', typ: 'JWT' }, minimalVc)],
-        },
-        nonce: 'nonce-123',
-      })
+      const result = await verifierFlow.verifyPresentations(response, 'txn-123')
+      assert.deepEqual(result, { my_vp_cred: [vpPayload] })
 
       assert.equal(mockVerifierMetadataStore.fetch.mock.callCount(), 1)
       assert.equal(mockVerifyVerifiablePresentationProvider.verify.mock.callCount(), 1)
@@ -570,6 +577,172 @@ describe('VerifierFlow', () => {
       assert.deepEqual(mockVerifyVerifiablePresentationProvider.verify.mock.calls[0].arguments[1], {
         kind: 'jwt_vp_json',
         expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
+        expectedNonce: undefined,
+      })
+    })
+
+    it('should throw INVALID_VP_TOKEN when a required credential query is missing from vp_token', async () => {
+      const verifierId = ClientId('https://example.com')
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async () =>
+        VerifierMetadata({
+          client_name: 'test',
+          vp_formats: { jwt_vc_json: { alg_values_supported: ['ES256'] } },
+        })
+      )
+      mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
+        dcqlQuery: {
+          dcql_query: {
+            credentials: [
+              { id: 'cred_a', format: 'jwt_vc_json' },
+              { id: 'cred_b', format: 'jwt_vc_json' },
+            ],
+          },
+        },
+        verifierId,
+      }))
+      mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
+      mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({}))
+
+      const vpToken = makeJwt({ alg: 'ES256' }, { vp: {}, nonce: 'n' })
+      const response = AuthorizationResponse({ vp_token: { cred_a: [vpToken] } })
+
+      await assert.rejects(verifierFlow.verifyPresentations(response, 'txn-123'), {
+        name: 'INVALID_VP_TOKEN',
+      })
+    })
+
+    it('should throw INVALID_VP_TOKEN when vp_token array is empty for a credential query', async () => {
+      const verifierId = ClientId('https://example.com')
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async () =>
+        VerifierMetadata({
+          client_name: 'test',
+          vp_formats: { jwt_vc_json: { alg_values_supported: ['ES256'] } },
+        })
+      )
+      mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
+        dcqlQuery: {
+          dcql_query: {
+            credentials: [{ id: 'cred_a', format: 'jwt_vc_json' }],
+          },
+        },
+        verifierId,
+      }))
+
+      const response = AuthorizationResponse({ vp_token: { cred_a: [] } })
+
+      await assert.rejects(verifierFlow.verifyPresentations(response, 'txn-123'), {
+        name: 'INVALID_VP_TOKEN',
+      })
+    })
+
+    it('should throw INVALID_VP_TOKEN when no option of a required credential_set is fully presented', async () => {
+      const verifierId = ClientId('https://example.com')
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async () =>
+        VerifierMetadata({
+          client_name: 'test',
+          vp_formats: { jwt_vc_json: { alg_values_supported: ['ES256'] } },
+        })
+      )
+      mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
+        dcqlQuery: {
+          dcql_query: {
+            credentials: [
+              { id: 'cred_a', format: 'jwt_vc_json' },
+              { id: 'cred_b', format: 'jwt_vc_json' },
+              { id: 'cred_c', format: 'jwt_vc_json' },
+            ],
+            credential_sets: [{ options: [['cred_a'], ['cred_b', 'cred_c']], required: true }],
+          },
+        },
+        verifierId,
+      }))
+      mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
+      mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({}))
+
+      // cred_b のみ提示 → option A (cred_a) も option B (cred_b + cred_c) も未充足
+      const vpToken = makeJwt({ alg: 'ES256' }, { vp: {}, nonce: 'n' })
+      const response = AuthorizationResponse({ vp_token: { cred_b: [vpToken] } })
+
+      await assert.rejects(verifierFlow.verifyPresentations(response, 'txn-123'), {
+        name: 'INVALID_VP_TOKEN',
+      })
+    })
+
+    it('should verify a presentation when response state matches transaction state', async () => {
+      const verifierId = ClientId('https://example.com')
+      const vpToken = makeJwt({ alg: 'ES256' }, { vp: {}, nonce: 'n' })
+      const response = AuthorizationResponse({
+        vp_token: { cred_a: [vpToken] },
+        state: 'expected-state',
+      })
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async () =>
+        VerifierMetadata({
+          client_name: 'test',
+          vp_formats: { jwt_vc_json: { alg_values_supported: ['ES256'] } },
+        })
+      )
+      mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
+        dcqlQuery: { dcql_query: { credentials: [{ id: 'cred_a', format: 'jwt_vc_json' }] } },
+        clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
+        verifierId,
+        state: 'expected-state',
+      }))
+      mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
+      mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({}))
+
+      await verifierFlow.verifyPresentations(response, 'txn-123')
+    })
+
+    it('should throw INVALID_REQUEST when response state does not match transaction state', async () => {
+      const verifierId = ClientId('https://example.com')
+      const vpToken = makeJwt({ alg: 'ES256' }, { vp: {}, nonce: 'n' })
+      const response = AuthorizationResponse({
+        vp_token: { cred_a: [vpToken] },
+        state: 'wrong-state',
+      })
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async () =>
+        VerifierMetadata({
+          client_name: 'test',
+          vp_formats: { jwt_vc_json: { alg_values_supported: ['ES256'] } },
+        })
+      )
+      mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
+        dcqlQuery: { dcql_query: { credentials: [{ id: 'cred_a', format: 'jwt_vc_json' }] } },
+        clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
+        verifierId,
+        state: 'expected-state',
+      }))
+
+      await assert.rejects(verifierFlow.verifyPresentations(response, 'txn-123'), {
+        name: 'INVALID_REQUEST',
+      })
+    })
+
+    it('should throw INVALID_REQUEST when response state is absent but transaction has state', async () => {
+      const verifierId = ClientId('https://example.com')
+      const vpToken = makeJwt({ alg: 'ES256' }, { vp: {}, nonce: 'n' })
+      const response = AuthorizationResponse({ vp_token: { cred_a: [vpToken] } })
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async () =>
+        VerifierMetadata({
+          client_name: 'test',
+          vp_formats: { jwt_vc_json: { alg_values_supported: ['ES256'] } },
+        })
+      )
+      mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
+        dcqlQuery: { dcql_query: { credentials: [{ id: 'cred_a', format: 'jwt_vc_json' }] } },
+        clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
+        verifierId,
+        state: 'expected-state',
+      }))
+
+      await assert.rejects(verifierFlow.verifyPresentations(response, 'txn-123'), {
+        name: 'INVALID_REQUEST',
       })
     })
   })

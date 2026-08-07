@@ -22,6 +22,6 @@
 		"@trustknots/server-core": "workspace:*",
 		"@trustknots/vcknots": "workspace:*",
 		"dotenv": "17.3.1",
-		"firebase-admin": "13.6.1"
+		"firebase-admin": "13.10.0"
 	}
 }
