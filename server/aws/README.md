@@ -2,7 +2,7 @@
 
 `@trustknots/server-aws` — Lambda handlers for Issuer, Authorization Server, and Verifier on AWS API Gateway.
 
-Shared routes are provided by `@trustknots/server-core`. The Issuer, Authorization Server, and Verifier all use DynamoDB-backed metadata stores (`@trustknots/aws`).
+Shared routes are provided by `@trustknots/server-core`. The Issuer, Authorization Server, and Verifier all use DynamoDB-backed metadata stores (`@trustknots/aws`). The Issuer additionally stores its signing keys in AWS KMS (see [Issuer signing keys (AWS KMS)](#issuer-signing-keys-aws-kms)).
 
 For **actual API specifications, parameters, type definitions, and usage examples** for Issuer, Authorization Server, and Verifier, please refer to the following official documentation:
 
@@ -17,7 +17,7 @@ The endpoint list in this README is an overview of the paths used in this server
 src/
 ├── apps/
 │   ├── create-base-app.ts      # Shared Hono app factory
-│   ├── create-issuer-app.ts    # Issuer app (DynamoDB issuer metadata store)
+│   ├── create-issuer-app.ts    # Issuer app (DynamoDB issuer metadata store + KMS signature key store)
 │   ├── create-authz-app.ts     # Authorization Server app (DynamoDB authz server metadata store)
 │   └── create-verifier-app.ts  # Verifier app (DynamoDB verifier metadata store)
 ├── handlers/
@@ -38,7 +38,7 @@ src/
 |---|---|---|
 | [Node.js](https://nodejs.org/) | 20+ | |
 | [pnpm](https://pnpm.io/) | 10.11.0 | Monorepo package manager |
-| AWS credentials | — | Required for the Issuer, Authorization Server, and Verifier (DynamoDB) |
+| AWS credentials | — | Required for the Issuer, Authorization Server, and Verifier (DynamoDB; the Issuer also uses KMS) |
 
 AWS credentials can be set via `~/.aws/credentials`, `~/.aws/config`, environment variables (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`), or `AWS_PROFILE`.
 
@@ -190,6 +190,14 @@ ISSUER_PORT=9081 ISSUER_BASE_URL=http://localhost:9081 pnpm start:issuer
 | `POST` | `/callback` | VP verification callback |
 | `POST` | `/callback-kbjwt` | VP verification callback (Key Binding JWT) |
 | `GET` | `/verified` | Redirect endpoint after verification |
+
+## Issuer Signing Keys (AWS KMS)
+
+The Issuer stores its credential-signing keys in AWS KMS via `kmsIssuerSignatureKeyStore()` (`@trustknots/aws`). Signing is always performed by the KMS `Sign` API. For keys generated inside KMS, the private key never leaves KMS. For an externally generated key pair, the application receives the private key, wraps it, and sends it to KMS via `ImportKeyMaterial` — the private key exists outside KMS up to that point.
+
+- **Alias naming**: each key is referenced through the alias `alias/vcknots/issuers/<md5(issuer)>-<alg>` (base64url MD5 of the issuer identifier plus the JOSE algorithm, e.g. `ES256`). Without a key pair, the key is created once and the same alias is reused on subsequent `save` calls. When importing an externally generated key pair, every `save` call creates a brand-new KMS key and repoints the alias to it (the previous key is kept, not deleted). No additional environment variables are required.
+- **Supported algorithms**: `ES256`, `ES384`, `RS256`, `RS512`, `PS256`, `PS512`. Keys can be generated inside KMS for all of them. Importing an externally generated key pair is supported for EC algorithms (`ES256`/`ES384`) only — RSA private keys exceed the RSAES_OAEP_SHA_256 wrapping limit and would require `RSA_AES_KEY_WRAP`, which is not implemented (same limitation as the Google Cloud provider).
+- **Required IAM** (granted to the Issuer Lambda role by the CDK stack): `kms:CreateKey`, `kms:TagResource`, `kms:CreateAlias`, `kms:UpdateAlias`, `kms:DescribeKey`, `kms:GetPublicKey`, `kms:Sign`, `kms:GetParametersForImport`, `kms:ImportKeyMaterial`, `kms:ScheduleKeyDeletion`. When running locally, the AWS profile needs the same permissions. Every key the provider creates is tagged (`vcknots:issuer-signature-key=true`); the CDK stack uses this tag to authorize `CreateAlias`/`UpdateAlias` on the key itself, since a brand-new key has no alias yet to scope access by.
 
 ## Notes
 

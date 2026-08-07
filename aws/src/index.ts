@@ -26,3 +26,5 @@ export {
   DynamoDbNonceStoreOptions,
   dynamodbNonceStore,
 } from './providers/dynamodb-nonce-store.provider'
+export { KmsProviderOptions, resolveKmsClient } from './providers/kms'
+export { kmsIssuerSignatureKeyStore } from './providers/kms-issuer-signature-key-store.provider'

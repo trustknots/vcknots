@@ -38,6 +38,15 @@ function stageScopedRestApiName(serviceName: string): string {
   return `vcknots-${serviceName}-${apiStage}`;
 }
 
+/** Reads a required synth-time env var (e.g. TX_CODE_PEPPER), throwing if unset. */
+export function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} environment variable is required to deploy this stack`);
+  }
+  return value;
+}
+
 export interface LambdaApiProps {
   /** Handler file name under server/aws/lambda/src/handlers/ (e.g. issuer.ts). */
   handlerFile: string;
