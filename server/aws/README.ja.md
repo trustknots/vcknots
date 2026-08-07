@@ -2,7 +2,7 @@
 
 `@trustknots/server-aws` — AWS API Gateway 上で動作する Issuer・Authorization Server・Verifier の Lambda ハンドラーです。
 
-共通ルートは `@trustknots/server-core` が提供します。Issuer・Authorization Server・Verifier はいずれも DynamoDB バックエンドのメタデータストア（`@trustknots/aws`）を使用します。Issuer と Verifier はさらに署名鍵を AWS KMS に保存します（[Issuer の署名鍵（AWS KMS）](#issuer-の署名鍵aws-kms)、[Verifier の署名鍵（AWS KMS）](#verifier-の署名鍵aws-kms)を参照）。
+共通ルートは `@trustknots/server-core` が提供します。Issuer・Authorization Server・Verifier はいずれも DynamoDB バックエンドのメタデータストア（`@trustknots/aws`）を使用します。Issuer と Verifier はさらに署名鍵を AWS KMS に保存します（[Issuer の署名鍵（AWS KMS）](#issuer-の署名鍵aws-kms)、[Verifier の署名鍵（AWS KMS）](#verifier-の署名鍵aws-kms)を参照）。Verifier は X.509 証明書を AWS Secrets Manager に保存します（[Verifier の証明書（AWS Secrets Manager）](#verifier-の証明書aws-secrets-manager)を参照）。
 
 Issuer および Verifier の **実際の API 仕様・パラメーター・型定義・使用例**については、以下の公式ドキュメントを参照してください：
 
@@ -89,6 +89,9 @@ cp .env.example .env
 | `AUTHZ_BASE_URL` | Authz（任意） | Authz メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{AUTHZ_PORT}`） |
 | `VERIFIER_PORT` | Verifier（任意） | Verifier のリッスンポートを上書き（デフォルト: `8083`） |
 | `VERIFIER_BASE_URL` | Verifier（任意） | Verifier メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{VERIFIER_PORT}`） |
+| `VERIFIER_CERTIFICATE_SECRET_PREFIX` | Verifier（任意） | Verifier 証明書を保存する Secrets Manager のシークレット名プレフィックス（デフォルト: `vcknots/verifier-certificates`）。変更する場合は `server/aws/resources` の IAM 許可も合わせて更新が必要 |
+| `PRIVATE_KEY_PATH` / `CERTIFICATE_PATH` | Verifier（任意） | 初回起動時に登録する秘密鍵（PEM）と X.509 証明書のファイルパス（デフォルト: `server/samples/certificate-openid-test/` の同梱サンプル） |
+| `PRIVATE_KEY` / `CERTIFICATE` | Verifier（任意） | 同じ内容を PEM 文字列で直接指定（`\n` はエスケープ）。`*_PATH` より優先されます |
 
 **`ISSUERS_TABLE_NAME`・`PRE_CODES_TABLE_NAME`（Issuer・Authz）・`NONCES_TABLE_NAME`（Issuer と Verifier）・`AUTH_SERVERS_TABLE_NAME`・`VERIFIERS_TABLE_NAME`・`REQUEST_OBJECTS_TABLE_NAME` は必須**です。必要なテーブル名が未設定の場合、該当サーバーは起動時に終了します。
 
@@ -132,7 +135,7 @@ Authz is running on http://localhost:8082
 ```
 
 ```text
-Verifier metadata initialized
+Verifier metadata and certificate initialized
 Verifier is running on http://localhost:8083
 ```
 
@@ -215,6 +218,16 @@ Verifier は認可リクエストオブジェクト（JAR）の署名鍵を `kms
   3. `pnpm start:verifier` を一度実行します。その verifier ID へのサンプルメタデータ登録と KMS 鍵の作成が行われるので、完了後は停止して構いません。
 
   カスタムメタデータを持つ verifier の場合は、先にアイテムをバックアップし、同じメタデータを `createVerifierMetadata` に渡すスクリプトから再登録してください（鍵の作成と `jwks` の書き換えはフローが行います）。**バックアップしたアイテムをそのまま復元してはいけません** — その `jwks` は失われた鍵を指したままで、まさに直そうとしているドリフトが再現します。
+
+## Verifier の証明書（AWS Secrets Manager）
+
+Verifier は X.509 証明書チェーンを `secretsManagerVerifierCertificateStore()`（`@trustknots/aws`）経由で AWS Secrets Manager に保存します。証明書は `x509_san_dns` / `x509_san_uri` の client_id 向けに署名付き認可リクエスト（JAR）を生成するたびに読み出され、JWT の `x5c` ヘッダに埋め込まれます。ウォレットはこれを自身のトラストアンカーと照合して Verifier の正当性を検証します。`redirect_uri` など他の client_id プレフィックスでは、このストアは一切使用されません。
+
+- **シークレット名**: verifier ごとに1つ、`vcknots/verifier-certificates/<md5(verifier id)>`（verifier のベース URL の MD5 を16進数化したもの。URL はそのままシークレット名に使えないためハッシュ化しています）。プレフィックスは `VERIFIER_CERTIFICATE_SECRET_PREFIX` で上書きできます。保存は PEM のまま、取得時は PEM ヘッダを除いた base64 DER で返されます。
+- **登録タイミング**: ローカル初回起動時に `PRIVATE_KEY`/`CERTIFICATE`（または `*_PATH`）から書き込まれます。未指定の場合は `server/samples/certificate-openid-test/` の同梱サンプルが使われます。このサンプル証明書の SAN は `localhost` で、`POST /request` が client_id 未指定時にフォールバックする `x509_san_dns:localhost` と一致します。
+- **デプロイ済み Lambda では自動登録されません。** 初期化は Lambda 以外でのみ実行され（`server/aws/src/handlers/verifier.ts` が `AWS_LAMBDA_FUNCTION_NAME` 設定時にスキップ）、またシークレット名は verifier のベース URL から導出されるため、`http://localhost:8083` で登録した証明書は API Gateway の URL からは参照されません。デプロイ環境では Secrets Manager へ手動で書き込むか、証明書を必要としない client_id プレフィックスを使用してください。
+- **必要な IAM 権限**（CDK スタックが Verifier Lambda ロールに付与）: `secretsmanager:CreateSecret`・`secretsmanager:PutSecretValue`・`secretsmanager:GetSecretValue`（リソースは `secret:vcknots/verifier-certificates/*` に限定）。シークレットは `aws/secretsmanager` マネージドキーで暗号化されるため、追加の KMS 権限は不要です。ローカル実行時は AWS プロファイルに同等の権限が必要です。
+- **初期化のやり直し**: メタデータは DynamoDB、証明書は Secrets Manager と別ストアに保存されるため、やり直す際は両方を削除する必要があります。片方だけ削除すると中途半端な状態になり、証明書側が欠けている場合は起動時に `Verifier metadata exists but no certificate is registered` が出力されます。削除したシークレットは復旧猶予期間中も名前を占有し続けるので、すぐに作り直す場合は `--force-delete-without-recovery` を使用してください。
 
 ## Authorization Server の署名鍵（AWS KMS）
 

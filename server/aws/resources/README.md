@@ -5,7 +5,7 @@ CDK stack for vcknots on AWS.
 Related packages:
 
 - [`@trustknots/server-aws`](../src) — Lambda handlers, vcknots context, and utilities (`src/handlers/`, `src/context/`, `src/utils/`)
-- [`@trustknots/aws`](../../../aws) — AWS providers for DynamoDB and KMS (Issuer, Authz, and Verifier signature keys; Secrets Manager not yet implemented)
+- [`@trustknots/aws`](../../../aws) — AWS providers for DynamoDB, KMS (Issuer, Authz, and Verifier signature keys), and Secrets Manager (Verifier certificates)
 
 ## Architecture
 
@@ -22,7 +22,7 @@ server/aws/
 │   ├── apps/
 │   │   ├── create-issuer-app.ts   Issuer app (DynamoDB issuer metadata store, KMS signature key store)
 │   │   ├── create-authz-app.ts    Authorization Server app (DynamoDB authz metadata store, KMS signature key store)
-│   │   └── create-verifier-app.ts Verifier app (DynamoDB verifier metadata store, KMS signature key store)
+│   │   └── create-verifier-app.ts Verifier app (DynamoDB verifier metadata store, KMS signature key store, Secrets Manager certificate store)
 │   ├── context/
 │   │   └── vcknots-context.ts context / baseUrl helpers
 │   └── utils/
@@ -66,7 +66,7 @@ Each handler mounts a single route from `@trustknots/server-core` on a Hono app 
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
 | `verifier.ts` | `@trustknots/server-core/routes/verify` |
 
-The Issuer uses `dynamodbIssuerMetadataStore` and `kmsIssuerSignatureKeyStore` from `@trustknots/aws`, the Authorization Server uses `dynamodbAuthzServerMetadataStore` and `kmsAuthzSignatureKeyStore`, and the Verifier uses `dynamodbVerifierMetadataStore` and `kmsVerifierSignatureKeyStore`.
+The Issuer uses `dynamodbIssuerMetadataStore` and `kmsIssuerSignatureKeyStore` from `@trustknots/aws`, the Authorization Server uses `dynamodbAuthzServerMetadataStore` and `kmsAuthzSignatureKeyStore`, and the Verifier uses `dynamodbVerifierMetadataStore`, `kmsVerifierSignatureKeyStore`, and `secretsManagerVerifierCertificateStore`.
 
 Unhandled errors are logged via `utils/error-logger.ts` (`sanitizeError`) so only safe fields reach CloudWatch.
 
@@ -142,6 +142,8 @@ The three roles differ only in the alias namespace and the tag:
 | Issuer | `alias/vcknots/issuers/*` | `vcknots:issuer-signature-key=true` |
 | Authz | `alias/vcknots/authz/*` | `vcknots:authz-signature-key=true` |
 | Verifier | `alias/vcknots/verifiers/*` | `vcknots:verifier-signature-key=true` |
+
+The Verifier role also has a scoped Secrets Manager policy for `secretsManagerVerifierCertificateStore` (see `lib/construct/api/verifier-api.ts`): `CreateSecret`/`PutSecretValue`/`GetSecretValue` restricted to `secret:vcknots/verifier-certificates/*`. The trailing wildcard is required because Secrets Manager appends a random six-character suffix to every secret ARN. The prefix constant is duplicated in the construct and in `aws/src/providers/secrets-manager.ts`, and is passed to the Lambda as `VERIFIER_CERTIFICATE_SECRET_PREFIX` so the two cannot drift apart. Secrets use the `aws/secretsmanager` managed key, so no KMS grant is needed.
 
 ### Stack Outputs
 

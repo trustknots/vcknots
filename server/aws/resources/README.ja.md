@@ -5,7 +5,7 @@ vcknots を AWS 上で動かすための CDK スタックです。
 関連パッケージ:
 
 - [`@trustknots/server-aws`](../src) — Lambda ハンドラ、vcknots context、ユーティリティ（`src/handlers/`、`src/context/`、`src/utils/`）
-- [`@trustknots/aws`](../../../aws) — DynamoDB / KMS 向け AWS provider（Issuer / Authz / Verifier 署名鍵；Secrets Manager は未実装）
+- [`@trustknots/aws`](../../../aws) — DynamoDB / KMS（Issuer / Authz / Verifier 署名鍵）/ Secrets Manager（Verifier 証明書）向け AWS provider
 
 ## アーキテクチャ
 
@@ -22,7 +22,7 @@ server/aws/
 │   ├── apps/
 │   │   ├── create-issuer-app.ts   Issuer アプリ（DynamoDB issuer メタデータストア、KMS 署名鍵ストア）
 │   │   ├── create-authz-app.ts    Authorization Server アプリ（DynamoDB authz メタデータストア、KMS 署名鍵ストア）
-│   │   └── create-verifier-app.ts Verifier アプリ（DynamoDB verifier メタデータストア、KMS 署名鍵ストア）
+│   │   └── create-verifier-app.ts Verifier アプリ（DynamoDB verifier メタデータストア、KMS 署名鍵ストア、Secrets Manager 証明書ストア）
 │   ├── context/
 │   │   └── vcknots-context.ts context / baseUrl ヘルパー
 │   └── utils/
@@ -66,7 +66,7 @@ ResourcesStack
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
 | `verifier.ts` | `@trustknots/server-core/routes/verify` |
 
-Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSignatureKeyStore` を、Authorization Server は `dynamodbAuthzServerMetadataStore` と `kmsAuthzSignatureKeyStore` を、Verifier は `dynamodbVerifierMetadataStore` と `kmsVerifierSignatureKeyStore` を使用します。
+Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSignatureKeyStore` を、Authorization Server は `dynamodbAuthzServerMetadataStore` と `kmsAuthzSignatureKeyStore` を、Verifier は `dynamodbVerifierMetadataStore`、`kmsVerifierSignatureKeyStore`、`secretsManagerVerifierCertificateStore` を使用します。
 
 未処理エラーは `utils/error-logger.ts`（`sanitizeError`）経由でログ出力され、CloudWatch には安全なフィールドのみが記録されます。
 
@@ -142,6 +142,8 @@ Issuer ロール・Authz ロール・Verifier ロールには署名鍵ストア�
 | Issuer | `alias/vcknots/issuers/*` | `vcknots:issuer-signature-key=true` |
 | Authz | `alias/vcknots/authz/*` | `vcknots:authz-signature-key=true` |
 | Verifier | `alias/vcknots/verifiers/*` | `vcknots:verifier-signature-key=true` |
+
+Verifier ロールには `secretsManagerVerifierCertificateStore` 用にスコープを絞った Secrets Manager ポリシーも付与されています（`lib/construct/api/verifier-api.ts` 参照）: `CreateSecret`/`PutSecretValue`/`GetSecretValue` を `secret:vcknots/verifier-certificates/*` に限定しています。末尾のワイルドカードは、Secrets Manager がすべてのシークレット ARN にランダムな6文字のサフィックスを付与するため必須です。プレフィックス定数は construct と `aws/src/providers/secrets-manager.ts` の2箇所に存在しますが、Lambda には `VERIFIER_CERTIFICATE_SECRET_PREFIX` として渡されるため両者がずれることはありません。シークレットは `aws/secretsmanager` マネージドキーで暗号化されるため、KMS 権限の付与は不要です。
 
 ### スタック出力
 

@@ -2,7 +2,7 @@
 
 `@trustknots/server-aws` — Lambda handlers for Issuer, Authorization Server, and Verifier on AWS API Gateway.
 
-Shared routes are provided by `@trustknots/server-core`. The Issuer, Authorization Server, and Verifier all use DynamoDB-backed metadata stores (`@trustknots/aws`). The Issuer and the Verifier additionally store their signing keys in AWS KMS (see [Issuer signing keys (AWS KMS)](#issuer-signing-keys-aws-kms) and [Verifier signing keys (AWS KMS)](#verifier-signing-keys-aws-kms)).
+Shared routes are provided by `@trustknots/server-core`. The Issuer, Authorization Server, and Verifier all use DynamoDB-backed metadata stores (`@trustknots/aws`). The Issuer and the Verifier additionally store their signing keys in AWS KMS (see [Issuer signing keys (AWS KMS)](#issuer-signing-keys-aws-kms) and [Verifier signing keys (AWS KMS)](#verifier-signing-keys-aws-kms)), and the Verifier stores its X.509 certificate in AWS Secrets Manager (see [Verifier certificate (AWS Secrets Manager)](#verifier-certificate-aws-secrets-manager)).
 
 For **actual API specifications, parameters, type definitions, and usage examples** for Issuer, Authorization Server, and Verifier, please refer to the following official documentation:
 
@@ -89,6 +89,9 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `AUTHZ_BASE_URL` | Authz (optional) | Override the base URL used in Authz metadata (default: `http://localhost:{AUTHZ_PORT}`) |
 | `VERIFIER_PORT` | Verifier (optional) | Override the Verifier listening port (default: `8083`) |
 | `VERIFIER_BASE_URL` | Verifier (optional) | Override the base URL used in Verifier metadata (default: `http://localhost:{VERIFIER_PORT}`) |
+| `VERIFIER_CERTIFICATE_SECRET_PREFIX` | Verifier (optional) | Secrets Manager name prefix for verifier certificates (default: `vcknots/verifier-certificates`). Changing it requires updating the IAM grant in `server/aws/resources` to match |
+| `PRIVATE_KEY_PATH` / `CERTIFICATE_PATH` | Verifier (optional) | Paths to the PEM private key and X.509 certificate registered on first startup (default: the sample chain in `server/samples/certificate-openid-test/`) |
+| `PRIVATE_KEY` / `CERTIFICATE` | Verifier (optional) | The same material inline as PEM (`\n` escaped). Takes precedence over the `*_PATH` variants |
 
 **`ISSUERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME` (Issuer & Authz), `NONCES_TABLE_NAME` (Issuer & Verifier), `AUTH_SERVERS_TABLE_NAME`, `VERIFIERS_TABLE_NAME`, and `REQUEST_OBJECTS_TABLE_NAME` are required** — each server exits at startup if a table name it needs is missing.
 
@@ -132,7 +135,7 @@ Authz is running on http://localhost:8082
 ```
 
 ```text
-Verifier metadata initialized
+Verifier metadata and certificate initialized
 Verifier is running on http://localhost:8083
 ```
 
@@ -215,6 +218,16 @@ The Verifier stores the key that signs Authorization Request Objects (JAR) in AW
   3. Run `pnpm start:verifier` once. It registers the sample metadata and creates the KMS key for that verifier id, then you can stop it.
 
   For a verifier with custom metadata, back the item up first and re-register that same metadata from a script that calls `createVerifierMetadata` — the flow creates the key and rewrites `jwks` from it. Do not restore the backed-up item verbatim: its `jwks` still describes the key that went missing, which is the drift you are repairing.
+
+## Verifier Certificate (AWS Secrets Manager)
+
+The Verifier stores its X.509 certificate chain in AWS Secrets Manager via `secretsManagerVerifierCertificateStore()` (`@trustknots/aws`). The chain is read every time a signed authorization request (JAR) is built for an `x509_san_dns` or `x509_san_uri` client id, and embedded in the JWT `x5c` header so the wallet can verify the Verifier's identity against its own trust anchors. Other client id prefixes (for example `redirect_uri`) never touch this store.
+
+- **Secret naming**: one secret per verifier, named `vcknots/verifier-certificates/<md5(verifier id)>` (hex MD5 of the verifier's base URL, since a URL cannot be used verbatim in a secret name). Override the prefix with `VERIFIER_CERTIFICATE_SECRET_PREFIX`. The chain is stored as PEM and returned as bare base64 DER.
+- **Registration**: the certificate is written on first local startup, from `PRIVATE_KEY`/`CERTIFICATE` (or the `*_PATH` variants), defaulting to the sample chain in `server/samples/certificate-openid-test/`. The sample certificate's SAN is `localhost`, which matches the `x509_san_dns:localhost` client id that `POST /request` falls back to when none is given.
+- **Deployed Lambdas do not self-register.** Initialization only runs outside Lambda (`server/aws/src/handlers/verifier.ts` skips it when `AWS_LAMBDA_FUNCTION_NAME` is set), and the secret name is derived from the verifier's base URL, so a certificate seeded from `http://localhost:8083` is not the one an API Gateway URL looks up. On a deployed stack, either write the secret manually or use a client id prefix that needs no certificate.
+- **Required IAM** (granted to the Verifier Lambda role by the CDK stack): `secretsmanager:CreateSecret`, `secretsmanager:PutSecretValue`, `secretsmanager:GetSecretValue`, scoped to `secret:vcknots/verifier-certificates/*`. Secrets use the `aws/secretsmanager` managed key, so no separate KMS grant is needed. When running locally, the AWS profile needs the same permissions.
+- **Re-running initialization**: metadata lives in DynamoDB and the certificate in Secrets Manager, so both must be cleared to start over. Deleting only one leaves a half-initialized verifier; startup logs `Verifier metadata exists but no certificate is registered` when the certificate is the missing half. A deleted secret stays name-reserved for its recovery window, so use `--force-delete-without-recovery` if you intend to re-create it immediately.
 
 ## Authorization Server Signing Keys (AWS KMS)
 
