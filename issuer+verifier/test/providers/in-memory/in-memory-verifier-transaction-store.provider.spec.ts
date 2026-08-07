@@ -29,7 +29,7 @@ describe('inMemoryVerifierTransactionDataStore', () => {
     })
 
     it('should have correct kind, name, and single properties', () => {
-      assert.strictEqual(transactionStoreProvider.kind, 'verifier-transaction-data-store-provider')
+      assert.strictEqual(transactionStoreProvider.kind, 'verifier-transaction-store-provider')
       assert.strictEqual(transactionStoreProvider.name, 'in-memory-transaction-data-provider')
       assert.strictEqual(transactionStoreProvider.single, true)
     })

@@ -109,7 +109,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   const transactionData$ = context.providers.get('transaction-data-provider')
   const verifiablePresentation$ = context.providers.get('verify-verifiable-presentation-provider')
   const transactionId$ = context.providers.get('transaction-id-provider')
-  const transactionDataStore$ = context.providers.get('verifier-transaction-data-store-provider')
+  const transactionDataStore$ = context.providers.get('verifier-transaction-store-provider')
 
   return {
     async findVerifierCertificate(id) {

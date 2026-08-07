@@ -416,7 +416,7 @@ export type TransactionIdProvider = {
 }
 
 export type VerifierTransactionDataStoreProvider = {
-  kind: 'verifier-transaction-data-store-provider'
+  kind: 'verifier-transaction-store-provider'
   name: string
   single: true
 

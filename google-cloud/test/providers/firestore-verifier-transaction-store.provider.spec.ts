@@ -31,8 +31,8 @@ describe('firestoreVerifierTransactionDataStore', () => {
 
   it('should have correct provider metadata', () => {
     const provider = firestoreVerifierTransactionDataStore({ app: mockApp })
-    assert.equal(provider.kind, 'verifier-transaction-data-store-provider')
-    assert.equal(provider.name, 'firestore-verifier-transaction-data-store-provider')
+    assert.equal(provider.kind, 'verifier-transaction-store-provider')
+    assert.equal(provider.name, 'firestore-verifier-transaction-store-provider')
     assert.equal(provider.single, true)
   })
 

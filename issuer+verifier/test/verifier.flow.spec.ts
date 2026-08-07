@@ -158,8 +158,8 @@ describe('VerifierFlow', () => {
   } satisfies TransactionIdProvider
 
   const mockVerifierTransactionDataStoreProvider = {
-    kind: 'verifier-transaction-data-store-provider',
-    name: 'mock-verifier-transaction-data-store-provider',
+    kind: 'verifier-transaction-store-provider',
+    name: 'mock-verifier-transaction-store-provider',
     single: true,
     fetch: mock.fn(),
     save: mock.fn(),

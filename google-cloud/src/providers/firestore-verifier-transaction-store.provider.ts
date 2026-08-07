@@ -3,6 +3,8 @@ import { VerifierTransactionDataStoreProvider } from '@trustknots/vcknots/provid
 import { Timestamp } from 'firebase-admin/firestore'
 import { FirestoreProviderOptions, resolveFirestore } from './firestore.provider'
 
+const DEFAULT_TRANSACTION_EXPIRE_IN_MS = 60 * 5 * 1000 // 5 minutes
+
 const ensureSafeTransactionId = (transactionId: string): string => {
   if (!/^[A-Za-z0-9_-]+$/.test(transactionId)) {
     throw new Error('Invalid transaction ID')
@@ -17,14 +19,15 @@ export const firestoreVerifierTransactionDataStore = (
   const ns = options?.namespace?.replace(/\//g, '') || 'vcknots'
 
   return {
-    kind: 'verifier-transaction-data-store-provider',
-    name: 'firestore-verifier-transaction-data-store-provider',
+    kind: 'verifier-transaction-store-provider',
+    name: 'firestore-verifier-transaction-store-provider',
     single: true,
 
     async save(transactionId, record) {
       const safeTransactionId = ensureSafeTransactionId(transactionId)
       const expiresAt = Timestamp.fromMillis(
-        new Date().getTime() + (options?.transaction_data_expire_in ?? 60 * 5 * 1000)
+        new Date().getTime() +
+          (options?.transaction_data_expire_in ?? DEFAULT_TRANSACTION_EXPIRE_IN_MS)
       )
 
       const docRef = firestore.doc(`${ns}/v1/verifierTransactions/${safeTransactionId}`)
