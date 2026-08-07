@@ -30,3 +30,9 @@ export { KmsProviderOptions, resolveKmsClient } from './providers/kms'
 export { kmsAuthzSignatureKeyStore } from './providers/kms-authz-signature-key-store.provider'
 export { kmsIssuerSignatureKeyStore } from './providers/kms-issuer-signature-key-store.provider'
 export { kmsVerifierSignatureKeyStore } from './providers/kms-verifier-signature-key-store.provider'
+export {
+  SecretsManagerProviderOptions,
+  VERIFIER_CERTIFICATE_SECRET_PREFIX,
+  resolveSecretsManagerClient,
+} from './providers/secrets-manager'
+export { secretsManagerVerifierCertificateStore } from './providers/secrets-manager-verifier-certificate-store.provider'
