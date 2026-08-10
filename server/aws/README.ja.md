@@ -2,7 +2,7 @@
 
 `@trustknots/server-aws` — AWS API Gateway 上で動作する Issuer・Authorization Server・Verifier の Lambda ハンドラーです。
 
-共通ルートは `@trustknots/server-core` が提供します。Issuer・Authorization Server・Verifier はいずれも DynamoDB バックエンドのメタデータストア（`@trustknots/aws`）を使用します。Issuer はさらに署名鍵を AWS KMS に保存します（[Issuer の署名鍵（AWS KMS）](#issuer-の署名鍵aws-kms)を参照）。
+共通ルートは `@trustknots/server-core` が提供します。Issuer・Authorization Server・Verifier はいずれも DynamoDB バックエンドのメタデータストア（`@trustknots/aws`）を使用します。Issuer と Verifier はさらに署名鍵を AWS KMS に保存します（[Issuer の署名鍵（AWS KMS）](#issuer-の署名鍵aws-kms)、[Verifier の署名鍵（AWS KMS）](#verifier-の署名鍵aws-kms)を参照）。
 
 Issuer および Verifier の **実際の API 仕様・パラメーター・型定義・使用例**については、以下の公式ドキュメントを参照してください：
 
@@ -19,7 +19,7 @@ src/
 │   ├── create-base-app.ts      # 共通 Hono アプリファクトリ
 │   ├── create-issuer-app.ts    # Issuer アプリ（DynamoDB issuer メタデータストア + KMS 署名鍵ストア）
 │   ├── create-authz-app.ts     # Authorization Server アプリ（DynamoDB authz server メタデータストア）
-│   └── create-verifier-app.ts  # Verifier アプリ（DynamoDB verifier メタデータストア）
+│   └── create-verifier-app.ts  # Verifier アプリ（DynamoDB verifier メタデータストア + KMS 署名鍵ストア）
 ├── handlers/
 │   ├── issuer.ts               # Lambda ハンドラー / ローカル起動エントリーポイント — Issuer（ポート 8081）
 │   ├── authz.ts                # Lambda ハンドラー / ローカル起動エントリーポイント — Authorization Server（ポート 8082）
@@ -38,7 +38,7 @@ src/
 |---|---|---|
 | [Node.js](https://nodejs.org/) | 20 以上 | |
 | [pnpm](https://pnpm.io/) | 10.11.0 | モノレポパッケージマネージャー |
-| AWS 認証情報 | — | Issuer・Authorization Server・Verifier（DynamoDB。Issuer は KMS も使用）で必要 |
+| AWS 認証情報 | — | Issuer・Authorization Server・Verifier（DynamoDB。Issuer と Verifier は KMS も使用）で必要 |
 
 AWS 認証情報は `~/.aws/credentials`・`~/.aws/config`・環境変数（`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`）・`AWS_PROFILE` のいずれかで設定できます。
 
@@ -198,6 +198,15 @@ Issuer はクレデンシャル署名鍵を `kmsIssuerSignatureKeyStore()`（`@t
 - **エイリアス命名規則**: 各鍵はエイリアス `alias/vcknots/issuers/<md5(issuer)>-<alg>`（issuer 識別子の MD5 を base64url 化したもの + JOSE アルゴリズム名。例: `ES256`）で参照されます。鍵ペアを指定しない場合、鍵は一度だけ作成され、以降の `save` では同じエイリアスが再利用されます。外部生成の鍵ペアをインポートする場合は、`save` を呼ぶたびに新しい KMS 鍵が作成され、エイリアスがその鍵に付け替えられます（古い鍵は削除されず残ります）。いずれの場合も追加の環境変数は不要です。
 - **対応アルゴリズム**: `ES256`・`ES384`・`RS256`・`RS512`・`PS256`・`PS512`。KMS 内での鍵生成はすべてのアルゴリズムに対応しています。外部で生成した鍵ペアのインポートは EC 系（`ES256`/`ES384`）のみ対応です — RSA 秘密鍵は RSAES_OAEP_SHA_256 のラップ上限を超えるため `RSA_AES_KEY_WRAP` が必要になりますが、これは未実装です（Google Cloud プロバイダと同じ制限）。
 - **必要な IAM 権限**（CDK スタックが Issuer Lambda ロールに付与）: `kms:CreateKey`・`kms:TagResource`・`kms:CreateAlias`・`kms:UpdateAlias`・`kms:DescribeKey`・`kms:GetPublicKey`・`kms:Sign`・`kms:GetParametersForImport`・`kms:ImportKeyMaterial`・`kms:ScheduleKeyDeletion`。ローカル実行時は AWS プロファイルに同等の権限が必要です。プロバイダが作成する鍵にはすべてタグ（`vcknots:issuer-signature-key=true`）が付与されます。新規作成直後の鍵にはまだエイリアスが無く、エイリアスによる権限の絞り込みができないため、CDK スタックはこのタグを使って鍵本体への`CreateAlias`/`UpdateAlias`を認可しています。
+
+## Verifier の署名鍵（AWS KMS）
+
+Verifier は認可リクエストオブジェクト（JAR）の署名鍵を `kmsVerifierSignatureKeyStore()`（`@trustknots/aws`）経由で AWS KMS に保存します。Issuer 用ストアと同じ provider ファクトリから構築されているため、KMS 内での鍵生成・ラップしたインポート・`Sign` API による署名といった挙動は同一で、エイリアス名前空間と鍵に付与するタグだけが異なります。
+
+- **エイリアス命名規則**: 各鍵はエイリアス `alias/vcknots/verifiers/<md5(client_id)>-<alg>`（verifier のクライアント ID の MD5 を base64url 化したもの + JOSE アルゴリズム名）で参照されます。鍵は verifier の登録時（`createVerifierMetadata`）に作成され、その公開鍵が verifier メタデータの `jwks` として公開されます。追加の環境変数は不要です。
+- **対応アルゴリズム**: Issuer と同じです — KMS 内での生成は `ES256`・`ES384`・`RS256`・`RS512`・`PS256`・`PS512`、外部生成の鍵ペアのインポートは EC 系（`ES256`/`ES384`）のみ対応です。
+- **必要な IAM 権限**（CDK スタックが Verifier Lambda ロールに付与）: Issuer と同じアクション一式を、`alias/vcknots/verifiers/*` 名前空間と `vcknots:verifier-signature-key=true` タグの付いた鍵にスコープを絞って付与しています。
+- **ストア間のズレ**: verifier メタデータは DynamoDB、鍵は KMS と別ストアにあるため、両者がズレることがあります（インメモリ鍵ストアで動かしていた環境を KMS に向けた場合に起こりやすいです）。`createVerifierMetadata` は登録済みの verifier を弾くため自動修復できず、Verifier は起動時に警告を出すだけです（`Verifier metadata exists but no <alg> key is registered in KMS`）。復旧するには Verifiers テーブルから該当 verifier のアイテムを削除し、次回起動時に再登録させてください。
 
 ## 注意事項
 

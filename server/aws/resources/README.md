@@ -5,7 +5,7 @@ CDK stack for vcknots on AWS.
 Related packages:
 
 - [`@trustknots/server-aws`](../src) — Lambda handlers, vcknots context, and utilities (`src/handlers/`, `src/context/`, `src/utils/`)
-- [`@trustknots/aws`](../../../aws) — AWS providers for DynamoDB and KMS (Issuer signature keys; Secrets Manager not yet implemented)
+- [`@trustknots/aws`](../../../aws) — AWS providers for DynamoDB and KMS (Issuer and Verifier signature keys; Secrets Manager not yet implemented)
 
 ## Architecture
 
@@ -22,7 +22,7 @@ server/aws/
 │   ├── apps/
 │   │   ├── create-issuer-app.ts   Issuer app (DynamoDB issuer metadata store, KMS signature key store)
 │   │   ├── create-authz-app.ts    Authorization Server app (in-memory)
-│   │   └── create-verifier-app.ts Verifier app (in-memory)
+│   │   └── create-verifier-app.ts Verifier app (DynamoDB verifier metadata store, KMS signature key store)
 │   ├── context/
 │   │   └── vcknots-context.ts context / baseUrl helpers
 │   └── utils/
@@ -66,7 +66,7 @@ Each handler mounts a single route from `@trustknots/server-core` on a Hono app 
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
 | `verifier.ts` | `@trustknots/server-core/routes/verify` |
 
-The Issuer uses `dynamodbIssuerMetadataStore` and `kmsIssuerSignatureKeyStore` from `@trustknots/aws`. The Authorization Server and Verifier use in-memory providers (including the Authz access-token signing key, which does not persist across Lambda invocations — a KMS-backed authz signature key store is not implemented yet).
+The Issuer uses `dynamodbIssuerMetadataStore` and `kmsIssuerSignatureKeyStore` from `@trustknots/aws`, and the Verifier uses `dynamodbVerifierMetadataStore` and `kmsVerifierSignatureKeyStore`. The Authorization Server still uses in-memory providers (including the Authz access-token signing key, which does not persist across Lambda invocations — a KMS-backed authz signature key store is not implemented yet).
 
 Unhandled errors are logged via `utils/error-logger.ts` (`sanitizeError`) so only safe fields reach CloudWatch.
 
@@ -124,7 +124,12 @@ Attributes other than `id` (metadata body, `expires_at`, `ttl`, and so on) are w
 | Authz | AuthServersTable, PreCodesTable (read/write) |
 | Verifier | VerifiersTable, RequestObjectsTable, NoncesTable (read/write) |
 
-The Issuer role also has a scoped KMS policy for `kmsIssuerSignatureKeyStore` (see `lib/construct/api/issuer-api.ts`): `CreateKey`/`TagResource` restricted to the `SigningAlgorithm`/`KeySpec`/`KeyOrigin` combinations the provider creates, `CreateAlias`/`UpdateAlias` restricted to the `alias/vcknots/issuers/*` namespace (and, for the key side, to keys tagged `vcknots:issuer-signature-key=true`), and `DescribeKey`/`GetPublicKey`/`Sign`/`GetParametersForImport`/`ImportKeyMaterial`/`ScheduleKeyDeletion` restricted via `kms:ResourceAliases` to `alias/vcknots/issuers/*`.
+The Issuer and Verifier roles also have a scoped KMS policy for their signature key store, granted by `grantSignatureKeyStoreAccess()` (`lib/construct/security/signature-key-policy.ts`): `CreateKey`/`TagResource` restricted to the `SigningAlgorithm`/`KeySpec`/`KeyOrigin` combinations the provider creates, `CreateAlias`/`UpdateAlias` restricted to the role's own alias namespace (and, for the key side, to keys carrying its tag), and `DescribeKey`/`GetPublicKey`/`Sign`/`GetParametersForImport`/`ImportKeyMaterial`/`ScheduleKeyDeletion` restricted via `kms:ResourceAliases` to that same namespace. The two roles differ only in those two values:
+
+| Role | Alias namespace | Key tag |
+|---|---|---|
+| Issuer | `alias/vcknots/issuers/*` | `vcknots:issuer-signature-key=true` |
+| Verifier | `alias/vcknots/verifiers/*` | `vcknots:verifier-signature-key=true` |
 
 ### Stack Outputs
 

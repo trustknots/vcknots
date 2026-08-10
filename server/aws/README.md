@@ -2,7 +2,7 @@
 
 `@trustknots/server-aws` — Lambda handlers for Issuer, Authorization Server, and Verifier on AWS API Gateway.
 
-Shared routes are provided by `@trustknots/server-core`. The Issuer, Authorization Server, and Verifier all use DynamoDB-backed metadata stores (`@trustknots/aws`). The Issuer additionally stores its signing keys in AWS KMS (see [Issuer signing keys (AWS KMS)](#issuer-signing-keys-aws-kms)).
+Shared routes are provided by `@trustknots/server-core`. The Issuer, Authorization Server, and Verifier all use DynamoDB-backed metadata stores (`@trustknots/aws`). The Issuer and the Verifier additionally store their signing keys in AWS KMS (see [Issuer signing keys (AWS KMS)](#issuer-signing-keys-aws-kms) and [Verifier signing keys (AWS KMS)](#verifier-signing-keys-aws-kms)).
 
 For **actual API specifications, parameters, type definitions, and usage examples** for Issuer, Authorization Server, and Verifier, please refer to the following official documentation:
 
@@ -19,7 +19,7 @@ src/
 │   ├── create-base-app.ts      # Shared Hono app factory
 │   ├── create-issuer-app.ts    # Issuer app (DynamoDB issuer metadata store + KMS signature key store)
 │   ├── create-authz-app.ts     # Authorization Server app (DynamoDB authz server metadata store)
-│   └── create-verifier-app.ts  # Verifier app (DynamoDB verifier metadata store)
+│   └── create-verifier-app.ts  # Verifier app (DynamoDB verifier metadata store + KMS signature key store)
 ├── handlers/
 │   ├── issuer.ts               # Lambda handler / local entrypoint — Issuer (port 8081)
 │   ├── authz.ts                # Lambda handler / local entrypoint — Authorization Server (port 8082)
@@ -38,7 +38,7 @@ src/
 |---|---|---|
 | [Node.js](https://nodejs.org/) | 20+ | |
 | [pnpm](https://pnpm.io/) | 10.11.0 | Monorepo package manager |
-| AWS credentials | — | Required for the Issuer, Authorization Server, and Verifier (DynamoDB; the Issuer also uses KMS) |
+| AWS credentials | — | Required for the Issuer, Authorization Server, and Verifier (DynamoDB; the Issuer and Verifier also use KMS) |
 
 AWS credentials can be set via `~/.aws/credentials`, `~/.aws/config`, environment variables (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`), or `AWS_PROFILE`.
 
@@ -198,6 +198,15 @@ The Issuer stores its credential-signing keys in AWS KMS via `kmsIssuerSignature
 - **Alias naming**: each key is referenced through the alias `alias/vcknots/issuers/<md5(issuer)>-<alg>` (base64url MD5 of the issuer identifier plus the JOSE algorithm, e.g. `ES256`). Without a key pair, the key is created once and the same alias is reused on subsequent `save` calls. When importing an externally generated key pair, every `save` call creates a brand-new KMS key and repoints the alias to it (the previous key is kept, not deleted). No additional environment variables are required.
 - **Supported algorithms**: `ES256`, `ES384`, `RS256`, `RS512`, `PS256`, `PS512`. Keys can be generated inside KMS for all of them. Importing an externally generated key pair is supported for EC algorithms (`ES256`/`ES384`) only — RSA private keys exceed the RSAES_OAEP_SHA_256 wrapping limit and would require `RSA_AES_KEY_WRAP`, which is not implemented (same limitation as the Google Cloud provider).
 - **Required IAM** (granted to the Issuer Lambda role by the CDK stack): `kms:CreateKey`, `kms:TagResource`, `kms:CreateAlias`, `kms:UpdateAlias`, `kms:DescribeKey`, `kms:GetPublicKey`, `kms:Sign`, `kms:GetParametersForImport`, `kms:ImportKeyMaterial`, `kms:ScheduleKeyDeletion`. When running locally, the AWS profile needs the same permissions. Every key the provider creates is tagged (`vcknots:issuer-signature-key=true`); the CDK stack uses this tag to authorize `CreateAlias`/`UpdateAlias` on the key itself, since a brand-new key has no alias yet to scope access by.
+
+## Verifier Signing Keys (AWS KMS)
+
+The Verifier stores the key that signs Authorization Request Objects (JAR) in AWS KMS via `kmsVerifierSignatureKeyStore()` (`@trustknots/aws`). It is built from the same provider factory as the Issuer store, so the KMS behaviour — in-KMS generation, wrapped import, and signing through the KMS `Sign` API — is identical; only the alias namespace and the key tag differ.
+
+- **Alias naming**: each key is referenced through the alias `alias/vcknots/verifiers/<md5(client_id)>-<alg>` (base64url MD5 of the verifier client id plus the JOSE algorithm). The key is created when the verifier is registered (`createVerifierMetadata`), and its public key is published as `jwks` in the verifier metadata. No additional environment variables are required.
+- **Supported algorithms**: same as the Issuer — `ES256`, `ES384`, `RS256`, `RS512`, `PS256`, `PS512` for in-KMS generation, EC only (`ES256`/`ES384`) for importing an externally generated key pair.
+- **Required IAM** (granted to the Verifier Lambda role by the CDK stack): the same actions as the Issuer, scoped to the `alias/vcknots/verifiers/*` namespace and to keys tagged `vcknots:verifier-signature-key=true`.
+- **Store drift**: the verifier metadata lives in DynamoDB while the key lives in KMS, so the two can drift apart — most often when an environment that previously ran on the in-memory key store is pointed at KMS. `createVerifierMetadata` rejects an already-registered verifier and cannot repair that, so the Verifier only logs a warning at startup (`Verifier metadata exists but no <alg> key is registered in KMS`). To recover, delete the verifier item from the Verifiers table and let the next startup register it again.
 
 ## Notes
 
