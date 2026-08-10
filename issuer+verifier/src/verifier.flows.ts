@@ -13,7 +13,7 @@ import { VerifierMetadata } from './verifier-metadata.types'
 import { RequestObjectId } from './request-object-id.types'
 import { Certificate } from './signature-key.types'
 import { Jwk } from './jwk.type'
-import { exportJWK, importSPKI } from 'jose'
+import { calculateJwkThumbprint, exportJWK, importSPKI } from 'jose'
 import { ClientIdentifier } from './client-id-scheme.types'
 import { Cnonce } from './cnonce.types'
 import { VpTokenPayload } from './presentation.types'
@@ -23,7 +23,21 @@ type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
   alg: string
   kid?: string
+  encryptionPublicKey?: EncryptionPublicKeyOptions
 }
+type EncryptionPublicKeyOptions =
+  | {
+      format: 'pem'
+      alg: string
+      kid?: string
+      publicKey: string
+    }
+  | {
+      format: 'jwk'
+      alg: string
+      kid?: string
+      publicKey: Jwk
+    }
 type CreateVerifierMetadataOptionsWithCert = CreateVerifierMetadataOptionsBase & {
   privateKey: string | Jwk
   certificate: string | string[]
@@ -138,36 +152,25 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       let certificatesToSave: Certificate | undefined
       let keyAlg: string | undefined = options?.alg
       if (!options || !keyAlg) {
-        // create new key pair (not support x509)
+        // create new signing key pair (not support x509)
         keyAlg = metadata.authorization_signed_response_alg ?? 'ES256'
         await keyStore$.save(verifierId, keyAlg)
-        const publicKey = await keyStore$.fetch(verifierId, keyAlg)
-        if (!publicKey) {
-          throw err('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
-            message: `Verifier public key for ${keyAlg} is not found.`,
-          })
-        }
-        const jwk = await exportJWK(publicKey)
-        verifierMetadata.jwks = { keys: [{ ...jwk, alg: keyAlg }] }
         verifierMetadata.authorization_signed_response_alg = keyAlg
       } else if ('publicKey' in options && options.publicKey !== undefined) {
-        // use provided key pair (not support x509)
+        // use provided signing key pair (not support x509)
         if (!keyAlg) {
           throw err('INTERNAL_SERVER_ERROR', {
             message: 'alg is required in the provided publicKey.',
           })
         }
         if (options.format === 'jwk' && typeof options.publicKey !== 'string') {
-          verifierMetadata.jwks = { keys: [options.publicKey] }
           verifierMetadata.authorization_signed_response_alg = keyAlg
         } else if (options.format === 'jwk') {
           throw err('INVALID_OPTIONS', {
             message: 'publicKey must be a JWK when format is jwk.',
           })
         } else if (options.format === 'pem' && typeof options.publicKey === 'string') {
-          const key = await importSPKI(options.publicKey, keyAlg)
-          const jwk = await exportJWK(key)
-          verifierMetadata.jwks = { keys: [{ ...jwk }] }
+          await importSPKI(options.publicKey, keyAlg)
           verifierMetadata.authorization_signed_response_alg = keyAlg
         } else {
           throw err('INVALID_OPTIONS', {
@@ -182,7 +185,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           privateKey: options.privateKey,
         }
       } else if ('certificate' in options && options.certificate !== undefined) {
-        // use provided key pair and x509 certificate
+        // use provided signing key pair and x509 certificate
         // password protected private key is not supported
         if (!keyAlg) {
           throw err('INTERNAL_SERVER_ERROR', {
@@ -200,9 +203,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         }
         const certificate = certificates[0]
         const publicKey = await certificate$.getPublicKey(certificate)
-        const key = await importSPKI(publicKey, keyAlg)
-        const jwk = await exportJWK(key)
-        verifierMetadata.jwks = { keys: [{ ...jwk }] }
+        await importSPKI(publicKey, keyAlg)
         verifierMetadata.authorization_signed_response_alg = keyAlg
         certificatesToSave = certificates
         keyPairsToSave = {
@@ -213,6 +214,39 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           privateKey: options.privateKey,
         }
       }
+
+      // set client_metadata.jwks if encryptionPublicKey is provided
+      if (options?.encryptionPublicKey) {
+        const encryptionPublicKey = options.encryptionPublicKey
+        let jwk
+
+        if (encryptionPublicKey.format === 'pem') {
+          const publicKey = await importSPKI(
+            encryptionPublicKey.publicKey,
+            encryptionPublicKey.alg,
+          )
+          jwk = await exportJWK(publicKey)
+        } else {
+          jwk = encryptionPublicKey.publicKey
+        }
+
+        const jwkKid = typeof jwk.kid === 'string' ? jwk.kid : undefined
+        if(jwkKid && encryptionPublicKey.kid && jwkKid !== encryptionPublicKey.kid) {
+          throw err('INVALID_OPTIONS', {
+            message: 'The encryption public key kid does not match the provided kid.',
+          })
+        }
+        const kid = encryptionPublicKey.kid ?? jwkKid ?? (await calculateJwkThumbprint(jwk))
+
+        const jwkUse = typeof jwk.use === 'string' ? jwk.use : undefined
+        if (jwkUse && jwkUse !== 'enc') {
+          throw err('INVALID_OPTIONS', {
+            message: 'The encryption public key use must be "enc" or undefined.',
+          })
+        }
+        verifierMetadata.jwks = { keys: [{ ...jwk, alg: encryptionPublicKey.alg, use: 'enc', kid }] }
+      }
+
       if (certificatesToSave) {
         await certificateStore$.save(verifierId, certificatesToSave)
       }
