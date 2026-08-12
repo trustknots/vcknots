@@ -8,6 +8,8 @@ export const jwkSchema = z
     x: z.string().optional(),
     y: z.string().optional(),
     crv: z.string().optional(),
+    kid: z.string().optional(),
+    use: z.string().optional(),
   })
   .catchall(z.unknown())
 

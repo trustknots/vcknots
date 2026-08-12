@@ -13,7 +13,7 @@ import { VerifierMetadata } from './verifier-metadata.types'
 import { RequestObjectId } from './request-object-id.types'
 import { Certificate } from './signature-key.types'
 import { Jwk } from './jwk.type'
-import { calculateJwkThumbprint, exportJWK, importSPKI } from 'jose'
+import { calculateJwkThumbprint, exportJWK, importSPKI, JWK } from 'jose'
 import { ClientIdentifier } from './client-id-scheme.types'
 import { Cnonce } from './cnonce.types'
 import { VpTokenPayload } from './presentation.types'
@@ -218,20 +218,17 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       // set client_metadata.jwks if encryptionPublicKey is provided
       if (options?.encryptionPublicKey) {
         const encryptionPublicKey = options.encryptionPublicKey
-        let jwk
+        let jwk: JWK | Jwk
 
         if (encryptionPublicKey.format === 'pem') {
-          const publicKey = await importSPKI(
-            encryptionPublicKey.publicKey,
-            encryptionPublicKey.alg,
-          )
+          const publicKey = await importSPKI(encryptionPublicKey.publicKey, encryptionPublicKey.alg)
           jwk = await exportJWK(publicKey)
         } else {
           jwk = encryptionPublicKey.publicKey
         }
 
         const jwkKid = typeof jwk.kid === 'string' ? jwk.kid : undefined
-        if(jwkKid && encryptionPublicKey.kid && jwkKid !== encryptionPublicKey.kid) {
+        if (jwkKid && encryptionPublicKey.kid && jwkKid !== encryptionPublicKey.kid) {
           throw err('INVALID_OPTIONS', {
             message: 'The encryption public key kid does not match the provided kid.',
           })
@@ -244,7 +241,9 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
             message: 'The encryption public key use must be "enc" or undefined.',
           })
         }
-        verifierMetadata.jwks = { keys: [{ ...jwk, alg: encryptionPublicKey.alg, use: 'enc', kid }] }
+        verifierMetadata.jwks = {
+          keys: [{ ...jwk, alg: encryptionPublicKey.alg, use: 'enc', kid }],
+        }
       }
 
       if (certificatesToSave) {
