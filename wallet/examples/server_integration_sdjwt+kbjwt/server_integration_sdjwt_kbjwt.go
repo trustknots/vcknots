@@ -90,52 +90,23 @@ func extractDisclosureNames(raw []byte) []string {
 	return names
 }
 
-func buildRequestObjectJSON(vct string, subjectFields []string) string {
-	fieldsJSON := ""
+func buildRequestObjectJSON(vct string) string {
+	// An empty meta object means no additional constraints on the requested credential.
+	metaJSON := "{}"
 	if vct != "" {
-		fieldsJSON += `[
-		{
-			"path": ["$.vct"],
-			"filter": {
-				"type": "string",
-				"const": "` + vct + `"
-			}
-		}`
-
-		for _, field := range subjectFields {
-			fieldsJSON += `,
-		{
-			"path": ["$.` + field + `"],
-			"intent_to_retain": false
-		}`
-		}
-		fieldsJSON += `
-	]`
-	}
-
-	constraintsJSON := ""
-	if fieldsJSON != "" {
-		constraintsJSON = `,
-				"constraints": {
-					"fields": ` + fieldsJSON + `
-				}`
+		metaJSON = `{
+							"vct_values": ["` + vct + `"]
+						}`
 	}
 
 	return `{
 		"query": {
-			"presentation_definition": {
-				"id": "dynamic-presentation-kbjwt",
-				"input_descriptors": [
+			"dcql_query": {
+				"credentials": [
 					{
 						"id": "credential-request",
-						"name": "SD-JWT VC with KB-JWT",
-						"purpose": "Verify credential with key binding",
-						"format": {
-							"dc+sd-jwt": {
-								"sd-jwt_alg_values": ["ES256"],
-								"kb-jwt_alg_values": ["ES256"]
-							}
-						}` + constraintsJSON + `
+						"format": "dc+sd-jwt",
+						"meta": ` + metaJSON + `
 					}
 				]
 			}
@@ -197,8 +168,8 @@ func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential
 		"requested_fields", requestedClaims,
 	)
 
-	jsonBody := buildRequestObjectJSON(vct, requestedClaims)
-	logger.Info("Generated presentation definition", "json", jsonBody)
+	jsonBody := buildRequestObjectJSON(vct)
+	logger.Info("Generated DCQL query", "json", jsonBody)
 
 	reqBody := io.NopCloser(strings.NewReader(jsonBody))
 	req, err := http.NewRequest("POST", verifierURL+"/request-object", reqBody)

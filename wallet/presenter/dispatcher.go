@@ -57,7 +57,7 @@ func (d *PresentationDispatcher) getPlugin(protocol types.SupportedPresentationP
 	return plugin, nil
 }
 
-func (d *PresentationDispatcher) Present(protocol SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission PresentationSubmission, request *PresentationRequest) (string, error) {
+func (d *PresentationDispatcher) Present(protocol SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, request *PresentationRequest) (string, error) {
 	if len(serializedPresentation) == 0 {
 		return "", types.NewPresenterError(protocol, endpoint.String(), "present", types.ErrInvalidPresentation)
 	}
@@ -67,7 +67,7 @@ func (d *PresentationDispatcher) Present(protocol SupportedPresentationProtocol,
 		return "", err
 	}
 
-	redirectURI, err := plugin.Present(protocol, endpoint, serializedPresentation, presentationSubmission, request)
+	redirectURI, err := plugin.Present(protocol, endpoint, serializedPresentation, request)
 	if err != nil {
 		return "", types.NewPresenterError(protocol, endpoint.String(), "present", err)
 	}
