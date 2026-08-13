@@ -3,8 +3,10 @@ import { DataStores } from '../data/data-stores';
 import { grantSignatureKeyStoreAccess } from '../security/signature-key-policy';
 import { LambdaApi } from './lambda-api';
 
+// Both values must match aws/src/providers/kms-verifier-signature-key-store.provider.ts. They are
+// matched against the alias and tag the provider attaches at runtime, so a mismatch is not caught
+// at build time — it surfaces as AccessDenied from KMS after deploy.
 const VERIFIER_KEY_ALIAS_PREFIX = 'alias/vcknots/verifiers/';
-// Must match VERIFIER_KEY_TAG_KEY in aws/src/providers/kms-verifier-signature-key-store.provider.ts.
 const VERIFIER_KEY_TAG_KEY = 'vcknots:verifier-signature-key';
 
 export class VerifierApi extends Construct {

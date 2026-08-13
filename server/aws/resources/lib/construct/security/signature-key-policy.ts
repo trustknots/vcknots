@@ -77,18 +77,27 @@ export function grantSignatureKeyStoreAccess(
   // to keys carrying an alias from this store's namespace.
   role.addToPrincipalPolicy(
     new iam.PolicyStatement({
-      actions: [
-        'kms:DescribeKey',
-        'kms:GetPublicKey',
-        'kms:Sign',
-        'kms:GetParametersForImport',
-        'kms:ImportKeyMaterial',
-        'kms:ScheduleKeyDeletion',
-      ],
+      actions: ['kms:DescribeKey', 'kms:GetPublicKey', 'kms:Sign'],
       resources: ['*'],
       conditions: {
         'ForAnyValue:StringLike': {
           'kms:ResourceAliases': `${aliasPrefix}*`,
+        },
+      },
+    }),
+  );
+
+  // kms:ResourceAliases matches on the aliases a key already carries, so it can never authorize
+  // an action on a key that has no alias yet. The provider imports key material and discards
+  // orphan keys before (or instead of) the first CreateAlias, so those calls are scoped by the
+  // creation tag instead — the same reason the CreateAlias key-side statement above uses it.
+  role.addToPrincipalPolicy(
+    new iam.PolicyStatement({
+      actions: ['kms:GetParametersForImport', 'kms:ImportKeyMaterial', 'kms:ScheduleKeyDeletion'],
+      resources: ['*'],
+      conditions: {
+        StringEquals: {
+          [`aws:ResourceTag/${tagKey}`]: 'true',
         },
       },
     }),

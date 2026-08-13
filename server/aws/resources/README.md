@@ -124,7 +124,18 @@ Attributes other than `id` (metadata body, `expires_at`, `ttl`, and so on) are w
 | Authz | AuthServersTable, PreCodesTable (read/write) |
 | Verifier | VerifiersTable, RequestObjectsTable, NoncesTable (read/write) |
 
-The Issuer and Verifier roles also have a scoped KMS policy for their signature key store, granted by `grantSignatureKeyStoreAccess()` (`lib/construct/security/signature-key-policy.ts`): `CreateKey`/`TagResource` restricted to the `SigningAlgorithm`/`KeySpec`/`KeyOrigin` combinations the provider creates, `CreateAlias`/`UpdateAlias` restricted to the role's own alias namespace (and, for the key side, to keys carrying its tag), and `DescribeKey`/`GetPublicKey`/`Sign`/`GetParametersForImport`/`ImportKeyMaterial`/`ScheduleKeyDeletion` restricted via `kms:ResourceAliases` to that same namespace. The two roles differ only in those two values:
+The Issuer and Verifier roles also have a scoped KMS policy for their signature key store, granted by `grantSignatureKeyStoreAccess()` (`lib/construct/security/signature-key-policy.ts`). Keys are created at runtime, so none of them can be referenced by ARN here; each statement is scoped by a condition instead:
+
+| Actions | Scoped by |
+|---|---|
+| `CreateKey`, `TagResource` | `kms:KeyUsage=SIGN_VERIFY` plus the `kms:KeySpec`/`kms:KeyOrigin` values the provider creates |
+| `CreateAlias`, `UpdateAlias` | the role's alias namespace (alias side) and `aws:ResourceTag` (key side — a new key has no alias yet) |
+| `DescribeKey`, `GetPublicKey`, `Sign` | `kms:ResourceAliases` matching the role's alias namespace |
+| `GetParametersForImport`, `ImportKeyMaterial`, `ScheduleKeyDeletion` | `aws:ResourceTag` |
+
+The last row is separate on purpose: `kms:ResourceAliases` matches on the aliases a key already carries, so it can never authorize an action on a key that has none. The provider imports key material and discards orphan keys before (or instead of) the first `CreateAlias`, so those calls are scoped by the tag the provider sets at `CreateKey` time.
+
+The two roles differ only in the alias namespace and the tag:
 
 | Role | Alias namespace | Key tag |
 |---|---|---|

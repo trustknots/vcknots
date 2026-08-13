@@ -3,8 +3,10 @@ import { DataStores } from '../data/data-stores';
 import { grantSignatureKeyStoreAccess } from '../security/signature-key-policy';
 import { LambdaApi, requiredEnv } from './lambda-api';
 
+// Both values must match aws/src/providers/kms-issuer-signature-key-store.provider.ts. They are
+// matched against the alias and tag the provider attaches at runtime, so a mismatch is not caught
+// at build time — it surfaces as AccessDenied from KMS after deploy.
 const ISSUER_KEY_ALIAS_PREFIX = 'alias/vcknots/issuers/';
-// Must match ISSUER_KEY_TAG_KEY in aws/src/providers/kms-issuer-signature-key-store.provider.ts.
 const ISSUER_KEY_TAG_KEY = 'vcknots:issuer-signature-key';
 
 export class IssuerApi extends Construct {

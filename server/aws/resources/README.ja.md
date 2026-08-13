@@ -124,7 +124,18 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSig
 | Authz | AuthServersTable、PreCodesTable（読み書き） |
 | Verifier | VerifiersTable、RequestObjectsTable、NoncesTable（読み書き） |
 
-Issuer ロールと Verifier ロールには署名鍵ストア用にスコープを絞った KMS ポリシーも付与されています（`grantSignatureKeyStoreAccess()`、`lib/construct/security/signature-key-policy.ts` 参照）: `CreateKey`/`TagResource` は provider が作成する `SigningAlgorithm`/`KeySpec`/`KeyOrigin` の組合せに限定、`CreateAlias`/`UpdateAlias` は各ロール自身のエイリアス名前空間に限定（キー側は各ロールのタグが付いたキーに限定）、`DescribeKey`/`GetPublicKey`/`Sign`/`GetParametersForImport`/`ImportKeyMaterial`/`ScheduleKeyDeletion` は `kms:ResourceAliases` 条件で同じ名前空間に限定されています。両ロールの違いはこの2つの値だけです:
+Issuer ロールと Verifier ロールには署名鍵ストア用にスコープを絞った KMS ポリシーも付与されています（`grantSignatureKeyStoreAccess()`、`lib/construct/security/signature-key-policy.ts` 参照）。鍵は実行時に作成されるため ARN で指定できず、各ステートメントは条件でスコープを絞っています:
+
+| アクション | スコープの絞り方 |
+|---|---|
+| `CreateKey`・`TagResource` | `kms:KeyUsage=SIGN_VERIFY` と、provider が作成する `kms:KeySpec`/`kms:KeyOrigin` の値 |
+| `CreateAlias`・`UpdateAlias` | 各ロールのエイリアス名前空間（エイリアス側）と `aws:ResourceTag`（キー側 — 新規キーにはまだエイリアスが無いため） |
+| `DescribeKey`・`GetPublicKey`・`Sign` | `kms:ResourceAliases` 条件で各ロールのエイリアス名前空間 |
+| `GetParametersForImport`・`ImportKeyMaterial`・`ScheduleKeyDeletion` | `aws:ResourceTag` |
+
+最後の行を分けているのは意図的です。`kms:ResourceAliases` はキーに既に設定されているエイリアスと照合するため、**エイリアスが無いキーに対する操作は決して許可できません**。provider は最初の `CreateAlias` より前に（あるいは `CreateAlias` の代わりに）鍵材料のインポートと孤児キーの破棄を行うため、これらの呼び出しは `CreateKey` 時に付与するタグでスコープを絞っています。
+
+両ロールの違いはエイリアス名前空間とタグだけです:
 
 | ロール | エイリアス名前空間 | キーのタグ |
 |---|---|---|
