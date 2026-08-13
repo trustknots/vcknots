@@ -70,6 +70,17 @@ export const createKmsSignatureKeyStore = (
     return `${aliasPrefix}${md5(id)}-${alg}`
   }
 
+  // A key that never got its alias is unusable and invisible to every later call, so it has to
+  // be discarded or it just accumulates against the KMS key quota and the bill. Cleanup failures
+  // are logged rather than thrown: they must not mask the error that triggered the cleanup.
+  const discardOrphanKey = async (keyId: string) => {
+    try {
+      await kms.send(new ScheduleKeyDeletionCommand({ KeyId: keyId, PendingWindowInDays: 7 }))
+    } catch (cleanupError) {
+      console.error(`Failed to discard the orphan KMS key ${keyId}: ${cleanupError}`)
+    }
+  }
+
   const describeKey = async (alias: string): Promise<KeyMetadata | null> => {
     try {
       const { KeyMetadata: metadata } = await kms.send(new DescribeKeyCommand({ KeyId: alias }))
@@ -130,11 +141,10 @@ export const createKmsSignatureKeyStore = (
         try {
           await kms.send(new CreateAliasCommand({ AliasName: alias, TargetKeyId: keyId }))
         } catch (error) {
+          // Either we lost the alias race (another writer created the key first) or the alias
+          // call failed outright. Either way the key we just created never got its alias.
+          await discardOrphanKey(keyId)
           if (isKmsError(error, 'AlreadyExistsException')) {
-            // Lost the alias race: another writer created the key first. Discard our orphan key.
-            await kms.send(
-              new ScheduleKeyDeletionCommand({ KeyId: keyId, PendingWindowInDays: 7 })
-            )
             return
           }
           throw error
@@ -182,23 +192,25 @@ export const createKmsSignatureKeyStore = (
           })
         )
       } catch (error) {
-        // Discard the orphan EXTERNAL key so a failed import doesn't leave an
-        // unaliased, unusable key (and its KMS-key-count/billing footprint) behind.
-        try {
-          await kms.send(new ScheduleKeyDeletionCommand({ KeyId: keyId, PendingWindowInDays: 7 }))
-        } catch (cleanupError) {
-          console.error(`Failed to discard the orphan KMS key ${keyId}: ${cleanupError}`)
-        }
+        await discardOrphanKey(keyId)
         throw error
       }
 
+      // The key material is in place but the key is still unaliased, so every failure below
+      // leaves it as unreachable as a failed import would.
       try {
         await kms.send(new CreateAliasCommand({ AliasName: alias, TargetKeyId: keyId }))
       } catch (error) {
         if (isKmsError(error, 'AlreadyExistsException')) {
-          await kms.send(new UpdateAliasCommand({ AliasName: alias, TargetKeyId: keyId }))
-          return
+          try {
+            await kms.send(new UpdateAliasCommand({ AliasName: alias, TargetKeyId: keyId }))
+            return
+          } catch (updateError) {
+            await discardOrphanKey(keyId)
+            throw updateError
+          }
         }
+        await discardOrphanKey(keyId)
         throw error
       }
     },

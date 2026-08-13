@@ -237,6 +237,10 @@ describe('kmsVerifierSignatureKeyStore', () => {
     )
 
     assert.equal(kmsMock.commandCalls(ImportKeyMaterialCommand).length, 0)
+    assert.deepEqual(kmsMock.commandCalls(ScheduleKeyDeletionCommand)[0]?.args[0].input, {
+      KeyId: 'imported-key',
+      PendingWindowInDays: 7,
+    })
   })
 
   it('should discard the orphan EXTERNAL key when the import fails', async () => {
@@ -292,6 +296,62 @@ describe('kmsVerifierSignatureKeyStore', () => {
 
     assert.equal(errors.length, 1)
     assert.match(String(errors[0][0]), /Failed to discard the orphan KMS key/)
+  })
+
+  it('should discard the imported key when CreateAlias fails outright', async () => {
+    const { privateKeyPem } = generateEcPair()
+    kmsMock.on(CreateKeyCommand).resolves({ KeyMetadata: { KeyId: 'imported-key' } as never })
+    kmsMock.on(GetParametersForImportCommand).resolves({
+      PublicKey: wrappingPublicKeyDer,
+      ImportToken: importToken,
+    })
+    kmsMock.on(ImportKeyMaterialCommand).resolves({})
+    kmsMock.on(CreateAliasCommand).rejects(accessDenied())
+    kmsMock.on(ScheduleKeyDeletionCommand).resolves({})
+
+    const provider = createProvider()
+    await assert.rejects(
+      provider.save(verifier, 'ES256', {
+        format: 'pem',
+        declaredAlg: 'ES256',
+        privateKey: privateKeyPem,
+      }),
+      /access denied/
+    )
+
+    // The key material is in place but the key never got its alias, so it is unreachable.
+    assert.deepEqual(kmsMock.commandCalls(ScheduleKeyDeletionCommand)[0]?.args[0].input, {
+      KeyId: 'imported-key',
+      PendingWindowInDays: 7,
+    })
+  })
+
+  it('should discard the imported key when UpdateAlias fails', async () => {
+    const { privateKeyPem } = generateEcPair()
+    kmsMock.on(CreateKeyCommand).resolves({ KeyMetadata: { KeyId: 'imported-key' } as never })
+    kmsMock.on(GetParametersForImportCommand).resolves({
+      PublicKey: wrappingPublicKeyDer,
+      ImportToken: importToken,
+    })
+    kmsMock.on(ImportKeyMaterialCommand).resolves({})
+    kmsMock.on(CreateAliasCommand).rejects(alreadyExists())
+    kmsMock.on(UpdateAliasCommand).rejects(accessDenied())
+    kmsMock.on(ScheduleKeyDeletionCommand).resolves({})
+
+    const provider = createProvider()
+    await assert.rejects(
+      provider.save(verifier, 'ES256', {
+        format: 'pem',
+        declaredAlg: 'ES256',
+        privateKey: privateKeyPem,
+      }),
+      /access denied/
+    )
+
+    assert.deepEqual(kmsMock.commandCalls(ScheduleKeyDeletionCommand)[0]?.args[0].input, {
+      KeyId: 'imported-key',
+      PendingWindowInDays: 7,
+    })
   })
 
   it('should create a KMS-managed key when pair is not provided', async () => {
@@ -364,6 +424,21 @@ describe('kmsVerifierSignatureKeyStore', () => {
 
     const provider = createProvider()
     await provider.save(verifier, 'ES256')
+
+    assert.deepEqual(kmsMock.commandCalls(ScheduleKeyDeletionCommand)[0]?.args[0].input, {
+      KeyId: 'orphan-key',
+      PendingWindowInDays: 7,
+    })
+  })
+
+  it('should discard the generated key when CreateAlias fails outright', async () => {
+    kmsMock.on(DescribeKeyCommand).rejects(notFound())
+    kmsMock.on(CreateKeyCommand).resolves({ KeyMetadata: { KeyId: 'orphan-key' } as never })
+    kmsMock.on(CreateAliasCommand).rejects(accessDenied())
+    kmsMock.on(ScheduleKeyDeletionCommand).resolves({})
+
+    const provider = createProvider()
+    await assert.rejects(provider.save(verifier, 'ES256'), /access denied/)
 
     assert.deepEqual(kmsMock.commandCalls(ScheduleKeyDeletionCommand)[0]?.args[0].input, {
       KeyId: 'orphan-key',
