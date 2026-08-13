@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 13
 ---
 
 # How to Set Up and Use the Wallet Feature

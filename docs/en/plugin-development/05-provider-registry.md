@@ -1,5 +1,5 @@
 ---
-sidebar_position: 10
+sidebar_position: 45
 ---
 
 # 05. ProviderRegistry: Roles and Internal Mechanisms

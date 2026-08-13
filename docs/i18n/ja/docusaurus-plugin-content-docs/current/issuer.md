@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 11
 ---
 
 # Issuer機能のセットアップと使用方法
