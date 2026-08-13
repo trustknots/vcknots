@@ -208,9 +208,13 @@ Verifier は認可リクエストオブジェクト（JAR）の署名鍵を `kms
 - **必要な IAM 権限**（CDK スタックが Verifier Lambda ロールに付与）: Issuer と同じアクション一式を、`alias/vcknots/verifiers/*` 名前空間と `vcknots:verifier-signature-key=true` タグの付いた鍵にスコープを絞って付与しています。
 - **ストア間のズレ**: verifier メタデータは DynamoDB、鍵は KMS と別ストアにあるため、両者がズレることがあります（インメモリ鍵ストアで動かしていた環境を KMS に向けた場合に起こりやすいです）。`createVerifierMetadata` は登録済みの verifier を弾くため自動修復できず、Verifier は起動時に警告を出して処理を続行します（`Verifier metadata exists but no <alg> key is registered in KMS`）。復旧は手動で、verifier を最初に登録する手順と同じです。**登録処理はローカル起動時にしか実行されない**点に注意してください: `handlers/verifier.ts` は `AWS_LAMBDA_FUNCTION_NAME` が設定されていると `initialize()` をスキップし、verifier を登録する HTTP エンドポイントも存在しないため、デプロイ済みの Lambda が自力で登録することはありません。
 
-  1. Verifiers テーブルから該当 verifier のアイテムを削除します（キーは verifier のクライアント ID、つまりベース URL です）。
+  `initialize()` は常に同梱の `server/samples/verifier_metadata.json` を登録するため、以下の手順は**その verifier が持っていたメタデータを置き換えます**。サンプルメタデータで動かしている verifier にのみ適用してください。
+
+  1. Verifiers テーブルから該当 verifier のアイテムを削除します。パーティションキーはクライアント ID そのものではなく、その MD5 を base64url 化した値です: `node -e "console.log(require('crypto').createHash('md5').update('<client-id>').digest('base64url'))"`
   2. ローカルの `.env` を同じテーブルに向け、`VERIFIER_BASE_URL` に復旧対象の verifier を設定します（デプロイ済み環境を直す場合は `localhost` ではなくデプロイ先の API URL）。
-  3. `pnpm start:verifier` を一度実行します。その verifier ID のメタデータ登録と KMS 鍵の作成が行われるので、完了後は停止して構いません。
+  3. `pnpm start:verifier` を一度実行します。その verifier ID へのサンプルメタデータ登録と KMS 鍵の作成が行われるので、完了後は停止して構いません。
+
+  カスタムメタデータを持つ verifier の場合は、先にアイテムをバックアップし、同じメタデータを `createVerifierMetadata` に渡すスクリプトから再登録してください（鍵の作成と `jwks` の書き換えはフローが行います）。**バックアップしたアイテムをそのまま復元してはいけません** — その `jwks` は失われた鍵を指したままで、まさに直そうとしているドリフトが再現します。
 
 ## 注意事項
 

@@ -208,9 +208,13 @@ The Verifier stores the key that signs Authorization Request Objects (JAR) in AW
 - **Required IAM** (granted to the Verifier Lambda role by the CDK stack): the same actions as the Issuer, scoped to the `alias/vcknots/verifiers/*` namespace and to keys tagged `vcknots:verifier-signature-key=true`.
 - **Store drift**: the verifier metadata lives in DynamoDB while the key lives in KMS, so the two can drift apart — most often when an environment that previously ran on the in-memory key store is pointed at KMS. `createVerifierMetadata` rejects an already-registered verifier and cannot repair that, so the Verifier only logs a warning at startup (`Verifier metadata exists but no <alg> key is registered in KMS`) and keeps running. Recovery is manual, and it is the same procedure that seeds a verifier in the first place — note that **registration only runs locally**: `handlers/verifier.ts` skips `initialize()` when `AWS_LAMBDA_FUNCTION_NAME` is set, and there is no HTTP endpoint that registers a verifier, so a deployed Lambda never registers one by itself.
 
-  1. Delete the verifier's item from the Verifiers table (its key is the verifier client id, i.e. the base URL).
+  `initialize()` always registers the bundled `server/samples/verifier_metadata.json`, so the steps below **replace whatever metadata the verifier had** and are only appropriate for a verifier that runs on that sample metadata:
+
+  1. Delete the verifier's item from the Verifiers table. Its partition key is not the client id itself but the base64url MD5 of it: `node -e "console.log(require('crypto').createHash('md5').update('<client-id>').digest('base64url'))"`.
   2. Locally, point `.env` at the same tables and set `VERIFIER_BASE_URL` to the verifier you are repairing (the deployed API URL, not `localhost`, when fixing a deployed environment).
-  3. Run `pnpm start:verifier` once. It registers the metadata and creates the KMS key for that verifier id, then you can stop it.
+  3. Run `pnpm start:verifier` once. It registers the sample metadata and creates the KMS key for that verifier id, then you can stop it.
+
+  For a verifier with custom metadata, back the item up first and re-register that same metadata from a script that calls `createVerifierMetadata` — the flow creates the key and rewrites `jwks` from it. Do not restore the backed-up item verbatim: its `jwks` still describes the key that went missing, which is the drift you are repairing.
 
 ## Notes
 
