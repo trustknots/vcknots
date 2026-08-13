@@ -55,7 +55,7 @@ func (o *Oid4vciReceiver) doRequest(method string, endpoint common.URIField, pat
 		return fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
 	}
 
-	if path == "/.well-known/oauth-authorization-server" {
+	if path == "/.well-known/oauth-authorization-server" || path == "/.well-known/openid-credential-issuer" {
 		// Special handling for metadata discovery as per RFC 8414 §3
 		// The well-known string MUST be inserted between the host component and the path component.
 		originalPath := strings.TrimSuffix(endpointURL.Path, "/")

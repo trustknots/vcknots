@@ -5,7 +5,7 @@ CDK stack for vcknots on AWS.
 Related packages:
 
 - [`@trustknots/server-aws`](../src) — Lambda handlers, vcknots context, and utilities (`src/handlers/`, `src/context/`, `src/utils/`)
-- [`@trustknots/aws`](../../../aws) — AWS providers for DynamoDB (KMS / Secrets Manager not yet implemented)
+- [`@trustknots/aws`](../../../aws) — AWS providers for DynamoDB and KMS (Issuer signature keys; Secrets Manager not yet implemented)
 
 ## Architecture
 
@@ -20,7 +20,7 @@ server/aws/
 │   │   ├── authz.ts       Lambda handler (Authz)
 │   │   └── verifier.ts    Lambda handler (Verifier)
 │   ├── apps/
-│   │   ├── create-issuer-app.ts   Issuer app (DynamoDB issuer metadata store)
+│   │   ├── create-issuer-app.ts   Issuer app (DynamoDB issuer metadata store, KMS signature key store)
 │   │   ├── create-authz-app.ts    Authorization Server app (in-memory)
 │   │   └── create-verifier-app.ts Verifier app (in-memory)
 │   ├── context/
@@ -42,7 +42,6 @@ server/aws/
         │   │   ├── authz-api.ts
         │   │   └── verifier-api.ts
         │   └── security/
-        │       ├── key-management.ts      (placeholder, not in stack yet)
         │       └── secret-management.ts   (placeholder, not in stack yet)
         ├── util/
         │   └── paths.ts
@@ -67,7 +66,7 @@ Each handler mounts a single route from `@trustknots/server-core` on a Hono app 
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
 | `verifier.ts` | `@trustknots/server-core/routes/verify` |
 
-The Issuer uses `dynamodbIssuerMetadataStore` from `@trustknots/aws`. The Authorization Server and Verifier use in-memory providers.
+The Issuer uses `dynamodbIssuerMetadataStore` and `kmsIssuerSignatureKeyStore` from `@trustknots/aws`. The Authorization Server and Verifier use in-memory providers (including the Authz access-token signing key, which does not persist across Lambda invocations — a KMS-backed authz signature key store is not implemented yet).
 
 Unhandled errors are logged via `utils/error-logger.ts` (`sanitizeError`) so only safe fields reach CloudWatch.
 
@@ -88,11 +87,13 @@ Physical names (log groups, REST API names) include the deployment stage from `A
 | Log retention | 1 week |
 | `API_GATEWAY_ID`, `API_STAGE` | Used to build the API Gateway default URL at runtime |
 
-| Lambda | Log group (`{stage}` = `API_STAGE`) | REST API name | Table env vars |
+| Lambda | Log group (`{stage}` = `API_STAGE`) | REST API name | Environment variables |
 |---|---|---|---|
-| Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`, `NONCES_TABLE_NAME`, `PRE_CODES_TABLE_NAME` |
-| Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME` |
+| Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`, `NONCES_TABLE_NAME`, `PRE_CODES_TABLE_NAME`, `TX_CODE_PEPPER` |
+| Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME`, `TX_CODE_PEPPER` |
 | Verifier | `/vcknots/{stage}/verifier` | `vcknots-verifier-{stage}` | `VERIFIERS_TABLE_NAME`, `REQUEST_OBJECTS_TABLE_NAME`, `NONCES_TABLE_NAME` |
+
+`TX_CODE_PEPPER` is read from the deploy-time environment (see [Deploy](#deploy)) and injected into the Issuer/Authz Lambda environment; CDK synth fails fast if it is unset.
 
 Role-specific constructs in `lib/construct/api/` wire DynamoDB tables, IAM, and environment variables.
 
@@ -122,6 +123,8 @@ Attributes other than `id` (metadata body, `expires_at`, `ttl`, and so on) are w
 | Issuer | IssuersTable, NoncesTable (read/write); PreCodesTable (write only) |
 | Authz | AuthServersTable, PreCodesTable (read/write) |
 | Verifier | VerifiersTable, RequestObjectsTable, NoncesTable (read/write) |
+
+The Issuer role also has a scoped KMS policy for `kmsIssuerSignatureKeyStore` (see `lib/construct/api/issuer-api.ts`): `CreateKey`/`TagResource` restricted to the `SigningAlgorithm`/`KeySpec`/`KeyOrigin` combinations the provider creates, `CreateAlias`/`UpdateAlias` restricted to the `alias/vcknots/issuers/*` namespace (and, for the key side, to keys tagged `vcknots:issuer-signature-key=true`), and `DescribeKey`/`GetPublicKey`/`Sign`/`GetParametersForImport`/`ImportKeyMaterial`/`ScheduleKeyDeletion` restricted via `kms:ResourceAliases` to `alias/vcknots/issuers/*`.
 
 ### Stack Outputs
 
@@ -201,6 +204,8 @@ pnpm run deploy -- --profile vc-knots
 pnpm run deploy -- --stage prod --profile vc-knots
 # prod requires CORS_ALLOWED_ORIGINS (env or scripts/.env)
 CORS_ALLOWED_ORIGINS=https://app.example.com pnpm run deploy -- --stage prod
+# TX_CODE_PEPPER is always required (env or scripts/.env) — CDK synth throws if it is unset
+TX_CODE_PEPPER=<your-tx-code-pepper-here> pnpm run deploy -- --profile vc-knots
 ```
 
 Options:
@@ -210,6 +215,7 @@ Options:
 | `--profile` | AWS profile (optional; uses CLI default when omitted) |
 | `--stage` | API Gateway stage name (default: `test`). Also sets `API_STAGE` for CDK synth |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated HTTPS origins for API Gateway CORS (**required when `API_STAGE=prod`**) |
+| `TX_CODE_PEPPER` | Secret pepper for `tx_code` HMAC hashing, injected into the Issuer/Authz Lambda environment (**always required**) |
 | `STACK_NAME` | CloudFormation stack name (default: `ResourcesStack`) |
 
 `scripts/.env` is loaded when present. CLI flags override `.env`.

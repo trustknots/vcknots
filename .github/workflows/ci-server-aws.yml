@@ -1,11 +1,11 @@
-name: CI multi server
+name: CI server aws
 
 # server depends on issuer+verifier
 on:
   pull_request:
     branches: ["main", "feat/oid4vci-1.0"]
     paths:
-      - server/multi/**
+      - server/aws/src/**
 
 jobs:
   core:
@@ -28,11 +28,15 @@ jobs:
 
       - name: Run format
         run: |
-          pnpm --filter ...@trustknots/multi-server format
+          pnpm --filter ...@trustknots/server-aws format
 
       - name: Run lint
         run: |
-          pnpm --filter ...@trustknots/multi-server lint
+          pnpm --filter ...@trustknots/server-aws lint
 
       - name: Build
-        run: pnpm --filter ...@trustknots/multi-server... build
+        run: pnpm --filter ...@trustknots/server-aws... build
+
+      - name: Run tests
+        run: |
+          pnpm --filter ...@trustknots/server-aws test

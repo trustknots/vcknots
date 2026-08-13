@@ -18,9 +18,9 @@
 	"license": "Apache-2.0",
 	"packageManager": "pnpm@11.10.0",
 	"dependencies": {
-		"@hono/node-server": "2.0.6",
+		"@hono/node-server": "2.0.12",
 		"@trustknots/server-core": "workspace:*",
 		"@trustknots/vcknots": "workspace:*",
-		"hono": "4.12.32"
+		"hono": "4.12.34"
 	}
 }
