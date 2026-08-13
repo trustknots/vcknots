@@ -62,12 +62,18 @@ export function createVerifierApp(options?: VcknotsOptions) {
       // apart — most often when an environment that ran on the in-memory key store is pointed at
       // KMS. createVerifierMetadata rejects an already-registered verifier and cannot repair that,
       // so just make the gap visible.
+      // This is a diagnostic, so a KMS failure here (missing permissions, a transient error) must
+      // not take the startup down with it: fetch() rethrows everything except a missing key.
       const keyAlg = existing.authorization_signed_response_alg ?? 'ES256'
-      const publicKey = await signatureKeyStore.fetch(verifierId, keyAlg)
-      if (!publicKey) {
-        console.warn(
-          `Verifier metadata exists but no ${keyAlg} key is registered in KMS: signing authorization requests will fail`,
-        )
+      try {
+        const publicKey = await signatureKeyStore.fetch(verifierId, keyAlg)
+        if (!publicKey) {
+          console.warn(
+            `Verifier metadata exists but no ${keyAlg} key is registered in KMS: signing authorization requests will fail`,
+          )
+        }
+      } catch (error) {
+        console.warn(`Could not check the verifier ${keyAlg} signing key in KMS: ${error}`)
       }
       return
     }

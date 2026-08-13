@@ -73,8 +73,8 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 
 | Variable | Required by | Description |
 |---|---|---|
-| `AWS_REGION` | Issuer | AWS region where DynamoDB tables are deployed (e.g. `ap-northeast-1`) |
-| `AWS_PROFILE` | Issuer (optional) | AWS profile to use (omit to use the default) |
+| `AWS_REGION` | All **required** | AWS region where the DynamoDB tables and KMS keys live (e.g. `ap-northeast-1`) |
+| `AWS_PROFILE` | All (optional) | AWS profile to use (omit to use the default) |
 | `TX_CODE_PEPPER` | All **required** | Secret pepper used to HMAC-hash `tx_code` before storing it in DynamoDB |
 | `ISSUERS_TABLE_NAME` | Issuer **required** | DynamoDB table name (stack output: `IssuersTableName`) |
 | `NONCES_TABLE_NAME` | Issuer **required** | DynamoDB table name (stack output: `NoncesTableName`) |
@@ -206,7 +206,11 @@ The Verifier stores the key that signs Authorization Request Objects (JAR) in AW
 - **Alias naming**: each key is referenced through the alias `alias/vcknots/verifiers/<md5(client_id)>-<alg>` (base64url MD5 of the verifier client id plus the JOSE algorithm). The key is created when the verifier is registered (`createVerifierMetadata`), and its public key is published as `jwks` in the verifier metadata. No additional environment variables are required.
 - **Supported algorithms**: same as the Issuer — `ES256`, `ES384`, `RS256`, `RS512`, `PS256`, `PS512` for in-KMS generation, EC only (`ES256`/`ES384`) for importing an externally generated key pair.
 - **Required IAM** (granted to the Verifier Lambda role by the CDK stack): the same actions as the Issuer, scoped to the `alias/vcknots/verifiers/*` namespace and to keys tagged `vcknots:verifier-signature-key=true`.
-- **Store drift**: the verifier metadata lives in DynamoDB while the key lives in KMS, so the two can drift apart — most often when an environment that previously ran on the in-memory key store is pointed at KMS. `createVerifierMetadata` rejects an already-registered verifier and cannot repair that, so the Verifier only logs a warning at startup (`Verifier metadata exists but no <alg> key is registered in KMS`). To recover, delete the verifier item from the Verifiers table and let the next startup register it again.
+- **Store drift**: the verifier metadata lives in DynamoDB while the key lives in KMS, so the two can drift apart — most often when an environment that previously ran on the in-memory key store is pointed at KMS. `createVerifierMetadata` rejects an already-registered verifier and cannot repair that, so the Verifier only logs a warning at startup (`Verifier metadata exists but no <alg> key is registered in KMS`) and keeps running. Recovery is manual, and it is the same procedure that seeds a verifier in the first place — note that **registration only runs locally**: `handlers/verifier.ts` skips `initialize()` when `AWS_LAMBDA_FUNCTION_NAME` is set, and there is no HTTP endpoint that registers a verifier, so a deployed Lambda never registers one by itself.
+
+  1. Delete the verifier's item from the Verifiers table (its key is the verifier client id, i.e. the base URL).
+  2. Locally, point `.env` at the same tables and set `VERIFIER_BASE_URL` to the verifier you are repairing (the deployed API URL, not `localhost`, when fixing a deployed environment).
+  3. Run `pnpm start:verifier` once. It registers the metadata and creates the KMS key for that verifier id, then you can stop it.
 
 ## Notes
 

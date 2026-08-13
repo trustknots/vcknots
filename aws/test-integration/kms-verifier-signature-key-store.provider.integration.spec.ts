@@ -13,6 +13,7 @@ import { DescribeKeyCommand, KMSClient, ScheduleKeyDeletionCommand } from '@aws-
 import { VcknotsError } from '@trustknots/vcknots/errors'
 import { VerifierClientId } from '@trustknots/vcknots/verifier'
 import { calculateJwkThumbprint, exportJWK, type JWK, jwtVerify } from 'jose'
+import { isKmsError } from '../src/providers/kms-provider.utils'
 import { kmsVerifierSignatureKeyStore } from '../src/providers/kms-verifier-signature-key-store.provider'
 
 const RUN_ID = Date.now().toString(36)
@@ -45,8 +46,12 @@ after(async () => {
           new ScheduleKeyDeletionCommand({ KeyId: KeyMetadata.KeyId, PendingWindowInDays: 7 })
         )
       }
-    } catch {
-      // Nothing to clean up if the alias/key is already gone.
+    } catch (error) {
+      // A missing alias/key is fine — it means there is nothing to clean up. Anything else (no
+      // permission, throttling) leaves a real key behind in the account, so say so.
+      if (!isKmsError(error, 'NotFoundException')) {
+        console.warn(`Failed to schedule deletion for ${alias}: ${error}`)
+      }
     }
   }
 })

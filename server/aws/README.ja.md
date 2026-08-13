@@ -73,8 +73,8 @@ cp .env.example .env
 
 | 変数 | 使用するサーバー | 説明 |
 |---|---|---|
-| `AWS_REGION` | Issuer | DynamoDB テーブルがデプロイされている AWS リージョン（例: `ap-northeast-1`） |
-| `AWS_PROFILE` | Issuer（任意） | 使用する AWS プロファイル（省略時はデフォルトを使用） |
+| `AWS_REGION` | 全サーバー **必須** | DynamoDB テーブルと KMS 鍵が存在する AWS リージョン（例: `ap-northeast-1`） |
+| `AWS_PROFILE` | 全サーバー（任意） | 使用する AWS プロファイル（省略時はデフォルトを使用） |
 | `TX_CODE_PEPPER` | 全サーバー **必須** | `tx_code` を DynamoDB に保存する前に HMAC ハッシュ化するための秘密 pepper |
 | `ISSUERS_TABLE_NAME` | Issuer **必須** | DynamoDB テーブル名（スタック出力: `IssuersTableName`） |
 | `NONCES_TABLE_NAME` | Issuer **必須** | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
@@ -206,7 +206,11 @@ Verifier は認可リクエストオブジェクト（JAR）の署名鍵を `kms
 - **エイリアス命名規則**: 各鍵はエイリアス `alias/vcknots/verifiers/<md5(client_id)>-<alg>`（verifier のクライアント ID の MD5 を base64url 化したもの + JOSE アルゴリズム名）で参照されます。鍵は verifier の登録時（`createVerifierMetadata`）に作成され、その公開鍵が verifier メタデータの `jwks` として公開されます。追加の環境変数は不要です。
 - **対応アルゴリズム**: Issuer と同じです — KMS 内での生成は `ES256`・`ES384`・`RS256`・`RS512`・`PS256`・`PS512`、外部生成の鍵ペアのインポートは EC 系（`ES256`/`ES384`）のみ対応です。
 - **必要な IAM 権限**（CDK スタックが Verifier Lambda ロールに付与）: Issuer と同じアクション一式を、`alias/vcknots/verifiers/*` 名前空間と `vcknots:verifier-signature-key=true` タグの付いた鍵にスコープを絞って付与しています。
-- **ストア間のズレ**: verifier メタデータは DynamoDB、鍵は KMS と別ストアにあるため、両者がズレることがあります（インメモリ鍵ストアで動かしていた環境を KMS に向けた場合に起こりやすいです）。`createVerifierMetadata` は登録済みの verifier を弾くため自動修復できず、Verifier は起動時に警告を出すだけです（`Verifier metadata exists but no <alg> key is registered in KMS`）。復旧するには Verifiers テーブルから該当 verifier のアイテムを削除し、次回起動時に再登録させてください。
+- **ストア間のズレ**: verifier メタデータは DynamoDB、鍵は KMS と別ストアにあるため、両者がズレることがあります（インメモリ鍵ストアで動かしていた環境を KMS に向けた場合に起こりやすいです）。`createVerifierMetadata` は登録済みの verifier を弾くため自動修復できず、Verifier は起動時に警告を出して処理を続行します（`Verifier metadata exists but no <alg> key is registered in KMS`）。復旧は手動で、verifier を最初に登録する手順と同じです。**登録処理はローカル起動時にしか実行されない**点に注意してください: `handlers/verifier.ts` は `AWS_LAMBDA_FUNCTION_NAME` が設定されていると `initialize()` をスキップし、verifier を登録する HTTP エンドポイントも存在しないため、デプロイ済みの Lambda が自力で登録することはありません。
+
+  1. Verifiers テーブルから該当 verifier のアイテムを削除します（キーは verifier のクライアント ID、つまりベース URL です）。
+  2. ローカルの `.env` を同じテーブルに向け、`VERIFIER_BASE_URL` に復旧対象の verifier を設定します（デプロイ済み環境を直す場合は `localhost` ではなくデプロイ先の API URL）。
+  3. `pnpm start:verifier` を一度実行します。その verifier ID のメタデータ登録と KMS 鍵の作成が行われるので、完了後は停止して構いません。
 
 ## 注意事項
 
