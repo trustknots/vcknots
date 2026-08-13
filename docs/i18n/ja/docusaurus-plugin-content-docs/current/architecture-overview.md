@@ -10,21 +10,17 @@ VC エコシステムでは、OpenID4VCI / OpenID4VP などの標準プロトコ
 
 例えば、利用するクラウド環境、ストレージ、鍵管理方式、Credential の発行ルールなどは、導入するシステムごとに異なる要件が存在します。
 
-VC Knots では、このような差異を吸収するため、以下の拡張ポイントを提供しています。
+VC Knots では、このような差異に対応するため、`provider` として以下の拡張ポイントを提供しています。
 
-- **Provider**
-  - Features 内部のビジネスロジックに対する拡張ポイントを提供します。
-  - 鍵生成、Nonce 生成、識別子管理、Credential 発行ポリシーなど、システム固有の処理を差し替え可能にします。
-  - 詳細については[プラグイン開発 - Custom Provider の作成](./plugin-development/03-custom-provider.md)を参照してください。
+- 鍵生成、Nonce 生成、識別子管理、Credential 発行ポリシーなど、システム固有のビジネスロジックを差し替え可能にします。
+- データストア、KMS など外部インフラへの接続を抽象化し、AWS や Google Cloud などの環境に対応できます。
+- 
+- 詳細については[プラグイン開発 - Custom Provider の作成](./plugin-development/03-custom-provider.md)を参照してください。
 
-- **Infrastructure Integrations**
-  - データストア、KMS など外部インフラへの接続を抽象化します。
-  - AWS や Google Cloud など異なる実行環境へ柔軟に対応できます。
+これにより、ビジネスロジックとインフラ依存を分離できます。
 
-この設計により、OpenID4VCI / OpenID4VP などの標準プロトコル処理と、インフラ依存やシステム固有のビジネスロジックを分離できます。
-
-Features と Infrastructure Integrations を組み合わせることで Issuer、Wallet、Verifier を効率的に実装できます。
-また、Samples により利用方法や推奨されるデプロイ構成を確認できます。
+`provider` を組み合わせることで Issuer、Wallet、Verifier を効率的に実装できます。
+また、リポジトリ内の Samples により利用方法や推奨されるデプロイ構成を確認できます。
 
 # 全体構成
 
@@ -36,6 +32,12 @@ VC Knots には次のレイヤーが存在します。
 | **Features** | OpenID4VCI / OpenID4VP のプロトコルや Wallet 機能を提供します。 |
 | **Infrastructure Integrations**      | データベースや KMS などの外部サービスとの接続を提供します。  |
 | **Infrastructure** | データベース、ストレージ、鍵管理サービスなど、 Infrastructure Integrations が接続する外部インフラです。  |
+
+VC Knots はレイヤーのうち Features と Infrastructure Integrations の機能を提供しています。これらは `provider` を通じて各システムの要件に応じて差し替えや拡張が可能です。
+
+各システムで構築する Infrastructure の上に Applications が構築されます。Applications は Features を利用してビジネスロジックを構築します。Infrastructure Integrations は Features と Infrastructure の間のやりとりを担います
+
+以下の図は対応範囲を示しています。
 
 ![overview](/img/docs/overview.drawio.svg)
 
