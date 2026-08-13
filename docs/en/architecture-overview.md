@@ -10,22 +10,17 @@ In VC ecosystems, interoperability based on standard protocols such as OpenID4VC
 
 For example, requirements for cloud environments, storage, key management methods, and Credential issuance rules differ between systems.
 
-VC Knots provides the following extension points to accommodate these differences.
+VC Knots provides the following extension points as `provider` to accommodate these differences.
 
-- **Provider**
-  - Provides extension points for business logic within Features.
-  - Enables replacement of system-specific processing such as key generation, Nonce generation, identifier management, and Credential issuance policies.
-  - For details, see [Plugin Development - Creating a Custom Provider](./plugin-development/03-custom-provider.md).
+- Enables replacement of system-specific business logic such as key generation, Nonce generation, identifier management, and Credential issuance policies.
+- Abstracts connections to external infrastructure such as data stores and KMS, enabling support for environments such as AWS and Google Cloud.
+- 
+- For details, see [Plugin Development - Creating a Custom Provider](./plugin-development/03-custom-provider.md).
 
-- **Infrastructure Integrations**
-  - Abstracts connections to external infrastructure such as data stores and KMS.
-  - Enables flexible support for different execution environments such as AWS and Google Cloud.
+This design separates business logic from infrastructure dependencies.
 
-This design separates standard protocol processing such as OpenID4VCI / OpenID4VP from infrastructure dependencies and system-specific business logic.
-
-By combining Features and Infrastructure Integrations, developers can efficiently implement Issuers, Wallets, and Verifiers.
-
-Samples are also provided to demonstrate usage and recommended deployment configurations.
+By combining `provider`, developers can efficiently implement Issuer, Wallet, or Verifier.
+Samples in the repository also demonstrate usage and recommended deployment configurations.
 
 # Architecture Layers
 
@@ -33,10 +28,16 @@ VC Knots consists of the following layers.
 
 | Layer | Description |
 | --- | --- |
-| **Applications** | Applications such as Issuers, Wallets, and Verifiers built using VC Knots. |
+| **Applications** | Applications such as Issuer, Wallet, or Verifier built using VC Knots. |
 | **Features** | Provides protocol implementations such as OpenID4VCI / OpenID4VP and Wallet functionality. |
 | **Infrastructure Integrations** | Provides connections to external services such as databases and KMS. |
 | **Infrastructure** | External infrastructure accessed through Infrastructure Integrations, such as databases, storage, and key management services. |
+
+VC Knots provides the functionality of the Features and Infrastructure Integrations layers. These can be replaced or extended through `provider` according to the requirements of each system.
+
+Applications are built on top of the Infrastructure configured for each system. Applications use Features to implement business logic. Infrastructure Integrations handle interactions between Features and Infrastructure.
+
+The following diagram shows the scope covered by VC Knots.
 
 ![overview](/img/docs/overview.drawio.svg)
 
@@ -70,7 +71,7 @@ VC Knots consists of the following layers.
 
 VC Knots provides standard protocol processing for OpenID4VCI / OpenID4VP as Features.
 
-Applications use these capabilities to build Issuers, Wallets, and Verifiers.
+Applications use these capabilities to build Issuer, Wallet, orVerifier.
 
 The following sections describe the role of each component in representative VC processing flows.
 
