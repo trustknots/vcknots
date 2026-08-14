@@ -11,27 +11,25 @@ describe('verifierEncryptionKey Provider', () => {
   })
 
   describe('generate', () => {
-    it('should generate a valid ECDH-ES key pair', async () => {
+    it('should generate a valid RSA-OAEP-256 key pair', async () => {
       const { publicKey, privateKey } = await provider.generate()
       assert.ok(publicKey, 'Public JWK should exist')
       assert.ok(privateKey, 'Private JWK should exist')
-      assert.equal(publicKey.kty, 'EC', 'Public JWK kty should be EC')
-      assert.equal(privateKey.kty, 'EC', 'Private JWK kty should be EC')
-      assert.equal(publicKey.crv, 'P-256', 'Public JWK crv should be P-256')
-      assert.equal(privateKey.crv, 'P-256', 'Private JWK crv should be P-256')
-      assert.ok(publicKey.x, 'Public key should have x coordinate')
-      assert.ok(publicKey.y, 'Public key should have y coordinate')
+      assert.equal(publicKey.kty, 'RSA', 'Public JWK kty should be RSA')
+      assert.equal(privateKey.kty, 'RSA', 'Private JWK kty should be RSA')
+      assert.ok(publicKey.n, 'Public JWK should have modulus n')
+      assert.ok(publicKey.e, 'Public JWK should have exponent e')
       assert.ok(privateKey.d, 'Private key should have d component')
       assert.ok(publicKey.kid, 'Public key should have kid')
-      assert.equal(publicKey.alg, 'ECDH-ES')
+      assert.equal(publicKey.alg, 'RSA-OAEP-256')
       assert.equal(publicKey.use, 'enc')
-      assert.equal(privateKey.alg, 'ECDH-ES')
+      assert.equal(privateKey.alg, 'RSA-OAEP-256')
     })
   })
 
   describe('canHandle', () => {
-    it('should return true for ECDH-ES algorithm', () => {
-      assert.strictEqual(provider.canHandle('ECDH-ES'), true)
+    it('should return true for RSA-OAEP-256 algorithm', () => {
+      assert.strictEqual(provider.canHandle('RSA-OAEP-256'), true)
     })
 
     it('should return false for other algorithms', () => {

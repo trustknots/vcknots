@@ -207,7 +207,7 @@ describe('VerifierFlow', () => {
       crv: 'P-256',
       x: 'enc-x',
       y: 'enc-y',
-      alg: 'ECDH-ES',
+      alg: 'RSA-OAEP-256',
       kid: 'enc-key-1',
       use: 'enc' as const,
     }
@@ -226,9 +226,13 @@ describe('VerifierFlow', () => {
       mock.method(mockKeyStoreProvider, 'save', async () => {})
       mock.method(mockEncryptionKeyStoreProvider, 'save', async () => {})
       mock.method(mockEncryptionKeyStoreProvider, 'fetch', async () => encryptionJwk)
-      mock.method(mockVerifierMetadataStore, 'save', async (_id: ClientId, value: VerifierMetadata) => {
-        savedMetadata = value
-      })
+      mock.method(
+        mockVerifierMetadataStore,
+        'save',
+        async (_id: ClientId, value: VerifierMetadata) => {
+          savedMetadata = value
+        }
+      )
 
       await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata)
 

@@ -8,7 +8,7 @@ export type VerifierEncryptionKeyProviderOptions = {
 export const verifierEncryptionKey = (
   options?: VerifierEncryptionKeyProviderOptions
 ): VerifierEncryptionKeyProvider => {
-  const alg = options?.alg ?? 'ECDH-ES'
+  const alg = options?.alg ?? 'RSA-OAEP-256'
 
   return {
     kind: 'verifier-encryption-key-provider',

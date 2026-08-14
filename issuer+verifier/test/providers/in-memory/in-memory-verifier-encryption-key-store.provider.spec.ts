@@ -24,20 +24,20 @@ describe('inMemoryVerifierEncryptionKeyStore', () => {
   })
 
   it('should save and fetch an encryption public jwk for a verifier', async () => {
-    await store.save(verifier, 'ECDH-ES')
-    const fetched = await store.fetch(verifier, 'ECDH-ES')
+    await store.save(verifier, 'RSA-OAEP-256')
+    const fetched = await store.fetch(verifier, 'RSA-OAEP-256')
 
     assert.ok(fetched)
-    assert.equal(fetched.alg, 'ECDH-ES')
+    assert.equal(fetched.alg, 'RSA-OAEP-256')
     assert.equal(fetched.use, 'enc')
     assert.ok(fetched.kid)
   })
 
   it('should replace encryption key with same alg', async () => {
-    await store.save(verifier, 'ECDH-ES')
-    const first = await store.fetch(verifier, 'ECDH-ES')
-    await store.save(verifier, 'ECDH-ES')
-    const second = await store.fetch(verifier, 'ECDH-ES')
+    await store.save(verifier, 'RSA-OAEP-256')
+    const first = await store.fetch(verifier, 'RSA-OAEP-256')
+    await store.save(verifier, 'RSA-OAEP-256')
+    const second = await store.fetch(verifier, 'RSA-OAEP-256')
 
     assert.ok(first)
     assert.ok(second)
@@ -45,12 +45,12 @@ describe('inMemoryVerifierEncryptionKeyStore', () => {
   })
 
   it('should return null if no encryption key pairs are saved', async () => {
-    const fetched = await store.fetch(ClientId('https://unknown.example.com'), 'ECDH-ES')
+    const fetched = await store.fetch(ClientId('https://unknown.example.com'), 'RSA-OAEP-256')
     assert.strictEqual(fetched, null)
   })
 
   it('should return null if requested algorithm is not found', async () => {
-    await store.save(verifier, 'ECDH-ES')
+    await store.save(verifier, 'RSA-OAEP-256')
     const fetched = await store.fetch(verifier, 'ES256')
     assert.strictEqual(fetched, null)
   })

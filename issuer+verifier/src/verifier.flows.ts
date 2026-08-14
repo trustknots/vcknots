@@ -216,7 +216,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         }
       }
 
-      const encryptionKeyAlg = 'ECDH-ES'
+      const encryptionKeyAlg = 'RSA-OAEP-256'
       await encryptionKeyStore$.save(verifierId, encryptionKeyAlg)
       const encryptionPublicJwk = await encryptionKeyStore$.fetch(verifierId, encryptionKeyAlg)
       if (!encryptionPublicJwk) {
