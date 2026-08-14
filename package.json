@@ -4,6 +4,7 @@
 	"description": "",
 	"main": "index.js",
 	"private": true,
+	"type": "module",
 	"scripts": {
 		"preinstall": "npx -y only-allow pnpm",
 		"test": "pnpm --filter @trustknots/* test",
@@ -14,13 +15,13 @@
 		"pack:vcknots": "cd issuer+verifier && npm pack",
 		"publish:vcknots": "cd issuer+verifier && npm publish --access public",
 		"prepare": "husky",
-		"test:conformance": "NODE_TLS_REJECT_UNAUTHORIZED=0 tsx tests/conformance/src/sample.ts",
+		"test:conformance": "NODE_TLS_REJECT_UNAUTHORIZED=0 tsx tests/conformance/src/runner.ts",
+		"ping:conformance": "NODE_TLS_REJECT_UNAUTHORIZED=0 tsx tests/conformance/src/sample.ts",
 		"test:haip": "tsx tests/conformance/runner/index.ts --profile=haip-1.0",
 		"test:haip:v5.1.43": "tsx tests/conformance/runner/index.ts --profile=haip-1.0 --suite=v5.1.43",
 		"test:haip:v5.2.0": "tsx tests/conformance/runner/index.ts --profile=haip-1.0 --suite=v5.2.0",
-		"compose:up:5.2.2": "docker compose -f tests/conformance/suites/v5.2.2/docker-compose-prebuilt.yml up -d",
-		"compose:down:5.2.2": "docker compose -f tests/conformance/suites/v5.2.2/docker-compose-prebuilt.yml down -v",
-		"compose:logs:5.2.2": "docker compose -f tests/conformance/suites/v5.2.2/docker-compose-prebuilt.yml logs -f"
+		"compose:up": "docker compose -f tests/conformance/suites/docker-compose-prebuilt.yml up -d",
+		"compose:down": "docker compose -f tests/conformance/suites/docker-compose-prebuilt.yml down -v"
 	},
 	"keywords": [],
 	"author": "trustknots",
