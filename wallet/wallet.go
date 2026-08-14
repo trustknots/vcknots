@@ -303,8 +303,8 @@ func validateClientAuthConfig(config ClientAuthConfig) error {
 			publicKey = &k
 		}
 
-		if publicKey == nil || publicKey.Curve == nil || publicKey.Curve.Params() == nil ||
-			publicKey.Curve.Params().Name != elliptic.P256().Params().Name {
+		if publicKey == nil || publicKey.Curve == nil || publicKey.Params() == nil ||
+			publicKey.Params().Name != elliptic.P256().Params().Name {
 			return fmt.Errorf("client authentication key is not compatible with ES256")
 		}
 		return nil

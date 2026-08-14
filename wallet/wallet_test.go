@@ -3379,7 +3379,7 @@ func TestController_PresentCredential_CallsRedirectHandler(t *testing.T) {
 	responseServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(fmt.Sprintf(`{"redirect_uri":"%s"}`, redirectTarget)))
+		_, _ = fmt.Fprintf(w, `{"redirect_uri":"%s"}`, redirectTarget)
 	}))
 	defer responseServer.Close()
 
@@ -3798,8 +3798,6 @@ func TestController_PresentCredential_DetailedErrorPaths_Integration(t *testing.
 				t.Errorf("PresentCredential() unexpected error: %v", err)
 			} else if (tt.expectParseError || tt.expectCredError) && err == nil {
 				t.Errorf("PresentCredential() expected error but got none for %s", tt.description)
-			} else if err != nil {
-				// Expected error occurred - test passes
 			}
 		})
 	}
