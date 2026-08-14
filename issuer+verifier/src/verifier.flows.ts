@@ -13,7 +13,7 @@ import { VerifierMetadata } from './verifier-metadata.types'
 import { RequestObjectId } from './request-object-id.types'
 import { Certificate } from './signature-key.types'
 import { Jwk } from './jwk.type'
-import { calculateJwkThumbprint, exportJWK, importSPKI, JWK } from 'jose'
+import { importSPKI } from 'jose'
 import { ClientIdentifier } from './client-id-scheme.types'
 import { Cnonce } from './cnonce.types'
 import { VpTokenPayload } from './presentation.types'
@@ -115,6 +115,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   const query$ = context.providers.get('credential-query-provider')
   const verifierMetadata$ = context.providers.get('verifier-metadata-store-provider')
   const keyStore$ = context.providers.get('verifier-signature-key-store-provider')
+  const encryptionKeyStore$ = context.providers.get('verifier-encryption-key-store-provider')
   const requestObjectId$ = context.providers.get('request-object-id-provider')
   const requestObjectStore$ = context.providers.get('request-object-store-provider')
   const authzRequestJAR$ = context.providers.get('authz-request-jar-provider')
@@ -215,35 +216,17 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         }
       }
 
-      // set client_metadata.jwks if encryptionPublicKey is provided
-      if (options?.encryptionPublicKey) {
-        const encryptionPublicKey = options.encryptionPublicKey
-        let jwk: JWK | Jwk
+      const encryptionKeyAlg = 'ECDH-ES'
+      await encryptionKeyStore$.save(verifierId, encryptionKeyAlg)
+      const encryptionPublicJwk = await encryptionKeyStore$.fetch(verifierId, encryptionKeyAlg)
+      if (!encryptionPublicJwk) {
+        throw err('INTERNAL_SERVER_ERROR', {
+          message: 'Failed to generate encryption key pair.',
+        })
+      }
 
-        if (encryptionPublicKey.format === 'pem') {
-          const publicKey = await importSPKI(encryptionPublicKey.publicKey, encryptionPublicKey.alg)
-          jwk = await exportJWK(publicKey)
-        } else {
-          jwk = encryptionPublicKey.publicKey
-        }
-
-        const jwkKid = typeof jwk.kid === 'string' ? jwk.kid : undefined
-        if (jwkKid && encryptionPublicKey.kid && jwkKid !== encryptionPublicKey.kid) {
-          throw err('INVALID_OPTIONS', {
-            message: 'The encryption public key kid does not match the provided kid.',
-          })
-        }
-        const kid = encryptionPublicKey.kid ?? jwkKid ?? (await calculateJwkThumbprint(jwk))
-
-        const jwkUse = typeof jwk.use === 'string' ? jwk.use : undefined
-        if (jwkUse && jwkUse !== 'enc') {
-          throw err('INVALID_OPTIONS', {
-            message: 'The encryption public key use must be "enc" or undefined.',
-          })
-        }
-        verifierMetadata.jwks = {
-          keys: [{ ...jwk, alg: encryptionPublicKey.alg, use: 'enc', kid }],
-        }
+      verifierMetadata.jwks = {
+        keys: [encryptionPublicJwk],
       }
 
       if (certificatesToSave) {

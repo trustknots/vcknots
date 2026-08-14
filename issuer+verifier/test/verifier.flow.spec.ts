@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { generateKeyPairSync } from 'node:crypto'
 import { before, beforeEach, describe, it, mock } from 'node:test'
-import { calculateJwkThumbprint } from 'jose'
 import { AuthorizationRequest } from '../src/authorization-request.types'
 import { AuthorizationResponse } from '../src/authorization-response.types'
 import { ClientId } from '../src/client-id.types'
@@ -13,6 +12,7 @@ import {
   CredentialQueryProvider,
   RequestObjectIdProvider,
   RequestObjectStoreProvider,
+  VerifierEncryptionKeyStoreProvider,
   VerifierMetadataStoreProvider,
   VerifierSignatureKeyProvider,
   VerifierSignatureKeyStoreProvider,
@@ -134,6 +134,14 @@ describe('VerifierFlow', () => {
     sign: mock.fn(),
   } satisfies VerifierSignatureKeyStoreProvider
 
+  const mockEncryptionKeyStoreProvider = {
+    kind: 'verifier-encryption-key-store-provider',
+    name: 'mock-verifier-encryption-key-store-provider',
+    single: true,
+    save: mock.fn(),
+    fetch: mock.fn(),
+  } satisfies VerifierEncryptionKeyStoreProvider
+
   const mockCertificateStoreProvider = {
     kind: 'verifier-certificate-store-provider',
     name: 'mock-verifier-certificate-store-provider',
@@ -182,6 +190,7 @@ describe('VerifierFlow', () => {
         mockTransactionDataProvider,
         mockKeyProvider,
         mockKeyStoreProvider,
+        mockEncryptionKeyStoreProvider,
         mockCertificateStoreProvider,
         mockCertificateProvider,
         mockVerifyVerifiablePresentationProvider,
@@ -193,7 +202,17 @@ describe('VerifierFlow', () => {
   })
 
   describe('createVerifierMetadata', () => {
-    it('should generate and persist keys via key store when options are omitted', async () => {
+    const encryptionJwk = {
+      kty: 'EC',
+      crv: 'P-256',
+      x: 'enc-x',
+      y: 'enc-y',
+      alg: 'ECDH-ES',
+      kid: 'enc-key-1',
+      use: 'enc' as const,
+    }
+
+    it('should generate signing keys and persist encryption jwk when options are omitted', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
         vp_formats: {
@@ -201,15 +220,24 @@ describe('VerifierFlow', () => {
           jwt_vp_json: { alg_values_supported: ['ES256'] },
         },
       })
+      let savedMetadata: VerifierMetadata | undefined
 
+      mock.method(mockVerifierMetadataStore, 'fetch', async () => null)
       mock.method(mockKeyStoreProvider, 'save', async () => {})
-      mock.method(mockVerifierMetadataStore, 'save', async () => {})
+      mock.method(mockEncryptionKeyStoreProvider, 'save', async () => {})
+      mock.method(mockEncryptionKeyStoreProvider, 'fetch', async () => encryptionJwk)
+      mock.method(mockVerifierMetadataStore, 'save', async (_id: ClientId, value: VerifierMetadata) => {
+        savedMetadata = value
+      })
 
       await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata)
 
       assert.equal(mockKeyStoreProvider.save.mock.callCount(), 1)
+      assert.equal(mockEncryptionKeyStoreProvider.save.mock.callCount(), 1)
+      assert.equal(mockEncryptionKeyStoreProvider.fetch.mock.callCount(), 1)
       assert.equal(mockVerifierMetadataStore.save.mock.callCount(), 1)
       assert.equal(metadata.authorization_signed_response_alg, 'ES256')
+      assert.deepEqual(savedMetadata?.jwks, { keys: [encryptionJwk] })
     })
 
     it('should persist provided verifier keys before saving metadata', async () => {
@@ -224,12 +252,17 @@ describe('VerifierFlow', () => {
       const { publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
       const publicKeyPem = publicKey.export({ format: 'pem', type: 'spki' }).toString()
 
-      mock.method(mockVerifierMetadataStore, 'save', async () => {
-        events.push('metadata')
-      })
+      mock.method(mockVerifierMetadataStore, 'fetch', async () => null)
       mock.method(mockKeyStoreProvider, 'save', async () => {
         events.push('key')
       })
+      mock.method(mockEncryptionKeyStoreProvider, 'save', async () => {
+        events.push('enc-key')
+      })
+      mock.method(mockEncryptionKeyStoreProvider, 'fetch', async () => encryptionJwk)
+      mock.method(mockVerifierMetadataStore, 'save', async () => {
+        events.push('metadata')
+      })
 
       await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata, {
         format: 'pem',
@@ -238,10 +271,10 @@ describe('VerifierFlow', () => {
         privateKey: 'private-key',
       })
 
-      assert.deepEqual(events, ['key', 'metadata'])
+      assert.deepEqual(events, ['enc-key', 'key', 'metadata'])
     })
 
-    it('should set jwks with enc key when encryptionPublicKey is provided as PEM', async () => {
+    it('should throw INTERNAL_SERVER_ERROR when encryption key generation fails', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
         vp_formats: {
@@ -249,247 +282,19 @@ describe('VerifierFlow', () => {
           jwt_vp_json: { alg_values_supported: ['ES256'] },
         },
       })
-      const { publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
-      const publicKeyPem = publicKey.export({ format: 'pem', type: 'spki' }).toString()
-      let savedMetadata: VerifierMetadata | undefined
 
-      mock.method(mockVerifierMetadataStore, 'save', async (_id: ClientId, value: VerifierMetadata) => {
-        savedMetadata = value
-      })
+      mock.method(mockVerifierMetadataStore, 'fetch', async () => null)
       mock.method(mockKeyStoreProvider, 'save', async () => {})
-
-      await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata, {
-        format: 'pem',
-        alg: 'ES256',
-        publicKey: publicKeyPem,
-        privateKey: 'private-key',
-        encryptionPublicKey: {
-          format: 'pem',
-          alg: 'ECDH-ES',
-          publicKey: publicKeyPem,
-        },
-      })
-
-      assert.ok(savedMetadata?.jwks)
-      assert.equal(savedMetadata.jwks.keys.length, 1)
-      assert.equal(savedMetadata.jwks.keys[0]!.alg, 'ECDH-ES')
-      assert.equal(savedMetadata.jwks.keys[0]!.use, 'enc')
-      assert.ok(savedMetadata.jwks.keys[0]!.kid)
-    })
-
-    it('should use kid from encryption public JWK when options kid is omitted', async () => {
-      const metadata = VerifierMetadata({
-        client_name: 'Test Verifier',
-        vp_formats: {
-          jwt_vc_json: { alg_values_supported: ['ES256'] },
-          jwt_vp_json: { alg_values_supported: ['ES256'] },
-        },
-      })
-      const signingKeys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
-      const signingPublicKeyPem = signingKeys.publicKey
-        .export({ format: 'pem', type: 'spki' })
-        .toString()
-      const encryptionJwk = {
-        "kty": "EC",
-        "crv": "P-256",
-        "x": "f83OJ3D2xF4...",
-        "y": "x_FEzRu9uX...",
-        "kid": "encryption-key-1",
-        "use": "enc",
-        "alg": "ECDH-ES"
-      }
-      let savedMetadata: VerifierMetadata | undefined
-
-      mock.method(mockVerifierMetadataStore, 'save', async (_id: ClientId, value: VerifierMetadata) => {
-        savedMetadata = value
-      })
-      mock.method(mockKeyStoreProvider, 'save', async () => {})
-
-      await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata, {
-        format: 'pem',
-        alg: 'ES256',
-        publicKey: signingPublicKeyPem,
-        privateKey: 'private-key',
-        encryptionPublicKey: {
-          format: 'jwk',
-          alg: 'ECDH-ES',
-          publicKey: encryptionJwk,
-        },
-      })
-
-      assert.equal(savedMetadata?.jwks?.keys[0]!.kid, 'encryption-key-1')
-      assert.equal(savedMetadata?.jwks?.keys[0]!.use, 'enc')
-    })
-
-    it('should use provided encryption key kid when JWK kid is absent', async () => {
-      const metadata = VerifierMetadata({
-        client_name: 'Test Verifier',
-        vp_formats: {
-          jwt_vc_json: { alg_values_supported: ['ES256'] },
-          jwt_vp_json: { alg_values_supported: ['ES256'] },
-        },
-      })
-      const signingKeys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
-      const signingPublicKeyPem = signingKeys.publicKey
-        .export({ format: 'pem', type: 'spki' })
-        .toString()
-      const encryptionJwk = {
-        "kty": "EC",
-        "crv": "P-256",
-        "x": "f83OJ3D2xF4...",
-        "y": "x_FEzRu9uX...",
-        "use": "enc",
-        "alg": "ECDH-ES"
-      }
-      const expectedKid = await calculateJwkThumbprint(encryptionJwk)
-      let savedMetadata: VerifierMetadata | undefined
-
-      mock.method(mockVerifierMetadataStore, 'save', async (_id: ClientId, value: VerifierMetadata) => {
-        savedMetadata = value
-      })
-      mock.method(mockKeyStoreProvider, 'save', async () => {})
-
-      await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata, {
-        format: 'pem',
-        alg: 'ES256',
-        publicKey: signingPublicKeyPem,
-        privateKey: 'private-key',
-        encryptionPublicKey: {
-          format: 'jwk',
-          alg: 'ECDH-ES',
-          kid: expectedKid,
-          publicKey: encryptionJwk,
-        },
-      })
-
-      assert.equal(savedMetadata?.jwks?.keys[0]!.kid, expectedKid)
-      assert.equal(savedMetadata?.jwks?.keys[0]!.use, 'enc')
-    })
-
-    it('should throw INVALID_OPTIONS when encryption public key kid does not match provided kid', async () => {
-      const metadata = VerifierMetadata({
-        client_name: 'Test Verifier',
-        vp_formats: {
-          jwt_vc_json: { alg_values_supported: ['ES256'] },
-          jwt_vp_json: { alg_values_supported: ['ES256'] },
-        },
-      })
-      const signingKeys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
-      const signingPublicKeyPem = signingKeys.publicKey
-        .export({ format: 'pem', type: 'spki' })
-        .toString()
-      const encryptionJwk ={
-        "kty": "EC",
-        "crv": "P-256",
-        "x": "f83OJ3D2xF4...",
-        "y": "x_FEzRu9uX...",
-        "kid": 'jwk-kid',
-        "use": "enc",
-        "alg": "ECDH-ES"
-      }
+      mock.method(mockEncryptionKeyStoreProvider, 'save', async () => {})
+      mock.method(mockEncryptionKeyStoreProvider, 'fetch', async () => null)
 
       await assert.rejects(
-        verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata, {
-          format: 'pem',
-          alg: 'ES256',
-          publicKey: signingPublicKeyPem,
-          privateKey: 'private-key',
-          encryptionPublicKey: {
-            format: 'jwk',
-            alg: 'ECDH-ES',
-            kid: 'different-kid',
-            publicKey: encryptionJwk,
-          },
-        }),
+        verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata),
         {
-          name: 'INVALID_OPTIONS',
-          message: 'The encryption public key kid does not match the provided kid.',
+          name: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to generate encryption key pair.',
         }
       )
-    })
-
-    it('should throw INVALID_OPTIONS when encryption public key use is not enc', async () => {
-      const metadata = VerifierMetadata({
-        client_name: 'Test Verifier',
-        vp_formats: {
-          jwt_vc_json: { alg_values_supported: ['ES256'] },
-          jwt_vp_json: { alg_values_supported: ['ES256'] },
-        },
-      })
-      const signingKeys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
-      const signingPublicKeyPem = signingKeys.publicKey
-        .export({ format: 'pem', type: 'spki' })
-        .toString()
-      const encryptionJwk = {
-        "kty": "EC",
-        "crv": "P-256",
-        "x": "f83OJ3D2xF4...",
-        "y": "x_FEzRu9uX...",
-        "kid": "encryption-key-1",
-        "use": "sig",
-        "alg": "ECDH-ES"
-      }
-
-      await assert.rejects(
-        verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata, {
-          format: 'pem',
-          alg: 'ES256',
-          publicKey: signingPublicKeyPem,
-          privateKey: 'private-key',
-          encryptionPublicKey: {
-            format: 'jwk',
-            alg: 'ECDH-ES',
-            publicKey: encryptionJwk,
-          },
-        }),
-        {
-          name: 'INVALID_OPTIONS',
-          message: 'The encryption public key use must be "enc" or undefined.',
-        }
-      )
-    })
-
-    it('should accept encryption public key use=enc', async () => {
-      const metadata = VerifierMetadata({
-        client_name: 'Test Verifier',
-        vp_formats: {
-          jwt_vc_json: { alg_values_supported: ['ES256'] },
-          jwt_vp_json: { alg_values_supported: ['ES256'] },
-        },
-      })
-      const signingKeys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
-      const signingPublicKeyPem = signingKeys.publicKey
-        .export({ format: 'pem', type: 'spki' })
-        .toString()
-      const encryptionJwk = {
-        "kty": "EC",
-        "crv": "P-256",
-        "x": "f83OJ3D2xF4...",
-        "y": "x_FEzRu9uX...",
-        "kid": "encryption-key-1",
-        "use": "enc",
-        "alg": "ECDH-ES"
-      }
-      let savedMetadata: VerifierMetadata | undefined
-
-      mock.method(mockVerifierMetadataStore, 'save', async (_id: ClientId, value: VerifierMetadata) => {
-        savedMetadata = value
-      })
-      mock.method(mockKeyStoreProvider, 'save', async () => {})
-
-      await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata, {
-        format: 'pem',
-        alg: 'ES256',
-        publicKey: signingPublicKeyPem,
-        privateKey: 'private-key',
-        encryptionPublicKey: {
-          format: 'jwk',
-          alg: 'ECDH-ES',
-          publicKey: encryptionJwk,
-        },
-      })
-
-      assert.equal(savedMetadata?.jwks?.keys[0]!.use, 'enc')
     })
   })
 
