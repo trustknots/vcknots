@@ -181,6 +181,8 @@ func NewWallet() (*Wallet, error) {
 		Serializer: serializer,
 		Verifier:   verifier,
 		Presenter:  presenter,
+		DPoP:       DPoPConfig{},
+		ClientAuth: ClientAuthConfig{},
 	}
 
 	return NewWalletWithConfig(config)
@@ -292,8 +294,16 @@ func validateClientAuthConfig(config ClientAuthConfig) error {
 		if _, err := joseutil.NewJWKSigner(config.Key, jose.ES256); err != nil {
 			return fmt.Errorf("client authentication key is not compatible with ES256: %w", err)
 		}
-		publicKey, ok := config.Key.PublicKey().Key.(*ecdsa.PublicKey)
-		if !ok || publicKey.Curve == nil || publicKey.Curve.Params() == nil ||
+		var publicKey *ecdsa.PublicKey
+
+		switch k := config.Key.PublicKey().Key.(type) {
+		case *ecdsa.PublicKey:
+			publicKey = k
+		case ecdsa.PublicKey:
+			publicKey = &k
+		}
+
+		if publicKey == nil || publicKey.Curve == nil || publicKey.Curve.Params() == nil ||
 			publicKey.Curve.Params().Name != elliptic.P256().Params().Name {
 			return fmt.Errorf("client authentication key is not compatible with ES256")
 		}
@@ -666,7 +676,7 @@ func (w *Wallet) generateClientAssertion(key IKeyEntry, clientID, audience strin
 		return "", fmt.Errorf("failed to create client assertion signer adapter: %w", err)
 	}
 
-	signerOpts := (&jose.SignerOptions{}).WithType("jwt")
+	signerOpts := (&jose.SignerOptions{}).WithType("JWT")
 	if kid := key.PublicKey().KeyID; strings.TrimSpace(kid) != "" {
 		signerOpts = signerOpts.WithHeader("kid", kid)
 	}

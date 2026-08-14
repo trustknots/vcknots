@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidateClientAssertionTimeClaims(t *testing.T) {
@@ -67,9 +70,7 @@ func TestValidateClientAssertionTimeClaims(t *testing.T) {
 				"exp": tt.expiration,
 				"nbf": tt.notBefore,
 			})
-			if err != nil {
-				t.Fatalf("failed to create client assertion: %v", err)
-			}
+			require.NoError(t, err)
 
 			form := url.Values{
 				"client_id":             {clientID},
@@ -77,21 +78,16 @@ func TestValidateClientAssertionTimeClaims(t *testing.T) {
 				"client_assertion":      {assertion},
 			}
 			req, err := http.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
-			if err != nil {
-				t.Fatalf("failed to create request: %v", err)
-			}
+			require.NoError(t, err)
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 			err = server.validateClientAssertion(req)
 			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("validateClientAssertion() error = %v", err)
-				}
+				require.NoError(t, err)
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("validateClientAssertion() error = %v, want error containing %q", err, tt.wantErr)
-			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
 		})
 	}
 }

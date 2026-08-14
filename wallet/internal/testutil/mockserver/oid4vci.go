@@ -30,8 +30,10 @@ type OID4VCIIssuerConfig struct {
 	RequireClientAssertion bool
 	ClientAuthPublicKey    *jose.JSONWebKey
 	ExpectedClientID       string
-	// ClientAssertionAudience is the registered aud value. When empty, the
-	// authorization server issuer (the mock server base URL) is expected.
+	// ClientAssertionAudience is the registered aud value that client_assertion
+	// must carry. It must be set before a token request is validated. Deriving
+	// it from the incoming request would make the aud check tautological,
+	// because the wallet resolves the same value from this server's metadata.
 	ClientAssertionAudience string
 }
 
@@ -220,7 +222,7 @@ func (is *OID4VCIIssuerServer) validateClientAssertion(r *http.Request) error {
 	}
 	expectedAudience := is.config.ClientAssertionAudience
 	if expectedAudience == "" {
-		expectedAudience = "http://" + r.Host
+		return fmt.Errorf("ClientAssertionAudience must be configured to validate client_assertion aud")
 	}
 	if claims.AUD != expectedAudience {
 		return fmt.Errorf("client_assertion aud must match registered authorization server audience")

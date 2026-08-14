@@ -1366,7 +1366,7 @@ func TestWallet_generateClientAssertion_HeaderAndPayload(t *testing.T) {
 	require.NoError(t, err)
 	var header map[string]interface{}
 	require.NoError(t, json.Unmarshal(headerBytes, &header))
-	assert.Equal(t, "jwt", header["typ"])
+	assert.Equal(t, "JWT", header["typ"])
 	assert.Equal(t, "ES256", header["alg"])
 	assert.Equal(t, "client-key-1", header["kid"])
 
@@ -1768,6 +1768,11 @@ func TestWallet_obtainAccessToken_PrivateKeyJwtEndToEndWithMockServer(t *testing
 	}
 	issuer := mockserver.NewOID4VCIIssuerServer(issuerConfig)
 	defer issuer.Close()
+
+	// Fix the expected aud on the server side. Letting the mock derive it from
+	// the incoming request would make the check tautological, since the wallet
+	// resolves the same value from this server's metadata.
+	issuerConfig.ClientAssertionAudience = issuer.URL()
 
 	issuerURL, err := url.Parse(issuer.URL())
 	require.NoError(t, err)

@@ -18,7 +18,6 @@ import (
 	"github.com/trustknots/vcknots/wallet/presenter"
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
 	"github.com/trustknots/vcknots/wallet/receiver"
-	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer"
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
@@ -149,7 +148,7 @@ func NewOID4VPRuntime(certPath string) (*Runtime, error) {
 		Verifier:   verifierDispatcher,
 		Presenter:  presenterDispatcher,
 		ClientAuth: wallet.ClientAuthConfig{
-			Method:            receiverTypes.PrivateKeyJwt,
+			Method:            receiver.PrivateKeyJwt,
 			ClientID:          "test-client-id",
 			Key:               clientAuthKey,
 			AssertionAudience: "https://authz.example.com",
