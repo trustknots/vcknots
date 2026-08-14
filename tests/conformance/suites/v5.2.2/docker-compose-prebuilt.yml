@@ -1,0 +1,50 @@
+services:
+  mongodb:
+    image: mongo:6.0.13
+    volumes:
+     - mongo-data:/data/db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500k"
+        max-file: "5"
+  nginx:
+    image: registry.gitlab.com/openid/conformance-suite/nginx:release-v5.2.2
+    ports:
+     - "8443:8443"
+     - "8444:8444"
+    networks:
+      default:
+        aliases:
+         # lets the suite's own outbound requests to its public hostname reach nginx
+         # (in-container DNS otherwise resolves localhost.emobix.co.uk to 127.0.0.1)
+         - localhost.emobix.co.uk
+    depends_on:
+     - server
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500k"
+        max-file: "5"
+  server:
+    image: registry.gitlab.com/openid/conformance-suite:release-v5.2.2
+    environment:
+      BASE_URL: https://localhost.emobix.co.uk:8443
+      # mtls endpoints use the same hostname as devenv and the dev profile
+      BASE_MTLS_URL: https://localhost.emobix.co.uk:8444
+      MONGODB_HOST: mongodb
+      SPRING_PROFILES_ACTIVE: dev
+      OIDC_GOOGLE_CLIENTID: google-client
+      OIDC_GOOGLE_SECRET: google-secret
+      OIDC_GITLAB_CLIENTID: gitlab-client
+      OIDC_GITLAB_SECRET: gitlab-secret
+    depends_on:
+     - mongodb
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500k"
+        max-file: "5"
+
+volumes:
+  mongo-data:
