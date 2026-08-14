@@ -12,8 +12,8 @@ const locationId = 'global'
 const keyRingId = 'verifiers'
 const verifier = VerifierClientId('https://example.com/verifier')
 
-const md5 = (value: string) => createHash('md5').update(value).digest('base64url')
-const verifierKeyId = (alg: string) => `${md5(verifier)}-enc-${alg}`
+const verifierHash = (value: string) => createHash('sha256').update(value).digest('base64url')
+const verifierKeyId = (alg: string) => `${verifierHash(verifier)}-enc-${alg}`
 
 type FakePublicKey = {
   name: string
@@ -125,7 +125,11 @@ class FakeKmsClient {
     return [publicKey]
   }
 
-  addEnabledVersion(cryptoKeyName: string, versionId: string, publicKey: Omit<FakePublicKey, 'name'>) {
+  addEnabledVersion(
+    cryptoKeyName: string,
+    versionId: string,
+    publicKey: Omit<FakePublicKey, 'name'>
+  ) {
     const versionName = `${cryptoKeyName}/cryptoKeyVersions/${versionId}`
     this.versions.set(cryptoKeyName, [
       ...(this.versions.get(cryptoKeyName) ?? []),

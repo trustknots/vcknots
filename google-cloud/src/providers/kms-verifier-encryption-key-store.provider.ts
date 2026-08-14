@@ -39,8 +39,11 @@ export const kmsVerifierEncryptionKeyStore = (
   }
   const keyRingId = 'verifiers'
   const baseImportJobId = 'vcknots-verifier-encryption-import-job'
-  const md5 = (verifier: VerifierClientId) => createHash('md5').update(verifier).digest('base64url')
-  const verifierKeyId = (verifier: VerifierClientId, alg: string) => `${md5(verifier)}-enc-${alg}`
+
+  const verifierHash = (verifier: VerifierClientId) =>
+    createHash('sha256').update(verifier).digest('base64url')
+  const verifierKeyId = (verifier: VerifierClientId, alg: string) =>
+    `${verifierHash(verifier)}-enc-${alg}`
 
   const { ensureKeyRing, ensureCryptoKey } = createKmsProviderHelpers({
     kms,
