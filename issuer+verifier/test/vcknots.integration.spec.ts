@@ -270,7 +270,7 @@ describe('Vcknots', () => {
     const verifierId = ClientId('https://example.com/verifier')
     const metadata = VerifierMetadata({
       client_name: 'Test Verifier',
-      vp_formats: {
+      vp_formats_supported: {
         jwt_vc_json: {
           alg: ['ES256'],
         },
@@ -355,7 +355,10 @@ describe('Vcknots', () => {
       assert.equal(authzRequest.request.response_type, 'vp_token')
       assert.equal(authzRequest.request.response_mode, 'direct_post')
       assert.equal(authzRequest.request.client_metadata?.client_name, metadata.client_name)
-      assert.deepEqual(authzRequest.request.client_metadata?.vp_formats, metadata.vp_formats)
+      assert.deepEqual(
+        authzRequest.request.client_metadata?.vp_formats_supported,
+        metadata.vp_formats_supported
+      )
       assert.ok(authzRequest.request.client_metadata.jwks)
       assert.ok(authzRequest.request.client_metadata.jwks.keys)
       assert.ok(authzRequest.request.nonce)

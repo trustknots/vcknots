@@ -16,7 +16,7 @@ describe('firestoreVerifierMetadataStore', () => {
     client_name: 'Example Verifier',
     redirect_uris: ['https://example.com/verifier/callback'],
     response_types: 'code',
-    vp_formats: {
+    vp_formats_supported: {
       jwt_vp_json: {
         alg: ['ES256'],
       },

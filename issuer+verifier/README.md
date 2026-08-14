@@ -119,7 +119,7 @@ const verifierId = VerifierClientId(base)
 const metadata: VerifierMetadata = {
 	client_name: 'MyVerifier',
 	client_uri: base,
-	vp_formats: {
+	vp_formats_supported: {
 		jwt_vp: {
 			alg: ['ES256']
 		}

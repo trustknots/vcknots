@@ -249,7 +249,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       const credentialIds: string[] = []
       let isDcSDJwtRequested = false
       // Validate: Metadata supports format
-      const vpFormats = Object.keys(metadata.vp_formats)
+      const vpFormats = Object.keys(metadata.vp_formats_supported)
       if (parsedQuery.dcql_query) {
         for (const credential of parsedQuery.dcql_query.credentials) {
           if (!vpFormats.includes(credential.format)) {

@@ -359,7 +359,7 @@ curl --location 'http://localhost:8080/verify/callback' \
 - 例（内容）:
 ```json
 {
-	"vp_formats": {
+	"vp_formats_supported": {
 		"jwt_vc_json": {
 			"alg_values_supported": ["ES256"]
 		},

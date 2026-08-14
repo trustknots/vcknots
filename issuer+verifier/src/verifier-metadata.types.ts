@@ -1,6 +1,22 @@
 import { z } from 'zod'
 
-// https://openid.net/specs/openid-4-verifiable-presentations-1_0-ID2.html#name-verifier-metadata-client-me
+// https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B
+// Per-format metadata types for known credential format identifiers (Appendix B).
+// Unknown format identifiers are allowed via the index signature.
+export type VpFormatsSupported = {
+  jwt_vc_json?: { alg_values_supported?: string[] }
+  ldp_vc?: { proof_type_values_supported?: string[]; cryptosuite_values_supported?: string[] }
+  mso_mdoc?: {
+    issuerauth_alg_values_supported?: number[]
+    deviceauth_alg_values_supported?: number[]
+  }
+  'dc+sd-jwt'?: {
+    'sd-jwt_alg_values_supported'?: string[]
+    'kb-jwt_alg_values_supported'?: string[]
+  }
+} & Record<string, unknown>
+
+// https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-verifier-metadata-client-me
 // https://www.rfc-editor.org/rfc/rfc7591.html#section-2
 export const verifierMetadataSchema = z.object({
   redirect_uris: z.array(z.string()).optional(),
@@ -48,10 +64,10 @@ export const verifierMetadataSchema = z.object({
   software_id: z.string().optional(),
   software_version: z.string().optional(),
   response_types: z.enum(['code', 'token']).optional(),
-  vp_formats: z.record(z.string(), z.unknown()),
-  authorization_signed_response_alg: z.string().optional(), // mentioned in OID4VP draft24
-  authorization_encrypted_response_alg: z.string().optional(), // mentioned in OID4VP draft24
-  authorization_encrypted_response_enc: z.string().optional(), // mentioned in OID4VP draft24
+  vp_formats_supported: z.record(z.string(), z.unknown()),
+  authorization_signed_response_alg: z.string().optional(),
+  authorization_encrypted_response_alg: z.string().optional(),
+  authorization_encrypted_response_enc: z.string().optional(),
 })
 export type VerifierMetadata = z.infer<typeof verifierMetadataSchema>
 export const VerifierMetadata = (value?: {
@@ -79,7 +95,7 @@ export const VerifierMetadata = (value?: {
   software_id?: string
   software_version?: string
   response_types?: string[]
-  vp_formats?: Record<string, unknown>
+  vp_formats_supported?: VpFormatsSupported
   authorization_signed_response_alg?: string
   authorization_encrypted_response_alg?: string
   authorization_encrypted_response_enc?: string

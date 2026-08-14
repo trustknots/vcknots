@@ -10,17 +10,17 @@ describe('inMemoryVerifierMetadataStore', () => {
   const metadata: VerifierMetadata = {
     client_name: 'Test Verifier',
     jwks: { keys: [] },
-    vp_formats: {
+    vp_formats_supported: {
       jwt_vc_json: {
-        alg_values_supported: ['ES256']
+        alg_values_supported: ['ES256'],
       },
       jwt_vp_json: {
-        alg_values_supported: ['ES256']
+        alg_values_supported: ['ES256'],
       },
       'dc+sd-jwt': {
         'sd-jwt_alg_values': ['ES256', 'ES384'],
-        'kb-jwt_alg_values': ['ES256', 'ES384']
-      }
+        'kb-jwt_alg_values': ['ES256', 'ES384'],
+      },
     },
   }
 

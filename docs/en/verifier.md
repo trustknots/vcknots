@@ -360,7 +360,7 @@ Metadata file (external JSON):
 - Example (contents):
 ```json
 {
-	"vp_formats": {
+	"vp_formats_supported": {
 		"jwt_vc_json": {
 			"alg_values_supported": ["ES256"]
 		},
