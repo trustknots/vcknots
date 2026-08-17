@@ -5,7 +5,7 @@ vcknots を AWS 上で動かすための CDK スタックです。
 関連パッケージ:
 
 - [`@trustknots/server-aws`](../src) — Lambda ハンドラ、vcknots context、ユーティリティ（`src/handlers/`、`src/context/`、`src/utils/`）
-- [`@trustknots/aws`](../../../aws) — DynamoDB / KMS 向け AWS provider（Issuer / Verifier 署名鍵；Secrets Manager は未実装）
+- [`@trustknots/aws`](../../../aws) — DynamoDB / KMS 向け AWS provider（Issuer / Authz / Verifier 署名鍵；Secrets Manager は未実装）
 
 ## アーキテクチャ
 
@@ -21,7 +21,7 @@ server/aws/
 │   │   └── verifier.ts    Lambda ハンドラ（Verifier）
 │   ├── apps/
 │   │   ├── create-issuer-app.ts   Issuer アプリ（DynamoDB issuer メタデータストア、KMS 署名鍵ストア）
-│   │   ├── create-authz-app.ts    Authorization Server アプリ（インメモリ）
+│   │   ├── create-authz-app.ts    Authorization Server アプリ（DynamoDB authz メタデータストア、KMS 署名鍵ストア）
 │   │   └── create-verifier-app.ts Verifier アプリ（DynamoDB verifier メタデータストア、KMS 署名鍵ストア）
 │   ├── context/
 │   │   └── vcknots-context.ts context / baseUrl ヘルパー
@@ -66,7 +66,7 @@ ResourcesStack
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
 | `verifier.ts` | `@trustknots/server-core/routes/verify` |
 
-Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSignatureKeyStore` を、Verifier は `dynamodbVerifierMetadataStore` と `kmsVerifierSignatureKeyStore` を使用します。Authorization Server は引き続きインメモリプロバイダーを使用します（Authz のアクセストークン署名鍵もインメモリで、Lambda の呼び出しをまたいで永続化されません。KMS を使った authz 署名鍵ストアはまだ未実装です）。
+Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSignatureKeyStore` を、Authorization Server は `dynamodbAuthzServerMetadataStore` と `kmsAuthzSignatureKeyStore` を、Verifier は `dynamodbVerifierMetadataStore` と `kmsVerifierSignatureKeyStore` を使用します。
 
 未処理エラーは `utils/error-logger.ts`（`sanitizeError`）経由でログ出力され、CloudWatch には安全なフィールドのみが記録されます。
 
@@ -124,7 +124,7 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSig
 | Authz | AuthServersTable、PreCodesTable（読み書き） |
 | Verifier | VerifiersTable、RequestObjectsTable、NoncesTable（読み書き） |
 
-Issuer ロールと Verifier ロールには署名鍵ストア用にスコープを絞った KMS ポリシーも付与されています（`grantSignatureKeyStoreAccess()`、`lib/construct/security/signature-key-policy.ts` 参照）。鍵は実行時に作成されるため ARN で指定できず、各ステートメントは条件でスコープを絞っています:
+Issuer ロール・Authz ロール・Verifier ロールには署名鍵ストア用にスコープを絞った KMS ポリシーも付与されています（`grantSignatureKeyStoreAccess()`、`lib/construct/security/signature-key-policy.ts` 参照）。鍵は実行時に作成されるため ARN で指定できず、各ステートメントは条件でスコープを絞っています:
 
 | アクション | スコープの絞り方 |
 |---|---|

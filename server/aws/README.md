@@ -216,6 +216,21 @@ The Verifier stores the key that signs Authorization Request Objects (JAR) in AW
 
   For a verifier with custom metadata, back the item up first and re-register that same metadata from a script that calls `createVerifierMetadata` — the flow creates the key and rewrites `jwks` from it. Do not restore the backed-up item verbatim: its `jwks` still describes the key that went missing, which is the drift you are repairing.
 
+## Authorization Server Signing Keys (AWS KMS)
+
+The Authorization Server stores the key that signs access tokens / responses in AWS KMS via `kmsAuthzSignatureKeyStore()` (`@trustknots/aws`). It is built from the same provider factory as the Issuer and Verifier stores, so the KMS behaviour — in-KMS generation, wrapped import, and signing through the KMS `Sign` API — is identical; only the alias namespace and the key tag differ.
+
+- **Alias naming**: each key is referenced through the alias `alias/vcknots/authz/<md5(issuer)>-<alg>` (base64url MD5 of the authorization server issuer URL plus the JOSE algorithm). The key is created when the authorization server is registered (`createAuthzServerMetadata`), always with `ES256` (`create-authz-app.ts` does not pass a custom `alg`). No additional environment variables are required.
+- **Supported algorithms**: same as the Issuer and Verifier — `ES256`, `ES384`, `RS256`, `RS512`, `PS256`, `PS512` for in-KMS generation, EC only (`ES256`/`ES384`) for importing an externally generated key pair.
+- **Required IAM** (granted to the Authz Lambda role by the CDK stack): the same actions as the Issuer and Verifier, scoped to the `alias/vcknots/authz/*` namespace and to keys tagged `vcknots:authz-signature-key=true`.
+- **Store drift**: the authz server metadata lives in DynamoDB while the key lives in KMS, so the two can drift apart — most often when an environment that previously ran on the in-memory key store is pointed at KMS. `createAuthzServerMetadata` rejects an already-registered authorization server and cannot repair that, so the Authorization Server only logs a warning at startup (`Authz server metadata exists but no <alg> key is registered in KMS`) and keeps running. Recovery is manual, and it is the same procedure that seeds an authorization server in the first place — note that **registration only runs locally**: `handlers/authz.ts` skips `initialize()` when `AWS_LAMBDA_FUNCTION_NAME` is set, and there is no HTTP endpoint that registers an authorization server, so a deployed Lambda never registers one by itself.
+
+  `initialize()` always registers the bundled `server/samples/authorization_metadata.json`, so the steps below **replace whatever metadata the authorization server had** and are only appropriate for one that runs on that sample metadata:
+
+  1. Delete the authorization server's item from the AuthServers table. Its partition key is not the issuer URL itself but the base64url MD5 of it: `node -e "console.log(require('crypto').createHash('md5').update('<issuer-url>').digest('base64url'))"`.
+  2. Locally, point `.env` at the same tables and set `AUTHZ_BASE_URL` to the authorization server you are repairing (the deployed API URL, not `localhost`, when fixing a deployed environment).
+  3. Run `pnpm start:authz` once. It registers the sample metadata and creates the KMS key for that authorization server, then you can stop it.
+
 ## Notes
 
 - `.env` is loaded by `dotenv/config` at startup; changes require a server restart.
