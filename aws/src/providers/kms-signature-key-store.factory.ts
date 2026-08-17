@@ -77,6 +77,9 @@ export const createKmsSignatureKeyStore = (
     try {
       await kms.send(new ScheduleKeyDeletionCommand({ KeyId: keyId, PendingWindowInDays: 7 }))
     } catch (cleanupError) {
+      if (isKmsError(cleanupError, 'NotFoundException')) {
+        return
+      }
       console.error(`Failed to discard the orphan KMS key ${keyId}: ${cleanupError}`)
     }
   }
