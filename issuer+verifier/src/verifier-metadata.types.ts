@@ -18,11 +18,49 @@ export type VpFormatsSupported = {
   }
 } & Record<string, unknown>
 
-const vpFormatFieldSchema = z.unknown().refine((val) => !Array.isArray(val) || val.length > 0, {
-  message: 'Arrays in vp_formats_supported must be non-empty',
-})
+const nonEmptyStringArray = z.array(z.string()).min(1)
+const nonEmptyNumberArray = z.array(z.number()).min(1)
 
-const vpFormatMetadataSchema = z.record(z.string(), vpFormatFieldSchema)
+// Schema for unknown format identifiers: any field value is accepted, but arrays must be non-empty
+const unknownFormatFieldSchema = z
+  .unknown()
+  .refine((val) => !Array.isArray(val) || val.length > 0, {
+    message: 'Arrays in vp_formats_supported must be non-empty',
+  })
+const unknownFormatSchema = z.record(z.string(), unknownFormatFieldSchema)
+
+const vpFormatsSchema = z
+  .object({
+    jwt_vc_json: z
+      .object({ alg_values: nonEmptyStringArray.optional() })
+      .catchall(z.unknown())
+      .optional(),
+    ldp_vc: z
+      .object({
+        proof_type_values: nonEmptyStringArray.optional(),
+        cryptosuite_values: nonEmptyStringArray.optional(),
+      })
+      .catchall(z.unknown())
+      .optional(),
+    mso_mdoc: z
+      .object({
+        issuerauth_alg_values: nonEmptyNumberArray.optional(),
+        deviceauth_alg_values: nonEmptyNumberArray.optional(),
+      })
+      .catchall(z.unknown())
+      .optional(),
+    'dc+sd-jwt': z
+      .object({
+        'sd-jwt_alg_values': nonEmptyStringArray.optional(),
+        'kb-jwt_alg_values': nonEmptyStringArray.optional(),
+      })
+      .catchall(z.unknown())
+      .optional(),
+  })
+  .catchall(unknownFormatSchema)
+  .refine((v) => Object.keys(v).length > 0, {
+    message: 'vp_formats_supported must contain at least one format',
+  })
 
 // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-verifier-metadata-client-me
 // https://www.rfc-editor.org/rfc/rfc7591.html#section-2
@@ -72,11 +110,7 @@ export const verifierMetadataSchema = z.object({
   software_id: z.string().optional(),
   software_version: z.string().optional(),
   response_types: z.enum(['code', 'token']).optional(),
-  vp_formats_supported: z
-    .record(z.string(), vpFormatMetadataSchema)
-    .refine((v) => Object.keys(v).length > 0, {
-      message: 'vp_formats_supported must contain at least one format',
-    }),
+  vp_formats_supported: vpFormatsSchema,
   authorization_signed_response_alg: z.string().optional(),
   authorization_encrypted_response_alg: z.string().optional(),
   authorization_encrypted_response_enc: z.string().optional(),
