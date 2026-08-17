@@ -23,6 +23,7 @@ type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
   alg: string
   kid?: string
+  encryptionKeyAlg?: string
 }
 type CreateVerifierMetadataOptionsWithCert = CreateVerifierMetadataOptionsBase & {
   privateKey: string | Jwk
@@ -202,7 +203,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         }
       }
 
-      const encryptionKeyAlg = 'RSA-OAEP-256'
+      const encryptionKeyAlg = options?.encryptionKeyAlg ?? 'RSA-OAEP-256'
       await encryptionKeyStore$.save(verifierId, encryptionKeyAlg)
       const encryptionPublicJwk = await encryptionKeyStore$.fetch(verifierId, encryptionKeyAlg)
       if (!encryptionPublicJwk) {
