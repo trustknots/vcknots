@@ -3,11 +3,19 @@ import { z } from 'zod'
 // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B
 // Per-format metadata types for known credential format identifiers (Appendix B).
 // Unknown format identifiers are allowed via the index signature.
+type NonEmptyArray<T> = [T, ...T[]]
+
 export type VpFormatsSupported = {
-  jwt_vc_json?: { alg_values?: string[] }
-  ldp_vc?: { proof_type_values?: string[]; cryptosuite_values?: string[] }
-  mso_mdoc?: { issuerauth_alg_values?: number[]; deviceauth_alg_values?: number[] }
-  'dc+sd-jwt'?: { 'sd-jwt_alg_values'?: string[]; 'kb-jwt_alg_values'?: string[] }
+  jwt_vc_json?: { alg_values?: NonEmptyArray<string> }
+  ldp_vc?: { proof_type_values?: NonEmptyArray<string>; cryptosuite_values?: NonEmptyArray<string> }
+  mso_mdoc?: {
+    issuerauth_alg_values?: NonEmptyArray<number>
+    deviceauth_alg_values?: NonEmptyArray<number>
+  }
+  'dc+sd-jwt'?: {
+    'sd-jwt_alg_values'?: NonEmptyArray<string>
+    'kb-jwt_alg_values'?: NonEmptyArray<string>
+  }
 } & Record<string, unknown>
 
 const vpFormatFieldSchema = z.unknown().refine((val) => !Array.isArray(val) || val.length > 0, {
@@ -64,7 +72,11 @@ export const verifierMetadataSchema = z.object({
   software_id: z.string().optional(),
   software_version: z.string().optional(),
   response_types: z.enum(['code', 'token']).optional(),
-  vp_formats_supported: z.record(z.string(), vpFormatMetadataSchema),
+  vp_formats_supported: z
+    .record(z.string(), vpFormatMetadataSchema)
+    .refine((v) => Object.keys(v).length > 0, {
+      message: 'vp_formats_supported must contain at least one format',
+    }),
   authorization_signed_response_alg: z.string().optional(),
   authorization_encrypted_response_alg: z.string().optional(),
   authorization_encrypted_response_enc: z.string().optional(),
