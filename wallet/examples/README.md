@@ -147,7 +147,7 @@ The test scripts also use this URL.
 
 #### Client authentication in local server integration test mode
 
-The local server integration test mode samples configure `ClientAuthConfig` with `PrivateKeyJwt` and enable DPoP. The token request therefore includes:
+The local server integration test mode samples use `private_key_jwt` for client authentication and enable DPoP. The token request therefore includes:
 
 | Location | Name | Value |
 | --- | --- | --- |

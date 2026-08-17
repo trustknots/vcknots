@@ -147,7 +147,7 @@ Authz metadata initialized
 
 #### ローカルサーバー統合テストモードのクライアント認証
 
-ローカルサーバー統合テストモードの各サンプルは、`ClientAuthConfig` に `PrivateKeyJwt` を設定し、DPoP も有効にします。そのため、Token Request には次が含まれます。
+ローカルサーバー統合テストモードの各サンプルは、クライアント認証に `private_key_jwt` を使い、DPoP も有効にします。そのため、Token Request には次が含まれます。
 
 | 位置 | 名前 | 値 |
 | --- | --- | --- |
