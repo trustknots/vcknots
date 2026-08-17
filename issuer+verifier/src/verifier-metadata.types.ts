@@ -4,17 +4,17 @@ import { z } from 'zod'
 // Per-format metadata types for known credential format identifiers (Appendix B).
 // Unknown format identifiers are allowed via the index signature.
 export type VpFormatsSupported = {
-  jwt_vc_json?: { alg_values_supported?: string[] }
-  ldp_vc?: { proof_type_values_supported?: string[]; cryptosuite_values_supported?: string[] }
-  mso_mdoc?: {
-    issuerauth_alg_values_supported?: number[]
-    deviceauth_alg_values_supported?: number[]
-  }
-  'dc+sd-jwt'?: {
-    'sd-jwt_alg_values_supported'?: string[]
-    'kb-jwt_alg_values_supported'?: string[]
-  }
+  jwt_vc_json?: { alg_values?: string[] }
+  ldp_vc?: { proof_type_values?: string[]; cryptosuite_values?: string[] }
+  mso_mdoc?: { issuerauth_alg_values?: number[]; deviceauth_alg_values?: number[] }
+  'dc+sd-jwt'?: { 'sd-jwt_alg_values'?: string[]; 'kb-jwt_alg_values'?: string[] }
 } & Record<string, unknown>
+
+const vpFormatFieldSchema = z.unknown().refine((val) => !Array.isArray(val) || val.length > 0, {
+  message: 'Arrays in vp_formats_supported must be non-empty',
+})
+
+const vpFormatMetadataSchema = z.record(z.string(), vpFormatFieldSchema)
 
 // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-verifier-metadata-client-me
 // https://www.rfc-editor.org/rfc/rfc7591.html#section-2
@@ -64,7 +64,7 @@ export const verifierMetadataSchema = z.object({
   software_id: z.string().optional(),
   software_version: z.string().optional(),
   response_types: z.enum(['code', 'token']).optional(),
-  vp_formats_supported: z.record(z.string(), z.unknown()),
+  vp_formats_supported: z.record(z.string(), vpFormatMetadataSchema),
   authorization_signed_response_alg: z.string().optional(),
   authorization_encrypted_response_alg: z.string().optional(),
   authorization_encrypted_response_enc: z.string().optional(),

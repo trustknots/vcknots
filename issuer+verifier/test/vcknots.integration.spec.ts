@@ -13,9 +13,9 @@ import {
 } from '../src'
 import { CredentialConfigurationId, CredentialIssuerMetadata } from '../src/credential-issuer.types'
 import { PreAuthorizedCode } from '../src/pre-authorized-code.types'
+import { inMemoryCnonceStore } from '../src/providers/in-memory/in-memory-cnonce-store.provider'
 import { GrantType, TokenRequest, TokenResponse } from '../src/token-request.types'
 import { Vcknots, vcknots } from '../src/vcknots'
-import { inMemoryCnonceStore } from '../src/providers/in-memory/in-memory-cnonce-store.provider'
 
 type JwtHeader = {
   alg: 'ES256'
@@ -273,12 +273,6 @@ describe('Vcknots', () => {
       vp_formats_supported: {
         jwt_vc_json: {
           alg: ['ES256'],
-        },
-        jwt_vp_json: {
-          alg: ['ES256'],
-        },
-        ldp_vp: {
-          proof_type: ['JsonWebSignature2020'],
         },
         'dc+sd-jwt': {
           'sd-jwt_alg_values': ['ES256', 'ES384'],
