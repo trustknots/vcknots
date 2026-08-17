@@ -203,7 +203,7 @@ describe('VerifierFlow', () => {
 
   describe('createVerifierMetadata', () => {
     const encryptionJwk = {
-      kty: 'EC',
+      kty: 'RSA',
       crv: 'P-256',
       x: 'enc-x',
       y: 'enc-y',

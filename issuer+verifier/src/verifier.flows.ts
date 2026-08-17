@@ -23,21 +23,7 @@ type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
   alg: string
   kid?: string
-  encryptionPublicKey?: EncryptionPublicKeyOptions
 }
-type EncryptionPublicKeyOptions =
-  | {
-      format: 'pem'
-      alg: string
-      kid?: string
-      publicKey: string
-    }
-  | {
-      format: 'jwk'
-      alg: string
-      kid?: string
-      publicKey: Jwk
-    }
 type CreateVerifierMetadataOptionsWithCert = CreateVerifierMetadataOptionsBase & {
   privateKey: string | Jwk
   certificate: string | string[]
