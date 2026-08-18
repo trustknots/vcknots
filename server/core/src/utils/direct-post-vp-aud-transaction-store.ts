@@ -1,4 +1,4 @@
-/** Default TTL for in-memory `direct_post` state-to-transaction binding (10 minutes). */
+/** Default TTL for in-memory `direct_post` state-to-transaction binding (5 minutes). */
 export const DEFAULT_DIRECT_POST_STATE_TTL_MS = 5 * 60 * 1000
 
 type StateTransaction = {
