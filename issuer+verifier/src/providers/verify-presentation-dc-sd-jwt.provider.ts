@@ -102,7 +102,11 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
             message: `Failed to fetch issuer metadata: ${metadataResponse.statusText}`,
           })
         }
-        const metadata = await metadataResponse.json()
+        const metadata = await metadataResponse.json().catch(() => {
+          throw err('INVALID_SD_JWT', {
+            message: `Issuer metadata at ${metadataUrl} is not valid JSON`,
+          })
+        })
         if (metadata.issuer !== decodedSdJwt.jwt.payload.iss) {
           throw err('INVALID_SD_JWT', {
             message: 'Issuer in metadata does not match SD-JWT issuer',
@@ -117,7 +121,11 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
               message: `Failed to fetch JWKS: ${jwksResponse.statusText}`,
             })
           }
-          jwks = await jwksResponse.json()
+          jwks = await jwksResponse.json().catch(() => {
+            throw err('INVALID_SD_JWT', {
+              message: `JWKS at ${metadata.jwks_uri} is not valid JSON`,
+            })
+          })
         } else if (metadata.jwks && typeof metadata.jwks === 'object') {
           jwks = metadata.jwks as jose.JSONWebKeySet
         } else {

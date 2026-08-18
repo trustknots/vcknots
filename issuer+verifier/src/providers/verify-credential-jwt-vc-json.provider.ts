@@ -64,7 +64,11 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
             message: `Failed to fetch issuer metadata: ${metadataResponse.statusText}`,
           })
         }
-        const metadata = await metadataResponse.json()
+        const metadata = await metadataResponse.json().catch(() => {
+          throw err('INVALID_CREDENTIAL', {
+            message: `Issuer metadata at ${metadataUrl} is not valid JSON`,
+          })
+        })
         if (metadata.issuer !== iss) {
           throw err('INVALID_CREDENTIAL', {
             message: 'Issuer in metadata does not match VC issuer',
@@ -78,7 +82,11 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
               message: `Failed to fetch JWKS: ${jwksResponse.statusText}`,
             })
           }
-          jwks = await jwksResponse.json()
+          jwks = await jwksResponse.json().catch(() => {
+            throw err('JWKS_NOT_FOUND', {
+              message: `JWKS at ${metadata.jwks_uri} is not valid JSON`,
+            })
+          })
         } else if (metadata.jwks && typeof metadata.jwks === 'object') {
           jwks = metadata.jwks as jose.JSONWebKeySet
         } else {
