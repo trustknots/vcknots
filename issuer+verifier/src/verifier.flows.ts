@@ -1,23 +1,23 @@
 import base64url from 'base64url'
+import { exportJWK, importSPKI } from 'jose'
 import { AuthorizationRequest } from './authorization-request.types'
 import { AuthorizationResponse } from './authorization-response.types'
+import { ClientIdentifier } from './client-id-scheme.types'
 import { ClientId } from './client-id.types'
+import { Cnonce } from './cnonce.types'
 import { Dcql } from './dcql.type'
 import { err, raise } from './errors/vcknots.error'
+import { Jwk } from './jwk.type'
+import { VpTokenPayload } from './presentation.types'
 import { VerifyVerifiablePresentationVerifyOptions } from './providers'
 import { selectProvider } from './providers/provider.utils'
+import { RequestObjectId } from './request-object-id.types'
 import { RequestObject } from './request-object.types'
+import { Certificate } from './signature-key.types'
+import { TransactionId, TransactionRecord } from './transaction-id.types'
 import { DeepPartialUnknown } from './type.utils'
 import { VcknotsContext } from './vcknots.context'
 import { VerifierMetadata } from './verifier-metadata.types'
-import { RequestObjectId } from './request-object-id.types'
-import { Certificate } from './signature-key.types'
-import { Jwk } from './jwk.type'
-import { exportJWK, importSPKI } from 'jose'
-import { ClientIdentifier } from './client-id-scheme.types'
-import { Cnonce } from './cnonce.types'
-import { VpTokenPayload } from './presentation.types'
-import { TransactionId, TransactionRecord } from './transaction-id.types'
 
 type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
@@ -233,6 +233,11 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       const client_id_scheme = client_id.split(':')[0]
 
       if (client_id_scheme === 'x509_san_dns' || client_id_scheme === 'x509_san_uri') {
+        if (!isRequestUri) {
+          throw err('INVALID_REQUEST', {
+            message: `${client_id_scheme} require request_uri to deliver the signed request object.`,
+          })
+        }
         const certificate = await certificateStore$.fetch(verifierId)
         if (certificate.length === 0) {
           throw err('CERTIFICATE_NOT_FOUND', {
