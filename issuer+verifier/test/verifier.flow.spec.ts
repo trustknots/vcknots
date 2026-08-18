@@ -212,7 +212,6 @@ describe('VerifierFlow', () => {
       assert.equal(mockKeyStoreProvider.save.mock.callCount(), 1)
       assert.equal(mockKeyStoreProvider.fetch.mock.callCount(), 1)
       assert.equal(mockVerifierMetadataStore.save.mock.callCount(), 1)
-      assert.equal(metadata.authorization_signed_response_alg, 'ES256')
       assert.ok(metadata.jwks)
       assert.equal(metadata.jwks.keys.length, 1)
       assert.equal(metadata.jwks.keys[0].alg, 'ES256')
