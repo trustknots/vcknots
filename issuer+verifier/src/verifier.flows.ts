@@ -234,7 +234,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       if (client_id_scheme === 'x509_san_dns' || client_id_scheme === 'x509_san_uri') {
         const certificate = await certificateStore$.fetch(verifierId)
-        if (!certificate) {
+        if (certificate.length === 0) {
           throw err('CERTIFICATE_NOT_FOUND', {
             message: 'verifier certificate is not found.',
           })

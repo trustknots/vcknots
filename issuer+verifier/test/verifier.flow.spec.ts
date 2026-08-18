@@ -375,6 +375,26 @@ describe('VerifierFlow', () => {
       )
     })
 
+    it('should throw CERTIFICATE_NOT_FOUND when x509_san_dns client_id has no certificate registered', async () => {
+      mock.method(mockCertificateStoreProvider, 'fetch', async () => [])
+      await assert.rejects(
+        verifierFlow.createAuthzRequest(
+          ClientId('https://example.com'),
+          'vp_token',
+          'x509_san_dns:example.com',
+          'direct_post',
+          {
+            dcql_query: {
+              credentials: [{ id: 'test_credential', format: 'jwt_vc_json' }],
+            },
+          },
+          false,
+          {}
+        ),
+        { name: 'CERTIFICATE_NOT_FOUND' }
+      )
+    })
+
     it('should save RequestObject and returns request_uri when request_uri is used', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
