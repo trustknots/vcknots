@@ -427,4 +427,15 @@ describe('verifyVerifiablePresentation provider', () => {
       message: 'Holder binding verification failed.',
     })
   })
+
+  test('should throw VERIFIER_VP_FORMATS_NOT_SUPPORTED when VP alg is not in allowedAlgs', async () => {
+    const vpJwt = await createVpJwt({
+      nonce: 'test-nonce',
+      vp: { type: ['VerifiablePresentation'], verifiableCredential: [vcJwt] },
+    })
+    await assert.rejects(
+      provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud, allowedAlgs: ['RS256'] }),
+      { name: 'VERIFIER_VP_FORMATS_NOT_SUPPORTED', message: /alg_values/ }
+    )
+  })
 })

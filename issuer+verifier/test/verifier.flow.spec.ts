@@ -569,6 +569,7 @@ describe('VerifierFlow', () => {
         kind: 'jwt_vp_json',
         expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
         expectedNonce: undefined,
+        allowedAlgs: ['ES256'],
       })
     })
 
@@ -711,6 +712,76 @@ describe('VerifierFlow', () => {
 
       await assert.rejects(verifierFlow.verifyPresentations(response, 'txn-123'), {
         name: 'INVALID_REQUEST',
+      })
+    })
+
+    it('should pass allowedAlgs from vp_formats_supported to provider for jwt_vc_json', async () => {
+      const verifierId = ClientId('https://example.com')
+      const vpToken = makeJwt({ alg: 'ES256' }, { vp: {}, nonce: 'n' })
+      const response = AuthorizationResponse({ vp_token: { cred_a: [vpToken] } })
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async () =>
+        VerifierMetadata({
+          client_name: 'test',
+          vp_formats_supported: { jwt_vc_json: { alg_values: ['ES256', 'ES384'] } },
+        })
+      )
+      mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
+        dcqlQuery: { dcql_query: { credentials: [{ id: 'cred_a', format: 'jwt_vc_json' }] } },
+        clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
+        verifierId,
+      }))
+      mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
+      mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({}))
+
+      await verifierFlow.verifyPresentations(response, 'txn-123')
+
+      assert.deepEqual(mockVerifyVerifiablePresentationProvider.verify.mock.calls[0].arguments[1], {
+        kind: 'jwt_vp_json',
+        expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
+        expectedNonce: undefined,
+        allowedAlgs: ['ES256', 'ES384'],
+      })
+    })
+
+    it('should pass sd-jwt alg constraints from vp_formats_supported to provider for dc+sd-jwt', async () => {
+      const verifierId = ClientId('https://example.com')
+      const issuerJwt = makeJwt(
+        { alg: 'ES256' },
+        { iss: 'https://issuer.example.com', vct: 'TestCred' }
+      )
+      const sdJwt = `${issuerJwt}~`
+      const response = AuthorizationResponse({ vp_token: { cred_a: [sdJwt] } })
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async () =>
+        VerifierMetadata({
+          client_name: 'test',
+          vp_formats_supported: {
+            'dc+sd-jwt': {
+              'sd-jwt_alg_values': ['ES256', 'ES384'],
+              'kb-jwt_alg_values': ['ES256'],
+            },
+          },
+        })
+      )
+      mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
+        dcqlQuery: { dcql_query: { credentials: [{ id: 'cred_a', format: 'dc+sd-jwt' }] } },
+        clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
+        verifierId,
+      }))
+      mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
+      mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({}))
+
+      await verifierFlow.verifyPresentations(response, 'txn-123')
+
+      assert.deepEqual(mockVerifyVerifiablePresentationProvider.verify.mock.calls[0].arguments[1], {
+        kind: 'dc+sd-jwt',
+        specifiedDisclosures: [],
+        expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
+        expectedNonce: undefined,
+        expectedTransactionDataHashes: undefined,
+        allowedSdJwtAlgs: ['ES256', 'ES384'],
+        allowedKbJwtAlgs: ['ES256'],
       })
     })
 

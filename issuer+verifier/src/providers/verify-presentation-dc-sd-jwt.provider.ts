@@ -42,6 +42,33 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       const decodedSdJwt = await decodeSdJwt(vp, digest)
       const sdJwtHeader = decodedSdJwt.jwt.header
 
+      const sdJwtAlg = typeof sdJwtHeader.alg === 'string' ? sdJwtHeader.alg : undefined
+      if (options.allowedSdJwtAlgs) {
+        if (!sdJwtAlg || !options.allowedSdJwtAlgs.includes(sdJwtAlg)) {
+          throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
+            message: `Algorithm '${sdJwtAlg ?? 'missing'}' is not in dc+sd-jwt sd-jwt_alg_values. Allowed: ${options.allowedSdJwtAlgs.join(', ')}`,
+          })
+        }
+      }
+      if (options.allowedKbJwtAlgs && !vp.endsWith('~')) {
+        const vpParts = vp.split('~')
+        const kbJwtStr = vpParts[vpParts.length - 1]
+        if (kbJwtStr) {
+          let kbHeader: Record<string, unknown>
+          try {
+            kbHeader = JSON.parse(Buffer.from(kbJwtStr.split('.')[0], 'base64url').toString())
+          } catch {
+            throw err('INVALID_SD_JWT', { message: 'KB-JWT header is malformed' })
+          }
+          const kbAlg = typeof kbHeader.alg === 'string' ? kbHeader.alg : undefined
+          if (!kbAlg || !options.allowedKbJwtAlgs.includes(kbAlg)) {
+            throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
+              message: `KB-JWT algorithm '${kbAlg ?? 'missing'}' is not in dc+sd-jwt kb-jwt_alg_values. Allowed: ${options.allowedKbJwtAlgs.join(', ')}`,
+            })
+          }
+        }
+      }
+
       let publicJwk: jose.JWK | undefined
       if (
         !sdJwtHeader.x5c &&
