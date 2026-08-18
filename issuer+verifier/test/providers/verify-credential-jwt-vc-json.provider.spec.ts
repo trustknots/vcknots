@@ -201,6 +201,15 @@ describe('verifyCredentialJwt provider', () => {
     })
   })
 
+  it('should throw VERIFIER_VP_FORMATS_NOT_SUPPORTED when VC alg is not in allowedAlgs', async () => {
+    // vcJwt uses RS256; passing allowedAlgs: ['ES256'] must reject before any HTTP call
+    await assert.rejects(provider.verify(vcJwt, { allowedAlgs: ['ES256'] }), (e: VcknotsError) => {
+      assert.equal(e.name, 'VERIFIER_VP_FORMATS_NOT_SUPPORTED')
+      assert.match(e.message, /alg_values/)
+      return true
+    })
+  })
+
   it("canHandle should return true for 'jwt_vc_json'", () => {
     assert.strictEqual(provider.canHandle('jwt_vc_json'), true)
   })

@@ -428,6 +428,17 @@ describe('verifyVerifiablePresentation provider', () => {
     })
   })
 
+  test('should pass allowedAlgs to credential verifier', async () => {
+    const vpJwt = await createVpJwt({
+      nonce: 'test-nonce',
+      vp: { type: ['VerifiablePresentation'], verifiableCredential: [vcJwt] },
+    })
+    await provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud, allowedAlgs: ['ES256'] })
+    assert.deepEqual(mockCredentialVerifier.verify.mock.calls[0].arguments[1], {
+      allowedAlgs: ['ES256'],
+    })
+  })
+
   test('should throw VERIFIER_VP_FORMATS_NOT_SUPPORTED when VP alg is not in allowedAlgs', async () => {
     const vpJwt = await createVpJwt({
       nonce: 'test-nonce',

@@ -272,7 +272,7 @@ describe('Vcknots', () => {
       client_name: 'Test Verifier',
       vp_formats_supported: {
         jwt_vc_json: {
-          alg: ['ES256'],
+          alg_values: ['ES256'],
         },
         'dc+sd-jwt': {
           'sd-jwt_alg_values': ['ES256', 'ES384'],

@@ -140,7 +140,7 @@ export type VerifyCredentialProvider = {
   name: string
   single: true
 
-  verify(vc: string): Promise<boolean>
+  verify(vc: string, options?: { allowedAlgs?: string[] }): Promise<boolean>
   canHandle(format: string): boolean
 }
 
