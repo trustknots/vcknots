@@ -15,6 +15,7 @@ import { VcknotsError } from '@trustknots/vcknots/errors'
 import { calculateJwkThumbprint, exportJWK, type JWK, jwtVerify } from 'jose'
 import { isKmsError } from '../src/providers/kms-provider.utils'
 import { kmsAuthzSignatureKeyStore } from '../src/providers/kms-authz-signature-key-store.provider'
+import { requireAwsSession } from './require-aws-session'
 
 const RUN_ID = Date.now().toString(36)
 const authzFor = (label: string) =>
@@ -22,6 +23,8 @@ const authzFor = (label: string) =>
 
 const kms = new KMSClient({})
 const store = kmsAuthzSignatureKeyStore()
+
+requireAwsSession()
 
 const keyAlias = (authz: string, alg: string) => {
   const md5 = createHash('md5').update(authz).digest('base64url')

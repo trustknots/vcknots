@@ -14,6 +14,7 @@ import { VcknotsError } from '@trustknots/vcknots/errors'
 import { CredentialIssuer } from '@trustknots/vcknots/issuer'
 import { exportJWK, type JWK, jwtVerify } from 'jose'
 import { kmsIssuerSignatureKeyStore } from '../src/providers/kms-issuer-signature-key-store.provider'
+import { requireAwsSession } from './require-aws-session'
 
 const RUN_ID = Date.now().toString(36)
 const issuerFor = (label: string) =>
@@ -21,6 +22,8 @@ const issuerFor = (label: string) =>
 
 const kms = new KMSClient({})
 const store = kmsIssuerSignatureKeyStore()
+
+requireAwsSession()
 
 const keyAlias = (issuer: string, alg: string) => {
   const md5 = createHash('md5').update(issuer).digest('base64url')

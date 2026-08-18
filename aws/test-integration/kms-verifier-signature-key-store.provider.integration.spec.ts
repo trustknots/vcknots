@@ -15,6 +15,7 @@ import { VerifierClientId } from '@trustknots/vcknots/verifier'
 import { calculateJwkThumbprint, exportJWK, type JWK, jwtVerify } from 'jose'
 import { isKmsError } from '../src/providers/kms-provider.utils'
 import { kmsVerifierSignatureKeyStore } from '../src/providers/kms-verifier-signature-key-store.provider'
+import { requireAwsSession } from './require-aws-session'
 
 const RUN_ID = Date.now().toString(36)
 const verifierFor = (label: string) =>
@@ -22,6 +23,8 @@ const verifierFor = (label: string) =>
 
 const kms = new KMSClient({})
 const store = kmsVerifierSignatureKeyStore()
+
+requireAwsSession()
 
 const keyAlias = (verifier: string, alg: string) => {
   const md5 = createHash('md5').update(verifier).digest('base64url')
