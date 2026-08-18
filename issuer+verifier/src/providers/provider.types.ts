@@ -107,6 +107,9 @@ export type AuthzSignatureKeyStoreProvider = {
   kind: 'authz-signature-key-store-provider'
   name: string
   single: true
+  // The algorithm the flow should use when the caller doesn't specify one. Optional so providers
+  // that don't declare a default (e.g. in-memory, GCP) fall back to the flow's own default.
+  defaultAlg?: string
 
   save(authz: AuthorizationServerIssuer, keyAlg: string, pair?: SignatureKeyEntry): Promise<void>
   fetch(authz: AuthorizationServerIssuer, keyAlg: string): Promise<CryptoKey | null>
@@ -122,6 +125,9 @@ export type IssuerSignatureKeyStoreProvider = {
   kind: 'issuer-signature-key-store-provider'
   name: string
   single: true
+  // The algorithm the flow should use when the caller doesn't specify one. Optional so providers
+  // that don't declare a default (e.g. in-memory, GCP) fall back to the flow's own default.
+  defaultAlg?: string
 
   save(issuer: CredentialIssuer, keyAlg: string, pair?: SignatureKeyEntry): Promise<void>
   fetch(issuer: CredentialIssuer, keyAlg: string): Promise<CryptoKey | null>
@@ -137,6 +143,9 @@ export type VerifierSignatureKeyStoreProvider = {
   kind: 'verifier-signature-key-store-provider'
   name: string
   single: true
+  // The algorithm the flow should use when the caller doesn't specify one. Optional so providers
+  // that don't declare a default (e.g. in-memory, GCP) fall back to the flow's own default.
+  defaultAlg?: string
 
   save(verifier: ClientId, keyAlg: string, pair?: SignatureKeyEntry): Promise<void>
   fetch(verifier: ClientId, keyAlg: string): Promise<CryptoKey | null>

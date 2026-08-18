@@ -137,7 +137,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       let keyAlg: string | undefined = options?.alg
       if (!options || !keyAlg) {
         // create new key pair (not support x509)
-        keyAlg = metadata.authorization_signed_response_alg ?? 'ES256'
+        keyAlg = metadata.authorization_signed_response_alg ?? keyStore$.defaultAlg ?? 'ES256'
         await keyStore$.save(verifierId, keyAlg)
         const publicKey = await keyStore$.fetch(verifierId, keyAlg)
         if (!publicKey) {
@@ -363,7 +363,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
     },
     async findRequestObject(verifierId, objectId) {
       const metadata = (await verifierMetadata$.fetch(verifierId)) ?? raise('verifier_not_found')
-      const keyAlg = metadata.authorization_signed_response_alg ?? 'ES256'
+      const keyAlg = metadata.authorization_signed_response_alg ?? keyStore$.defaultAlg ?? 'ES256'
 
       const requestObject = await requestObjectStore$.fetch(objectId)
       if (!requestObject) {

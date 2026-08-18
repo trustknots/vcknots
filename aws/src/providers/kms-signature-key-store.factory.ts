@@ -97,6 +97,10 @@ export const createKmsSignatureKeyStore = (
   }
 
   return {
+    // Every AWS-KMS-backed store defaults to the same algorithm; owning it here means the flow
+    // layer never has to hardcode it, and it changes in exactly one place for issuer/authz/verifier.
+    defaultAlg: 'ES256',
+
     async save(id: string, keyAlg: string, pair?: SignatureKeyEntry): Promise<void> {
       const declaredAlg = pair?.declaredAlg ?? keyAlg
       if (pair && pair.declaredAlg !== keyAlg) {
