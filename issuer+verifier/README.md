@@ -120,8 +120,9 @@ const metadata: VerifierMetadata = {
 	client_name: 'MyVerifier',
 	client_uri: base,
 	vp_formats_supported: {
-		jwt_vc_json: {
-			alg_values: ['ES256'] 
+		'dc+sd-jwt': {
+			'sd-jwt_alg_values': ['ES256', 'ES384'],
+      'kb-jwt_alg_values': ['ES256', 'ES384']
 		},
 	},
 	client_id_scheme: 'redirect_uri'
