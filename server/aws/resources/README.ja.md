@@ -5,7 +5,7 @@ vcknots を AWS 上で動かすための CDK スタックです。
 関連パッケージ:
 
 - [`@trustknots/server-aws`](../src) — Lambda ハンドラ、vcknots context、ユーティリティ（`src/handlers/`、`src/context/`、`src/utils/`）
-- [`@trustknots/aws`](../../../aws) — DynamoDB / KMS 向け AWS provider（Issuer 署名鍵；Secrets Manager は未実装）
+- [`@trustknots/aws`](../../../aws) — DynamoDB / KMS 向け AWS provider（Issuer / Verifier 署名鍵；Secrets Manager は未実装）
 
 ## アーキテクチャ
 
@@ -22,7 +22,7 @@ server/aws/
 │   ├── apps/
 │   │   ├── create-issuer-app.ts   Issuer アプリ（DynamoDB issuer メタデータストア、KMS 署名鍵ストア）
 │   │   ├── create-authz-app.ts    Authorization Server アプリ（インメモリ）
-│   │   └── create-verifier-app.ts Verifier アプリ（インメモリ）
+│   │   └── create-verifier-app.ts Verifier アプリ（DynamoDB verifier メタデータストア、KMS 署名鍵ストア）
 │   ├── context/
 │   │   └── vcknots-context.ts context / baseUrl ヘルパー
 │   └── utils/
@@ -66,7 +66,7 @@ ResourcesStack
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
 | `verifier.ts` | `@trustknots/server-core/routes/verify` |
 
-Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSignatureKeyStore` を使用します。Authorization Server と Verifier はインメモリプロバイダーを使用します（Authz のアクセストークン署名鍵もインメモリで、Lambda の呼び出しをまたいで永続化されません。KMS を使った authz 署名鍵ストアはまだ未実装です）。
+Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSignatureKeyStore` を、Verifier は `dynamodbVerifierMetadataStore` と `kmsVerifierSignatureKeyStore` を使用します。Authorization Server は引き続きインメモリプロバイダーを使用します（Authz のアクセストークン署名鍵もインメモリで、Lambda の呼び出しをまたいで永続化されません。KMS を使った authz 署名鍵ストアはまだ未実装です）。
 
 未処理エラーは `utils/error-logger.ts`（`sanitizeError`）経由でログ出力され、CloudWatch には安全なフィールドのみが記録されます。
 
@@ -124,7 +124,23 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSig
 | Authz | AuthServersTable、PreCodesTable（読み書き） |
 | Verifier | VerifiersTable、RequestObjectsTable、NoncesTable（読み書き） |
 
-Issuer ロールには `kmsIssuerSignatureKeyStore` 用にスコープを絞った KMS ポリシーも付与されています（`lib/construct/api/issuer-api.ts` 参照）: `CreateKey`/`TagResource` は provider が作成する `SigningAlgorithm`/`KeySpec`/`KeyOrigin` の組合せに限定、`CreateAlias`/`UpdateAlias` は `alias/vcknots/issuers/*` 名前空間に限定（キー側は `vcknots:issuer-signature-key=true` タグが付いたキーに限定）、`DescribeKey`/`GetPublicKey`/`Sign`/`GetParametersForImport`/`ImportKeyMaterial`/`ScheduleKeyDeletion` は `kms:ResourceAliases` 条件で `alias/vcknots/issuers/*` に限定されています。
+Issuer ロールと Verifier ロールには署名鍵ストア用にスコープを絞った KMS ポリシーも付与されています（`grantSignatureKeyStoreAccess()`、`lib/construct/security/signature-key-policy.ts` 参照）。鍵は実行時に作成されるため ARN で指定できず、各ステートメントは条件でスコープを絞っています:
+
+| アクション | スコープの絞り方 |
+|---|---|
+| `CreateKey`・`TagResource` | `kms:KeyUsage=SIGN_VERIFY` と、provider が作成する `kms:KeySpec`/`kms:KeyOrigin` の値 |
+| `CreateAlias`・`UpdateAlias` | 各ロールのエイリアス名前空間（エイリアス側）と `aws:ResourceTag`（キー側 — 新規キーにはまだエイリアスが無いため） |
+| `DescribeKey`・`GetPublicKey`・`Sign` | `kms:ResourceAliases` 条件で各ロールのエイリアス名前空間 |
+| `GetParametersForImport`・`ImportKeyMaterial`・`ScheduleKeyDeletion` | `aws:ResourceTag` |
+
+最後の行を分けているのは意図的です。`kms:ResourceAliases` はキーに既に設定されているエイリアスと照合するため、**エイリアスが無いキーに対する操作は決して許可できません**。provider は最初の `CreateAlias` より前に（あるいは `CreateAlias` の代わりに）鍵材料のインポートと孤児キーの破棄を行うため、これらの呼び出しは `CreateKey` 時に付与するタグでスコープを絞っています。
+
+両ロールの違いはエイリアス名前空間とタグだけです:
+
+| ロール | エイリアス名前空間 | キーのタグ |
+|---|---|---|
+| Issuer | `alias/vcknots/issuers/*` | `vcknots:issuer-signature-key=true` |
+| Verifier | `alias/vcknots/verifiers/*` | `vcknots:verifier-signature-key=true` |
 
 ### スタック出力
 
