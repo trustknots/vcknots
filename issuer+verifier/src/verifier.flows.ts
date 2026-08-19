@@ -2,7 +2,7 @@ import base64url from 'base64url'
 import { exportJWK, importSPKI } from 'jose'
 import { AuthorizationRequest } from './authorization-request.types'
 import { AuthorizationResponse } from './authorization-response.types'
-import { ClientIdentifier } from './client-id-scheme.types'
+import { ClientIdentifier } from './client-id-prefix.types'
 import { ClientId } from './client-id.types'
 import { Cnonce } from './cnonce.types'
 import { Dcql } from './dcql.type'
@@ -232,7 +232,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
     ) {
       const client_id_scheme = client_id.split(':')[0]
 
-      if (client_id_scheme === 'x509_san_dns' || client_id_scheme === 'x509_san_uri') {
+      if (client_id_scheme === 'x509_san_dns') {
         if (!isRequestUri) {
           throw err('INVALID_REQUEST', {
             message: `${client_id_scheme} require request_uri to deliver the signed request object.`,
@@ -576,8 +576,8 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 export { VerifierMetadata } from './verifier-metadata.types'
 export { ClientId as VerifierClientId } from './client-id.types'
 export { AuthorizationResponse as VerifierAuthorizationResponse } from './authorization-response.types'
-export { ClientIdScheme as VerifierClientIdScheme } from './client-id-scheme.types'
+export { ClientIdPrefix as VerifierClientIdPrefix } from './client-id-prefix.types'
 export { RequestObjectId as VerifierRequestObjectId } from './request-object-id.types'
 export { PresentationExchange } from './presentation-exchange.types'
 export { Dcql } from './dcql.type'
-export { ClientIdentifier } from './client-id-scheme.types'
+export { ClientIdentifier } from './client-id-prefix.types'

@@ -536,7 +536,7 @@ createAuthzRequest(
 
 **Error cases**:
 - `UNSUPPORTED_CLIENT_ID_SCHEME`: An unsupported client_id_scheme was specified
-- `CERTIFICATE_NOT_FOUND`: Certificate is not registered when using x509_san_dns or x509_san_uri
+- `CERTIFICATE_NOT_FOUND`: Certificate is not registered when using x509_san_dns
 - `INVALID_REQUEST`: options.base_url is not specified even though isRequestUri = true
 - `VERIFIER_VP_FORMATS_NOT_SUPPORTED`: A VP format specified in the query is not listed in the Verifier's metadata
 

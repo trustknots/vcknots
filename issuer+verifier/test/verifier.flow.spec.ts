@@ -5,7 +5,7 @@ import { generateKeyPair } from 'jose'
 import { AuthorizationRequest } from '../src/authorization-request.types'
 import { AuthorizationResponse } from '../src/authorization-response.types'
 import { ClientId } from '../src/client-id.types'
-import { ClientIdentifier } from '../src/client-id-scheme.types'
+import { ClientIdentifier } from '../src/client-id-prefix.types'
 import { Dcql } from '../src/dcql.type'
 import {
   CnonceProvider,

@@ -1,9 +1,9 @@
-import { AuthzRequestJARProvider } from './provider.types'
-import { RequestObject } from '../request-object.types'
-import { JwtContent } from '../jwt.types'
-import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
 import { ClientId } from '../client-id.types'
 import { raise } from '../errors'
+import { JwtContent } from '../jwt.types'
+import { RequestObject } from '../request-object.types'
+import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
+import { AuthzRequestJARProvider } from './provider.types'
 
 export const authzRequestJARX5c = (): AuthzRequestJARProvider & WithProviderRegistry => {
   return {
@@ -46,9 +46,9 @@ export const authzRequestJARX5c = (): AuthzRequestJARProvider & WithProviderRegi
         payload: jwtPayload,
       }
     },
-    canHandle(clientIdScheme: string): boolean {
-      const supportClientIdSchemes = ['x509_san_dns', 'x509_san_uri']
-      return supportClientIdSchemes.includes(clientIdScheme)
+    canHandle(clientIdPrefix: string): boolean {
+      const supportClientIdPrefixes = ['x509_san_dns']
+      return supportClientIdPrefixes.includes(clientIdPrefix)
     },
   }
 }

@@ -2,7 +2,7 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
 } from '../authorization-server.types'
-import type { ClientIdentifier } from '../client-id-scheme.types'
+import type { ClientIdentifier } from '../client-id-prefix.types'
 import { ClientId } from '../client-id.types'
 import { Cnonce } from '../cnonce.types'
 import {
@@ -387,7 +387,7 @@ export type AuthzRequestJARProvider = {
     alg: string,
     wallet_nonce?: string
   ): Promise<JwtContent>
-  canHandle(clientIdScheme: string): boolean
+  canHandle(clientIdPrefix: string): boolean
 }
 
 export type CertificateProvider = {

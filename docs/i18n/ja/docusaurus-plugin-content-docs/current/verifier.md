@@ -540,7 +540,7 @@ createAuthzRequest(
 
 **エラーケース**:
 - `UNSUPPORTED_CLIENT_ID_SCHEME`: 未対応のclient_id_schemeが指定された
-- `CERTIFICATE_NOT_FOUND`: x509_san_dnsまたはx509_san_uri利用時に証明書未登録
+- `CERTIFICATE_NOT_FOUND`: x509_san_dns利用時に証明書未登録
 - `INVALID_REQUEST`: isRequestUri = trueなのにoptions.base_urlが未指定
 - `VERIFIER_VP_FORMATS_NOT_SUPPORTED`: クエリで指定した VP フォーマットが Verifier のメタデータで未対応
 

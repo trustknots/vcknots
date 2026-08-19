@@ -49,8 +49,8 @@ export const authzRequestJARKid = (): AuthzRequestJARProvider & WithProviderRegi
         payload: jwtPayload,
       }
     },
-    canHandle(clientIdScheme: string): boolean {
-      return clientIdScheme === 'redirect_uri'
+    canHandle(clientIdPrefix: string): boolean {
+      return clientIdPrefix === 'redirect_uri'
     },
   }
 }

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
+import { ClientId } from '../../src/client-id.types'
+import { raise } from '../../src/errors'
 import { authzRequestJARX5c } from '../../src/providers/authorization-request-jar-x5c.provider'
 import { VerifierCertificateStoreProvider } from '../../src/providers/provider.types'
 import { RequestObject } from '../../src/request-object.types'
-import { raise } from '../../src/errors'
-import { ClientId } from '../../src/client-id.types'
 
 describe('AuthzRequestJARProvider', () => {
   const x5c = ['sign1', 'sign2']
@@ -41,7 +41,6 @@ describe('AuthzRequestJARProvider', () => {
 
   it('should handle supported client_id_schemes', () => {
     assert.ok(provider.canHandle('x509_san_dns'))
-    assert.ok(provider.canHandle('x509_san_uri'))
     assert.ok(!provider.canHandle('other'))
   })
 
