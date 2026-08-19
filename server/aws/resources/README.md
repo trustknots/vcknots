@@ -135,11 +135,12 @@ The Issuer, Authz, and Verifier roles also have a scoped KMS policy for their si
 
 The last row is separate on purpose: `kms:ResourceAliases` matches on the aliases a key already carries, so it can never authorize an action on a key that has none. The provider imports key material and discards orphan keys before (or instead of) the first `CreateAlias`, so those calls are scoped by the tag the provider sets at `CreateKey` time.
 
-The two roles differ only in the alias namespace and the tag:
+The three roles differ only in the alias namespace and the tag:
 
 | Role | Alias namespace | Key tag |
 |---|---|---|
 | Issuer | `alias/vcknots/issuers/*` | `vcknots:issuer-signature-key=true` |
+| Authz | `alias/vcknots/authz/*` | `vcknots:authz-signature-key=true` |
 | Verifier | `alias/vcknots/verifiers/*` | `vcknots:verifier-signature-key=true` |
 
 ### Stack Outputs

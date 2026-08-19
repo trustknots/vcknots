@@ -135,11 +135,12 @@ Issuer ロール・Authz ロール・Verifier ロールには署名鍵ストア�
 
 最後の行を分けているのは意図的です。`kms:ResourceAliases` はキーに既に設定されているエイリアスと照合するため、**エイリアスが無いキーに対する操作は決して許可できません**。provider は最初の `CreateAlias` より前に（あるいは `CreateAlias` の代わりに）鍵材料のインポートと孤児キーの破棄を行うため、これらの呼び出しは `CreateKey` 時に付与するタグでスコープを絞っています。
 
-両ロールの違いはエイリアス名前空間とタグだけです:
+3つのロールの違いはエイリアス名前空間とタグだけです:
 
 | ロール | エイリアス名前空間 | キーのタグ |
 |---|---|---|
 | Issuer | `alias/vcknots/issuers/*` | `vcknots:issuer-signature-key=true` |
+| Authz | `alias/vcknots/authz/*` | `vcknots:authz-signature-key=true` |
 | Verifier | `alias/vcknots/verifiers/*` | `vcknots:verifier-signature-key=true` |
 
 ### スタック出力
