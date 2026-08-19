@@ -1,5 +1,15 @@
-import { constants, createPrivateKey, createPublicKey, publicEncrypt } from 'node:crypto'
+import { constants, createHash, createPrivateKey, createPublicKey, publicEncrypt } from 'node:crypto'
 import { KeySpec, SigningAlgorithmSpec } from '@aws-sdk/client-kms'
+
+/**
+ * Every KMS signature key store (issuer/authz/verifier) derives its key alias the same way:
+ * `<aliasPrefix><md5(id)>-<alg>`. Exported so tests can compute the expected alias instead of
+ * duplicating this rule.
+ */
+export const kmsKeyAlias = (aliasPrefix: string, id: string, alg: string): string => {
+  const md5 = createHash('md5').update(id).digest('base64url')
+  return `${aliasPrefix}${md5}-${alg}`
+}
 
 export const joseAlgorithmToKeySpec = (alg?: string): KeySpec | null => {
   switch (alg) {

@@ -26,13 +26,14 @@ import { derToJose } from 'ecdsa-sig-formatter'
 import { exportJWK } from 'jose'
 import { AuthorizationServerIssuer } from '@trustknots/vcknots/authz'
 import {
+  AUTHZ_KEY_ALIAS_PREFIX,
   AUTHZ_KEY_TAG_KEY,
   kmsAuthzSignatureKeyStore,
 } from '../src/providers/kms-authz-signature-key-store.provider'
+import { kmsKeyAlias } from '../src/providers/kms-provider.utils'
 
 const authz = AuthorizationServerIssuer('https://example.com/authz')
-const md5 = (value: string) => createHash('md5').update(value).digest('base64url')
-const authzKeyAlias = (alg: string) => `alias/vcknots/authz/${md5(authz)}-${alg}`
+const authzKeyAlias = (alg: string) => kmsKeyAlias(AUTHZ_KEY_ALIAS_PREFIX, authz, alg)
 
 const kmsMock = mockClient(KMSClient)
 
@@ -78,6 +79,7 @@ describe('kmsAuthzSignatureKeyStore', () => {
     assert.equal(provider.kind, 'authz-signature-key-store-provider')
     assert.equal(provider.name, 'kms-authz-signature-key-store-provider')
     assert.equal(provider.single, true)
+    assert.equal(provider.defaultAlg, 'ES256')
   })
 
   it('should save an ES256 authz key by importing it into KMS', async () => {

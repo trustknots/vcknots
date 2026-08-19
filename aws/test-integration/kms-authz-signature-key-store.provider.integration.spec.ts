@@ -7,14 +7,17 @@
 // Every key created here is scheduled for deletion (7-day pending window) in the top-level
 // `after` hook once the whole file finishes.
 import assert from 'node:assert/strict'
-import { createHash, generateKeyPairSync } from 'node:crypto'
+import { generateKeyPairSync } from 'node:crypto'
 import { after, describe, it } from 'node:test'
 import { DescribeKeyCommand, KMSClient, ScheduleKeyDeletionCommand } from '@aws-sdk/client-kms'
 import { AuthorizationServerIssuer } from '@trustknots/vcknots/authz'
 import { VcknotsError } from '@trustknots/vcknots/errors'
 import { calculateJwkThumbprint, exportJWK, type JWK, jwtVerify } from 'jose'
-import { isKmsError } from '../src/providers/kms-provider.utils'
-import { kmsAuthzSignatureKeyStore } from '../src/providers/kms-authz-signature-key-store.provider'
+import { isKmsError, kmsKeyAlias } from '../src/providers/kms-provider.utils'
+import {
+  AUTHZ_KEY_ALIAS_PREFIX,
+  kmsAuthzSignatureKeyStore,
+} from '../src/providers/kms-authz-signature-key-store.provider'
 import { requireAwsSession } from './require-aws-session'
 
 const RUN_ID = Date.now().toString(36)
@@ -26,10 +29,7 @@ const store = kmsAuthzSignatureKeyStore()
 
 requireAwsSession()
 
-const keyAlias = (authz: string, alg: string) => {
-  const md5 = createHash('md5').update(authz).digest('base64url')
-  return `alias/vcknots/authz/${md5}-${alg}`
-}
+const keyAlias = (authz: string, alg: string) => kmsKeyAlias(AUTHZ_KEY_ALIAS_PREFIX, authz, alg)
 
 const keyMaterialEquals = (a: JWK, b: JWK, alg: string) =>
   alg.startsWith('ES') ? a.x === b.x && a.y === b.y : a.n === b.n && a.e === b.e

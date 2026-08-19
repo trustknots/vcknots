@@ -30,6 +30,7 @@ import {
   joseAlgorithmToKeySpec,
   joseAlgorithmToSigningAlgorithm,
   keySpecMatchesAlgorithm,
+  kmsKeyAlias,
   toPkcs8Der,
   wrapPrivateKeyForImport,
 } from './kms-provider.utils'
@@ -60,14 +61,13 @@ export const createKmsSignatureKeyStore = (
   const kms = resolveKmsClient(options)
   const { subject, aliasPrefix, tagKey, keyNotFoundError } = config
   const Subject = `${subject.charAt(0).toUpperCase()}${subject.slice(1)}`
-  const md5 = (value: string) => createHash('md5').update(value).digest('base64url')
   const keyAlias = (id: string, alg: string) => {
     if (typeof alg !== 'string' || alg.trim().length === 0) {
       raise('internal_server_error', {
         message: `${Subject} key algorithm is required to build a KMS key alias`,
       })
     }
-    return `${aliasPrefix}${md5(id)}-${alg}`
+    return kmsKeyAlias(aliasPrefix, id, alg)
   }
 
   // A key that never got its alias is unusable and invisible to every later call, so it has to
