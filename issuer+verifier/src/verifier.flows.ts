@@ -130,6 +130,11 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       // encrypted_response_enc_values_supported MUST be present for anything other than the default single value of A128GCM. Otherwise, this SHOULD be absent
       const encryptedResponseEnc = options?.encryptedResponseEnc
+      if (encryptedResponseEnc?.length === 0) {
+        throw err('INVALID_OPTIONS', {
+          message: 'encrypted_response_enc_values_supported must be non-empty if provided.',
+        })
+      }
       if (
         encryptedResponseEnc &&
         !(encryptedResponseEnc.length === 1 && encryptedResponseEnc[0] === 'A128GCM')
@@ -367,6 +372,10 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
     },
     async findRequestObject(verifierId, objectId, options) {
+      const metadata = await verifierMetadata$.fetch(verifierId)
+      if (!metadata) {
+        throw raise('VERIFIER_NOT_FOUND')
+      }
       const keyAlg = options?.alg ?? 'ES256'
 
       const requestObject = await requestObjectStore$.fetch(objectId)
