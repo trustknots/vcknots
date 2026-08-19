@@ -49,7 +49,7 @@ export type VerifyPresentationOptions = {
 }
 export type FindRequestObjectOptions = {
   alg?: string
-  // https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.11 is not supported
+  // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.10 is not supported
   // wallet_metadata? :
   // wallet_nonce?: string
 }
@@ -230,12 +230,12 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       isRequestUri,
       options
     ) {
-      const client_id_scheme = client_id.split(':')[0]
+      const client_id_prefix = client_id.split(':')[0]
 
-      if (client_id_scheme === 'x509_san_dns') {
+      if (client_id_prefix === 'x509_san_dns') {
         if (!isRequestUri) {
           throw err('INVALID_REQUEST', {
-            message: `${client_id_scheme} require request_uri to deliver the signed request object.`,
+            message: `${client_id_prefix} require request_uri to deliver the signed request object.`,
           })
         }
         const certificate = await certificateStore$.fetch(verifierId)
@@ -278,10 +278,10 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       // when using request_uri
       if (isRequestUri ?? true) {
-        const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_scheme)
+        const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_prefix)
         if (!authzRequestJAR) {
-          throw err('UNSUPPORTED_CLIENT_ID_SCHEME', {
-            message: 'client_id_scheme is not supported.',
+          throw err('UNSUPPORTED_CLIENT_ID_PREFIX', {
+            message: 'client_id_prefix is not supported.',
           })
         }
         if (!options.base_url) {
@@ -355,7 +355,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           response_uri: responseUri,
           response_type: response_type,
           response_mode: response_mode || 'direct_post',
-          client_id_scheme: client_id_scheme,
           client_metadata: metadata,
           nonce,
           state: options.state,
@@ -377,8 +376,8 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
 
       const clientId = requestObject.client_id
-      const client_id_scheme = clientId.split(':')[0]
-      const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_scheme)
+      const client_id_prefix = clientId.split(':')[0]
+      const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_prefix)
       if (!authzRequestJAR) {
         throw raise('PROVIDER_NOT_FOUND', {
           message: 'Authorization request JAR provider is not found.',

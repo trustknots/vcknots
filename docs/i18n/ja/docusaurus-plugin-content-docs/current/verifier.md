@@ -143,7 +143,7 @@ curl --location 'http://localhost:8080/verify/request' \
 **レスポンス**
 
 ```
-openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&client_metadata=...&nonce=a9a3e60cbb8e46e0946facb635839b57&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback&client_id_scheme=x509_san_dns&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%22sample-id%22%2C%22require_cryptographic_holder_binding%22%3Atrue%2C%22multiple%22%3Afalse%2C%22format%22%3A%22jwt_vc_json%22%2C%22claims%22%3A%5B%7B%22path%22%3A%5B%22vc%22%2C%22credentialSubject%22%2C%22given_name%22%5D%7D%5D%2C%22meta%22%3A%7B%22type_values%22%3A%5B%5B%22UniversityDegreeCredential%22%5D%5D%7D%7D%5D%7D
+openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&client_metadata=...&nonce=a9a3e60cbb8e46e0946facb635839b57&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%22sample-id%22%2C%22require_cryptographic_holder_binding%22%3Atrue%2C%22multiple%22%3Afalse%2C%22format%22%3A%22jwt_vc_json%22%2C%22claims%22%3A%5B%7B%22path%22%3A%5B%22vc%22%2C%22credentialSubject%22%2C%22given_name%22%5D%7D%5D%2C%22meta%22%3A%7B%22type_values%22%3A%5B%5B%22UniversityDegreeCredential%22%5D%5D%7D%7D%5D%7D
 ```
 
 
@@ -529,7 +529,6 @@ createAuthzRequest(
       response_uri: string,
       response_type: 'vp_token',
       response_mode: 'direct_post' | 'query' | 'fragment' | 'dc_api.jwt' | 'dc_api',
-      client_id_scheme: string,
       client_metadata: VerifierMetadata,
       nonce: string,
       // dcql_query
@@ -539,7 +538,7 @@ createAuthzRequest(
   - `transactionId` (string): `verifyPresentations` 呼び出し時に必要なトランザクション ID。セッションや状態管理の仕組みと紐づけて保管してください。
 
 **エラーケース**:
-- `UNSUPPORTED_CLIENT_ID_SCHEME`: 未対応のclient_id_schemeが指定された
+- `UNSUPPORTED_CLIENT_ID_PREFIX`: 未対応のclient_id_prefixが指定された
 - `CERTIFICATE_NOT_FOUND`: x509_san_dns利用時に証明書未登録
 - `INVALID_REQUEST`: isRequestUri = trueなのにoptions.base_urlが未指定
 - `VERIFIER_VP_FORMATS_NOT_SUPPORTED`: クエリで指定した VP フォーマットが Verifier のメタデータで未対応

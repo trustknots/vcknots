@@ -39,7 +39,7 @@ describe('AuthzRequestJARProvider', () => {
     assert.strictEqual(provider.single, false)
   })
 
-  it('should handle supported client_id_schemes', () => {
+  it('should handle supported client_id_prefixes', () => {
     assert.ok(provider.canHandle('x509_san_dns'))
     assert.ok(!provider.canHandle('other'))
   })

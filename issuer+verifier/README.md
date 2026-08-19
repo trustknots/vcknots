@@ -123,8 +123,7 @@ const metadata: VerifierMetadata = {
 		jwt_vp: {
 			alg: ['ES256']
 		}
-	},
-	client_id_scheme: 'redirect_uri'
+	}
 }
 
 // This will generate signing keys for the verifier (for JAR)

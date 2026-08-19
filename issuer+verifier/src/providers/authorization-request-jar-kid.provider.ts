@@ -39,7 +39,7 @@ export const authzRequestJARKid = (): AuthzRequestJARProvider & WithProviderRegi
         ...requestObject,
         iat: Math.floor(Date.now() / 1000),
       }
-      // https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.11
+      // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.10
       if (wallet_nonce) {
         jwtPayload.wallet_nonce = wallet_nonce
       }
