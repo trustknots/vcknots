@@ -366,8 +366,8 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         transactionId,
       }
     },
-    async findRequestObject(verifierId, objectId) {
-      const keyAlg = 'ES256'
+    async findRequestObject(verifierId, objectId, options) {
+      const keyAlg = options?.alg ?? 'ES256'
 
       const requestObject = await requestObjectStore$.fetch(objectId)
       if (!requestObject) {

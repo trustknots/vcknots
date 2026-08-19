@@ -49,7 +49,7 @@ export const verifierMetadataSchema = z.object({
   software_version: z.string().optional(),
   response_types: z.enum(['code', 'token']).optional(),
   vp_formats: z.record(z.string(), z.unknown()),
-  encrypted_response_enc_values_supported: z.array(z.string()).optional(),
+  encrypted_response_enc_values_supported: z.array(z.string()).nonempty().optional(),
 })
 export type VerifierMetadata = z.infer<typeof verifierMetadataSchema>
 export const VerifierMetadata = (value?: {
