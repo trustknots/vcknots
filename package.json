@@ -27,13 +27,13 @@
 	},
 	"packageManager": "pnpm@11.10.0",
 	"devDependencies": {
-		"@biomejs/biome": "2.5.6",
-		"@commitlint/cli": "21.2.1",
-		"@commitlint/config-conventional": "21.2.0",
+		"@biomejs/biome": "2.5.8",
+		"@commitlint/cli": "21.2.2",
+		"@commitlint/config-conventional": "21.2.2",
 		"@changesets/cli": "2.31.1",
 		"@types/node": "24.13.3",
 		"husky": "9.1.7",
-		"tsx": "4.23.5",
+		"tsx": "4.23.12",
 		"typescript": "6.0.3"
 	}
 }
