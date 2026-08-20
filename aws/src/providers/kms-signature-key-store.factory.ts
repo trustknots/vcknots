@@ -30,6 +30,7 @@ import {
   joseAlgorithmToKeySpec,
   joseAlgorithmToSigningAlgorithm,
   keySpecMatchesAlgorithm,
+  kmsKeyAlias,
   toPkcs8Der,
   wrapPrivateKeyForImport,
 } from './kms-provider.utils'
@@ -43,6 +44,20 @@ export type KmsSignatureKeyStoreConfig = {
   tagKey: string
   /** Error code raised when signing is attempted without a key. */
   keyNotFoundError: ErrorCodes
+}
+
+/**
+ * Extra surface the AWS KMS stores expose on top of the core provider interfaces, kept out of
+ * those interfaces so the flow layer never sees it.
+ *
+ * IMPORTANT: the flow layer decides the algorithm — every call arrives here with `keyAlg`
+ * already resolved (`options?.alg ?? 'ES256'`). `defaultAlg` therefore does NOT drive what gets
+ * created; it only mirrors the flow's fallback so AWS-side callers stop repeating the literal.
+ * Changing it will not change which algorithm the flow uses, so keep it in sync with the flow.
+ */
+export type KmsSignatureKeyStoreDefaults = {
+  /** Mirror of the flow layer's fallback algorithm, for AWS-side callers only. */
+  defaultAlg: string
 }
 
 /**
@@ -60,14 +75,13 @@ export const createKmsSignatureKeyStore = (
   const kms = resolveKmsClient(options)
   const { subject, aliasPrefix, tagKey, keyNotFoundError } = config
   const Subject = `${subject.charAt(0).toUpperCase()}${subject.slice(1)}`
-  const md5 = (value: string) => createHash('md5').update(value).digest('base64url')
   const keyAlias = (id: string, alg: string) => {
     if (typeof alg !== 'string' || alg.trim().length === 0) {
       raise('internal_server_error', {
         message: `${Subject} key algorithm is required to build a KMS key alias`,
       })
     }
-    return `${aliasPrefix}${md5(id)}-${alg}`
+    return kmsKeyAlias(aliasPrefix, id, alg)
   }
 
   // A key that never got its alias is unusable and invisible to every later call, so it has to
@@ -77,6 +91,9 @@ export const createKmsSignatureKeyStore = (
     try {
       await kms.send(new ScheduleKeyDeletionCommand({ KeyId: keyId, PendingWindowInDays: 7 }))
     } catch (cleanupError) {
+      if (isKmsError(cleanupError, 'NotFoundException')) {
+        return
+      }
       console.error(`Failed to discard the orphan KMS key ${keyId}: ${cleanupError}`)
     }
   }
@@ -94,6 +111,10 @@ export const createKmsSignatureKeyStore = (
   }
 
   return {
+    // Mirrors the flow layer's fallback so the AWS app factories don't each repeat it. See
+    // KmsSignatureKeyStoreDefaults: this does not decide the algorithm, the flow does.
+    defaultAlg: 'ES256',
+
     async save(id: string, keyAlg: string, pair?: SignatureKeyEntry): Promise<void> {
       const declaredAlg = pair?.declaredAlg ?? keyAlg
       if (pair && pair.declaredAlg !== keyAlg) {

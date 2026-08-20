@@ -1,4 +1,4 @@
-import { VerifierSignatureKeyStoreProvider } from '@trustknots/vcknots/providers'
+import { AuthzSignatureKeyStoreProvider } from '@trustknots/vcknots/providers'
 import { KmsProviderOptions } from './kms'
 import {
   KmsSignatureKeyStoreDefaults,
@@ -9,23 +9,23 @@ import {
 // KMS key itself, not just the alias — and the key's ARN isn't known before CreateKey runs.
 // Tagging every key we create lets the CDK stack authorize the key side of those actions
 // via an aws:ResourceTag condition instead of a key ARN it can't know in advance.
-export const VERIFIER_KEY_TAG_KEY = 'vcknots:verifier-signature-key'
+export const AUTHZ_KEY_TAG_KEY = 'vcknots:authz-signature-key'
 
-export const VERIFIER_KEY_ALIAS_PREFIX = 'alias/vcknots/verifiers/'
+export const AUTHZ_KEY_ALIAS_PREFIX = 'alias/vcknots/authz/'
 
-export const kmsVerifierSignatureKeyStore = (
+export const kmsAuthzSignatureKeyStore = (
   options?: KmsProviderOptions
-): VerifierSignatureKeyStoreProvider & KmsSignatureKeyStoreDefaults => ({
-  kind: 'verifier-signature-key-store-provider',
-  name: 'kms-verifier-signature-key-store-provider',
+): AuthzSignatureKeyStoreProvider & KmsSignatureKeyStoreDefaults => ({
+  kind: 'authz-signature-key-store-provider',
+  name: 'kms-authz-signature-key-store-provider',
   single: true,
 
   ...createKmsSignatureKeyStore(
     {
-      subject: 'verifier',
-      aliasPrefix: VERIFIER_KEY_ALIAS_PREFIX,
-      tagKey: VERIFIER_KEY_TAG_KEY,
-      keyNotFoundError: 'authz_verifier_key_not_found',
+      subject: 'authorization server',
+      aliasPrefix: AUTHZ_KEY_ALIAS_PREFIX,
+      tagKey: AUTHZ_KEY_TAG_KEY,
+      keyNotFoundError: 'authz_issuer_key_not_found',
     },
     options
   ),
