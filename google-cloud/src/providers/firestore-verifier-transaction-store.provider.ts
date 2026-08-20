@@ -34,7 +34,7 @@ export const firestoreVerifierTransactionDataStore = (
       await docRef.set({
         transaction_id: transactionId,
         transaction_data_expires_at: expiresAt,
-        dcqlQuery: record.dcqlQuery,
+        dcqlQuery: JSON.stringify(record.dcqlQuery),
         clientId: record.clientId,
         verifierId: record.verifierId,
         ...(record.state !== undefined ? { state: record.state } : {}),
@@ -52,7 +52,7 @@ export const firestoreVerifierTransactionDataStore = (
       const data = doc.data() as {
         transaction_id: string
         transaction_data_expires_at: Timestamp
-        dcqlQuery: Transaction['dcqlQuery']
+        dcqlQuery: string
         clientId: Transaction['clientId']
         verifierId: Transaction['verifierId']
         state?: string
@@ -67,7 +67,7 @@ export const firestoreVerifierTransactionDataStore = (
       return Transaction({
         transaction_id: transactionId,
         transaction_data_expires_at: data.transaction_data_expires_at.toMillis(),
-        dcqlQuery: data.dcqlQuery,
+        dcqlQuery: JSON.parse(data.dcqlQuery) as Transaction['dcqlQuery'],
         clientId: data.clientId,
         verifierId: data.verifierId,
         state: data.state,
