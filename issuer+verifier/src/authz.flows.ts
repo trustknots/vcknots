@@ -750,7 +750,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
         message: `Access token issuer ${authzIssuer} does not match the expected issuer ${authz}.`,
       })
     }
-    const keyAlg = decodedHeader.alg ?? options?.alg ?? authzKey$.defaultAlg ?? 'ES256'
+    const keyAlg = decodedHeader.alg ?? options?.alg ?? 'ES256'
     const publicKey = await authzKey$.fetch(authzIssuer, keyAlg)
     if (!publicKey) {
       throw err('authz_issuer_key_not_found', {
@@ -988,7 +988,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
      * @throws When metadata for `metadata.issuer` already exists.
      */
     async createAuthzServerMetadata(metadata, options) {
-      const privateKeyAlg = options?.alg ?? authzKey$.defaultAlg ?? 'ES256'
+      const privateKeyAlg = options?.alg ?? 'ES256'
       const current = await authz$.fetch(metadata.issuer)
       if (current) {
         throw err('duplicate_authz_server', {
@@ -1184,7 +1184,7 @@ export const initializeAuthzFlow = (context: VcknotsContext): AuthzFlow => {
             })
           }
           const ttlSec = option?.ttlSec ?? 86400
-          const keyAlg = options?.alg ?? authzKey$.defaultAlg ?? 'ES256'
+          const keyAlg = options?.alg ?? 'ES256'
           // Authz access token (data)
           // for JWK privateKey
           const jwtHeader = {

@@ -47,6 +47,20 @@ export type KmsSignatureKeyStoreConfig = {
 }
 
 /**
+ * Extra surface the AWS KMS stores expose on top of the core provider interfaces, kept out of
+ * those interfaces so the flow layer never sees it.
+ *
+ * IMPORTANT: the flow layer decides the algorithm — every call arrives here with `keyAlg`
+ * already resolved (`options?.alg ?? 'ES256'`). `defaultAlg` therefore does NOT drive what gets
+ * created; it only mirrors the flow's fallback so AWS-side callers stop repeating the literal.
+ * Changing it will not change which algorithm the flow uses, so keep it in sync with the flow.
+ */
+export type KmsSignatureKeyStoreDefaults = {
+  /** Mirror of the flow layer's fallback algorithm, for AWS-side callers only. */
+  defaultAlg: string
+}
+
+/**
  * The issuer and verifier signature key stores differ only in their alias namespace, key tag
  * and key-not-found error code — the KMS interaction (generate, import, describe, sign) is
  * identical — so both are built from this factory.
@@ -97,8 +111,8 @@ export const createKmsSignatureKeyStore = (
   }
 
   return {
-    // Every AWS-KMS-backed store defaults to the same algorithm; owning it here means the flow
-    // layer never has to hardcode it, and it changes in exactly one place for issuer/authz/verifier.
+    // Mirrors the flow layer's fallback so the AWS app factories don't each repeat it. See
+    // KmsSignatureKeyStoreDefaults: this does not decide the algorithm, the flow does.
     defaultAlg: 'ES256',
 
     async save(id: string, keyAlg: string, pair?: SignatureKeyEntry): Promise<void> {

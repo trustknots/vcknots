@@ -1,6 +1,9 @@
 import { VerifierSignatureKeyStoreProvider } from '@trustknots/vcknots/providers'
 import { KmsProviderOptions } from './kms'
-import { createKmsSignatureKeyStore } from './kms-signature-key-store.factory'
+import {
+  KmsSignatureKeyStoreDefaults,
+  createKmsSignatureKeyStore,
+} from './kms-signature-key-store.factory'
 
 // CreateAlias/UpdateAlias require kms:CreateAlias/kms:UpdateAlias permission on the target
 // KMS key itself, not just the alias — and the key's ARN isn't known before CreateKey runs.
@@ -12,7 +15,7 @@ export const VERIFIER_KEY_ALIAS_PREFIX = 'alias/vcknots/verifiers/'
 
 export const kmsVerifierSignatureKeyStore = (
   options?: KmsProviderOptions
-): VerifierSignatureKeyStoreProvider => ({
+): VerifierSignatureKeyStoreProvider & KmsSignatureKeyStoreDefaults => ({
   kind: 'verifier-signature-key-store-provider',
   name: 'kms-verifier-signature-key-store-provider',
   single: true,

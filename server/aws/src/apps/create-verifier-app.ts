@@ -64,7 +64,7 @@ export function createVerifierApp(options?: VcknotsOptions) {
       // so just make the gap visible.
       // This is a diagnostic, so a KMS failure here (missing permissions, a transient error) must
       // not take the startup down with it: fetch() rethrows everything except a missing key.
-      const keyAlg = existing.authorization_signed_response_alg ?? signatureKeyStore.defaultAlg ?? 'ES256'
+      const keyAlg = existing.authorization_signed_response_alg ?? signatureKeyStore.defaultAlg
       try {
         const publicKey = await signatureKeyStore.fetch(verifierId, keyAlg)
         if (!publicKey) {

@@ -55,9 +55,9 @@ export function createAuthzApp(options?: VcknotsOptions) {
       // repair that, so just make the gap visible.
       // This is a diagnostic, so a KMS failure here (missing permissions, a transient error) must
       // not take the startup down with it: fetch() rethrows everything except a missing key.
-      // AuthorizationServerMetadata carries no signing-alg field, so this uses the same 'ES256'
-      // default createAuthzServerMetadata falls back to when no alg option is passed.
-      const keyAlg = 'ES256'
+      // AuthorizationServerMetadata carries no signing-alg field, so this mirrors the default
+      // createAuthzServerMetadata falls back to when no alg option is passed.
+      const keyAlg = signatureKeyStore.defaultAlg
       try {
         const publicKey = await signatureKeyStore.fetch(authzId, keyAlg)
         if (!publicKey) {
