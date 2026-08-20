@@ -46,6 +46,23 @@ describe('firestoreVerifierTransactionDataStore', () => {
     assert.deepEqual(transaction?.dcqlQuery, transactionRecord.dcqlQuery)
   })
 
+  it('should store dcqlQuery as a string and restore it as Transaction dcqlQuery on fetch', async () => {
+    const provider = firestoreVerifierTransactionDataStore({ app: mockApp })
+    await provider.save(transactionId, transactionRecord)
+
+    const raw = store.get(`vcknots/v1/verifierTransactions/${transactionId}`)
+    if (raw === undefined) {
+      assert.fail('expected saved Firestore document')
+    }
+    assert.notEqual(raw, undefined)
+    assert.equal(typeof raw.dcqlQuery, 'string')
+    assert.equal(raw.dcqlQuery, JSON.stringify(transactionRecord.dcqlQuery))
+
+    const transaction = await provider.fetch(transactionId)
+    assert.notEqual(transaction, null)
+    assert.deepEqual(transaction?.dcqlQuery, transactionRecord.dcqlQuery)
+  })
+
   it('should return null when fetching an unknown transaction', async () => {
     const provider = firestoreVerifierTransactionDataStore({ app: mockApp })
     const transaction = await provider.fetch(TransactionId('unknown-transaction-id'))
