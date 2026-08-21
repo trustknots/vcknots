@@ -67,8 +67,9 @@ export function createVerifierApp(options?: VcknotsOptions) {
       // separate stores, so they can drift apart — most often when an environment that ran on
       // the in-memory stores is pointed at AWS. createVerifierMetadata rejects an
       // already-registered verifier and cannot repair that, so just make the gap visible.
-      // This is a diagnostic, so a KMS failure here (missing permissions, a transient error) must
-      // not take the startup down with it: fetch() rethrows everything except a missing key.
+      // This is a diagnostic, so a KMS or Secrets Manager failure here (missing permissions, a
+      // transient error) must not take the startup down with it: fetch() rethrows everything
+      // except a missing key or certificate.
       const keyAlg = existing.authorization_signed_response_alg ?? signatureKeyStore.defaultAlg
       try {
         const publicKey = await signatureKeyStore.fetch(verifierId, keyAlg)
@@ -80,11 +81,15 @@ export function createVerifierApp(options?: VcknotsOptions) {
       } catch (error) {
         console.warn(`Could not check the verifier ${keyAlg} signing key in KMS: ${error}`)
       }
-      const certificate = await verifierFlow.findVerifierCertificate(verifierId)
-      if (!certificate || certificate.length === 0) {
-        console.warn(
-          'Verifier metadata exists but no certificate is registered: x509_san_dns requests will fail',
-        )
+      try {
+        const certificate = await verifierFlow.findVerifierCertificate(verifierId)
+        if (!certificate || certificate.length === 0) {
+          console.warn(
+            'Verifier metadata exists but no certificate is registered: x509_san_dns requests will fail',
+          )
+        }
+      } catch (error) {
+        console.warn(`Could not check the verifier certificate in Secrets Manager: ${error}`)
       }
       return
     }
