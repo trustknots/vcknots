@@ -21,7 +21,9 @@
 		"test:haip:v5.1.43": "tsx tests/conformance/runner/index.ts --profile=haip-1.0 --suite=v5.1.43",
 		"test:haip:v5.2.0": "tsx tests/conformance/runner/index.ts --profile=haip-1.0 --suite=v5.2.0",
 		"compose:up": "docker compose -f tests/conformance/suites/docker-compose-prebuilt.yml up -d",
-		"compose:down": "docker compose -f tests/conformance/suites/docker-compose-prebuilt.yml down -v"
+		"compose:down": "docker compose -f tests/conformance/suites/docker-compose-prebuilt.yml down -v",
+		"tunnel": "cloudflared tunnel --url http://localhost:8080",
+		"conformance:token": "bash tests/conformance/src/register-token.sh"
 	},
 	"keywords": [],
 	"author": "trustknots",

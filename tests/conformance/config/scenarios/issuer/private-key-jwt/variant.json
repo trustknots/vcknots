@@ -1,0 +1,12 @@
+{
+   "fapi_profile": "vci",
+  "sender_constrain": "dpop",
+  "client_auth_type": "private_key_jwt",
+  "vci_authorization_code_flow_variant": "issuer_initiated",
+  "credential_format": "sd_jwt_vc",
+  "authorization_request_type": "simple",
+  "fapi_request_method": "unsigned",
+  "vci_grant_type": "pre_authorization_code",
+  "vci_credential_encryption": "plain"
+}
+

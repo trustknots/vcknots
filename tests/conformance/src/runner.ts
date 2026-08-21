@@ -9,38 +9,12 @@ import { ConformanceClient } from './conformance.js'
 interface RunnerConfig {
   conformanceServer: string
   conformanceToken: string
+  scenario: string
 }
 
 const RUNNER_CONFIG_PATH = new URL('../config/runner.json', import.meta.url)
 
-const TEST_PLAN_CONFIG_PATH = new URL(
-  '../config/issuer-private-key-jwt.json',
-  import.meta.url
-)
-
-
-/*
- * OpenID4VCI Issuer用のTest Plan
- */
-const TEST_PLAN_NAME = 'oid4vci-1_0-issuer-test-plan'
-
-/*
- * Test Planのvariant
- *
- * 実際のv5.2.2のIssuer Test Planに
- * 合わせて設定する。
- */
-const TEST_VARIANT = {
-  fapi_profile: 'vci',
-  sender_constrain: 'dpop',
-  client_auth_type: 'private_key_jwt',
-  vci_authorization_code_flow_variant: 'issuer_initiated',
-  credential_format: 'sd_jwt_vc',
-  authorization_request_type: 'simple',
-  fapi_request_method: 'unsigned',
-  vci_grant_type: 'pre_authorization_code',
-  vci_credential_encryption: 'plain',
-}
+const SCENARIOS_DIR = new URL('../config/scenarios/', import.meta.url)
 
 /*
  * Runner log
@@ -48,9 +22,7 @@ const TEST_VARIANT = {
  * 起動時にログファイルを上書きし、
  * プロセス終了まで追記する。
  */
-const LOG_FILE = fileURLToPath(
-  new URL('../logs/runner.log', import.meta.url)
-)
+const LOG_FILE = fileURLToPath(new URL('../logs/runner.log', import.meta.url))
 
 async function setupLogging() {
   await mkdir(dirname(LOG_FILE), { recursive: true })
@@ -88,22 +60,16 @@ function validateRunnerConfig(config: unknown): asserts config is RunnerConfig {
 
   const value = config as Record<string, unknown>
 
-  if (
-    typeof value.conformanceServer !== 'string' ||
-    value.conformanceServer.length === 0
-  ) {
-    throw new Error(
-      'runner.json: "conformanceServer" must be a non-empty string'
-    )
+  if (typeof value.conformanceServer !== 'string' || value.conformanceServer.length === 0) {
+    throw new Error('runner.json: "conformanceServer" must be a non-empty string')
   }
 
-  if (
-    typeof value.conformanceToken !== 'string' ||
-    value.conformanceToken.length === 0
-  ) {
-    throw new Error(
-      'runner.json: "conformanceToken" must be a non-empty string'
-    )
+  if (typeof value.conformanceToken !== 'string' || value.conformanceToken.length === 0) {
+    throw new Error('runner.json: "conformanceToken" must be a non-empty string')
+  }
+
+  if (typeof value.scenario !== 'string' || value.scenario.length === 0) {
+    throw new Error('runner.json: "scenario" must be a non-empty string')
   }
 }
 
@@ -114,34 +80,42 @@ async function main() {
     /*
      * Runner設定をJSONファイルから読み込む。
      */
-    const runnerConfig = JSON.parse(
-      await readFile(RUNNER_CONFIG_PATH, 'utf8')
-    )
+    const runnerConfig = JSON.parse(await readFile(RUNNER_CONFIG_PATH, 'utf8'))
 
     validateRunnerConfig(runnerConfig)
 
     /*
-     * Test Plan ConfigurationをJSONファイルから読み込む。
+     * シナリオディレクトリを決定する。
+     *
+     * 例:
+     * config/scenarios/issuer-sd-jwt-vc/
      */
-    const testPlanConfig = JSON.parse(
-      await readFile(TEST_PLAN_CONFIG_PATH, 'utf8')
-    )
+    const scenarioDir = new URL(`${runnerConfig.scenario}/`, SCENARIOS_DIR)
+
+    const metadataConfigPath = new URL('metadata.json', scenarioDir)
+
+    const planConfigPath = new URL('plan.json', scenarioDir)
+
+    const variantConfigPath = new URL('variant.json', scenarioDir)
+
+    const planConfig = JSON.parse(await readFile(planConfigPath, 'utf8'))
+
+    const variant = JSON.parse(await readFile(variantConfigPath, 'utf8'))
+
+    const metadataConfig = JSON.parse(await readFile(metadataConfigPath, 'utf8'))
 
     const conformance = new ConformanceClient(
       runnerConfig.conformanceServer,
       runnerConfig.conformanceToken
     )
 
-    console.log(`Creating test plan: ${TEST_PLAN_NAME}`)
+    console.log(`Scenario: ${runnerConfig.scenario}`)
+    console.log(`Creating test plan: ${metadataConfig.testPlanName}`)
 
     /*
      * ① Test Planを作成
      */
-    const plan = await conformance.createTestPlan(
-      TEST_PLAN_NAME,
-      testPlanConfig,
-      TEST_VARIANT
-    )
+    const plan = await conformance.createTestPlan(metadataConfig.testPlanName, planConfig, variant)
 
     console.log(`Test Plan created: ${plan.id}`)
 

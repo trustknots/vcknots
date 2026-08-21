@@ -1,7 +1,7 @@
 {
     "alias": "vcknots-issuer-private_key_jwt",
     "vci": {
-        "credential_issuer_url": "https://graduates-nerve-casa-love.trycloudflare.com",
+        "credential_issuer_url": "https://showed-vbulletin-playback-pee.trycloudflare.com",
         "credential_configuration_id": "UniversityDegreeCredentialSdJwt"
     },
     "client": {
