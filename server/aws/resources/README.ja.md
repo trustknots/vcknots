@@ -143,7 +143,7 @@ Issuer ロール・Authz ロール・Verifier ロールには署名鍵ストア�
 | Authz | `alias/vcknots/authz/*` | `vcknots:authz-signature-key=true` |
 | Verifier | `alias/vcknots/verifiers/*` | `vcknots:verifier-signature-key=true` |
 
-Verifier ロールには `secretsManagerVerifierCertificateStore` 用にスコープを絞った Secrets Manager ポリシーも付与されています（`lib/construct/api/verifier-api.ts` 参照）: `CreateSecret`/`PutSecretValue`/`GetSecretValue` を `secret:vcknots/verifier-certificates/*` に限定しています。末尾のワイルドカードは、Secrets Manager がすべてのシークレット ARN にランダムな6文字のサフィックスを付与するため必須です。プレフィックス定数は construct と `aws/src/providers/secrets-manager.ts` の2箇所に存在しますが、Lambda には `VERIFIER_CERTIFICATE_SECRET_PREFIX` として渡されるため両者がずれることはありません。シークレットは `aws/secretsmanager` マネージドキーで暗号化されるため、KMS 権限の付与は不要です。
+Verifier ロールには `secretsManagerVerifierCertificateStore` 用にスコープを絞った Secrets Manager ポリシーも付与されています（`lib/construct/api/verifier-api.ts` 参照）。`CreateSecret` は Secrets Manager 側にリソースレベル権限がなく、リクエスト時点ではシークレットの ARN がまだ存在しないため、`Resource: '*'` に `secretsmanager:Name` 条件（`vcknots/verifier-certificates/*` に限定）を組み合わせて付与しています。`PutSecretValue`/`GetSecretValue` は別ステートメントとして `secret:vcknots/verifier-certificates/*` に限定して付与しています。末尾のワイルドカードは、Secrets Manager がすべてのシークレット ARN にランダムな6文字のサフィックスを付与するため必須です。プレフィックス定数は construct と `aws/src/providers/secrets-manager.ts` の2箇所に存在しますが、Lambda には `VERIFIER_CERTIFICATE_SECRET_PREFIX` として渡されるため両者がずれることはありません。シークレットは `aws/secretsmanager` マネージドキーで暗号化されるため、KMS 権限の付与は不要です。
 
 ### スタック出力
 

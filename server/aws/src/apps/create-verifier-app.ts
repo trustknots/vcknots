@@ -9,7 +9,11 @@ import {
   secretsManagerVerifierCertificateStore,
 } from '@trustknots/aws'
 import { createVerifierRouter } from '@trustknots/server-core/routes/verify'
-import { VerifierClientId, VerifierMetadata, initializeVerifierFlow } from '@trustknots/vcknots/verifier'
+import {
+  VerifierClientId,
+  VerifierMetadata,
+  initializeVerifierFlow,
+} from '@trustknots/vcknots/verifier'
 import type { VcknotsOptions } from '@trustknots/vcknots'
 import { createBaseApp } from './create-base-app.js'
 
@@ -53,7 +57,7 @@ export function createVerifierApp(options?: VcknotsOptions) {
         certificateStore,
         ...(options?.providers ?? []),
       ],
-    },
+    }
   )
 
   async function initialize(baseUrl: string) {
@@ -75,7 +79,7 @@ export function createVerifierApp(options?: VcknotsOptions) {
         const publicKey = await signatureKeyStore.fetch(verifierId, keyAlg)
         if (!publicKey) {
           console.warn(
-            `Verifier metadata exists but no ${keyAlg} key is registered in KMS: signing authorization requests will fail`,
+            `Verifier metadata exists but no ${keyAlg} key is registered in KMS: signing authorization requests will fail`
           )
         }
       } catch (error) {
@@ -85,7 +89,7 @@ export function createVerifierApp(options?: VcknotsOptions) {
         const certificate = await verifierFlow.findVerifierCertificate(verifierId)
         if (!certificate || certificate.length === 0) {
           console.warn(
-            'Verifier metadata exists but no certificate is registered: x509_san_dns requests will fail',
+            'Verifier metadata exists but no certificate is registered: x509_san_dns / x509_san_uri requests will fail'
           )
         }
       } catch (error) {
@@ -95,13 +99,29 @@ export function createVerifierApp(options?: VcknotsOptions) {
     }
 
     const samplesDir = join(dirname(fileURLToPath(import.meta.url)), '../../../samples')
-    const sampleVerifierMetadata = JSON.parse(readFileSync(join(samplesDir, 'verifier_metadata.json'), 'utf-8'))
+    const sampleVerifierMetadata = JSON.parse(
+      readFileSync(join(samplesDir, 'verifier_metadata.json'), 'utf-8')
+    )
+
+    // The sample key pair is bundled in the repo, so it must never be registered against a
+    // deployed verifier — anyone can read it and forge that verifier's JARs. Only a local
+    // baseUrl (the default for `pnpm start:verifier`) may fall back to it; a deployed API URL,
+    // e.g. when repairing a verifier per the README, requires PRIVATE_KEY/CERTIFICATE explicitly.
+    const local = isLocalBaseUrl(baseUrl)
 
     // Registering with a certificate is what populates the certificate store; without it the
     // verifier cannot sign JAR requests for x509_san_dns / x509_san_uri client ids.
     const option = {
-      privateKey: readPem('PRIVATE_KEY', 'PRIVATE_KEY_PATH', join(samplesDir, DEFAULT_PRIVATE_KEY)),
-      certificate: readPem('CERTIFICATE', 'CERTIFICATE_PATH', join(samplesDir, DEFAULT_CERTIFICATE)),
+      privateKey: readPem(
+        'PRIVATE_KEY',
+        'PRIVATE_KEY_PATH',
+        local ? join(samplesDir, DEFAULT_PRIVATE_KEY) : undefined
+      ),
+      certificate: readPem(
+        'CERTIFICATE',
+        'CERTIFICATE_PATH',
+        local ? join(samplesDir, DEFAULT_CERTIFICATE) : undefined
+      ),
       format: 'pem',
       alg: 'ES256',
     } as const
@@ -117,10 +137,28 @@ export function createVerifierApp(options?: VcknotsOptions) {
 const DEFAULT_PRIVATE_KEY = 'certificate-openid-test/private_key_openid.pem'
 const DEFAULT_CERTIFICATE = 'certificate-openid-test/certificate_openid.pem'
 
-/** Reads a PEM from an inline env var, a path env var, or the bundled sample, in that order. */
-function readPem(valueEnv: string, pathEnv: string, defaultPath: string): string {
+/** Whether a base URL is a local development endpoint, e.g. `http://localhost:8083`. */
+function isLocalBaseUrl(baseUrl: string): boolean {
+  try {
+    const { hostname } = new URL(baseUrl)
+    return hostname === 'localhost' || hostname === '127.0.0.1'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Reads a PEM from an inline env var, a path env var, or — only when `defaultPath` is given —
+ * the bundled sample, in that order. Throws if none is available so a deployed verifier can
+ * never be silently registered with the bundled sample's publicly known private key.
+ */
+function readPem(valueEnv: string, pathEnv: string, defaultPath?: string): string {
   const inline = process.env[valueEnv]?.replace(/\\n/g, '\n')
   if (inline) return inline
   const path = process.env[pathEnv]
-  return readFileSync(path ? resolve(path) : defaultPath, 'utf-8')
+  if (path) return readFileSync(resolve(path), 'utf-8')
+  if (defaultPath) return readFileSync(defaultPath, 'utf-8')
+  throw new Error(
+    `${valueEnv} or ${pathEnv} is required: VERIFIER_BASE_URL is not local, and the bundled sample certificate must not be registered for a deployed verifier.`
+  )
 }

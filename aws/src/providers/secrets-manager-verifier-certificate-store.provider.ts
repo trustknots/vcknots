@@ -16,11 +16,13 @@ import {
 } from './secrets-manager'
 
 // The verifier id is a URL (see client-id.types.ts) and ':' is not a legal character in a
-// Secrets Manager name, so the id is hashed. Hex rather than base64url because AWS advises
-// against names ending in a hyphen plus six characters — that collides with the random suffix
-// AWS appends to secret ARNs — and a base64url digest can end that way by chance.
+// Secrets Manager name, so the id is hashed. SHA-256 rather than MD5 since a collision would
+// make save()/fetch() serve one verifier's certificate under another verifier's id. Hex rather
+// than base64url because AWS advises against names ending in a hyphen plus six characters —
+// that collides with the random suffix AWS appends to secret ARNs — and a base64url digest can
+// end that way by chance.
 const secretName = (verifier: VerifierClientId, prefix: string): string =>
-  `${prefix}/${createHash('md5').update(verifier).digest('hex')}`
+  `${prefix}/${createHash('sha256').update(verifier).digest('hex')}`
 
 export const secretsManagerVerifierCertificateStore = (
   options?: SecretsManagerProviderOptions

@@ -49,16 +49,27 @@ export class VerifierApi extends Construct {
     const stack = Stack.of(this);
     const verifierCertificateSecretArn = `arn:${stack.partition}:secretsmanager:${stack.region}:${stack.account}:secret:${VERIFIER_CERTIFICATE_SECRET_PREFIX}/*`;
 
-    // CreateSecret on first registration, PutSecretValue on re-registration, GetSecretValue on
-    // every JAR signed for an x509_san_dns / x509_san_uri client id. Secrets encrypted with the
-    // aws/secretsmanager managed key need no separate kms grant for a same-account role.
+    // CreateSecret has no resource-level permissions: the secret's ARN does not exist yet when
+    // the request is made, so it must be scoped with Resource: '*' plus a secretsmanager:Name
+    // condition instead — an ARN-scoped statement would deny every first-time registration.
     this.lambdaApi.role.addToPolicy(
       new iam.PolicyStatement({
-        actions: [
-          'secretsmanager:CreateSecret',
-          'secretsmanager:PutSecretValue',
-          'secretsmanager:GetSecretValue',
-        ],
+        actions: ['secretsmanager:CreateSecret'],
+        resources: ['*'],
+        conditions: {
+          StringLike: {
+            'secretsmanager:Name': `${VERIFIER_CERTIFICATE_SECRET_PREFIX}/*`,
+          },
+        },
+      }),
+    );
+
+    // PutSecretValue on re-registration, GetSecretValue on every JAR signed for an
+    // x509_san_dns / x509_san_uri client id. Secrets encrypted with the aws/secretsmanager
+    // managed key need no separate kms grant for a same-account role.
+    this.lambdaApi.role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['secretsmanager:PutSecretValue', 'secretsmanager:GetSecretValue'],
         resources: [verifierCertificateSecretArn],
       }),
     );
