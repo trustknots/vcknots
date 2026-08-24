@@ -282,14 +282,13 @@ Authorization Server メタデータの取得
 ```json
 {
   "credentialId": string (必須, 例: "UniversityDegreeCredential"),
-  "client_id"?: string (オプション、デフォルト: "x509_san_dns:localhost")
+  "state": string (必須, 例: "550e8400e29b41d4a716446655440000"),
+  "client_id"?: string (オプション、デフォルト: "redirect_uri:localhost")
 }
 ```
 
 **`client_id` の形式:**
 - `redirect_uri:{uri}` - リダイレクトURIベースの識別子
-- `x509_san_dns:{dns_name}` - X.509証明書のSAN DNS名ベースの識別子
-- デフォルト: `"x509_san_dns:localhost"`
 
 **レスポンス:**
 - `200 OK` - `openid4vp://authorize?{encoded_params}` 形式のテキスト
@@ -312,6 +311,11 @@ Request Object を JAR 形式で作成します。
   "client_id"?: string
 }
 ```
+
+**`client_id` の形式:**
+- `redirect_uri:{uri}` - リダイレクトURIベースの識別子
+- `x509_san_dns:{dns_name}` - X.509証明書のSAN DNS名ベースの識別子
+- デフォルト: `"x509_san_dns:localhost"`
 
 **レスポンス:**
 - `200 OK` - `openid4vp://authorize?{encoded_params}` 形式のテキスト

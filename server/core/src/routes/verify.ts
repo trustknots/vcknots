@@ -1,16 +1,16 @@
-import { Hono } from 'hono'
+import { randomUUID } from 'node:crypto'
 import { VcknotsContext } from '@trustknots/vcknots'
 import {
+  ClientIdentifier,
+  VerifierAuthorizationResponse,
+  VerifierClientId,
   VerifierClientIdPrefix,
   VerifierRequestObjectId,
   initializeVerifierFlow,
-  VerifierAuthorizationResponse,
-  VerifierClientId,
-  ClientIdentifier,
 } from '@trustknots/vcknots/verifier'
-import { randomUUID } from 'node:crypto'
-import { handleError } from '../utils/error-handler.js'
+import { Hono } from 'hono'
 import { createDirectPostVpAudTransactionStore } from '../utils/direct-post-vp-aud-transaction-store.js'
+import { handleError } from '../utils/error-handler.js'
 
 export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
   const verifyApp = new Hono()
@@ -102,7 +102,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           400
         )
       }
-      const client_id = validateClientIdScheme(body.client_id as string)
+      const client_id = validateClientIdScheme(
+        (body.client_id as string) ?? 'redirect_uri:localhost'
+      )
 
       const query = {
         dcql_query: {
