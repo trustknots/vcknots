@@ -106,19 +106,18 @@ export function createVerifierApp(options?: VcknotsOptions) {
     // The sample key pair is bundled in the repo, so it must never be registered against a
     // deployed verifier — anyone can read it and forge that verifier's JARs. Only a local
     // baseUrl (the default for `pnpm start:verifier`) may fall back to it; a deployed API URL,
-    // e.g. when repairing a verifier per the README, requires PRIVATE_KEY/CERTIFICATE explicitly.
+    // e.g. when repairing a verifier per the README, requires PRIVATE_KEY_PATH/CERTIFICATE_PATH
+    // explicitly.
     const local = isLocalBaseUrl(baseUrl)
 
     // Registering with a certificate is what populates the certificate store; without it the
     // verifier cannot sign JAR requests for x509_san_dns / x509_san_uri client ids.
     const option = {
       privateKey: readPem(
-        'PRIVATE_KEY',
         'PRIVATE_KEY_PATH',
         local ? join(samplesDir, DEFAULT_PRIVATE_KEY) : undefined
       ),
       certificate: readPem(
-        'CERTIFICATE',
         'CERTIFICATE_PATH',
         local ? join(samplesDir, DEFAULT_CERTIFICATE) : undefined
       ),
@@ -148,17 +147,15 @@ function isLocalBaseUrl(baseUrl: string): boolean {
 }
 
 /**
- * Reads a PEM from an inline env var, a path env var, or — only when `defaultPath` is given —
- * the bundled sample, in that order. Throws if none is available so a deployed verifier can
- * never be silently registered with the bundled sample's publicly known private key.
+ * Reads a PEM from a path env var, or — only when `defaultPath` is given — the bundled sample.
+ * Throws if neither is available so a deployed verifier can never be silently registered with
+ * the bundled sample's publicly known private key.
  */
-function readPem(valueEnv: string, pathEnv: string, defaultPath?: string): string {
-  const inline = process.env[valueEnv]?.replace(/\\n/g, '\n')
-  if (inline) return inline
+function readPem(pathEnv: string, defaultPath?: string): string {
   const path = process.env[pathEnv]
   if (path) return readFileSync(resolve(path), 'utf-8')
   if (defaultPath) return readFileSync(defaultPath, 'utf-8')
   throw new Error(
-    `${valueEnv} or ${pathEnv} is required: VERIFIER_BASE_URL is not local, and the bundled sample certificate must not be registered for a deployed verifier.`
+    `${pathEnv} is required: VERIFIER_BASE_URL is not local, and the bundled sample certificate must not be registered for a deployed verifier.`
   )
 }
