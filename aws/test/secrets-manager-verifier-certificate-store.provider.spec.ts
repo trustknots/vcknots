@@ -20,8 +20,8 @@ import { secretsManagerVerifierCertificateStore } from '../src/providers/secrets
 const secretsMock = mockClient(SecretsManagerClient)
 
 const verifier = VerifierClientId('https://verifier.example.com')
-const sha256Hex = (value: string) => createHash('sha256').update(value).digest('hex')
-const defaultSecretName = `${VERIFIER_CERTIFICATE_SECRET_PREFIX}/${sha256Hex(verifier)}`
+const md5Hex = (value: string) => createHash('md5').update(value).digest('hex')
+const defaultSecretName = `${VERIFIER_CERTIFICATE_SECRET_PREFIX}/${md5Hex(verifier)}`
 
 const certificate: Certificate = [
   '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----',
@@ -77,7 +77,7 @@ describe('secretsManagerVerifierCertificateStore', () => {
     await createProvider('custom/prefix').save(verifier, certificate)
 
     const calls = secretsMock.commandCalls(CreateSecretCommand)
-    assert.equal(calls[0].args[0].input.Name, `custom/prefix/${sha256Hex(verifier)}`)
+    assert.equal(calls[0].args[0].input.Name, `custom/prefix/${md5Hex(verifier)}`)
   })
 
   it('should derive distinct secret names per verifier', async () => {
@@ -92,7 +92,7 @@ describe('secretsManagerVerifierCertificateStore', () => {
     assert.notEqual(first.args[0].input.Name, second.args[0].input.Name)
     assert.equal(
       second.args[0].input.Name,
-      `${VERIFIER_CERTIFICATE_SECRET_PREFIX}/${sha256Hex(other)}`
+      `${VERIFIER_CERTIFICATE_SECRET_PREFIX}/${md5Hex(other)}`
     )
   })
 

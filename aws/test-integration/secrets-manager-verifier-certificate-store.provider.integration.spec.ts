@@ -39,11 +39,11 @@ const verifierFor = (label: string) =>
 const secretsManager = new SecretsManagerClient({})
 const store = secretsManagerVerifierCertificateStore()
 
-const sha256Hex = (value: string) => createHash('sha256').update(value).digest('hex')
+const md5Hex = (value: string) => createHash('md5').update(value).digest('hex')
 
 const createdSecretNames: string[] = []
 const trackCreatedSecret = (verifier: string, prefix = VERIFIER_CERTIFICATE_SECRET_PREFIX) =>
-  createdSecretNames.push(`${prefix}/${sha256Hex(verifier)}`)
+  createdSecretNames.push(`${prefix}/${md5Hex(verifier)}`)
 
 const stripPem = (pem: string) =>
   pem
