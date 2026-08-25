@@ -21,6 +21,11 @@ import (
 
 type Oid4vciReceiver struct{}
 
+const (
+	wellKnownCredentialIssuer    = "/.well-known/openid-credential-issuer"
+	wellKnownAuthorizationServer = "/.well-known/oauth-authorization-server"
+)
+
 type credentialNonceResponse struct {
 	CNonce *string `json:"c_nonce"`
 	Nonce  *string `json:"nonce"`
@@ -55,11 +60,13 @@ func (o *Oid4vciReceiver) doRequest(method string, endpoint common.URIField, pat
 		return fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
 	}
 
-	if path == "/.well-known/oauth-authorization-server" || path == "/.well-known/openid-credential-issuer" {
-		// Special handling for metadata discovery as per RFC 8414 §3 / OID4VCI §11.2.2.
-		// The well-known string MUST be inserted between the host component and the path
-		// component, preserving the original path (including any trailing slash) so that
-		// e.g. "https://issuer.example.com/tenant/" resolves to
+	// Both metadata discovery URLs are formed by inserting the well-known string between the
+	// host component and the path component of the identifier, but the two specs differ on
+	// whether the identifier's trailing slash survives, so they are handled separately.
+	switch path {
+	case wellKnownCredentialIssuer:
+		// OID4VCI 1.0 §12.2.2: the path component is preserved verbatim, trailing slash
+		// included, so "https://issuer.example.com/tenant/" resolves to
 		// "https://issuer.example.com/.well-known/openid-credential-issuer/tenant/".
 		originalPath := endpointURL.Path
 		if originalPath == "/" {
@@ -69,7 +76,15 @@ func (o *Oid4vciReceiver) doRequest(method string, endpoint common.URIField, pat
 		if !strings.HasPrefix(originalPath, path) {
 			endpointURL.Path = path + originalPath
 		}
-	} else {
+	case wellKnownAuthorizationServer:
+		// RFC 8414 §3.1: the same insertion, but the identifier's trailing slash is not part
+		// of the path component, so "https://as.example.com/tenant/" resolves to
+		// "https://as.example.com/.well-known/oauth-authorization-server/tenant".
+		originalPath := strings.TrimSuffix(endpointURL.Path, "/")
+		if !strings.HasPrefix(originalPath, path) {
+			endpointURL.Path = path + originalPath
+		}
+	default:
 		// OID4VCI Draft 13 (ID1) §11.2.2, etc...
 		if !strings.HasSuffix(endpointURL.Path, path) {
 			endpointURL = *endpointURL.JoinPath(path)
@@ -122,7 +137,7 @@ func (o *Oid4vciReceiver) FetchIssuerMetadata(endpoint common.URIField, receivin
 	}
 
 	var metadata types.CredentialIssuerMetadata
-	if err := o.doRequest("GET", endpoint, "/.well-known/openid-credential-issuer", nil, &metadata); err != nil {
+	if err := o.doRequest("GET", endpoint, wellKnownCredentialIssuer, nil, &metadata); err != nil {
 		return nil, fmt.Errorf("failed to fetch issuer metadata: %w", err)
 	}
 
@@ -135,7 +150,7 @@ func (o *Oid4vciReceiver) FetchAuthorizationServerMetadata(endpoint common.URIFi
 	}
 
 	var metadata types.AuthorizationServerMetadata
-	if err := o.doRequest("GET", endpoint, "/.well-known/oauth-authorization-server", nil, &metadata); err != nil {
+	if err := o.doRequest("GET", endpoint, wellKnownAuthorizationServer, nil, &metadata); err != nil {
 		return nil, fmt.Errorf("failed to fetch authorization server metadata: %w", err)
 	}
 
