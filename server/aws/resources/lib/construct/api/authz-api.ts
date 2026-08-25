@@ -18,10 +18,15 @@ export class AuthzApi extends Construct {
     this.lambdaApi = new LambdaApi(this, 'Api', {
       handlerFile: 'authz.ts',
       serviceName: 'authz',
-      readWriteTables: [dataStores.authServersTable, dataStores.preCodesTable],
+      readWriteTables: [
+        dataStores.authServersTable,
+        dataStores.preCodesTable,
+        dataStores.authzOAuthClientsTable,
+      ],
       environment: {
         AUTH_SERVERS_TABLE_NAME: dataStores.authServersTable.tableName,
         PRE_CODES_TABLE_NAME: dataStores.preCodesTable.tableName,
+        AUTHZ_OAUTH_CLIENTS_TABLE_NAME: dataStores.authzOAuthClientsTable.tableName,
         TX_CODE_PEPPER: requiredEnv('TX_CODE_PEPPER'),
       },
     });
