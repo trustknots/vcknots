@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { generateKeyPairSync } from 'node:crypto'
 import { before, beforeEach, describe, it, mock } from 'node:test'
-import { generateKeyPair } from 'jose'
 import { AuthorizationRequest } from '../src/authorization-request.types'
 import { AuthorizationResponse } from '../src/authorization-response.types'
 import { ClientId } from '../src/client-id.types'
@@ -13,6 +12,7 @@ import {
   CredentialQueryProvider,
   RequestObjectIdProvider,
   RequestObjectStoreProvider,
+  VerifierEncryptionKeyStoreProvider,
   VerifierMetadataStoreProvider,
   VerifierSignatureKeyProvider,
   VerifierSignatureKeyStoreProvider,
@@ -134,6 +134,14 @@ describe('VerifierFlow', () => {
     sign: mock.fn(),
   } satisfies VerifierSignatureKeyStoreProvider
 
+  const mockEncryptionKeyStoreProvider = {
+    kind: 'verifier-encryption-key-store-provider',
+    name: 'mock-verifier-encryption-key-store-provider',
+    single: true,
+    save: mock.fn(),
+    fetch: mock.fn(),
+  } satisfies VerifierEncryptionKeyStoreProvider
+
   const mockCertificateStoreProvider = {
     kind: 'verifier-certificate-store-provider',
     name: 'mock-verifier-certificate-store-provider',
@@ -182,6 +190,7 @@ describe('VerifierFlow', () => {
         mockTransactionDataProvider,
         mockKeyProvider,
         mockKeyStoreProvider,
+        mockEncryptionKeyStoreProvider,
         mockCertificateStoreProvider,
         mockCertificateProvider,
         mockVerifyVerifiablePresentationProvider,
@@ -193,7 +202,17 @@ describe('VerifierFlow', () => {
   })
 
   describe('createVerifierMetadata', () => {
-    it('should generate and persist keys via key store when options are omitted', async () => {
+    const encryptionJwk = {
+      kty: 'RSA',
+      crv: 'P-256',
+      x: 'enc-x',
+      y: 'enc-y',
+      alg: 'RSA-OAEP-256',
+      kid: 'enc-key-1',
+      use: 'enc' as const,
+    }
+
+    it('should generate signing keys and persist encryption jwk when options are omitted', async () => {
       const metadata = VerifierMetadata({
         client_name: 'Test Verifier',
         vp_formats: {
@@ -201,21 +220,28 @@ describe('VerifierFlow', () => {
           jwt_vp_json: { alg_values_supported: ['ES256'] },
         },
       })
-      const { publicKey } = await generateKeyPair('ES256', { extractable: true })
+      let savedMetadata: VerifierMetadata | undefined
 
+      mock.method(mockVerifierMetadataStore, 'fetch', async () => null)
       mock.method(mockKeyStoreProvider, 'save', async () => {})
-      mock.method(mockKeyStoreProvider, 'fetch', async () => publicKey)
-      mock.method(mockVerifierMetadataStore, 'save', async () => {})
+      mock.method(mockEncryptionKeyStoreProvider, 'save', async () => {})
+      mock.method(mockEncryptionKeyStoreProvider, 'fetch', async () => encryptionJwk)
+      mock.method(
+        mockVerifierMetadataStore,
+        'save',
+        async (_id: ClientId, value: VerifierMetadata) => {
+          savedMetadata = value
+        }
+      )
 
       await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata)
 
       assert.equal(mockKeyStoreProvider.save.mock.callCount(), 1)
-      assert.equal(mockKeyStoreProvider.fetch.mock.callCount(), 1)
+      assert.equal(mockEncryptionKeyStoreProvider.save.mock.callCount(), 1)
+      assert.equal(mockEncryptionKeyStoreProvider.fetch.mock.callCount(), 1)
       assert.equal(mockVerifierMetadataStore.save.mock.callCount(), 1)
       assert.equal(metadata.authorization_signed_response_alg, 'ES256')
-      assert.ok(metadata.jwks)
-      assert.equal(metadata.jwks.keys.length, 1)
-      assert.equal(metadata.jwks.keys[0].alg, 'ES256')
+      assert.deepEqual(savedMetadata?.jwks, { keys: [encryptionJwk] })
     })
 
     it('should persist provided verifier keys before saving metadata', async () => {
@@ -230,11 +256,16 @@ describe('VerifierFlow', () => {
       const { publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
       const publicKeyPem = publicKey.export({ format: 'pem', type: 'spki' }).toString()
 
-      mock.method(mockVerifierMetadataStore, 'save', async () => {
-        events.push('metadata')
-      })
+      mock.method(mockVerifierMetadataStore, 'fetch', async () => null)
       mock.method(mockKeyStoreProvider, 'save', async () => {
         events.push('key')
+      })
+      mock.method(mockEncryptionKeyStoreProvider, 'save', async () => {
+        events.push('enc-key')
+      })
+      mock.method(mockEncryptionKeyStoreProvider, 'fetch', async () => encryptionJwk)
+      mock.method(mockVerifierMetadataStore, 'save', async () => {
+        events.push('metadata')
       })
 
       await verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata, {
@@ -244,7 +275,30 @@ describe('VerifierFlow', () => {
         privateKey: 'private-key',
       })
 
-      assert.deepEqual(events, ['key', 'metadata'])
+      assert.deepEqual(events, ['enc-key', 'key', 'metadata'])
+    })
+
+    it('should throw INTERNAL_SERVER_ERROR when encryption key generation fails', async () => {
+      const metadata = VerifierMetadata({
+        client_name: 'Test Verifier',
+        vp_formats: {
+          jwt_vc_json: { alg_values_supported: ['ES256'] },
+          jwt_vp_json: { alg_values_supported: ['ES256'] },
+        },
+      })
+
+      mock.method(mockVerifierMetadataStore, 'fetch', async () => null)
+      mock.method(mockKeyStoreProvider, 'save', async () => {})
+      mock.method(mockEncryptionKeyStoreProvider, 'save', async () => {})
+      mock.method(mockEncryptionKeyStoreProvider, 'fetch', async () => null)
+
+      await assert.rejects(
+        verifierFlow.createVerifierMetadata(ClientId('https://example.com'), metadata),
+        {
+          name: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to generate encryption key pair.',
+        }
+      )
     })
   })
 

@@ -18,6 +18,7 @@ import { CredentialFormats } from '../credential-request.types'
 import { JwtVcJson, ProofJwt, ProofJwtHeader, VerifiableCredential } from '../credential.types'
 import { Dcql } from '../dcql.type'
 import { DidDocument } from '../did.types'
+import { EncryptionKeyPair, EncryptionPublicJwk } from '../encryption-key.types'
 import { JwtContent, JwtPayload } from '../jwt.types'
 import { PreAuthorizedCode } from '../pre-authorized-code.types'
 import { VpTokenPayload } from '../presentation.types'
@@ -91,6 +92,15 @@ export type IssuerSignatureKeyStoreProvider = {
     jwtPayload: JwtPayload,
     jwtHeader: ProofJwtHeader
   ): Promise<string | null>
+}
+
+export type VerifierEncryptionKeyStoreProvider = {
+  kind: 'verifier-encryption-key-store-provider'
+  name: string
+  single: true
+
+  save(verifier: ClientId, keyAlg: string): Promise<void>
+  fetch(verifier: ClientId, keyAlg: string): Promise<EncryptionPublicJwk | null>
 }
 
 export type VerifierSignatureKeyStoreProvider = {
@@ -301,6 +311,15 @@ export type IssuerSignatureKeyProvider = {
   canHandle(keyAlg: string): boolean
 }
 
+export type VerifierEncryptionKeyProvider = {
+  kind: 'verifier-encryption-key-provider'
+  name: string
+  single: false
+
+  generate(): Promise<EncryptionKeyPair>
+  canHandle(keyAlg: string): boolean
+}
+
 export type VerifierSignatureKeyProvider = {
   kind: 'verifier-signature-key-provider'
   name: string
@@ -448,6 +467,8 @@ export type Provider =
   | IssueCredentialProvider
   | DidProvider
   | VerifierMetadataStoreProvider
+  | VerifierEncryptionKeyStoreProvider
+  | VerifierEncryptionKeyProvider
   | VerifierSignatureKeyProvider
   | VerifierSignatureKeyStoreProvider
   | CredentialQueryProvider

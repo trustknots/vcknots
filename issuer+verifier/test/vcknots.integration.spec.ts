@@ -356,8 +356,6 @@ describe('Vcknots', () => {
       assert.equal(authzRequest.request.response_mode, 'direct_post')
       assert.equal(authzRequest.request.client_metadata?.client_name, metadata.client_name)
       assert.deepEqual(authzRequest.request.client_metadata?.vp_formats, metadata.vp_formats)
-      assert.ok(authzRequest.request.client_metadata.jwks)
-      assert.ok(authzRequest.request.client_metadata.jwks.keys)
       assert.ok(authzRequest.request.nonce)
       assert.ok('dcql_query' in authzRequest.request && authzRequest.request.dcql_query)
       assert.equal(authzRequest.request.dcql_query.credentials[0].id, dcqlQuery.credentials[0].id)
