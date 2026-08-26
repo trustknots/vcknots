@@ -23,6 +23,7 @@ type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
   alg: string
   kid?: string
+  encryptionKeyAlg?: string
 }
 type CreateVerifierMetadataOptionsWithCert = CreateVerifierMetadataOptionsBase & {
   privateKey: string | Jwk
@@ -101,6 +102,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   const query$ = context.providers.get('credential-query-provider')
   const verifierMetadata$ = context.providers.get('verifier-metadata-store-provider')
   const keyStore$ = context.providers.get('verifier-signature-key-store-provider')
+  const encryptionKeyStore$ = context.providers.get('verifier-encryption-key-store-provider')
   const requestObjectId$ = context.providers.get('request-object-id-provider')
   const requestObjectStore$ = context.providers.get('request-object-store-provider')
   const authzRequestJAR$ = context.providers.get('authz-request-jar-provider')
@@ -157,31 +159,20 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         // create new key pair (not support x509)
         keyAlg = 'ES256'
         await keyStore$.save(verifierId, keyAlg)
-        const publicKey = await keyStore$.fetch(verifierId, keyAlg)
-        if (!publicKey) {
-          throw err('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
-            message: `Verifier public key for ${keyAlg} is not found.`,
-          })
-        }
-        const jwk = await exportJWK(publicKey)
-        verifierMetadata.jwks = { keys: [{ ...jwk, alg: keyAlg }] }
       } else if ('publicKey' in options && options.publicKey !== undefined) {
-        // use provided key pair (not support x509)
+        // use provided signing key pair (not support x509)
         if (!keyAlg) {
           throw err('INTERNAL_SERVER_ERROR', {
             message: 'alg is required in the provided publicKey.',
           })
         }
         if (options.format === 'jwk' && typeof options.publicKey !== 'string') {
-          verifierMetadata.jwks = { keys: [options.publicKey] }
         } else if (options.format === 'jwk') {
           throw err('INVALID_OPTIONS', {
             message: 'publicKey must be a JWK when format is jwk.',
           })
         } else if (options.format === 'pem' && typeof options.publicKey === 'string') {
-          const key = await importSPKI(options.publicKey, keyAlg)
-          const jwk = await exportJWK(key)
-          verifierMetadata.jwks = { keys: [{ ...jwk }] }
+          await importSPKI(options.publicKey, keyAlg)
         } else {
           throw err('INVALID_OPTIONS', {
             message: 'publicKey must be a PEM string when format is pem.',
@@ -195,7 +186,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           privateKey: options.privateKey,
         }
       } else if ('certificate' in options && options.certificate !== undefined) {
-        // use provided key pair and x509 certificate
+        // use provided signing key pair and x509 certificate
         // password protected private key is not supported
         if (!keyAlg) {
           throw err('INTERNAL_SERVER_ERROR', {
@@ -213,9 +204,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         }
         const certificate = certificates[0]
         const publicKey = await certificate$.getPublicKey(certificate)
-        const key = await importSPKI(publicKey, keyAlg)
-        const jwk = await exportJWK(key)
-        verifierMetadata.jwks = { keys: [{ ...jwk }] }
+        await importSPKI(publicKey, keyAlg)
         certificatesToSave = certificates
         keyPairsToSave = {
           format: options.format,
@@ -225,6 +214,20 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           privateKey: options.privateKey,
         }
       }
+
+      const encryptionKeyAlg = options?.encryptionKeyAlg ?? 'RSA-OAEP-256'
+      await encryptionKeyStore$.save(verifierId, encryptionKeyAlg)
+      const encryptionPublicJwk = await encryptionKeyStore$.fetch(verifierId, encryptionKeyAlg)
+      if (!encryptionPublicJwk) {
+        throw err('INTERNAL_SERVER_ERROR', {
+          message: 'Failed to generate encryption key pair.',
+        })
+      }
+
+      verifierMetadata.jwks = {
+        keys: [encryptionPublicJwk],
+      }
+
       if (certificatesToSave) {
         await certificateStore$.save(verifierId, certificatesToSave)
       }

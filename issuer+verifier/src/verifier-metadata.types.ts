@@ -38,7 +38,8 @@ export const verifierMetadataSchema = z.object({
             y: z.string().optional(),
             crv: z.string().optional(),
             alg: z.string().optional(),
-            kid: z.string().optional(),
+            kid: z.string(),
+            use: z.string().optional(),
           })
           .and(z.record(z.string(), z.unknown()))
           .optional()
@@ -72,6 +73,9 @@ export const VerifierMetadata = (value?: {
       x?: string
       y?: string
       crv?: string
+      alg?: string
+      kid: string
+      use?: string
     }[]
   }
   software_id?: string
