@@ -65,7 +65,8 @@ export type VerifierFlow = {
   findVerifierMetadata: (verifierId: ClientId) => Promise<VerifierMetadata | null>
   createVerifierMetadata(
     verifierId: ClientId,
-    metadata: VerifierMetadata,
+    // Input metadata excludes jwks because it is generated internally.
+    metadata: Omit<VerifierMetadata, 'jwks'>,
     options?: CreateVerifierMetadataOptions
   ): Promise<void>
   createAuthzRequest(
@@ -136,7 +137,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           message: 'encrypted_response_enc_values_supported must be non-empty if provided.',
         })
       }
-      const verifierMetadata =
+      const verifierMetadata: VerifierMetadata =
         encryptedResponseEnc?.length === 1 && encryptedResponseEnc[0] === 'A128GCM'
           ? (() => {
               const { encrypted_response_enc_values_supported: _encryptedResponseEnc, ...rest } =
