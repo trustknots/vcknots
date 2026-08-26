@@ -23,7 +23,6 @@ type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
   alg: string
   kid?: string
-  encryptedResponseEnc?: string[]
 }
 type CreateVerifierMetadataOptionsWithCert = CreateVerifierMetadataOptionsBase & {
   privateKey: string | Jwk
@@ -126,21 +125,23 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           message: `verifier ${verifierId} is already registered.`,
         })
       }
-      const verifierMetadata = metadata
+      // const verifierMetadata = metadata
 
       // encrypted_response_enc_values_supported MUST be present for anything other than the default single value of A128GCM. Otherwise, this SHOULD be absent
-      const encryptedResponseEnc = options?.encryptedResponseEnc
+      const encryptedResponseEnc = metadata.encrypted_response_enc_values_supported
       if (encryptedResponseEnc?.length === 0) {
         throw err('INVALID_OPTIONS', {
           message: 'encrypted_response_enc_values_supported must be non-empty if provided.',
         })
       }
-      if (
-        encryptedResponseEnc &&
-        !(encryptedResponseEnc.length === 1 && encryptedResponseEnc[0] === 'A128GCM')
-      ) {
-        verifierMetadata.encrypted_response_enc_values_supported = encryptedResponseEnc
-      }
+      const verifierMetadata =
+        encryptedResponseEnc?.length === 1 && encryptedResponseEnc[0] === 'A128GCM'
+          ? (() => {
+              const { encrypted_response_enc_values_supported: _encryptedResponseEnc, ...rest } =
+                metadata
+              return rest
+            })()
+          : { ...metadata }
       let keyPairsToSave:
         | {
             format: 'pem' | 'jwk'
