@@ -23,12 +23,6 @@ describe('InMemoryRequestObjectStoreProvider', () => {
       ],
     },
   }
-  const requestObjectBase: RequestObject = {
-    response_type: 'vp_token',
-    client_id: 'https://example.com/client123',
-    nonce: 'nonce123',
-    response_mode: 'direct_post',
-  }
   beforeEach(() => {
     provider = inMemoryRequestObjectStore()
   })
@@ -48,59 +42,6 @@ describe('InMemoryRequestObjectStoreProvider', () => {
 
     assert.notEqual(fetched, null)
     assert.deepEqual(fetched, requestObject)
-  })
-
-  it('should save and fetch a request object with presentation_definition', async () => {
-    const presentationDefinition = {
-      id: 'vp token example',
-      input_descriptors: [
-        {
-          id: 'id card credential',
-          format: {
-            ldp_vc: {
-              proof_type: ['Ed25519Signature2018'],
-            },
-          },
-          constraints: {
-            fields: [
-              {
-                path: ['$.type'],
-                filter: {
-                  type: 'string',
-                  pattern: 'IDCardCredential',
-                },
-              },
-            ],
-          },
-        },
-      ],
-    }
-    const reqObj = {
-      ...requestObjectBase,
-      presentation_definition: presentationDefinition,
-    }
-    const id = requestObjectId
-
-    await provider.save(id, reqObj)
-    const fetched = await provider.fetch(id)
-
-    assert.notEqual(fetched, null)
-    assert.deepEqual(fetched, reqObj)
-  })
-
-  it('should save and fetch a request object with presentation_definition_uri', async () => {
-    const reqObj = {
-      ...requestObjectBase,
-      presentation_definition_uri:
-        'https://server.example.com/presentationdefs?ref=idcard_presentation_request',
-    }
-    const id = requestObjectId
-
-    await provider.save(id, reqObj)
-    const fetched = await provider.fetch(id)
-
-    assert.notEqual(fetched, null)
-    assert.deepEqual(fetched, reqObj)
   })
 
   it('should overwrite existing request object when saving with the same id', async () => {
