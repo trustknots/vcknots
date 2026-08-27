@@ -150,7 +150,7 @@ export type VerifyCredentialProvider = {
   name: string
   single: true
 
-  verify(vc: string): Promise<boolean>
+  verify(vc: string, options?: { allowedAlgs?: string[] }): Promise<boolean>
   canHandle(format: string): boolean
 }
 
@@ -160,6 +160,7 @@ export type VerifyVerifiablePresentationVerifyOptions =
       /** VP JWT `aud` must equal this or be included if `aud` is an array. */
       expectedAud: ClientIdentifier
       expectedNonce?: string
+      allowedAlgs?: string[]
     }
   | {
       kind: 'dc+sd-jwt'
@@ -168,6 +169,8 @@ export type VerifyVerifiablePresentationVerifyOptions =
       expectedAud?: ClientIdentifier
       expectedNonce?: string
       expectedTransactionDataHashes?: string[]
+      allowedSdJwtAlgs?: string[]
+      allowedKbJwtAlgs?: string[]
     }
   | {
       kind: 'dc+sd-jwt'
@@ -176,6 +179,8 @@ export type VerifyVerifiablePresentationVerifyOptions =
       expectedAud: ClientIdentifier
       expectedNonce?: string
       expectedTransactionDataHashes?: string[]
+      allowedSdJwtAlgs?: string[]
+      allowedKbJwtAlgs?: string[]
     }
 // | {
 //     kind: 'dc+sd-jwt'

@@ -454,12 +454,9 @@ curl --location 'http://localhost:8080/callback' \
 - 例（内容）:
 ```json
 {
-	"vp_formats": {
+	"vp_formats_supported": {
 		"jwt_vc_json": {
-			"alg_values_supported": ["ES256"]
-		},
-		"jwt_vp_json": {
-			"alg_values_supported": ["ES256"]
+			"alg_values": ["ES256"]
 		},
 		"dc+sd-jwt": {
 			"sd-jwt_alg_values": ["ES256", "ES384"],
