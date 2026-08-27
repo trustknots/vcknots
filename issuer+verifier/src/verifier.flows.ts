@@ -1,23 +1,23 @@
 import base64url from 'base64url'
+import { importSPKI } from 'jose'
 import { AuthorizationRequest } from './authorization-request.types'
 import { AuthorizationResponse } from './authorization-response.types'
+import { ClientIdentifier } from './client-id-scheme.types'
 import { ClientId } from './client-id.types'
+import { Cnonce } from './cnonce.types'
 import { Dcql } from './dcql.type'
 import { err, raise } from './errors/vcknots.error'
+import { Jwk } from './jwk.type'
+import { VpTokenPayload } from './presentation.types'
 import { VerifyVerifiablePresentationVerifyOptions } from './providers'
 import { selectProvider } from './providers/provider.utils'
+import { RequestObjectId } from './request-object-id.types'
 import { RequestObject } from './request-object.types'
+import { Certificate } from './signature-key.types'
+import { TransactionId, TransactionRecord } from './transaction-id.types'
 import { DeepPartialUnknown } from './type.utils'
 import { VcknotsContext } from './vcknots.context'
 import { VerifierMetadata } from './verifier-metadata.types'
-import { RequestObjectId } from './request-object-id.types'
-import { Certificate } from './signature-key.types'
-import { Jwk } from './jwk.type'
-import { importSPKI } from 'jose'
-import { ClientIdentifier } from './client-id-scheme.types'
-import { Cnonce } from './cnonce.types'
-import { VpTokenPayload } from './presentation.types'
-import { TransactionId, TransactionRecord } from './transaction-id.types'
 
 type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
@@ -252,7 +252,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       const credentialIds: string[] = []
       let isDcSDJwtRequested = false
       // Validate: Metadata supports format
-      const vpFormats = Object.keys(metadata.vp_formats)
+      const vpFormats = Object.keys(metadata.vp_formats_supported)
       if (parsedQuery.dcql_query) {
         for (const credential of parsedQuery.dcql_query.credentials) {
           if (!vpFormats.includes(credential.format)) {
@@ -440,11 +440,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           message: 'Transaction is not found.',
         })
       }
-      if (!(await verifierMetadata$.fetch(transaction.verifierId))) {
+      const verifierMetadata = await verifierMetadata$.fetch(transaction.verifierId)
+      if (!verifierMetadata) {
         throw raise('VERIFIER_NOT_FOUND', {
           message: 'verifier is not found.',
         })
       }
+      const { vp_formats_supported: vpFormatsSupported } = verifierMetadata
       if (transaction.state !== undefined) {
         if (response.state !== transaction.state) {
           throw err('INVALID_REQUEST', {
@@ -497,6 +499,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           .filter((c) => c.path.every((k) => typeof k === 'string'))
           .map((c) => (c.path as string[]).join('.'))
 
+        const sdJwtFormats = vpFormatsSupported['dc+sd-jwt']
         const verifyOptions: VerifyVerifiablePresentationVerifyOptions =
           format === 'dc+sd-jwt'
             ? options?.isKbJwt
@@ -507,6 +510,8 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
                   expectedAud,
                   expectedNonce,
                   expectedTransactionDataHashes: options?.expectedTransactionDataHashes,
+                  allowedSdJwtAlgs: sdJwtFormats?.['sd-jwt_alg_values'] as string[] | undefined,
+                  allowedKbJwtAlgs: sdJwtFormats?.['kb-jwt_alg_values'] as string[] | undefined,
                 }
               : {
                   kind: 'dc+sd-jwt',
@@ -514,8 +519,15 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
                   expectedAud,
                   expectedNonce,
                   expectedTransactionDataHashes: options?.expectedTransactionDataHashes,
+                  allowedSdJwtAlgs: sdJwtFormats?.['sd-jwt_alg_values'] as string[] | undefined,
+                  allowedKbJwtAlgs: sdJwtFormats?.['kb-jwt_alg_values'] as string[] | undefined,
                 }
-            : { kind: 'jwt_vp_json', expectedAud, expectedNonce }
+            : {
+                kind: 'jwt_vp_json',
+                expectedAud,
+                expectedNonce,
+                allowedAlgs: vpFormatsSupported.jwt_vc_json?.alg_values as string[] | undefined,
+              }
 
         const payloads: VpTokenPayload[] = []
         for (const vp of vpArray) {
