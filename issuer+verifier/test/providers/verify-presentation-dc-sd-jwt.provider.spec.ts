@@ -291,6 +291,36 @@ describe('sd-jwt provider', () => {
     assert.equal(provider.canHandle('jwt_vc_json'), false)
   })
 
+  it('throws VERIFIER_VP_FORMATS_NOT_SUPPORTED when SD-JWT alg is not in allowedSdJwtAlgs', async () => {
+    const sdJwt = await issueSdJwt(issuer)
+    await assert.rejects(
+      provider.verify(sdJwt, {
+        kind: 'dc+sd-jwt',
+        allowedSdJwtAlgs: ['RS256'],
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'VERIFIER_VP_FORMATS_NOT_SUPPORTED')
+        assert.match(e.message, /sd-jwt_alg_values/)
+        return true
+      }
+    )
+  })
+
+  it('throws VERIFIER_VP_FORMATS_NOT_SUPPORTED when KB-JWT alg is not in allowedKbJwtAlgs', async () => {
+    await assert.rejects(
+      provider.verify(fixtureDcSdJwtVpWithKb, {
+        kind: 'dc+sd-jwt',
+        allowedSdJwtAlgs: ['ES256'],
+        allowedKbJwtAlgs: ['RS256'],
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'VERIFIER_VP_FORMATS_NOT_SUPPORTED')
+        assert.match(e.message, /kb-jwt_alg_values/)
+        return true
+      }
+    )
+  })
+
   it('fails when signature does not match x5c key', async () => {
     const certificate =
       'MIICHjCCAcOgAwIBAgIUZX9BS5CDOJRW2t1FK1UDMt/QwMEwCgYIKoZIzj0EAwIwITELMAkGA1UEBhMCR0IxEjAQBgNVBAMMCU9JREYgVGVzdDAeFw0yNDExMjUwODM2MDRaFw0zNDExMjMwODM2MDRaMCExCzAJBgNVBAYTAkdCMRIwEAYDVQQDDAlPSURGIFRlc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATT/dLsd51LLBrGV6R23o6vymRxHXeFBoI8yq31y5kFV2VV0gi9x5ZzEFiq8DMiAHucLACFndxLtZorCha9zznQo4HYMIHVMB0GA1UdDgQWBBS5cbdgAeMBi5wxpbpwISGhShAWETAfBgNVHSMEGDAWgBS5cbdgAeMBi5wxpbpwISGhShAWETAPBgNVHRMBAf8EBTADAQH/MIGBBgNVHREEejB4ghB3d3cuaGVlbmFuLm1lLnVrgh1kZW1vLmNlcnRpZmljYXRpb24ub3BlbmlkLm5ldIIJbG9jYWxob3N0ghZsb2NhbGhvc3QuZW1vYml4LmNvLnVrgiJkZW1vLnBpZC1pc3N1ZXIuYnVuZGVzZHJ1Y2tlcmVpLmRlMAoGCCqGSM49BAMCA0kAMEYCIQCPbnLxCI+WR1vhOW+A8KznAWv1MJo+YEb1MI45NKW/VQIhALzsqox8VuBRwN2dl5LkpnxP4oH9p6H0AOZmKP+Y7nXS'

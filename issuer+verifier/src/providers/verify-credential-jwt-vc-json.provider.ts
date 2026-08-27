@@ -13,7 +13,7 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
     name: 'default-verifiable-jwt-vc-provider',
     single: true,
 
-    async verify(vc): Promise<boolean> {
+    async verify(vc, options): Promise<boolean> {
       if (typeof vc !== 'string') {
         throw err('ILLEGAL_ARGUMENT', {
           message: 'VC represented as object is not supported.',
@@ -22,6 +22,14 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
       const decodedJwtVc = jwt.decode(vc, { complete: true })
       if (!decodedJwtVc) {
         throw err('INVALID_CREDENTIAL')
+      }
+      if (options?.allowedAlgs) {
+        const vcAlg = decodedJwtVc.header.alg
+        if (!vcAlg || !options.allowedAlgs.includes(vcAlg)) {
+          throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
+            message: `VC algorithm '${vcAlg ?? 'missing'}' is not in jwt_vc_json alg_values. Allowed: ${options.allowedAlgs.join(', ')}`,
+          })
+        }
       }
 
       let iss: string | undefined
@@ -56,7 +64,11 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
             message: `Failed to fetch issuer metadata: ${metadataResponse.statusText}`,
           })
         }
-        const metadata = await metadataResponse.json()
+        const metadata = await metadataResponse.json().catch(() => {
+          throw err('INVALID_CREDENTIAL', {
+            message: `Issuer metadata at ${metadataUrl} is not valid JSON`,
+          })
+        })
         if (metadata.issuer !== iss) {
           throw err('INVALID_CREDENTIAL', {
             message: 'Issuer in metadata does not match VC issuer',
@@ -70,7 +82,11 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
               message: `Failed to fetch JWKS: ${jwksResponse.statusText}`,
             })
           }
-          jwks = await jwksResponse.json()
+          jwks = await jwksResponse.json().catch(() => {
+            throw err('JWKS_NOT_FOUND', {
+              message: `JWKS at ${metadata.jwks_uri} is not valid JSON`,
+            })
+          })
         } else if (metadata.jwks && typeof metadata.jwks === 'object') {
           jwks = metadata.jwks as jose.JSONWebKeySet
         } else {

@@ -13,9 +13,9 @@ import {
 } from '../src'
 import { CredentialConfigurationId, CredentialIssuerMetadata } from '../src/credential-issuer.types'
 import { PreAuthorizedCode } from '../src/pre-authorized-code.types'
+import { inMemoryCnonceStore } from '../src/providers/in-memory/in-memory-cnonce-store.provider'
 import { GrantType, TokenRequest, TokenResponse } from '../src/token-request.types'
 import { Vcknots, vcknots } from '../src/vcknots'
-import { inMemoryCnonceStore } from '../src/providers/in-memory/in-memory-cnonce-store.provider'
 
 type JwtHeader = {
   alg: 'ES256'
@@ -270,15 +270,9 @@ describe('Vcknots', () => {
     const verifierId = ClientId('https://example.com/verifier')
     const metadata = VerifierMetadata({
       client_name: 'Test Verifier',
-      vp_formats: {
+      vp_formats_supported: {
         jwt_vc_json: {
-          alg: ['ES256'],
-        },
-        jwt_vp_json: {
-          alg: ['ES256'],
-        },
-        ldp_vp: {
-          proof_type: ['JsonWebSignature2020'],
+          alg_values: ['ES256'],
         },
         'dc+sd-jwt': {
           'sd-jwt_alg_values': ['ES256', 'ES384'],
@@ -355,6 +349,12 @@ describe('Vcknots', () => {
       assert.equal(authzRequest.request.response_type, 'vp_token')
       assert.equal(authzRequest.request.response_mode, 'direct_post')
       assert.equal(authzRequest.request.client_metadata?.client_name, metadata.client_name)
+      assert.deepEqual(
+        authzRequest.request.client_metadata?.vp_formats_supported,
+        metadata.vp_formats_supported
+      )
+      assert.ok(authzRequest.request.client_metadata.jwks)
+      assert.ok(authzRequest.request.client_metadata.jwks.keys)
       assert.deepEqual(authzRequest.request.client_metadata?.vp_formats, metadata.vp_formats)
       assert.ok(authzRequest.request.nonce)
       assert.ok('dcql_query' in authzRequest.request && authzRequest.request.dcql_query)
