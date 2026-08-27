@@ -204,9 +204,8 @@ describe('VerifierFlow', () => {
   describe('createVerifierMetadata', () => {
     const encryptionJwk = {
       kty: 'RSA',
-      crv: 'P-256',
-      x: 'enc-x',
-      y: 'enc-y',
+      n: 'seF7Y1SYDEgT30sDsCDq23DaKnjhOsw8vxMAKhykVkADGujurQ2PaWqsSuejWKo0xxuglbtVsNQMqJg4ISyq6_ldkBEXXQoqJqPC0iOUVeNOgZyTHOuGTHsJ9O4Xy8V4rM7h50ng8Tlo8-rAz0AnQx7tyCz9c4DsO2OKYHW5lBAKGyOR4VxP0n4xQfZJXBBMyzg08MiJ0rI2PCJYnQpQpFbOcMF2DkWUB7Gh5bL8u3D4tGvaTGG00QBIQLxPOKaSvTZEt6xqWMl1V2nKa2id1Jxe0koTe23KHYVGETEtdpdhF6X9bAg195HzW5QMxQNGEVL3BCcFpRR58rTPWw46Mw',
+      e: 'AQAB',
       alg: 'RSA-OAEP-256',
       kid: 'enc-key-1',
       use: 'enc' as const,
