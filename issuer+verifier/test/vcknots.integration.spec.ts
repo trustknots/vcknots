@@ -355,6 +355,7 @@ describe('Vcknots', () => {
       )
       assert.ok(authzRequest.request.client_metadata.jwks)
       assert.ok(authzRequest.request.client_metadata.jwks.keys)
+      assert.deepEqual(authzRequest.request.client_metadata?.vp_formats, metadata.vp_formats)
       assert.ok(authzRequest.request.nonce)
       assert.ok('dcql_query' in authzRequest.request && authzRequest.request.dcql_query)
       assert.equal(authzRequest.request.dcql_query.credentials[0].id, dcqlQuery.credentials[0].id)
