@@ -614,6 +614,46 @@ func TestOid4vciReceiver_FetchAccessToken_ClientAssertion(t *testing.T) {
 	})
 }
 
+func TestOid4vciReceiver_FetchAccessToken_DoesNotFollowRedirects(t *testing.T) {
+	receiver := &Oid4vciReceiver{}
+
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	// A 307 keeps the method and body, so following the redirect would replay
+	// the client_assertion against this second origin.
+	var relayedRequests int
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		relayedRequests++
+		mockserver.JSONResponse(w, http.StatusOK, map[string]string{
+			"access_token": "leaked",
+			"token_type":   "Bearer",
+		})
+	}))
+	defer relay.Close()
+
+	redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, relay.URL+"/token", http.StatusTemporaryRedirect)
+	}))
+	defer redirecting.Close()
+
+	tokenURL, err := url.Parse(redirecting.URL + "/token")
+	require.NoError(t, err)
+
+	token, err := receiver.FetchAccessToken(
+		types.Oid4vci,
+		common.URIField(*tokenURL),
+		"code",
+		"",
+		types.WithClientAssertion("wallet-id", "assertion.jwt.value"),
+	)
+	require.Error(t, err)
+	assert.Nil(t, token)
+	assert.Contains(t, err.Error(), "redirects are not followed for token requests")
+	assert.Zero(t, relayedRequests, "the client_assertion must not reach the redirect target")
+}
+
 func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 	receiver := &Oid4vciReceiver{}
 	accessToken := types.CredentialIssuanceAccessToken{Token: "test_token", TokenType: "bearer"}

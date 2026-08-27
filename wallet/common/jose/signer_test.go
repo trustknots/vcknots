@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"math/big"
 	"testing"
@@ -33,10 +34,25 @@ func (m *mockKeyEntry) PublicKey() jose.JSONWebKey {
 func (m *mockKeyEntry) Sign(data []byte) ([]byte, error) {
 	// Only ECDSA is currently tested
 	if ecdsaKey, ok := m.privateKey.(*ecdsa.PrivateKey); ok {
-		hash := sha256.Sum256(data)
-		return ecdsa.SignASN1(rand.Reader, ecdsaKey, hash[:])
+		return ecdsa.SignASN1(rand.Reader, ecdsaKey, digestForAlgorithm(m.algorithm, data))
 	}
 	return nil, nil
+}
+
+// digestForAlgorithm returns the digest RFC 7518 section 3.4 pairs with the
+// algorithm: SHA-256 for ES256, SHA-384 for ES384 and SHA-512 for ES512.
+func digestForAlgorithm(alg string, data []byte) []byte {
+	switch alg {
+	case string(jose.ES384):
+		sum := sha512.Sum384(data)
+		return sum[:]
+	case string(jose.ES512):
+		sum := sha512.Sum512(data)
+		return sum[:]
+	default:
+		sum := sha256.Sum256(data)
+		return sum[:]
+	}
 }
 
 func createMockECDSAKey(curve elliptic.Curve, alg string) *mockKeyEntry {
@@ -177,11 +193,12 @@ func TestJWKSigner_SignPayload(t *testing.T) {
 				t.Errorf("expected signature length %d, got %d", tt.expectedSigLen, len(signature))
 			}
 
-			// Verify signature cryptographically
+			// Verify signature cryptographically, against the digest the
+			// signing algorithm requires rather than a fixed SHA-256.
 			if tt.verifyFunc != nil {
 				pubKey := keyEntry.publicKey.Key.(*ecdsa.PublicKey)
-				hash := sha256.Sum256(payload)
-				if !tt.verifyFunc(pubKey, hash[:], signature) {
+				hash := digestForAlgorithm(string(tt.signerAlg), payload)
+				if !tt.verifyFunc(pubKey, hash, signature) {
 					t.Error("signature verification failed")
 				}
 			}

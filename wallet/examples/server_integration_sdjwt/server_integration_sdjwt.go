@@ -434,10 +434,9 @@ func main() {
 			panic(err)
 		}
 		walletConfig.ClientAuth = clientAuth
-		walletConfig.DPoP = wallet.DPoPConfig{
-			Enabled: true,
-			Key:     clientAuth.Key,
-		}
+		// Key is left unset so that NewWalletWithConfig generates a DPoP key
+		// of its own, keeping it independent of the client assertion key.
+		walletConfig.DPoP = wallet.DPoPConfig{Enabled: true}
 	}
 
 	w, err := wallet.NewWalletWithConfig(walletConfig)

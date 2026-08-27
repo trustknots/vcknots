@@ -178,10 +178,10 @@ func NewOID4VPRuntime(certPath string) (*Runtime, error) {
 		Verifier:   verifierDispatcher,
 		Presenter:  presenterDispatcher,
 		ClientAuth: clientAuth,
-		DPoP: wallet.DPoPConfig{
-			Enabled: true,
-			Key:     clientAuth.Key,
-		},
+		// Key is left unset so that NewWalletWithConfig generates a DPoP key
+		// of its own. Reusing the registered client authentication key would
+		// tie DPoP key rotation to the client assertion key.
+		DPoP: wallet.DPoPConfig{Enabled: true},
 	})
 	if err != nil {
 		return nil, err

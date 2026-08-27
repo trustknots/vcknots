@@ -12,4 +12,6 @@ cover.out
 *.jwk
 !*.sample.jwk
 *.pem
+!*.sample.pem
 *.key
+!*.sample.key

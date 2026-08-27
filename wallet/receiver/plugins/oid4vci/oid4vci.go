@@ -34,6 +34,17 @@ const maxNonceResponseBodyBytes int64 = 4 << 10
 
 var oid4vciHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
+// tokenHTTPClient refuses to follow redirects. The token request carries the
+// client_assertion in its body, and a 307 or 308 response would make the HTTP
+// client replay that body against whatever origin the redirect names. Token
+// endpoints do not redirect, so failing is the safe reading.
+var tokenHTTPClient = &http.Client{
+	Timeout: 15 * time.Second,
+	CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+		return fmt.Errorf("token endpoint redirected to %s: redirects are not followed for token requests", req.URL.Redacted())
+	},
+}
+
 // OID4VCICredentialFormatToSerializationFlavor maps OID4VCI credential format identifiers
 // to wallet serialization flavors.
 func OID4VCICredentialFormatToSerializationFlavor(format string) (credential.SupportedSerializationFlavor, error) {
@@ -188,7 +199,7 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	if requestConfig.DPoPProof != "" {
 		req.Header.Set("DPoP", requestConfig.DPoPProof)
 	}
-	resp, err := oid4vciHTTPClient.Do(req)
+	resp, err := tokenHTTPClient.Do(req)
 
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
