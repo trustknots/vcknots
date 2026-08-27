@@ -1043,6 +1043,15 @@ func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
 	}{
 		{
 			name:         "Auth Server (Base URL)",
+			identifier:   "",
+			expectedPath: "/.well-known/oauth-authorization-server",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchAuthorizationServerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+		{
+			name:         "Auth Server (Root Path)",
 			identifier:   "/",
 			expectedPath: "/.well-known/oauth-authorization-server",
 			discovery: func(u common.URIField) error {
@@ -1062,7 +1071,7 @@ func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
 		{
 			name:         "Auth Server (With Trailing Slash)",
 			identifier:   "/tenant1/",
-			expectedPath: "/.well-known/oauth-authorization-server/tenant1",
+			expectedPath: "/.well-known/oauth-authorization-server/tenant1/",
 			discovery: func(u common.URIField) error {
 				_, err := receiver.FetchAuthorizationServerMetadata(u, types.Oid4vci)
 				return err
@@ -1070,6 +1079,15 @@ func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
 		},
 		{
 			name:         "Credential Issuer (Base URL)",
+			identifier:   "",
+			expectedPath: "/.well-known/openid-credential-issuer",
+			discovery: func(u common.URIField) error {
+				_, err := receiver.FetchIssuerMetadata(u, types.Oid4vci)
+				return err
+			},
+		},
+		{
+			name:         "Credential Issuer (Root Path)",
 			identifier:   "/",
 			expectedPath: "/.well-known/openid-credential-issuer",
 			discovery: func(u common.URIField) error {
@@ -1080,7 +1098,7 @@ func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
 		{
 			name:         "Credential Issuer (With Path)",
 			identifier:   "/tenant2",
-			expectedPath: "/tenant2/.well-known/openid-credential-issuer",
+			expectedPath: "/.well-known/openid-credential-issuer/tenant2",
 			discovery: func(u common.URIField) error {
 				_, err := receiver.FetchIssuerMetadata(u, types.Oid4vci)
 				return err
@@ -1089,7 +1107,7 @@ func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
 		{
 			name:         "Credential Issuer (With Trailing Slash)",
 			identifier:   "/tenant2/",
-			expectedPath: "/tenant2/.well-known/openid-credential-issuer",
+			expectedPath: "/.well-known/openid-credential-issuer/tenant2/",
 			discovery: func(u common.URIField) error {
 				_, err := receiver.FetchIssuerMetadata(u, types.Oid4vci)
 				return err
@@ -1116,14 +1134,14 @@ func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
 
 			serverURL, _ := url.Parse(server.URL)
 			identifierURL := *serverURL
-			if tt.identifier != "/" {
+			// Empty identifier keeps the parsed base URL's empty path (e.g. "https://host"),
+			// while "/" sets the root path so the originalPath == "/" branch is exercised.
+			if tt.identifier != "" {
 				identifierURL.Path = tt.identifier
 			}
 			endpoint := common.URIField(identifierURL)
 
-			if err := tt.discovery(endpoint); err != nil {
-				t.Errorf("Pattern %s failed: expected success at %s, got %v", tt.name, tt.expectedPath, err)
-			}
+			assert.NoError(t, tt.discovery(endpoint), "Pattern %s failed: expected success at %s", tt.name, tt.expectedPath)
 		})
 	}
 }

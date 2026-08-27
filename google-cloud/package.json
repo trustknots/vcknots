@@ -23,12 +23,12 @@
 	"packageManager": "pnpm@11.10.0",
 	"dependencies": {
 		"@google-cloud/kms": "5.5.1",
-		"@node-rs/crc32": "1.10.6",
+		"@node-rs/crc32": "1.10.7",
 		"@google-cloud/secret-manager": "6.2.0",
 		"@trustknots/vcknots": "workspace:*",
 		"ecdsa-sig-formatter": "1.0.11",
 		"firebase-admin": "14.1.0",
-		"jose": "6.2.4",
+		"jose": "6.2.9",
 		"zod": "4.4.3"
 	}
 }

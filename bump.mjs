@@ -54,17 +54,35 @@ function escapeRegex(str) {
 const ROOT_PACKAGES = [
   "issuer+verifier",
   "google-cloud",
+  "aws",
   "docusaurus"
 ]
 
 function getServerPackages() {
   if (!fs.existsSync("server")) return []
 
-  return fs.readdirSync("server")
-    .map(dir => path.join("server", dir))
-    .filter(dir =>
-      fs.existsSync(path.join(dir, "package.json"))
-    )
+  const dirs = fs.readdirSync("server", { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => path.join("server", entry.name))
+
+  const packages = []
+
+  for (const dir of dirs) {
+    if (fs.existsSync(path.join(dir, "package.json"))) {
+      packages.push(dir)
+      continue
+    }
+
+    // server/aws has no package.json of its own; its packages
+    // live one level deeper (server/aws/src, server/aws/resources)
+    fs.readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => path.join(dir, entry.name))
+      .filter(subDir => fs.existsSync(path.join(subDir, "package.json")))
+      .forEach(subDir => packages.push(subDir))
+  }
+
+  return packages
 }
 
 function getAllPackagePaths() {
@@ -146,6 +164,20 @@ function scopeMatches(pkgName, scope) {
     "@trustknots/google-cloud": [
       "@trustknots/google-cloud",
       "google-cloud"
+    ],
+    "@trustknots/aws": [
+      "@trustknots/aws",
+      "aws"
+    ],
+    "@trustknots/server-aws": [
+      "@trustknots/server-aws",
+      "server/aws",
+      "server-aws"
+    ],
+    "@trustknots/aws-resources": [
+      "@trustknots/aws-resources",
+      "server/aws/resources",
+      "aws-resources"
     ],
     "@trustknots/server": [
       "@trustknots/server",

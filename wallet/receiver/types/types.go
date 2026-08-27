@@ -2,6 +2,7 @@
 package types
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -98,6 +99,7 @@ func DPoPNonceFromError(err error) (string, bool) {
 }
 
 type SupportedReceivingTypes int
+type SignatureAlgorithm jose.SignatureAlgorithm
 
 const (
 	Oid4vci SupportedReceivingTypes = iota
@@ -119,7 +121,45 @@ type CredentialConfiguration struct {
 	CryptographicBindingMethodsSupported *[]string                         `json:"cryptographic_binding_methods_supported,omitempty"`
 	Format                               string                            `json:"format"`
 	CredentialDefinition                 *CredentialDefinition             `json:"credential_definition,omitempty"`
-	CredentialSigningAlgValuesSupported  []jose.SignatureAlgorithm         `json:"credential_signing_alg_values_supported,omitempty"`
+	CredentialSigningAlgValuesSupported  []SignatureAlgorithm              `json:"credential_signing_alg_values_supported,omitempty"`
+}
+
+var coseAlgToJWA = map[int64]jose.SignatureAlgorithm{
+	-8:   jose.EdDSA,
+	5:    jose.HS256,
+	6:    jose.HS384,
+	7:    jose.HS512,
+	-257: jose.RS256,
+	-258: jose.RS384,
+	-259: jose.RS512,
+	-7:   jose.ES256,
+	-9:   jose.ES256, // ESP256 (fully-specified ECDSA using P-256 and SHA-256)
+	-35:  jose.ES384,
+	-36:  jose.ES512,
+	-37:  jose.PS256,
+	-38:  jose.PS384,
+	-39:  jose.PS512,
+}
+
+func (c *SignatureAlgorithm) UnmarshalJSON(raw []byte) error {
+	var coseID int64
+	if err := json.Unmarshal(raw, &coseID); err == nil {
+		// COSE algorithm identifier
+		alg, ok := coseAlgToJWA[coseID]
+		if !ok {
+			return fmt.Errorf("unsupported COSE algorithm identifier %d", coseID)
+		}
+		*c = SignatureAlgorithm(alg)
+		return nil
+	}
+
+	// JWA name
+	var alg string
+	if err := json.Unmarshal(raw, &alg); err != nil {
+		return fmt.Errorf("invalid credential_signing_alg_values_supported entry: %w", err)
+	}
+	*c = SignatureAlgorithm(alg)
+	return nil
 }
 
 type CredentialIssuerMetadataDisplay struct {

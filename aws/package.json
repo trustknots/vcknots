@@ -15,18 +15,23 @@
 		"test": "node --env-file=.env.test --import tsx --test test/**/*.spec.ts",
 		"test:ci": "node --env-file=.env.test --import tsx --test --experimental-test-coverage \"test/**/*.spec.ts\"",
 		"test:all": "node --env-file=.env.test --import tsx --test --experimental-test-coverage --test-coverage-include=\"src/**/*.ts\" --test-coverage-exclude=\"test/**/*.ts\" --test-coverage-lines=80 --test-coverage-functions=80 --test-coverage-branches=80 \"test/**/*.spec.ts\"",
+		"test:integration": "node --import tsx --test \"test-integration/**/*.spec.ts\"",
 		"typecheck": "tsc --noEmit"
 	},
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@10.30.3",
+	"packageManager": "pnpm@11.10.0",
 	"dependencies": {
 		"@aws-sdk/client-dynamodb": "^3.1064.0",
+		"@aws-sdk/client-kms": "^3.1089.0",
 		"@aws-sdk/lib-dynamodb": "^3.1064.0",
-		"@trustknots/vcknots": "workspace:*"
+		"@trustknots/vcknots": "workspace:*",
+		"ecdsa-sig-formatter": "1.0.11",
+		"jose": "6.2.9"
 	},
 	"devDependencies": {
+		"@aws-sdk/client-sts": "^3.1064.0",
 		"@types/node": "^24.12.4",
 		"aws-sdk-client-mock": "^4.1.0",
 		"typescript": "~5.9.3"

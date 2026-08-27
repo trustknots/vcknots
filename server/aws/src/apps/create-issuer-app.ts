@@ -5,6 +5,7 @@ import {
   dynamodbIssuerMetadataStore,
   dynamodbNonceStore,
   dynamodbPreAuthorizedCodeStore,
+  kmsIssuerSignatureKeyStore,
 } from '@trustknots/aws'
 import { createIssueRouter } from '@trustknots/server-core/routes/issue'
 import { CredentialIssuer, CredentialIssuerMetadata, initializeIssuerFlow } from '@trustknots/vcknots/issuer'
@@ -34,6 +35,7 @@ export function createIssuerApp(options?: VcknotsOptions) {
   const issuerMetadataStore = dynamodbIssuerMetadataStore({ tableName: issuersTableName })
   const nonceStore = dynamodbNonceStore({ tableName: noncesTableName })
   const preAuthorizedCodeStore = dynamodbPreAuthorizedCodeStore({ tableName: preCodesTableName })
+  const issuerSignatureKeyStore = kmsIssuerSignatureKeyStore()
   const { app, context } = createBaseApp(
     createIssueRouter,
     { port, baseUrl: process.env.ISSUER_BASE_URL },
@@ -43,6 +45,7 @@ export function createIssuerApp(options?: VcknotsOptions) {
         issuerMetadataStore,
         nonceStore,
         preAuthorizedCodeStore,
+        issuerSignatureKeyStore,
         ...(options?.providers ?? []),
       ],
     },

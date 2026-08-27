@@ -5,7 +5,7 @@ vcknots を AWS 上で動かすための CDK スタックです。
 関連パッケージ:
 
 - [`@trustknots/server-aws`](../src) — Lambda ハンドラ、vcknots context、ユーティリティ（`src/handlers/`、`src/context/`、`src/utils/`）
-- [`@trustknots/aws`](../../../aws) — DynamoDB 向け AWS provider（KMS / Secrets Manager は未実装）
+- [`@trustknots/aws`](../../../aws) — DynamoDB / KMS 向け AWS provider（Issuer / Authz / Verifier 署名鍵；Secrets Manager は未実装）
 
 ## アーキテクチャ
 
@@ -20,9 +20,9 @@ server/aws/
 │   │   ├── authz.ts       Lambda ハンドラ（Authz）
 │   │   └── verifier.ts    Lambda ハンドラ（Verifier）
 │   ├── apps/
-│   │   ├── create-issuer-app.ts   Issuer アプリ（DynamoDB issuer メタデータストア）
-│   │   ├── create-authz-app.ts    Authorization Server アプリ（インメモリ）
-│   │   └── create-verifier-app.ts Verifier アプリ（インメモリ）
+│   │   ├── create-issuer-app.ts   Issuer アプリ（DynamoDB issuer メタデータストア、KMS 署名鍵ストア）
+│   │   ├── create-authz-app.ts    Authorization Server アプリ（DynamoDB authz メタデータストア、KMS 署名鍵ストア）
+│   │   └── create-verifier-app.ts Verifier アプリ（DynamoDB verifier メタデータストア、KMS 署名鍵ストア）
 │   ├── context/
 │   │   └── vcknots-context.ts context / baseUrl ヘルパー
 │   └── utils/
@@ -42,7 +42,6 @@ server/aws/
         │   │   ├── authz-api.ts
         │   │   └── verifier-api.ts
         │   └── security/
-        │       ├── key-management.ts      （プレースホルダー、スタック未組み込み）
         │       └── secret-management.ts   （プレースホルダー、スタック未組み込み）
         ├── util/
         │   └── paths.ts
@@ -67,7 +66,7 @@ ResourcesStack
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
 | `verifier.ts` | `@trustknots/server-core/routes/verify` |
 
-Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` を使用します。Authorization Server と Verifier はインメモリプロバイダーを使用します。
+Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSignatureKeyStore` を、Authorization Server は `dynamodbAuthzServerMetadataStore` と `kmsAuthzSignatureKeyStore` を、Verifier は `dynamodbVerifierMetadataStore` と `kmsVerifierSignatureKeyStore` を使用します。
 
 未処理エラーは `utils/error-logger.ts`（`sanitizeError`）経由でログ出力され、CloudWatch には安全なフィールドのみが記録されます。
 
@@ -88,11 +87,13 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` を使用しま�
 | ログ保持 | 1 週間 |
 | `API_GATEWAY_ID`、`API_STAGE` | ランタイムで API Gateway のデフォルト URL を組み立てるために使用 |
 
-| Lambda | ロググループ（`{stage}` = `API_STAGE`） | REST API 名 | テーブル環境変数 |
+| Lambda | ロググループ（`{stage}` = `API_STAGE`） | REST API 名 | 環境変数 |
 |---|---|---|---|
-| Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`、`NONCES_TABLE_NAME`、`PRE_CODES_TABLE_NAME` |
-| Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`、`PRE_CODES_TABLE_NAME` |
+| Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`、`NONCES_TABLE_NAME`、`PRE_CODES_TABLE_NAME`、`TX_CODE_PEPPER` |
+| Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`、`PRE_CODES_TABLE_NAME`、`TX_CODE_PEPPER` |
 | Verifier | `/vcknots/{stage}/verifier` | `vcknots-verifier-{stage}` | `VERIFIERS_TABLE_NAME`、`REQUEST_OBJECTS_TABLE_NAME`、`NONCES_TABLE_NAME` |
+
+`TX_CODE_PEPPER` はデプロイ時の環境変数から読み込まれ（[デプロイ](#デプロイ)参照）、Issuer/Authz Lambda の環境変数に注入されます。未設定の場合、CDK synth はすぐに失敗します。
 
 `lib/construct/api/` のロール別 construct が DynamoDB テーブル、IAM、環境変数を接続します。
 
@@ -122,6 +123,25 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` を使用しま�
 | Issuer | IssuersTable、NoncesTable（読み書き）；PreCodesTable（書き込みのみ） |
 | Authz | AuthServersTable、PreCodesTable（読み書き） |
 | Verifier | VerifiersTable、RequestObjectsTable、NoncesTable（読み書き） |
+
+Issuer ロール・Authz ロール・Verifier ロールには署名鍵ストア用にスコープを絞った KMS ポリシーも付与されています（`grantSignatureKeyStoreAccess()`、`lib/construct/security/signature-key-policy.ts` 参照）。鍵は実行時に作成されるため ARN で指定できず、各ステートメントは条件でスコープを絞っています:
+
+| アクション | スコープの絞り方 |
+|---|---|
+| `CreateKey`・`TagResource` | `kms:KeyUsage=SIGN_VERIFY` と、provider が作成する `kms:KeySpec`/`kms:KeyOrigin` の値 |
+| `CreateAlias`・`UpdateAlias` | 各ロールのエイリアス名前空間（エイリアス側）と `aws:ResourceTag`（キー側 — 新規キーにはまだエイリアスが無いため） |
+| `DescribeKey`・`GetPublicKey`・`Sign` | `kms:ResourceAliases` 条件で各ロールのエイリアス名前空間 |
+| `GetParametersForImport`・`ImportKeyMaterial`・`ScheduleKeyDeletion` | `aws:ResourceTag` |
+
+最後の行を分けているのは意図的です。`kms:ResourceAliases` はキーに既に設定されているエイリアスと照合するため、**エイリアスが無いキーに対する操作は決して許可できません**。provider は最初の `CreateAlias` より前に（あるいは `CreateAlias` の代わりに）鍵材料のインポートと孤児キーの破棄を行うため、これらの呼び出しは `CreateKey` 時に付与するタグでスコープを絞っています。
+
+3つのロールの違いはエイリアス名前空間とタグだけです:
+
+| ロール | エイリアス名前空間 | キーのタグ |
+|---|---|---|
+| Issuer | `alias/vcknots/issuers/*` | `vcknots:issuer-signature-key=true` |
+| Authz | `alias/vcknots/authz/*` | `vcknots:authz-signature-key=true` |
+| Verifier | `alias/vcknots/verifiers/*` | `vcknots:verifier-signature-key=true` |
 
 ### スタック出力
 
@@ -201,6 +221,8 @@ pnpm run deploy -- --profile vc-knots
 pnpm run deploy -- --stage prod --profile vc-knots
 # prod では CORS_ALLOWED_ORIGINS が必須（環境変数または scripts/.env）
 CORS_ALLOWED_ORIGINS=https://app.example.com pnpm run deploy -- --stage prod
+# TX_CODE_PEPPER は常に必須（環境変数または scripts/.env）。未設定だと CDK synth がエラーになる
+TX_CODE_PEPPER=<your-tx-code-pepper-here> pnpm run deploy -- --profile vc-knots
 ```
 
 オプション:
@@ -210,6 +232,7 @@ CORS_ALLOWED_ORIGINS=https://app.example.com pnpm run deploy -- --stage prod
 | `--profile` | AWS プロファイル（任意；省略時は CLI の既定値を使用） |
 | `--stage` | API Gateway ステージ名（既定: `test`）。CDK synth 時の `API_STAGE` にも設定される |
 | `CORS_ALLOWED_ORIGINS` | API Gateway CORS 用のカンマ区切り HTTPS オリジン（**`API_STAGE=prod` 時は必須**） |
+| `TX_CODE_PEPPER` | `tx_code` HMAC ハッシュ化用の秘密 pepper。Issuer/Authz Lambda の環境変数に注入される（**常に必須**） |
 | `STACK_NAME` | CloudFormation スタック名（既定: `ResourcesStack`） |
 
 `scripts/.env` は存在する場合に読み込まれます。CLI フラグは `.env` より優先されます。
