@@ -128,15 +128,9 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           message: `verifier ${verifierId} is already registered.`,
         })
       }
-      // const verifierMetadata = metadata
 
       // encrypted_response_enc_values_supported MUST be present for anything other than the default single value of A128GCM. Otherwise, this SHOULD be absent
       const encryptedResponseEnc = metadata.encrypted_response_enc_values_supported
-      if (encryptedResponseEnc?.length === 0) {
-        throw err('INVALID_OPTIONS', {
-          message: 'encrypted_response_enc_values_supported must be non-empty if provided.',
-        })
-      }
       const verifierMetadata: VerifierMetadata =
         encryptedResponseEnc?.length === 1 && encryptedResponseEnc[0] === 'A128GCM'
           ? (() => {
