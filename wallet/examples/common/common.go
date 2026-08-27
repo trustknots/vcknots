@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/trustknots/vcknots/wallet"
+	"github.com/trustknots/vcknots/wallet/clientconfig"
 	"github.com/trustknots/vcknots/wallet/credstore"
 	"github.com/trustknots/vcknots/wallet/idprof"
 	"github.com/trustknots/vcknots/wallet/presenter"
@@ -23,6 +24,31 @@ import (
 )
 
 const DefaultCertPath = "../../../server/samples/certificate-openid-test/certificate_openid.pem"
+
+// Paths of the sample client registration shared by the local server
+// integration examples. They are relative to each example's own directory.
+const (
+	DefaultClientConfigPath     = "../config/wallet-clients.json"
+	DefaultClientPrivateJWKPath = "../config/client-private.sample.jwks.json"
+	DefaultClientID             = "test-client-id"
+)
+
+// LoadClientAuth reads the sample client registration used by the local server
+// integration examples. The public half of the key it selects is the one
+// registered as test-client-id in server/samples/oauth-clients.json.
+//
+// AllowInsecureFilePermissions is passed deliberately: the sample private key
+// is committed so that the examples run straight after a clone, and git does
+// not preserve file modes. A real deployment keeps its signing key out of the
+// repository with mode 0600 and lets the permission check run.
+func LoadClientAuth() (wallet.ClientAuthConfig, error) {
+	return clientconfig.Load(
+		DefaultClientConfigPath,
+		clientconfig.WithClientID(DefaultClientID),
+		clientconfig.WithPrivateJWKFile(DefaultClientPrivateJWKPath),
+		clientconfig.AllowInsecureFilePermissions(),
+	)
+}
 
 type MockKeyEntry struct {
 	id         string
@@ -139,7 +165,11 @@ func NewOID4VPRuntime(certPath string) (*Runtime, error) {
 		return nil, err
 	}
 
-	clientAuthKey := NewMockKeyEntry()
+	clientAuth, err := LoadClientAuth()
+	if err != nil {
+		return nil, err
+	}
+
 	w, err := wallet.NewWalletWithConfig(wallet.Config{
 		CredStore:  credStore,
 		IDProfiler: idProf,
@@ -147,15 +177,10 @@ func NewOID4VPRuntime(certPath string) (*Runtime, error) {
 		Serializer: serializerDispatcher,
 		Verifier:   verifierDispatcher,
 		Presenter:  presenterDispatcher,
-		ClientAuth: wallet.ClientAuthConfig{
-			Method:            receiver.PrivateKeyJwt,
-			ClientID:          "test-client-id",
-			Key:               clientAuthKey,
-			AssertionAudience: "https://authz.example.com",
-		},
+		ClientAuth: clientAuth,
 		DPoP: wallet.DPoPConfig{
 			Enabled: true,
-			Key:     clientAuthKey,
+			Key:     clientAuth.Key,
 		},
 	})
 	if err != nil {

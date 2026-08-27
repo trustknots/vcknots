@@ -156,9 +156,33 @@ Authz metadata initialized
 | フォームパラメータ | `client_assertion` | ES256 で署名した JWT |
 | HTTP ヘッダー | `DPoP` | DPoP Proof JWT（RFC 9449） |
 
-`examples/common.NewMockKeyEntry` が返す P-256 の固定鍵は、`server/samples/oauth-clients.json` の `test-client-id` に登録された公開 JWK と対応しています。また、`server/samples/authorization_metadata.json` では `private_key_jwt` と ES256 の両方を明示的に広告しています。Wallet は両方が広告されている場合にだけ、この認証方式を利用します。
+各サンプルはこの登録情報を `examples/config/` から読み込みます。読み込みには `wallet/clientconfig` パッケージを使います。
 
-> ⚠️ **警告**: この固定秘密鍵はローカルサンプル専用です。実環境では別の鍵を生成して安全に保管し、対応する公開 JWK を認可サーバーへ登録してください。
+| ファイル | 内容 |
+| --- | --- |
+| `examples/config/wallet-clients.json` | クライアントメタデータ。`client_id`、`token_endpoint_auth_method`、`token_endpoint_auth_signing_alg`、`client_assertion_audience`、および公開鍵の `jwks` |
+| `examples/config/client-private.sample.jwks.json` | `client_assertion` の署名に使う秘密鍵 JWK |
+
+```go
+clientAuth, err := clientconfig.Load(
+	"../config/wallet-clients.json",
+	clientconfig.WithClientID("test-client-id"),
+	clientconfig.WithPrivateJWKFile("../config/client-private.sample.jwks.json"),
+)
+if err != nil {
+	return err
+}
+
+w, err := wallet.NewWalletWithConfig(wallet.Config{ClientAuth: clientAuth})
+```
+
+2つのファイルを分けているのは意図的です。OpenID Connect Dynamic Client Registration 1.0 は `jwks` に秘密鍵を含めてはならない（MUST NOT）と規定しているため、`wallet-clients.json` は公開鍵だけを持ち、そのまま認可サーバーへ渡せます。`clientconfig.Load` は `jwks` に秘密鍵が含まれていればエラーにし、秘密鍵ファイルにはパーミッション `0600` を要求します。
+
+`examples/config/wallet-clients.json` の公開鍵は、`server/samples/oauth-clients.json` の `test-client-id` に登録された公開 JWK と同一です。また、`server/samples/authorization_metadata.json` では `private_key_jwt` と ES256 の両方を明示的に広告しています。Wallet は両方が広告されている場合にだけ、この認証方式を利用します。
+
+Go のコードで設定する従来の方法も引き続き使えます。`clientconfig.Load` の戻り値は `wallet.Config.ClientAuth` がこれまで受け取ってきた `wallet.ClientAuthConfig` そのものです。HSM やセキュアエンクレーブ内の鍵などファイルに書き出せない鍵は、`clientconfig.WithKeyEntry` で渡します。
+
+> ⚠️ **警告**: サンプルの秘密鍵は、clone 直後にサンプルが動くようリポジトリにコミットしてあります（各サンプルが `clientconfig.AllowInsecureFilePermissions()` を渡しているのもこのためです）。この鍵はローカルサンプル専用です。実環境では別の鍵を生成し、パーミッション `0600` でリポジトリ外に保管したうえで、対応する公開 JWK を認可サーバーへ登録してください。
 
 #### ステップ2: 統合テスト用のスクリプト実行（引数なし）
 
@@ -289,6 +313,9 @@ go run server_integration_sdjwt.go "openid4vp://authorize?..."
 ```
 examples/
 ├── common/                            # サンプル共通のセットアップ（Wallet 構築、モック鍵）
+├── config/
+│   ├── wallet-clients.json            # クライアント認証メタデータ（公開鍵のみ）
+│   └── client-private.sample.jwks.json # client_assertion 署名用サンプル鍵（ローカル専用）
 ├── server_integration_jwtvc/
 │   └── server_integration_jwtvc.go   # JWT-VC 統合テスト
 ├── server_integration_sdjwt/

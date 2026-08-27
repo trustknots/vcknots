@@ -132,8 +132,22 @@ func TestJWKSigner_SignPayload(t *testing.T) {
 				return ecdsa.Verify(pubKey, hash, r, s)
 			},
 		},
-		// Note: ES512 (P-521) test is skipped due to variable-length DER encoding issues
-		// Will be implemented using RFC 7515 test vectors
+		{
+			name:           "ES512 signature",
+			curve:          elliptic.P521(),
+			signerAlg:      jose.ES512,
+			requestedAlg:   jose.ES512,
+			expectedSigLen: 132,
+			wantErr:        false,
+			verifyFunc: func(pubKey *ecdsa.PublicKey, hash []byte, sig []byte) bool {
+				if len(sig) != 132 {
+					return false
+				}
+				r := new(big.Int).SetBytes(sig[:66])
+				s := new(big.Int).SetBytes(sig[66:])
+				return ecdsa.Verify(pubKey, hash, r, s)
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -106,8 +106,19 @@ func ConvertDERToRaw(derSig []byte, keySize int) ([]byte, error) {
 		return nil, fmt.Errorf("signature is not in DER format and length (%d) doesn't match expected raw format (%d)", len(derSig), keySize*2)
 	}
 
-	// Parse DER format
-	offset := 2 // Skip sequence tag (0x30) and total length
+	// Skip the sequence tag and its length. The length switches to the
+	// definite long form once the contents exceed 127 bytes, which P-521
+	// (ES512) signatures always do.
+	offset := 1
+	seqLen := int(derSig[offset])
+	offset++
+	if seqLen&0x80 != 0 {
+		lenBytes := seqLen & 0x7f
+		if lenBytes == 0 || lenBytes > 4 || offset+lenBytes > len(derSig) {
+			return nil, fmt.Errorf("invalid DER format: unsupported sequence length encoding")
+		}
+		offset += lenBytes
+	}
 
 	// Parse R component
 	if offset >= len(derSig) || derSig[offset] != 0x02 {

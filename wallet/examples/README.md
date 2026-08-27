@@ -156,9 +156,33 @@ The local server integration test mode samples use `private_key_jwt` for client 
 | Form parameter | `client_assertion` | An ES256-signed JWT |
 | HTTP header | `DPoP` | A DPoP proof JWT (RFC 9449) |
 
-The fixed P-256 key returned by `examples/common.NewMockKeyEntry` matches the public JWK registered for `test-client-id` in `server/samples/oauth-clients.json`. The authorization server metadata in `server/samples/authorization_metadata.json` explicitly advertises both `private_key_jwt` and ES256; the wallet uses this authentication method only when both are advertised.
+The samples read this registration from `examples/config/`, which the wallet loads with the `wallet/clientconfig` package:
 
-> ⚠️ **Warning**: The fixed private key is for this local sample only. Generate and protect a separate key, and register its public JWK with the authorization server, in a real deployment.
+| File | Contents |
+| --- | --- |
+| `examples/config/wallet-clients.json` | Client metadata: `client_id`, `token_endpoint_auth_method`, `token_endpoint_auth_signing_alg`, `client_assertion_audience`, and the public `jwks` |
+| `examples/config/client-private.sample.jwks.json` | The matching private JWK used to sign the `client_assertion` |
+
+```go
+clientAuth, err := clientconfig.Load(
+	"../config/wallet-clients.json",
+	clientconfig.WithClientID("test-client-id"),
+	clientconfig.WithPrivateJWKFile("../config/client-private.sample.jwks.json"),
+)
+if err != nil {
+	return err
+}
+
+w, err := wallet.NewWalletWithConfig(wallet.Config{ClientAuth: clientAuth})
+```
+
+The two files are kept apart on purpose. OpenID Connect Dynamic Client Registration 1.0 states that a `jwks` member MUST NOT contain private key values, so `wallet-clients.json` holds public keys only and can be handed to the authorization server as-is. `clientconfig.Load` rejects a `jwks` that carries a private key, and requires the private JWK file to be mode `0600`.
+
+The public key in `examples/config/wallet-clients.json` is the one registered for `test-client-id` in `server/samples/oauth-clients.json`. The authorization server metadata in `server/samples/authorization_metadata.json` explicitly advertises both `private_key_jwt` and ES256; the wallet uses this authentication method only when both are advertised.
+
+Configuring the wallet in Go remains supported: `clientconfig.Load` returns a `wallet.ClientAuthConfig`, the same struct `wallet.Config.ClientAuth` has always accepted. Keys that cannot be exported into a file, such as those held in an HSM or a secure enclave, are supplied with `clientconfig.WithKeyEntry`.
+
+> ⚠️ **Warning**: The sample private key is committed so that the examples run straight after a clone, which is also why they pass `clientconfig.AllowInsecureFilePermissions()`. It is for this local sample only. In a real deployment generate a separate key, keep it out of the repository with mode `0600`, and register its public JWK with the authorization server.
 
 #### Step 2: Run the integration test script (no arguments)
 
@@ -289,6 +313,9 @@ go run server_integration_sdjwt.go "openid4vp://authorize?..."
 ```
 examples/
 ├── common/                            # Shared sample setup (wallet construction, mock key)
+├── config/
+│   ├── wallet-clients.json            # Client authentication metadata (public keys only)
+│   └── client-private.sample.jwks.json # Sample client_assertion signing key (local use only)
 ├── server_integration_jwtvc/
 │   └── server_integration_jwtvc.go   # JWT-VC integration test
 ├── server_integration_sdjwt/

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/common"
@@ -27,6 +28,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/env"
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
 	"github.com/trustknots/vcknots/wallet/internal/testutil/mockserver"
+	"github.com/trustknots/vcknots/wallet/keystore"
 	"github.com/trustknots/vcknots/wallet/presenter"
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
 	"github.com/trustknots/vcknots/wallet/receiver"
@@ -1356,7 +1358,7 @@ func TestWallet_generateClientAssertion_HeaderAndPayload(t *testing.T) {
 	const clientID = "test-client-id"
 	const tokenEndpoint = "https://as.example.com/token"
 
-	assertion, err := w.generateClientAssertion(key, clientID, tokenEndpoint)
+	assertion, err := w.generateClientAssertion(key, clientID, tokenEndpoint, jose.ES256)
 	require.NoError(t, err)
 
 	parts := strings.Split(assertion, ".")
@@ -1394,15 +1396,15 @@ func TestWallet_generateClientAssertion_ErrorsOnMissingInputs(t *testing.T) {
 	w := &Wallet{}
 	key, _ := newClientAuthKeyEntry(t, "client-key-1")
 
-	_, err := w.generateClientAssertion(nil, "client-id", "https://as.example.com/token")
+	_, err := w.generateClientAssertion(nil, "client-id", "https://as.example.com/token", jose.ES256)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "client auth key is required")
 
-	_, err = w.generateClientAssertion(key, "  ", "https://as.example.com/token")
+	_, err = w.generateClientAssertion(key, "  ", "https://as.example.com/token", jose.ES256)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "clientID is required")
 
-	_, err = w.generateClientAssertion(key, "client-id", "  ")
+	_, err = w.generateClientAssertion(key, "client-id", "  ", jose.ES256)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "audience is required")
 }
@@ -1586,6 +1588,125 @@ func TestValidateClientAuthConfig(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not compatible with ES256")
+
+	// The same P-384 key becomes valid once the configuration declares ES384,
+	// which is what token_endpoint_auth_signing_alg carries.
+	require.NoError(t, validateClientAuthConfig(ClientAuthConfig{
+		Method:     receiverTypes.PrivateKeyJwt,
+		ClientID:   "wallet-id",
+		Key:        incompatibleKey,
+		SigningAlg: jose.ES384,
+	}))
+
+	err = validateClientAuthConfig(ClientAuthConfig{
+		Method:     receiverTypes.PrivateKeyJwt,
+		ClientID:   "wallet-id",
+		Key:        key,
+		SigningAlg: jose.ES384,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not compatible with ES384")
+
+	err = validateClientAuthConfig(ClientAuthConfig{
+		Method:     receiverTypes.PrivateKeyJwt,
+		ClientID:   "wallet-id",
+		Key:        key,
+		SigningAlg: jose.RS256,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported client authentication signing algorithm")
+}
+
+func TestClientAuthConfig_SignatureAlgorithmDefaultsToES256(t *testing.T) {
+	assert.Equal(t, jose.ES256, ClientAuthConfig{}.signatureAlgorithm())
+	assert.Equal(t, jose.ES384, ClientAuthConfig{SigningAlg: jose.ES384}.signatureAlgorithm())
+}
+
+func TestClientAuthMethodAvailable_HonoursConfiguredSigningAlg(t *testing.T) {
+	key, _ := newClientAuthKeyEntry(t, "client-key-1")
+	authMetadata := &receiverTypes.AuthorizationServerMetadata{
+		TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
+		TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.ES384},
+	}
+
+	// The authorization server advertises ES384 only, so the ES256 default
+	// finds no usable method.
+	assert.False(t, clientAuthMethodAvailable(
+		receiverTypes.PrivateKeyJwt,
+		ClientAuthConfig{ClientID: "wallet-id", Key: key},
+		authMetadata,
+	))
+
+	assert.True(t, clientAuthMethodAvailable(
+		receiverTypes.PrivateKeyJwt,
+		ClientAuthConfig{ClientID: "wallet-id", Key: key, SigningAlg: jose.ES384},
+		authMetadata,
+	))
+}
+
+func TestWallet_generateClientAssertion_SupportsEveryConfigurableAlgorithm(t *testing.T) {
+	tests := []struct {
+		alg   jose.SignatureAlgorithm
+		curve elliptic.Curve
+	}{
+		{jose.ES256, elliptic.P256()},
+		{jose.ES384, elliptic.P384()},
+		{jose.ES512, elliptic.P521()},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.alg), func(t *testing.T) {
+			privKey, err := ecdsa.GenerateKey(tt.curve, rand.Reader)
+			require.NoError(t, err)
+			// mockKeyEntry only signs with P-256, so use the key entry the
+			// configuration loader actually produces.
+			key, err := keystore.NewKeyEntryFromJWK(jose.JSONWebKey{
+				Key:       privKey,
+				KeyID:     "client-key-1",
+				Algorithm: string(tt.alg),
+				Use:       "sig",
+			})
+			require.NoError(t, err)
+
+			clientAuth := ClientAuthConfig{
+				Method:     receiverTypes.PrivateKeyJwt,
+				ClientID:   "wallet-id",
+				Key:        key,
+				SigningAlg: tt.alg,
+			}
+			require.NoError(t, validateClientAuthConfig(clientAuth))
+
+			w := &Wallet{clientAuth: clientAuth}
+			assertion, err := w.generateClientAssertion(key, "wallet-id", "https://as.example.com", tt.alg)
+			require.NoError(t, err)
+
+			parts := strings.Split(assertion, ".")
+			require.Len(t, parts, 3)
+
+			headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+			require.NoError(t, err)
+			var header map[string]interface{}
+			require.NoError(t, json.Unmarshal(headerBytes, &header))
+			assert.Equal(t, string(tt.alg), header["alg"])
+
+			// Parsing with the public key proves the signature encoding is the
+			// IEEE P1363 form a JWS verifier expects, not raw DER.
+			parsed, err := jwt.ParseSigned(assertion, []jose.SignatureAlgorithm{tt.alg})
+			require.NoError(t, err)
+			claims := map[string]interface{}{}
+			require.NoError(t, parsed.Claims(&privKey.PublicKey, &claims))
+			assert.Equal(t, "wallet-id", claims["iss"])
+		})
+	}
+}
+
+func TestWallet_generateClientAssertion_RejectsNonECDSAAlgorithm(t *testing.T) {
+	w := &Wallet{}
+	key, _ := newClientAuthKeyEntry(t, "client-key-1")
+
+	_, err := w.generateClientAssertion(key, "client-id", "https://as.example.com", jose.RS256)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported client authentication signing algorithm")
 }
 
 func TestResolveClientAssertionAudience(t *testing.T) {

@@ -429,15 +429,14 @@ func main() {
 		Presenter:  presenterDisp,
 	}
 	if !isConformanceMode {
-		walletConfig.ClientAuth = wallet.ClientAuthConfig{
-			Method:            receiver.PrivateKeyJwt,
-			ClientID:          "test-client-id",
-			Key:               mockKey,
-			AssertionAudience: "https://authz.example.com",
+		clientAuth, err := common.LoadClientAuth()
+		if err != nil {
+			panic(err)
 		}
+		walletConfig.ClientAuth = clientAuth
 		walletConfig.DPoP = wallet.DPoPConfig{
 			Enabled: true,
-			Key:     mockKey,
+			Key:     clientAuth.Key,
 		}
 	}
 

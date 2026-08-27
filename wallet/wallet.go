@@ -119,11 +119,42 @@ type DPoPConfig struct {
 // AssertionAudience is the authorization server identifier placed in the
 // client_assertion aud claim. When empty, the authorization server metadata
 // issuer is used, falling back to the token endpoint URL when issuer is absent.
+//
+// SigningAlg selects the JWS algorithm used to sign the client_assertion. It
+// corresponds to the token_endpoint_auth_signing_alg client metadata value
+// defined by OpenID Connect Dynamic Client Registration 1.0, and must be one
+// of ES256, ES384 or ES512. An empty value defaults to ES256.
 type ClientAuthConfig struct {
 	Method            receiverTypes.TokenEndpointAuthMethod
 	ClientID          string
 	Key               IKeyEntry
 	AssertionAudience string
+	SigningAlg        jose.SignatureAlgorithm
+}
+
+// signatureAlgorithm returns the configured client_assertion signing
+// algorithm, defaulting to ES256 when unset.
+func (c ClientAuthConfig) signatureAlgorithm() jose.SignatureAlgorithm {
+	if c.SigningAlg == "" {
+		return jose.ES256
+	}
+	return c.SigningAlg
+}
+
+// curveForSignatureAlgorithm returns the elliptic curve that alg requires.
+// RFC 7518 section 3.4 pairs each ECDSA algorithm with exactly one curve, so
+// the signing key must sit on the curve named here.
+func curveForSignatureAlgorithm(alg jose.SignatureAlgorithm) (elliptic.Curve, error) {
+	switch alg {
+	case jose.ES256:
+		return elliptic.P256(), nil
+	case jose.ES384:
+		return elliptic.P384(), nil
+	case jose.ES512:
+		return elliptic.P521(), nil
+	default:
+		return nil, fmt.Errorf("unsupported client authentication signing algorithm: %q", alg)
+	}
 }
 
 var dpopNonceHTTPClient = &http.Client{
@@ -291,8 +322,13 @@ func validateClientAuthConfig(config ClientAuthConfig) error {
 		if strings.TrimSpace(config.Key.PublicKey().KeyID) == "" {
 			return fmt.Errorf("client authentication key kid is required for private_key_jwt client authentication")
 		}
-		if _, err := joseutil.NewJWKSigner(config.Key, jose.ES256); err != nil {
-			return fmt.Errorf("client authentication key is not compatible with ES256: %w", err)
+		alg := config.signatureAlgorithm()
+		curve, err := curveForSignatureAlgorithm(alg)
+		if err != nil {
+			return err
+		}
+		if _, err := joseutil.NewJWKSigner(config.Key, alg); err != nil {
+			return fmt.Errorf("client authentication key is not compatible with %s: %w", alg, err)
 		}
 		var publicKey *ecdsa.PublicKey
 
@@ -304,8 +340,8 @@ func validateClientAuthConfig(config ClientAuthConfig) error {
 		}
 
 		if publicKey == nil || publicKey.Curve == nil || publicKey.Params() == nil ||
-			publicKey.Params().Name != elliptic.P256().Params().Name {
-			return fmt.Errorf("client authentication key is not compatible with ES256")
+			publicKey.Params().Name != curve.Params().Name {
+			return fmt.Errorf("client authentication key is not compatible with %s", alg)
 		}
 		return nil
 	default:
@@ -659,8 +695,8 @@ func (w *Wallet) generateDPoPProof(key IKeyEntry, method, targetURL, accessToken
 //
 // The resulting JWT contains the following claims: iss, sub (both equal to the
 // client_id), aud (the resolved authorization server audience), iat, nbf, exp,
-// and jti. The header carries the signing key's kid and the alg (ES256).
-func (w *Wallet) generateClientAssertion(key IKeyEntry, clientID, audience string) (string, error) {
+// and jti. The header carries the signing key's kid and the given alg.
+func (w *Wallet) generateClientAssertion(key IKeyEntry, clientID, audience string, alg jose.SignatureAlgorithm) (string, error) {
 	if key == nil {
 		return "", fmt.Errorf("client auth key is required")
 	}
@@ -670,8 +706,11 @@ func (w *Wallet) generateClientAssertion(key IKeyEntry, clientID, audience strin
 	if strings.TrimSpace(audience) == "" {
 		return "", fmt.Errorf("audience is required for client assertion aud")
 	}
+	if _, err := curveForSignatureAlgorithm(alg); err != nil {
+		return "", err
+	}
 
-	signerAdapter, err := joseutil.NewJWKSigner(key, jose.ES256)
+	signerAdapter, err := joseutil.NewJWKSigner(key, alg)
 	if err != nil {
 		return "", fmt.Errorf("failed to create client assertion signer adapter: %w", err)
 	}
@@ -682,7 +721,7 @@ func (w *Wallet) generateClientAssertion(key IKeyEntry, clientID, audience strin
 	}
 
 	signingKey := jose.SigningKey{
-		Algorithm: jose.ES256,
+		Algorithm: alg,
 		Key:       signerAdapter,
 	}
 
@@ -741,7 +780,7 @@ func clientAuthMethodAvailable(method receiverTypes.TokenEndpointAuthMethod, cli
 		if !asMetadataSupportsAuthMethod(authMetadata, receiverTypes.PrivateKeyJwt) {
 			return false
 		}
-		return asMetadataSupportsSigningAlg(authMetadata, jose.ES256)
+		return asMetadataSupportsSigningAlg(authMetadata, clientAuth.signatureAlgorithm())
 	}
 	return false
 }
@@ -1151,7 +1190,12 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 	fetchAccessToken := func(dpopNonce *string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
 		var tokenReqOptions []receiverTypes.TokenRequestOption
 		if authMethod == receiverTypes.PrivateKeyJwt {
-			assertion, err := w.generateClientAssertion(w.clientAuth.Key, w.clientAuth.ClientID, clientAssertionAudience)
+			assertion, err := w.generateClientAssertion(
+				w.clientAuth.Key,
+				w.clientAuth.ClientID,
+				clientAssertionAudience,
+				w.clientAuth.signatureAlgorithm(),
+			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to generate client assertion: %w", err)
 			}

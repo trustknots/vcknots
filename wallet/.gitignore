@@ -4,3 +4,12 @@ deliwac_old/
 # coverage report
 cover.html
 cover.out
+
+# Client authentication private key material.
+# Only the *.sample.* fixtures used by examples/ are meant to be tracked.
+*.jwks.json
+!*.sample.jwks.json
+*.jwk
+!*.sample.jwk
+*.pem
+*.key
