@@ -614,6 +614,39 @@ func TestOid4vciReceiver_FetchAccessToken_ClientAssertion(t *testing.T) {
 	})
 }
 
+func TestOid4vciReceiver_FetchAccessToken_RequiresClientIDWithAssertion(t *testing.T) {
+	receiver := &Oid4vciReceiver{}
+
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		mockserver.JSONResponse(w, http.StatusOK, map[string]string{
+			"access_token": "tok",
+			"token_type":   "Bearer",
+		})
+	}))
+	defer server.Close()
+
+	tokenURL, err := url.Parse(server.URL + "/token")
+	require.NoError(t, err)
+
+	token, err := receiver.FetchAccessToken(
+		types.Oid4vci,
+		common.URIField(*tokenURL),
+		"code",
+		"",
+		types.WithClientAssertion("  ", "assertion.jwt.value"),
+	)
+	require.Error(t, err)
+	assert.Nil(t, token)
+	assert.Contains(t, err.Error(), "client_id is required when a client assertion is sent")
+	assert.Zero(t, requests, "the request must not be sent at all")
+}
+
 func TestOid4vciReceiver_FetchAccessToken_DoesNotFollowRedirects(t *testing.T) {
 	receiver := &Oid4vciReceiver{}
 

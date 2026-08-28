@@ -47,8 +47,8 @@ cd /path/to/vcknots/wallet
 mise install
 ```
 
-This automatically installs Go 1.26.5 and configures the necessary environment variables based on `mise.toml`.
-If you prefer not to use mise, install Go 1.26.5 manually and set the `GOPRIVATE` environment variable:
+This automatically installs Go 1.26.6 and configures the necessary environment variables based on `mise.toml`.
+If you prefer not to use mise, install Go 1.26.6 manually and set the `GOPRIVATE` environment variable:
 
 ```bash
 export GOPRIVATE="github.com/trustknots/vcknots/wallet"
@@ -180,7 +180,7 @@ The two files are kept apart on purpose. OpenID Connect Dynamic Client Registrat
 
 The public key in `examples/config/wallet-clients.json` is the one registered for `test-client-id` in `server/samples/oauth-clients.json`. The authorization server metadata in `server/samples/authorization_metadata.json` explicitly advertises both `private_key_jwt` and ES256; the wallet uses this authentication method only when both are advertised.
 
-Configuring the wallet in Go remains supported: `clientconfig.Load` returns a `wallet.ClientAuthConfig`, the same struct `wallet.Config.ClientAuth` has always accepted. Keys that cannot be exported into a file, such as those held in an HSM or a secure enclave, are supplied with `clientconfig.WithKeyEntry`.
+Configuring the wallet in Go is equally supported: `clientconfig.Load` returns a `wallet.ClientAuthConfig`, which you pass through `wallet.Config.ClientAuth` yourself. Keys that cannot be exported into a file, such as those held in an HSM or a secure enclave, are supplied with `clientconfig.WithKeyEntry`.
 
 > ⚠️ **Warning**: The sample private key is committed so that the examples run straight after a clone, which is also why they pass `clientconfig.AllowInsecureFilePermissions()`. It is for this local sample only. In a real deployment generate a separate key, keep it out of the repository with mode `0600`, and register its public JWK with the authorization server.
 

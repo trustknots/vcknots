@@ -47,8 +47,8 @@ cd /path/to/vcknots/wallet
 mise install
 ```
 
-これにより、`mise.toml`に基づいてGo 1.26.5が自動的にインストールされ、必要な環境変数が設定されます。
-miseを利用しない場合は、Go 1.26.5を手動でインストールし、`GOPRIVATE`環境変数を設定してください：
+これにより、`mise.toml`に基づいてGo 1.26.6が自動的にインストールされ、必要な環境変数が設定されます。
+miseを利用しない場合は、Go 1.26.6を手動でインストールし、`GOPRIVATE`環境変数を設定してください：
 
 ```bash
 export GOPRIVATE="github.com/trustknots/vcknots/wallet"
@@ -180,7 +180,7 @@ w, err := wallet.NewWalletWithConfig(wallet.Config{ClientAuth: clientAuth})
 
 `examples/config/wallet-clients.json` の公開鍵は、`server/samples/oauth-clients.json` の `test-client-id` に登録された公開 JWK と同一です。また、`server/samples/authorization_metadata.json` では `private_key_jwt` と ES256 の両方を明示的に広告しています。Wallet は両方が広告されている場合にだけ、この認証方式を利用します。
 
-Go のコードで設定する従来の方法も引き続き使えます。`clientconfig.Load` の戻り値は `wallet.Config.ClientAuth` がこれまで受け取ってきた `wallet.ClientAuthConfig` そのものです。HSM やセキュアエンクレーブ内の鍵などファイルに書き出せない鍵は、`clientconfig.WithKeyEntry` で渡します。
+Go のコードで直接設定する方法も同様に使えます。`clientconfig.Load` の戻り値は `wallet.ClientAuthConfig` で、これをそのまま `wallet.Config.ClientAuth` に渡します。HSM やセキュアエンクレーブ内の鍵などファイルに書き出せない鍵は、`clientconfig.WithKeyEntry` で渡します。
 
 > ⚠️ **警告**: サンプルの秘密鍵は、clone 直後にサンプルが動くようリポジトリにコミットしてあります（各サンプルが `clientconfig.AllowInsecureFilePermissions()` を渡しているのもこのためです）。この鍵はローカルサンプル専用です。実環境では別の鍵を生成し、パーミッション `0600` でリポジトリ外に保管したうえで、対応する公開 JWK を認可サーバーへ登録してください。
 

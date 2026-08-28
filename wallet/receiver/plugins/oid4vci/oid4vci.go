@@ -171,6 +171,12 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	}
 	requestConfig := types.NewTokenRequestConfig(opts...)
 	if requestConfig.ClientAssertion != "" {
+		// private_key_jwt identifies the client by client_id, and an empty one
+		// would only be rejected at the authorization server, where the cause
+		// is far harder to see.
+		if strings.TrimSpace(requestConfig.ClientID) == "" {
+			return nil, fmt.Errorf("client_id is required when a client assertion is sent")
+		}
 		formData.Set("client_id", requestConfig.ClientID)
 		formData.Set("client_assertion", requestConfig.ClientAssertion)
 		formData.Set("client_assertion_type", types.ClientAssertionTypeJWTBearer)
