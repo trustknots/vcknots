@@ -34,6 +34,17 @@ const maxNonceResponseBodyBytes int64 = 4 << 10
 
 var oid4vciHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
+// tokenHTTPClient refuses to follow redirects. The token request carries the
+// client_assertion in its body, and a 307 or 308 response would make the HTTP
+// client replay that body against whatever origin the redirect names. Token
+// endpoints do not redirect, so failing is the safe reading.
+var tokenHTTPClient = &http.Client{
+	Timeout: 15 * time.Second,
+	CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+		return fmt.Errorf("token endpoint redirected to %s: redirects are not followed for token requests", req.URL.Redacted())
+	},
+}
+
 // OID4VCICredentialFormatToSerializationFlavor maps OID4VCI credential format identifiers
 // to wallet serialization flavors.
 func OID4VCICredentialFormatToSerializationFlavor(format string) (credential.SupportedSerializationFlavor, error) {
@@ -158,6 +169,18 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	if txCode != "" {
 		formData.Set("tx_code", txCode)
 	}
+	requestConfig := types.NewTokenRequestConfig(opts...)
+	if requestConfig.ClientAssertion != "" {
+		// private_key_jwt identifies the client by client_id, and an empty one
+		// would only be rejected at the authorization server, where the cause
+		// is far harder to see.
+		if strings.TrimSpace(requestConfig.ClientID) == "" {
+			return nil, fmt.Errorf("client_id is required when a client assertion is sent")
+		}
+		formData.Set("client_id", requestConfig.ClientID)
+		formData.Set("client_assertion", requestConfig.ClientAssertion)
+		formData.Set("client_assertion_type", types.ClientAssertionTypeJWTBearer)
+	}
 	endpointURLString := types.ResolveTokenEndpointURL(endpoint)
 	endpointURL, err := url.Parse(endpointURLString)
 	if err != nil {
@@ -167,6 +190,21 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	if !env.IsHTTPAllowed() && !strings.EqualFold(endpointURL.Scheme, "https") {
 		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
 	}
+
+	// A client assertion proves possession of the registered client key, and
+	// RFC 6749 section 10.8 requires client credentials never to travel in the
+	// clear. VCKNOTS_WALLET_HTTP_ALLOWED exists so that the local samples can
+	// talk to a development server on this machine, which is why loopback
+	// stays permitted; it is not a licence to send the assertion across a
+	// network unprotected.
+	if requestConfig.ClientAssertion != "" &&
+		!strings.EqualFold(endpointURL.Scheme, "https") &&
+		!common.IsLoopbackHost(endpointURL.Hostname()) {
+		return nil, fmt.Errorf(
+			"refusing to send a client assertion to %q over %q: https is required for any host other than loopback",
+			endpointURL.Host, endpointURL.Scheme)
+	}
+
 	req, err := http.NewRequest(
 		http.MethodPost,
 		endpointURL.String(),
@@ -179,11 +217,10 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	requestConfig := types.NewTokenRequestConfig(opts...)
 	if requestConfig.DPoPProof != "" {
 		req.Header.Set("DPoP", requestConfig.DPoPProof)
 	}
-	resp, err := oid4vciHTTPClient.Do(req)
+	resp, err := tokenHTTPClient.Do(req)
 
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
