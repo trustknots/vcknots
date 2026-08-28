@@ -114,7 +114,11 @@ export const verifierMetadataSchema = z.object({
   encrypted_response_enc_values_supported: z.array(z.string()).nonempty().optional(),
   vp_formats_supported: vpFormatsSchema,
 })
+export const createVerifierMetadataInputSchema = verifierMetadataSchema.omit({
+  jwks: true,
+})
 export type VerifierMetadata = z.infer<typeof verifierMetadataSchema>
+export type CreateVerifierMetadataInput = z.infer<typeof createVerifierMetadataInputSchema>
 export const VerifierMetadata = (value?: {
   redirect_uris?: string[]
   token_endpoint_auth_method?: string

@@ -17,7 +17,7 @@ import { Certificate } from './signature-key.types'
 import { TransactionId, TransactionRecord } from './transaction-id.types'
 import { DeepPartialUnknown } from './type.utils'
 import { VcknotsContext } from './vcknots.context'
-import { VerifierMetadata } from './verifier-metadata.types'
+import { CreateVerifierMetadataInput, VerifierMetadata } from './verifier-metadata.types'
 
 type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
@@ -65,8 +65,7 @@ export type VerifierFlow = {
   findVerifierMetadata: (verifierId: ClientId) => Promise<VerifierMetadata | null>
   createVerifierMetadata(
     verifierId: ClientId,
-    // Input metadata excludes jwks because it is generated internally.
-    metadata: Omit<VerifierMetadata, 'jwks'>,
+    metadata: CreateVerifierMetadataInput,
     options?: CreateVerifierMetadataOptions
   ): Promise<void>
   createAuthzRequest(
