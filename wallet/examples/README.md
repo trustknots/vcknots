@@ -349,7 +349,7 @@ In addition to `VCKNOTS_CERT_PATH`, the wallet runtime behavior is controlled by
 
 | Variable | Default | Description |
 | :---- | :---- | :---- |
-| `VCKNOTS_WALLET_HTTP_ALLOWED` | `false` (unset/empty) | When set to `true`, HTTP endpoints are allowed for wallet HTTP calls (for local development/testing). |
+| `VCKNOTS_WALLET_HTTP_ALLOWED` | `false` (unset/empty) | When set to `true`, HTTP endpoints are allowed for wallet HTTP calls (for local development/testing). A client assertion is the exception: it is sent over plain HTTP only to a loopback host, so `private_key_jwt` against a remote `http://` endpoint is refused even with this set. |
 | `VCKNOTS_WALLET_DEBUG` | `false` (unset/empty) | Enables debug mode. Debug mode also enables HTTP allowance behavior. |
 
 Behavior summary:

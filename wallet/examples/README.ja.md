@@ -349,7 +349,7 @@ VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
 
 | 環境変数 | 既定値 | 説明 |
 | :---- | :---- | :---- |
-| `VCKNOTS_WALLET_HTTP_ALLOWED` | `false`（未設定/空） | `true` を設定すると、Wallet の HTTP 通信で HTTP エンドポイントを許可します（ローカル開発/テスト用途）。 |
+| `VCKNOTS_WALLET_HTTP_ALLOWED` | `false`（未設定/空） | `true` を設定すると、Wallet の HTTP 通信で HTTP エンドポイントを許可します（ローカル開発/テスト用途）。ただし client assertion だけは例外で、平文 HTTP で送るのはループバックホスト宛てに限られます。リモートの `http://` エンドポイントへの `private_key_jwt` は、この設定を有効にしても拒否されます。 |
 | `VCKNOTS_WALLET_DEBUG` | `false`（未設定/空） | デバッグモードを有効化します。デバッグモード時は HTTP 許可動作も有効になります。 |
 
 挙動の要点:

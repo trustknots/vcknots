@@ -190,6 +190,21 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 	if !env.IsHTTPAllowed() && !strings.EqualFold(endpointURL.Scheme, "https") {
 		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
 	}
+
+	// A client assertion proves possession of the registered client key, and
+	// RFC 6749 section 10.8 requires client credentials never to travel in the
+	// clear. VCKNOTS_WALLET_HTTP_ALLOWED exists so that the local samples can
+	// talk to a development server on this machine, which is why loopback
+	// stays permitted; it is not a licence to send the assertion across a
+	// network unprotected.
+	if requestConfig.ClientAssertion != "" &&
+		!strings.EqualFold(endpointURL.Scheme, "https") &&
+		!common.IsLoopbackHost(endpointURL.Hostname()) {
+		return nil, fmt.Errorf(
+			"refusing to send a client assertion to %q over %q: https is required for any host other than loopback",
+			endpointURL.Host, endpointURL.Scheme)
+	}
+
 	req, err := http.NewRequest(
 		http.MethodPost,
 		endpointURL.String(),
