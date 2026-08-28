@@ -80,6 +80,7 @@ cp .env.example .env
 | `NONCES_TABLE_NAME` | Issuer **必須** | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
 | `PRE_CODES_TABLE_NAME` | Issuer・Authz **必須** | DynamoDB テーブル名（Issuer/Authz 共通、スタック出力: `PreCodesTableName`） |
 | `AUTH_SERVERS_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthServersTableName`） |
+| `AUTHZ_OAUTH_POLICIES_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthzOAuthPoliciesTableName`） |
 | `VERIFIERS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `VerifiersTableName`） |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `RequestObjectsTableName`） |
 | `NONCES_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
@@ -90,7 +91,7 @@ cp .env.example .env
 | `VERIFIER_PORT` | Verifier（任意） | Verifier のリッスンポートを上書き（デフォルト: `8083`） |
 | `VERIFIER_BASE_URL` | Verifier（任意） | Verifier メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{VERIFIER_PORT}`） |
 
-**`ISSUERS_TABLE_NAME`・`PRE_CODES_TABLE_NAME`（Issuer・Authz）・`NONCES_TABLE_NAME`（Issuer と Verifier）・`AUTH_SERVERS_TABLE_NAME`・`VERIFIERS_TABLE_NAME`・`REQUEST_OBJECTS_TABLE_NAME` は必須**です。必要なテーブル名が未設定の場合、該当サーバーは起動時に終了します。
+**`ISSUERS_TABLE_NAME`・`PRE_CODES_TABLE_NAME`（Issuer・Authz）・`NONCES_TABLE_NAME`（Issuer と Verifier）・`AUTH_SERVERS_TABLE_NAME`・`AUTHZ_OAUTH_POLICIES_TABLE_NAME`・`VERIFIERS_TABLE_NAME`・`REQUEST_OBJECTS_TABLE_NAME` は必須**です。必要なテーブル名が未設定の場合、該当サーバーは起動時に終了します。
 
 **`TX_CODE_PEPPER` は全サーバーで必須**です。`tx_code` を DynamoDB に保存する前に HMAC-SHA256 でハッシュ化するための秘密値（pepper）です。`@trustknots/aws` は import 時にこの値を評価するため、未設定の場合は Issuer・Authorization Server・Verifier のいずれも起動時に `TX_CODE_PEPPER environment variable is required` でエラーになります。十分に長いランダム文字列を設定し、環境ごとに固定して運用してください（変更すると既存データの `tx_code` 検証に失敗します）。
 

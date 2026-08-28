@@ -26,6 +26,10 @@ export {
   DynamoDbNonceStoreOptions,
   dynamodbNonceStore,
 } from './providers/dynamodb-nonce-store.provider'
+export {
+  DynamoDbAuthzOAuthPolicyStoreOptions,
+  dynamodbAuthzOAuthPolicyStore,
+} from './providers/dynamodb-authz-oauth-policy-store.provider'
 export { KmsProviderOptions, resolveKmsClient } from './providers/kms'
 export { kmsAuthzSignatureKeyStore } from './providers/kms-authz-signature-key-store.provider'
 export { kmsIssuerSignatureKeyStore } from './providers/kms-issuer-signature-key-store.provider'

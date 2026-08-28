@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  dynamodbAuthzOAuthPolicyStore,
   dynamodbAuthzServerMetadataStore,
   dynamodbPreAuthorizedCodeStore,
   kmsAuthzSignatureKeyStore,
@@ -26,19 +27,31 @@ export function createAuthzApp(options?: VcknotsOptions) {
     throw new Error('PRE_CODES_TABLE_NAME is required')
   }
 
+  const authzOAuthPoliciesTableName = process.env.AUTHZ_OAUTH_POLICIES_TABLE_NAME
+  if (!authzOAuthPoliciesTableName) {
+    throw new Error('AUTHZ_OAUTH_POLICIES_TABLE_NAME is required')
+  }
+
   const rawPort = process.env.AUTHZ_PORT ?? '8082'
   const port = Number.parseInt(rawPort, 10)
   if (!Number.isFinite(port)) throw new Error(`Invalid AUTHZ_PORT: "${rawPort}"`)
 
   const store = dynamodbAuthzServerMetadataStore({ tableName: authServersTableName })
   const preAuthorizedCodeStore = dynamodbPreAuthorizedCodeStore({ tableName: preCodesTableName })
+  const oauthPolicyStore = dynamodbAuthzOAuthPolicyStore({ tableName: authzOAuthPoliciesTableName })
   const signatureKeyStore = kmsAuthzSignatureKeyStore()
   const { app, context } = createBaseApp(
     createAuthzRouter,
     { port, baseUrl: process.env.AUTHZ_BASE_URL },
     {
       ...options,
-      providers: [store, preAuthorizedCodeStore, signatureKeyStore, ...(options?.providers ?? [])],
+      providers: [
+        store,
+        preAuthorizedCodeStore,
+        oauthPolicyStore,
+        signatureKeyStore,
+        ...(options?.providers ?? []),
+      ],
     }
   )
 
