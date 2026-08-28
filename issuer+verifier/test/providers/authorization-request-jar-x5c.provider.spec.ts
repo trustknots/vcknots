@@ -1,23 +1,23 @@
 import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
+import { ClientId } from '../../src/client-id.types'
+import { raise } from '../../src/errors'
 import { authzRequestJARX5c } from '../../src/providers/authorization-request-jar-x5c.provider'
 import { VerifierCertificateStoreProvider } from '../../src/providers/provider.types'
 import { RequestObject } from '../../src/request-object.types'
-import { raise } from '../../src/errors'
-import { ClientId } from '../../src/client-id.types'
 
 describe('AuthzRequestJARProvider', () => {
   const x5c = ['sign1', 'sign2']
   const verifierId = 'test-verifier' as ClientId
+  const emptyVerifierId = 'empty-verifier' as ClientId
 
   const mockCertificateStore: VerifierCertificateStoreProvider = {
     kind: 'verifier-certificate-store-provider',
     name: 'mock-certificate-store',
     single: true,
     fetch: mock.fn(async (id: string) => {
-      if (id === verifierId) {
-        return x5c
-      }
+      if (id === verifierId) return x5c
+      if (id === emptyVerifierId) return []
       return Promise.reject(
         raise('CERTIFICATE_NOT_FOUND', { message: 'Verifier certificate not found.' })
       )
@@ -39,9 +39,8 @@ describe('AuthzRequestJARProvider', () => {
     assert.strictEqual(provider.single, false)
   })
 
-  it('should handle supported client_id_schemes', () => {
+  it('should handle supported client_id_prefixes', () => {
     assert.ok(provider.canHandle('x509_san_dns'))
-    assert.ok(provider.canHandle('x509_san_uri'))
     assert.ok(!provider.canHandle('other'))
   })
 
@@ -126,6 +125,21 @@ describe('AuthzRequestJARProvider', () => {
     }
 
     await assert.rejects(provider.generate('unknown-verifier' as ClientId, requestObject, alg), {
+      name: 'CERTIFICATE_NOT_FOUND',
+      message: 'Verifier certificate not found.',
+    })
+  })
+
+  it('should throw an error if certificate store returns empty array', async () => {
+    const alg = 'ES256'
+    const requestObject: RequestObject = {
+      response_type: 'code',
+      client_id: 'test-client',
+      redirect_uri: 'https://example.com/cb',
+      response_mode: 'query',
+    }
+
+    await assert.rejects(provider.generate(emptyVerifierId, requestObject, alg), {
       name: 'CERTIFICATE_NOT_FOUND',
       message: 'Verifier certificate not found.',
     })

@@ -1,16 +1,16 @@
-import { Hono } from 'hono'
+import { randomUUID } from 'node:crypto'
 import { VcknotsContext } from '@trustknots/vcknots'
 import {
-  VerifierClientIdScheme,
-  VerifierRequestObjectId,
-  initializeVerifierFlow,
+  ClientIdentifier,
   VerifierAuthorizationResponse,
   VerifierClientId,
-  ClientIdentifier,
+  VerifierClientIdPrefix,
+  VerifierRequestObjectId,
+  initializeVerifierFlow,
 } from '@trustknots/vcknots/verifier'
-import { randomUUID } from 'node:crypto'
-import { handleError } from '../utils/error-handler.js'
+import { Hono } from 'hono'
 import { createDirectPostVpAudTransactionStore } from '../utils/direct-post-vp-aud-transaction-store.js'
+import { handleError } from '../utils/error-handler.js'
 
 export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
   const verifyApp = new Hono()
@@ -60,14 +60,14 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     return { ok: true, payload }
   }
 
-  const canHandleClientIdScheme: VerifierClientIdScheme[] = ['redirect_uri', 'x509_san_dns']
+  const canHandleClientIdScheme: VerifierClientIdPrefix[] = ['redirect_uri', 'x509_san_dns']
   function validateClientIdScheme(client_id: string): ClientIdentifier {
     if (client_id == null || client_id === '') {
       return 'x509_san_dns:localhost'
     }
     const m = client_id.match(/^([^:]+):(.+)$/)
     const prefix = m?.[1]
-    if (!prefix || !canHandleClientIdScheme.includes(prefix as VerifierClientIdScheme)) {
+    if (!prefix || !canHandleClientIdScheme.includes(prefix as VerifierClientIdPrefix)) {
       throw new Error('Invalid client_id format')
     }
     return ClientIdentifier(client_id)
@@ -102,7 +102,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           400
         )
       }
-      const client_id = validateClientIdScheme(body.client_id as string)
+      const client_id = validateClientIdScheme(
+        (body.client_id as string) ?? 'redirect_uri:localhost'
+      )
 
       const query = {
         dcql_query: {

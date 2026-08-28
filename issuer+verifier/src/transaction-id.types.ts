@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { Dcql } from './dcql.type'
-import { ClientIdentifier } from './client-id-scheme.types'
+import { ClientIdentifier } from './client-id-prefix.types'
 import { ClientId } from './client-id.types'
 
 const transactionIdSchema = z.string().brand('TransactionId')

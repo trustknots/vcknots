@@ -17,7 +17,7 @@ sidebar_position: 3
 - TypeScriptが設定されていること
 - 本ドキュメントはserverのサンプル実装に基づいて説明します
 - HonoのWebフレームワークを使用していますが、他のフレームワークでも利用可能です
-- 現在対応しているclient_id_schema:x509_san_dns、redirect_uriになります
+- 現在対応しているclient_id_prefixはx509_san_dns、redirect_uriになります
 - 現在対応しているVPフォーマットについては、VPはjwt_vp_json、VCはjwt_vc_jsonに対応しています。また、dc+sd-jwtにも対応しています。
 - `state` パラメータを `createAuthzRequest` に渡した場合、`verifyPresentations` 呼び出し時にライブラリ側でレスポンスの `state` と照合します。`state` を使用しないフロー（dc_api 等）では省略可能です
 
@@ -53,6 +53,7 @@ const verifierFlow = initializeVerifierFlow(context);
 
 はじめに:
 - サーバ起動時にVerifierのメタデータを事前登録しています。（[initializeVerifierMetadata](#initializeVerifierMetadata)）
+- サンプルコード内の `vpAudTx` は `state` と `transactionId` を対応づけるサンプルユーティリティです。実際のアプリではセッションや DB で管理してください。
 
 
 
@@ -64,66 +65,88 @@ Verifier が Wallet に提示を依頼するための認可リクエスト（ope
 
 このエンドポイントは OAuth 2.0 に準拠した認可リクエスト形式を使用します。
 
-- **エンドポイント**: `POST /verify/request`
+- **エンドポイント**: `POST /request`
 - **リクエストボディ (JSON)**
   - `credentialId` (string, 必須): 要求する VC の type を指定。例: `UniversityDegreeCredential`。未指定の場合はエラー。
+  - `state` (string, 必須): 認可リクエストとレスポンスを紐づける識別子。予測困難なランダム値を指定すること。
+  - `client_id` (string, 任意): Verifier の client_id を prefix:value 形式で指定。省略時は redirect_uri:localhost が使用されます。
 - **レスポンス**
   - `200 OK`: テキストで `openid4vp://authorize?...` 形式の認可リクエスト URL を返却。
-  - `400 Bad Request`: `credentialId` 未指定時など。
+  - `400 Bad Request`: `credentialId` 、 `state`未指定時など。
 
 - **実際のコード**
 ```typescript
-app.post('/verify/request', async (c) => {
+verifyApp.post('/request', async (c) => {
   try {
     const verifierId = VerifierClientId(baseUrl)
-    const { credentialId } = (await c.req.json()) ?? {};
-
-    if (!credentialId) throw err("INVALID_REQUEST");
-    const client_id = 'x509_san_dns:localhost'
-
+    type Payload = Record<string, unknown>
+    const body: Payload = await c.req.json<Payload>().catch(() => ({}))
+    const credentialId = ('credentialId' in body ? body.credentialId : undefined) as
+      | string
+      | undefined
+    if (!credentialId) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'credentialId is required.',
+        },
+        400
+      )
+    }
+    const state =
+      typeof body.state === 'string' && body.state.trim() !== '' ? body.state.trim() : undefined
+    if (state === undefined) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'state is required.',
+        },
+        400
+      )
+    }
+    const client_id = validateClientIdScheme(
+      (body.client_id as string) ?? 'redirect_uri:localhost'
+    )
     const query = {
       dcql_query: {
         credentials: [
           {
-            id: 'sample-id',
+            id: randomUUID(),
             format: 'jwt_vc_json',
             meta: {
-              type_values: [['UniversityDegreeCredential']],
+              type_values: [['VerifiableCredential']],
             },
-            claims: [
-              {
-                path: ['vc', 'credentialSubject', 'given_name'],
-              },
-            ],
           },
         ],
       },
     }
-
-    const { request, transactionId } = await verifierFlow.createAuthzRequest(
-      verifierId,
-      'vp_token',
-      client_id,
-      'direct_post',
-      query,
-      false,
-      {
-        response_uri: `${baseUrl}/verifiers/${encodeURIComponent(verifierId)}/callback`,
+    const reserved = vpAudTx.reserve(state)
+    if (!reserved.ok) {
+      return c.json(reserved.error, 400)
+    }
+    const { request, transactionId: verifierTxId } = await verifierFlow
+      .createAuthzRequest(verifierId, 'vp_token', client_id, 'direct_post', query, false, {
+        state,
+        response_uri: `${baseUrl}/callback`,
         base_url: baseUrl,
-      }
-    )
-    // transactionId は verifyPresentations 呼び出し時に必要。セッション等と紐づけて保管してください。
+      })
+      .catch((err: unknown) => {
+        vpAudTx.consume(state)
+        throw err
+      })
+    vpAudTx.register(state, verifierTxId)
 
-    const encoded = Object.entries(request)
+    const encoded = Object.entries({ ...request, state })
       .map(([key, value]) => {
         const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
         return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
       })
       .join('&')
-
-    return c.text(`openid4vp://authorize?${encoded}`)
-  } catch (error) {
-    return c.json({ error: 'internal_server_error' }, 400)
+      return c.text(`openid4vp://authorize?${encoded}`)
+  } catch (err) {
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
   }
 })
 ```
@@ -134,16 +157,17 @@ app.post('/verify/request', async (c) => {
 **リクエスト**
 
 ```bash
-curl --location 'http://localhost:8080/verify/request' \
+curl --location 'http://localhost:8080/request' \
 --header 'Content-Type: application/json' \
 --data ' {
- "credentialId": "UniversityDegreeCredential"
+ "credentialId": "UniversityDegreeCredential",
+ "state": "example-state"
 }'
 ```
 **レスポンス**
 
 ```
-openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&client_metadata=...&nonce=a9a3e60cbb8e46e0946facb635839b57&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback&client_id_scheme=x509_san_dns&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%22sample-id%22%2C%22require_cryptographic_holder_binding%22%3Atrue%2C%22multiple%22%3Afalse%2C%22format%22%3A%22jwt_vc_json%22%2C%22claims%22%3A%5B%7B%22path%22%3A%5B%22vc%22%2C%22credentialSubject%22%2C%22given_name%22%5D%7D%5D%2C%22meta%22%3A%7B%22type_values%22%3A%5B%5B%22UniversityDegreeCredential%22%5D%5D%7D%7D%5D%7D
+openid4vp://authorize?response_type=vp_token&client_id=redirect_uri%3Alocalhost&state=example-state&client_metadata=...&nonce=cf0736e6f68d4bf094b38850169e8c04&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%220d67e47b-a5f0-48ae-b880-60b94c61fbfd%22%2C%22require_cryptographic_holder_binding%22%3Atrue%2C%22multiple%22%3Afalse%2C%22format%22%3A%22jwt_vc_json%22%2C%22meta%22%3A%7B%22type_values%22%3A%5B%5B%22VerifiableCredential%22%5D%5D%7D%7D%5D%7D
 ```
 
 
@@ -151,58 +175,114 @@ openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&
 
 このエンドポイントは JWT Authorization Request (JAR) を用いて Request Object を生成・保存し、Wallet が取得するための認可リクエスト URI を返します。
 
-- **エンドポイント**: `POST /verify/request-object`
-- **リクエストボディ (JSON)**
-  - 以下のフィールドを含めます。
-      - `query.dcql_query`
-      - `state`
-      - `response_uri`
-      - `client_id`：`redirect_uri:<URL>` または `x509_san_dns:<ホスト名>` を指定
+- **エンドポイント**: `POST /request-object`
+- **リクエストボディ (JSON)**（全フィールド省略可）
+  - `query` (object, 任意): DCQL クエリを指定。省略時はデフォルトの `jwt_vc_json` クエリが使用されます。
+  - `state` (string, 任意): 認可リクエストとレスポンスを紐づける識別子。省略時はランダム値が生成されます。
+  - `client_id` (string, 任意): `redirect_uri:<URL>` または `x509_san_dns:<ホスト名>` を指定。省略時は `x509_san_dns:localhost`。
+  - `is_request_uri` (boolean, 任意): `true` の場合 request_uri 形式で返却（デフォルト: `true`）。
+  - `is_transaction_data` (boolean, 任意): `true` の場合 transaction_data を付与（デフォルト: `false`）。
+  - `response_uri` (string, 任意): Wallet がレスポンスを送信するコールバック URI。省略時は `${baseUrl}/callback`。
 - **レスポンス**
   - `200 OK`: テキストで `openid4vp://authorize?...` 形式の認可リクエスト URL を返却（`request_uri` 情報を含みます）。
   - `400 Bad Request`: JSON が不正な場合など、リクエスト内容に問題があるとき。
 
 - 実際のコード
 ```typescript
-  verifyApp.post('/verify/request-object', async (c) => {
-    try {
-      const verifierId = VerifierClientId(baseUrl)
-
-      const body = await c.req.json()
-      if (!body) throw err('INVALID_REQUEST')
-      const {
-        client_id: clientId,
-        state,
-        response_uri: responseUri,
-        query,
-      } = body
-      const { request, transactionId } = await verifierFlow.createAuthzRequest(
-        verifierId,
-        'vp_token',
-        clientId,
-        'direct_post',
-        query,
-        true,
+verifyApp.post('/request-object', async (c) => {
+  const dcqlQuery = {
+    dcql_query: {
+      credentials: [
         {
-          state: state,
-          base_url: baseUrl,
-          response_uri: responseUri,
-        }
+          id: randomUUID(),
+          format: 'jwt_vc_json',
+          meta: {
+            type_values: [['VerifiableCredential']],
+          },
+        },
+      ],
+    },
+  }
+  const raw = await c.req.text()
+  let parsed: unknown = {}
+  if (raw.trim()) {
+    try {
+      parsed = JSON.parse(raw)
+    } catch (e) {
+      return c.json(
+        { error: 'invalid_request', error_description: 'Request body must be valid JSON' },
+        400
       )
-      // transactionId は verifyPresentations 呼び出し時に必要。セッション等と紐づけて保管してください。
-      const encoded = Object.entries(request)
-        .map(([key, value]) => {
-          const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
-          return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
-        })
-        .join('&')
-
-      return c.text(`openid4vp://authorize?${encoded}`)
-    } catch (err) {
-      return c.json(handleError(err), 400)
     }
-  })
-
+  }
+  const input = parsed && typeof parsed === 'object' ? (parsed as RequestObjectInput) : {}
+  const requestObject: RequestObjectShape = {
+    query:
+      typeof input.query === 'object' && input.query !== null && !Array.isArray(input.query)
+        ? input.query
+        : dcqlQuery,
+    state:
+      typeof input.state === 'string' && input.state.trim() !== ''
+        ? input.state
+        : randomUUID().replaceAll('-', ''),
+    base_url:
+      typeof input.base_url === 'string' && input.base_url.trim() !== ''
+        ? input.base_url
+        : baseUrl,
+    is_request_uri: typeof input.is_request_uri === 'boolean' ? input.is_request_uri : true,
+    is_transaction_data:
+      typeof input.is_transaction_data === 'boolean' ? input.is_transaction_data : false,
+    response_uri:
+      typeof input.response_uri === 'string' && input.response_uri.trim() !== ''
+        ? input.response_uri
+        : undefined,
+    client_id:
+      typeof input.client_id === 'string' && input.client_id.trim() !== ''
+        ? validateClientIdScheme(input.client_id)
+        : 'x509_san_dns:localhost',
+  }
+  let reserved: ReturnType<typeof vpAudTx.reserve> | undefined
+  try {
+    reserved = vpAudTx.reserve(requestObject.state)
+    if (!reserved.ok) {
+      return c.json(reserved.error, 400)
+    }
+    const verifierId = VerifierClientId(baseUrl)
+    const { request, transactionId: verifierTxId } = await verifierFlow.createAuthzRequest(
+      verifierId,
+      'vp_token',
+      requestObject.client_id,
+      'direct_post',
+      requestObject.query,
+      requestObject.is_request_uri,
+      {
+        state: requestObject.state,
+        base_url: baseUrl,
+        response_uri: requestObject.response_uri ?? `${baseUrl}/callback`,
+        request_uri: `${baseUrl}/request.jwt`,
+        ...(requestObject.is_transaction_data
+          ? { transaction_data: { type: 'sample_type' } }
+          : {}),
+      }
+    )
+    vpAudTx.register(requestObject.state, verifierTxId)
+    console.log('[verify] direct_post transaction_id:', verifierTxId)
+    const encoded = Object.entries(request)
+      .map(([key, value]) => {
+        const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
+        return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
+      })
+      .join('&')
+    return c.text(`openid4vp://authorize?${encoded}`)
+  } catch (err) {
+    if (reserved?.ok) {
+      vpAudTx.consume(requestObject.state)
+    }
+    const errorResponse = handleError(err)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
+  }
+})
 ```
 
 **例**
@@ -210,7 +290,7 @@ openid4vp://authorize?response_type=vp_token&client_id=x509_san_dns%3Alocalhost&
 **リクエスト**
 
 ```bash
-curl --location 'http://localhost:8080/verify/request-object' \
+curl --location 'http://localhost:8080/request-object' \
 --header 'Content-Type: application/json' \
 --data '{
   "query": {
@@ -239,7 +319,7 @@ curl --location 'http://localhost:8080/verify/request-object' \
 
 **レスポンス**
 ```
-openid4vp://authorize?client_id=x509_san_dns%3Alocalhost&request_uri=http%3A%2F%2Flocalhost%3A8080%2Fverifiers%2Fhttp%253A%252F%252Flocalhost%253A8080%2Frequest.jwt%2F0aab8b5062b0410ba96f1afaf3925f93
+openid4vp://authorize?client_id=x509_san_dns%3Alocalhost&request_uri=http%3A%2F%2Flocalhost%3A8080%2Frequest.jwt%2F98feadd6e5d94254b91b132f4de0782e
 ```
 
 
@@ -248,7 +328,7 @@ openid4vp://authorize?client_id=x509_san_dns%3Alocalhost&request_uri=http%3A%2F%
 
 JAR 生成時に保存された Request Object（JWT）を Wallet などのクライアントが取得するためのエンドポイントです。
 
-- **エンドポイント**: `GET /verify/request.jwt/:request-object-Id`
+- **エンドポイント**: `GET /request.jwt/:request-object-Id`
 - **パスパラメーター**
   - `request-object-Id`: `createAuthzRequest` のレスポンスに含まれる `request_uri`（末尾の ID）で指定します。
 - **レスポンス**
@@ -257,69 +337,14 @@ JAR 生成時に保存された Request Object（JWT）を Wallet などのク�
 
 - 実際のコード
 ```typescript
-verifyApp.get('/verify/request.jwt/:request-object-Id', async (c) => {
+verifyApp.get('/request.jwt/:request-object-Id', async (c) => {
   try {
     const verifierId = VerifierClientId(baseUrl)
-    const requestObjectId = RequestObjectId(c.req.param('request-object-Id'))
+    const requestObjectId = VerifierRequestObjectId(c.req.param('request-object-Id'))
     const jar = await verifierFlow.findRequestObject(verifierId, requestObjectId)
     return c.body(jar, 200, {
       'Content-Type': 'application/oauth-authz-req+jwt',
     })
-  } catch (err) {
-    return c.json(handleError(err), 400)
-  }
-})
-```
-
-**例**
-
-**リクエスト**
-
-```bash
-curl --location 'http://localhost:8080/verify/request.jwt/fca442d1b80a43c7bb3faeb13e9a3b73'
-```
-**レスポンス**
-```
-eyJhbGciOiJFUzI1NiIsInR5cCI6Im9hdXRoLWF1dGh6LXJlcStqd3QiLCJ4NWMiOlsiXG5NSUlDSGpDQ0FjT2dBd0lCQWdJVVpYOUJTNUNET0pSVzJ0MUZLMVVETXQvUXdNRXdDZ1lJS29aSXpqMEVBd0l3XG5JVEVMTUFrR0ExVUVCaE1DUjBJeEVqQVFCZ05WQkFNTUNVOUpSRVlnVkdWemREQWVGdzB5TkRFeE1qVXdPRE0yXG5NRFJhRncwek5ERXhNak13T0RNMk1EUmFNQ0V4Q3pBSkJnTlZCQVlUQWtkQ01SSXdFQVlEVlFRRERBbFBTVVJHXG5JRlJsYzNRd1dUQVRCZ2NxaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUVC9kTHNkNTFMTEJyR1Y2UjIzbzZ2XG55bVJ4SFhlRkJvSTh5cTMxeTVrRlYyVlYwZ2k5eDVaekVGaXE4RE1pQUh1Y0xBQ0ZuZHhMdFpvckNoYTl6em5RXG5vNEhZTUlIVk1CMEdBMVVkRGdRV0JCUzVjYmRnQWVNQmk1d3hwYnB3SVNHaFNoQVdFVEFmQmdOVkhTTUVHREFXXG5nQlM1Y2JkZ0FlTUJpNXd4cGJwd0lTR2hTaEFXRVRBUEJnTlZIUk1CQWY4RUJUQURBUUgvTUlHQkJnTlZIUkVFXG5lakI0Z2hCM2QzY3VhR1ZsYm1GdUxtMWxMblZyZ2gxa1pXMXZMbU5sY25ScFptbGpZWFJwYjI0dWIzQmxibWxrXG5MbTVsZElJSmJHOWpZV3hvYjNOMGdoWnNiMk5oYkdodmMzUXVaVzF2WW1sNExtTnZMblZyZ2lKa1pXMXZMbkJwXG5aQzFwYzNOMVpYSXVZblZ1WkdWelpISjFZMnRsY21WcExtUmxNQW9HQ0NxR1NNNDlCQU1DQTBrQU1FWUNJUUNQXG5ibkx4Q0krV1IxdmhPVytBOEt6bkFXdjFNSm8rWUViMU1JNDVOS1cvVlFJaEFMenNxb3g4VnVCUndOMmRsNUxrXG5wbnhQNG9IOXA2SDBBT1ptS1ArWTduWFNcbiJdfQ.eyJyZXNwb25zZV90eXBlIjoidnBfdG9rZW4iLCJjbGllbnRfaWQiOiJ4NTA5X3Nhbl9kbnM6bG9jYWxob3N0Iiwic3RhdGUiOiIwMzg0NzViMDEyNmI0Njg0YTIyNmJjODBlYWM5MzRiNiIsImNsaWVudF9tZXRhZGF0YSI6eyJjbGllbnRfbmFtZSI6IlNhbXBsZSBWZXJpZmllciBBcHAiLCJjbGllbnRfdXJpIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwIiwiandrcyI6eyJrZXlzIjpbeyJrdHkiOiJFQyIsIngiOiIwXzNTN0hlZFN5d2F4bGVrZHQ2T3I4cGtjUjEzaFFhQ1BNcXQ5Y3VaQlZjIiwieSI6IlpWWFNDTDNIbG5NUVdLcndNeUlBZTV3c0FJV2QzRXUxbWlzS0ZyM1BPZEEiLCJjcnYiOiJQLTI1NiJ9XX0sInZwX2Zvcm1hdHMiOnsiand0X3ZwIjp7ImFsZyI6WyJFUzI1NiJdfX0sImNsaWVudF9pZF9zY2hlbWUiOiJyZWRpcmVjdF91cmkiLCJhdXRob3JpemF0aW9uX3NpZ25lZF9yZXNwb25zZV9hbGciOiJFUzI1NiJ9LCJyZXNwb25zZV9tb2RlIjoiZGlyZWN0X3Bvc3QiLCJyZXNwb25zZV91cmkiOiJodHRwOi8vbG9jYWxob3N0OjgwODAvdmVyaWZpZXJzL2h0dHAlM0ElMkYlMkZsb2NhbGhvc3QlM0E4MDgwL2NhbGxiYWNrIiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwIiwiYXVkIjoiaHR0cHM6Ly9zZWxmLWlzc3VlZC5tZS92MiIsInByZXNlbnRhdGlvbl9kZWZpbml0aW9uIjp7ImlkIjoiODkyMGVjMGUtZDc3YS00MmJlLTk4OWQtZTU1MTBjZmFhNjlkIiwibmFtZSI6IlRlc3QgTmFtZSIsInB1cnBvc2UiOiJUZXN0IFB1cnBvc2UiLCJpbnB1dF9kZXNjcmlwdG9ycyI6W3siaWQiOiI4ZjJmZWM3ZC1hMmI5LTRhZTEtYTdmMi1mMGJmMTgyMWYzY2UiLCJmb3JtYXQiOnsiand0X3ZjX2pzb24iOnsicHJvb2ZfdHlwZSI6WyJFUzI1NiJdfX0sImNvbnN0cmFpbnRzIjp7ImZpZWxkcyI6W3sicGF0aCI6WyIkLnZjLnR5cGUiXSwiZmlsdGVyIjp7InR5cGUiOiJhcnJheSIsImNvbnRhaW5zIjp7ImNvbnN0IjoiVmVyaWZpYWJsZUNyZWRlbnRpYWwifX19XX19XX0sImlhdCI6MTc2MTkwMTAzOCwibm9uY2UiOiI0YTVhYTQ1ZjllMWQ0N2FmOTkzNWY5OWEyM2M5ZDNlNiJ9.Kc4FFI1cNXJCO5nI8Yy0jnlYtLFDL-Wr-AoWtq8sasI0grzP1Zco8Zw9Ug2zybtMnn_o6XLDnnRj8jb2g0Y0TQ
-```
-
-
-
-### 3. vp_token の受信と検証
-
-Wallet から返送される `vp_token` を受け取り、Verifier 側で検証 (VP 検証) を行うエンドポイントです。
-
-- **エンドポイント**: `POST /verify/callback`
-- **リクエストボディ**
-  - `Content-Type: application/x-www-form-urlencoded`
-  - フォームフィールドに `vp_token`（JSON オブジェクト）と `state` を載せます（Wallet の `direct_post` 応答と同形式）。
-  - `vp_token` は DCQL のクレデンシャルクエリ ID をキー、VP の配列を値とする JSON オブジェクトです。
-  - 値は検証のうえ `VerifierAuthorizationResponse` にパースされます。
-- **レスポンス**
-  - `200 OK`: JSON 本文 `{ "redirect_uri": "<baseUrl>/verified" }`（サンプルサーバの挙動。アプリに合わせて変更してください）。
-  - `400 Bad Request` / `500 Internal Server Error`: バリデーションまたは VP 検証失敗時に `handleError` 由来の OAuth 形式 JSON（`error`, `error_description`）。
-
-- **関連エンドポイント**: `POST /verify/callback-kbjwt` — 認可リクエストが `x509_san_dns` かつ SD-JWT + Key Binding JWT を使うサンプル向け。`verifyPresentations` を `isKbJwt: true` で呼び出します。`client_id`（KB-JWT の `aud` 検証に使用）はライブラリがトランザクションから自動的に取得します。
-
-- コード例
-```typescript
-verifyApp.post('/verify/callback', async (c) => {
-  try {
-    const parsed = parseFormPayload(await c.req.formData())
-    if (!parsed.ok) {
-      return c.json(parsed.error, 400)
-    }
-
-    const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-
-    // `lookupTransactionId` はサンプルです。
-    // `authorizationResponse.state`に対応する transaction ID を取得する処理は
-    // アプリケーション側で実装するプレースホルダーとして置き換えてください。
-    const transactionId = await lookupTransactionId(authorizationResponse.state)
-
-    const vpPayload = await verifierFlow.verifyPresentations(authorizationResponse, transactionId)
-
-    return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
   } catch (err) {
     const errorResponse = handleError(err)
     const status = errorResponse.error === 'internal_server_error' ? 500 : 400
@@ -333,7 +358,77 @@ verifyApp.post('/verify/callback', async (c) => {
 **リクエスト**
 
 ```bash
-curl --location 'http://localhost:8080/verify/callback' \
+curl --location 'http://localhost:8080/request.jwt/98feadd6e5d94254b91b132f4de0782e'
+```
+**レスポンス**
+```
+eyJhbGciOiJFUzI1NiIsInR5cCI6Im9hdXRoLWF1dGh6LXJlcStqd3QiLCJ4NWMiOlsiXG5NSUlDSGpDQ0FjT2dBd0lCQWdJVVpYOUJTNUNET0pSVzJ0MUZLMVVETXQvUXdNRXdDZ1lJS29aSXpqMEVBd0l3XG5JVEVMTUFrR0ExVUVCaE1DUjBJeEVqQVFCZ05WQkFNTUNVOUpSRVlnVkdWemREQWVGdzB5TkRFeE1qVXdPRE0yXG5NRFJhRncwek5ERXhNak13T0RNMk1EUmFNQ0V4Q3pBSkJnTlZCQVlUQWtkQ01SSXdFQVlEVlFRRERBbFBTVVJHXG5JRlJsYzNRd1dUQVRCZ2NxaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUVC9kTHNkNTFMTEJyR1Y2UjIzbzZ2XG55bVJ4SFhlRkJvSTh5cTMxeTVrRlYyVlYwZ2k5eDVaekVGaXE4RE1pQUh1Y0xBQ0ZuZHhMdFpvckNoYTl6em5RXG5vNEhZTUlIVk1CMEdBMVVkRGdRV0JCUzVjYmRnQWVNQmk1d3hwYnB3SVNHaFNoQVdFVEFmQmdOVkhTTUVHREFXXG5nQlM1Y2JkZ0FlTUJpNXd4cGJwd0lTR2hTaEFXRVRBUEJnTlZIUk1CQWY4RUJUQURBUUgvTUlHQkJnTlZIUkVFXG5lakI0Z2hCM2QzY3VhR1ZsYm1GdUxtMWxMblZyZ2gxa1pXMXZMbU5sY25ScFptbGpZWFJwYjI0dWIzQmxibWxrXG5MbTVsZElJSmJHOWpZV3hvYjNOMGdoWnNiMk5oYkdodmMzUXVaVzF2WW1sNExtTnZMblZyZ2lKa1pXMXZMbkJwXG5aQzFwYzNOMVpYSXVZblZ1WkdWelpISjFZMnRsY21WcExtUmxNQW9HQ0NxR1NNNDlCQU1DQTBrQU1FWUNJUUNQXG5ibkx4Q0krV1IxdmhPVytBOEt6bkFXdjFNSm8rWUViMU1JNDVOS1cvVlFJaEFMenNxb3g4VnVCUndOMmRsNUxrXG5wbnhQNG9IOXA2SDBBT1ptS1ArWTduWFNcbiJdfQ.eyJyZXNwb25zZV90eXBlIjoidnBfdG9rZW4iLCJjbGllbnRfaWQiOiJ4NTA5X3Nhbl9kbnM6bG9jYWxob3N0Iiwic3RhdGUiOiIwMzg0NzViMDEyNmI0Njg0YTIyNmJjODBlYWM5MzRiNiIsImNsaWVudF9tZXRhZGF0YSI6eyJjbGllbnRfbmFtZSI6IlNhbXBsZSBWZXJpZmllciBBcHAiLCJjbGllbnRfdXJpIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwIiwiandrcyI6eyJrZXlzIjpbeyJrdHkiOiJFQyIsIngiOiIwXzNTN0hlZFN5d2F4bGVrZHQ2T3I4cGtjUjEzaFFhQ1BNcXQ5Y3VaQlZjIiwieSI6IlpWWFNDTDNIbG5NUVdLcndNeUlBZTV3c0FJV2QzRXUxbWlzS0ZyM1BPZEEiLCJjcnYiOiJQLTI1NiJ9XX0sInZwX2Zvcm1hdHMiOnsiand0X3ZwIjp7ImFsZyI6WyJFUzI1NiJdfX0sImNsaWVudF9pZF9zY2hlbWUiOiJyZWRpcmVjdF91cmkiLCJhdXRob3JpemF0aW9uX3NpZ25lZF9yZXNwb25zZV9hbGciOiJFUzI1NiJ9LCJyZXNwb25zZV9tb2RlIjoiZGlyZWN0X3Bvc3QiLCJyZXNwb25zZV91cmkiOiJodHRwOi8vbG9jYWxob3N0OjgwODAvdmVyaWZpZXJzL2h0dHAlM0ElMkYlMkZsb2NhbGhvc3QlM0E4MDgwL2NhbGxiYWNrIiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwIiwiYXVkIjoiaHR0cHM6Ly9zZWxmLWlzc3VlZC5tZS92MiIsInByZXNlbnRhdGlvbl9kZWZpbml0aW9uIjp7ImlkIjoiODkyMGVjMGUtZDc3YS00MmJlLTk4OWQtZTU1MTBjZmFhNjlkIiwibmFtZSI6IlRlc3QgTmFtZSIsInB1cnBvc2UiOiJUZXN0IFB1cnBvc2UiLCJpbnB1dF9kZXNjcmlwdG9ycyI6W3siaWQiOiI4ZjJmZWM3ZC1hMmI5LTRhZTEtYTdmMi1mMGJmMTgyMWYzY2UiLCJmb3JtYXQiOnsiand0X3ZjX2pzb24iOnsicHJvb2ZfdHlwZSI6WyJFUzI1NiJdfX0sImNvbnN0cmFpbnRzIjp7ImZpZWxkcyI6W3sicGF0aCI6WyIkLnZjLnR5cGUiXSwiZmlsdGVyIjp7InR5cGUiOiJhcnJheSIsImNvbnRhaW5zIjp7ImNvbnN0IjoiVmVyaWZpYWJsZUNyZWRlbnRpYWwifX19XX19XX0sImlhdCI6MTc2MTkwMTAzOCwibm9uY2UiOiI0YTVhYTQ1ZjllMWQ0N2FmOTkzNWY5OWEyM2M5ZDNlNiJ9.Kc4FFI1cNXJCO5nI8Yy0jnlYtLFDL-Wr-AoWtq8sasI0grzP1Zco8Zw9Ug2zybtMnn_o6XLDnnRj8jb2g0Y0TQ
+```
+
+
+
+### 3. vp_token の受信と検証
+
+Wallet から返送される `vp_token` を受け取り、Verifier 側で検証 (VP 検証) を行うエンドポイントです。
+
+- **エンドポイント**: `POST /callback`
+- **リクエストボディ**
+  - `Content-Type: application/x-www-form-urlencoded`
+  - フォームフィールドに `vp_token`（JSON オブジェクト）と `state` を載せます（Wallet の `direct_post` 応答と同形式）。
+  - `vp_token` は DCQL のクレデンシャルクエリ ID をキー、VP の配列を値とする JSON オブジェクトです。
+  - 値は検証のうえ `VerifierAuthorizationResponse` にパースされます。
+- **レスポンス**
+  - `200 OK`: JSON 本文 `{ "redirect_uri": "<baseUrl>/verified" }`（サンプルサーバの挙動。アプリに合わせて変更してください）。
+  - `400 Bad Request` / `500 Internal Server Error`: バリデーションまたは VP 検証失敗時に `handleError` 由来の OAuth 形式 JSON（`error`, `error_description`）。
+
+- **関連エンドポイント**: `POST /callback-kbjwt` — 認可リクエストが `x509_san_dns` かつ SD-JWT + Key Binding JWT を使うサンプル向け。`verifyPresentations` を `isKbJwt: true` で呼び出します。`client_id`（KB-JWT の `aud` 検証に使用）はライブラリがトランザクションから自動的に取得します。
+
+- コード例
+```typescript
+verifyApp.post('/callback', async (c) => {
+  try {
+    const contentType = normalizeContentType(c.req.header('content-type') ?? '')
+    if (contentType !== 'application/x-www-form-urlencoded') {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'content-type must be application/x-www-form-urlencoded',
+        },
+        400
+      )
+    }
+    const formData = await c.req.formData()
+    const parsed = parseFormPayload(formData)
+    if (!parsed.ok) {
+      return c.json(parsed.error, 400)
+    }
+    const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
+    const resolved = vpAudTx.resolve(authorizationResponse.state)
+    if (!resolved.ok) {
+      return c.json(resolved.error, 400)
+    }
+    const vpPayload = await verifierFlow.verifyPresentations(
+      authorizationResponse,
+      resolved.transactionId
+    )
+    vpAudTx.consume(authorizationResponse.state ?? '')
+    console.log('Verified VP Payload:', vpPayload)
+    return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
+  } catch (err) {
+    const errorResponse = handleError(err)
+    console.log('error Response:', errorResponse)
+    const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+    return c.json(errorResponse, status)
+  }
+})
+```
+
+**例**
+
+**リクエスト**
+
+```bash
+curl --location 'http://localhost:8080/callback' \
 --header 'Content-Type: application/x-www-form-urlencoded' \
 --data-urlencode 'vp_token={"sample-id":["eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."]}' \
 --data-urlencode 'state=example-state'
@@ -381,7 +476,6 @@ curl --location 'http://localhost:8080/verify/callback' \
 const baseUrl = process.env.BASE_URL ?? 'http://localhost:8080'
 
 // サンプルの verifier メタデータ(JSON) を読み込んだものを利用（例: verifierMetadataConfig）
-verifierMetadataConfig.client_uri = baseUrl
 await initializeVerifierMetadata(baseUrl, verifierMetadataConfig)
 ```
 
@@ -391,24 +485,30 @@ async function initializeVerifierMetadata(verifierId: string, metadata: Verifier
   try {
     const clientId = VerifierClientId(verifierId)
 
-    const __dirname = dirname(fileURLToPath(import.meta.url))
-    const privateKeyPath = join(
+    const verifier = await verifierFlow.findVerifierMetadata(clientId)
+    if (verifier) {
+      console.log('Verifier metadata already exists, skipping initialization')
+      return true
+    }
+    const defaultPrivateKeyPath = join(
       __dirname,
-      '..',
-      'samples/certificate-openid-test/private_key_openid.pem'
+      '../../samples/certificate-openid-test/private_key_openid.pem'
     )
-    const certificatePath = join(
+    const defaultCertPath = join(
       __dirname,
-      '..',
-      'samples/certificate-openid-test/certificate_openid.pem'
+      '../../samples/certificate-openid-test/certificate_openid.pem'
     )
-    const option = {
-      privateKey: readFileSync(privateKeyPath, 'utf-8'),
-      certificate: readFileSync(certificatePath, 'utf-8'),
-      format: 'pem',
-      alg: 'ES256',
-    } as const
-
+    const privateKeyPath = process.env.PRIVATE_KEY_PATH
+      ? resolve(process.env.PRIVATE_KEY_PATH)
+      : defaultPrivateKeyPath
+    const certificatePath = process.env.CERTIFICATE_PATH
+      ? resolve(process.env.CERTIFICATE_PATH)
+      : defaultCertPath
+    const privateKeyEnv = process.env.PRIVATE_KEY?.replace(/\\n/g, '\n')
+    const certificateEnv = process.env.CERTIFICATE?.replace(/\\n/g, '\n')
+    const privateKey = privateKeyEnv ?? readFileSync(privateKeyPath, 'utf-8')
+    const certificate = certificateEnv ?? readFileSync(certificatePath, 'utf-8')
+    const option = { privateKey, certificate, format: 'pem', alg: 'ES256' } as const
     await verifierFlow.createVerifierMetadata(clientId, metadata, option)
     console.log(`Verifier metadata initialized for ${clientId}`)
     return true
@@ -526,7 +626,6 @@ createAuthzRequest(
       response_uri: string,
       response_type: 'vp_token',
       response_mode: 'direct_post' | 'query' | 'fragment' | 'dc_api.jwt' | 'dc_api',
-      client_id_scheme: string,
       client_metadata: VerifierMetadata,
       nonce: string,
       // dcql_query
@@ -536,8 +635,8 @@ createAuthzRequest(
   - `transactionId` (string): `verifyPresentations` 呼び出し時に必要なトランザクション ID。セッションや状態管理の仕組みと紐づけて保管してください。
 
 **エラーケース**:
-- `UNSUPPORTED_CLIENT_ID_SCHEME`: 未対応のclient_id_schemeが指定された
-- `CERTIFICATE_NOT_FOUND`: x509_san_dnsまたはx509_san_uri利用時に証明書未登録
+- `UNSUPPORTED_CLIENT_ID_PREFIX`: 未対応のclient_id_prefixが指定された
+- `CERTIFICATE_NOT_FOUND`: x509_san_dns利用時に証明書未登録
 - `INVALID_REQUEST`: isRequestUri = trueなのにoptions.base_urlが未指定
 - `VERIFIER_VP_FORMATS_NOT_SUPPORTED`: クエリで指定した VP フォーマットが Verifier のメタデータで未対応
 

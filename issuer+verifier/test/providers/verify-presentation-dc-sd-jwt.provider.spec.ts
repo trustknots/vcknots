@@ -1,27 +1,27 @@
 import assert from 'node:assert/strict'
 import { afterEach, before, describe, it, mock } from 'node:test'
 
-import { ES256, digest, generateSalt } from '@sd-jwt/crypto-nodejs'
 import { SDJwtInstance } from '@sd-jwt/core'
-import { Jwk } from '../../src/jwk.type'
+import { ES256, digest, generateSalt } from '@sd-jwt/crypto-nodejs'
+import { ClientIdentifier } from '../../src/client-id-prefix.types'
 import { VcknotsError } from '../../src/errors/vcknots.error'
-import { ClientIdentifier } from '../../src/client-id-scheme.types'
-import { verifyVerifiablePresentationDcSdJwt } from '../../src/providers/verify-presentation-dc-sd-jwt.provider'
+import { Jwk } from '../../src/jwk.type'
 // import { VerifyVerifiablePresentationProvider } from '../../src/providers/provider.types'
 import { CnonceStoreProvider } from '../../src/providers/provider.types'
+import { verifyVerifiablePresentationDcSdJwt } from '../../src/providers/verify-presentation-dc-sd-jwt.provider'
 
 const issuer = 'https://issuer.example.com'
 const kid = 'test-kid'
 /** Placeholder client_id for SD-JWT paths that do not verify KB-JWT `aud`. */
 const dcExpectedAud = ClientIdentifier('redirect_uri:https://client.example/cb')
 /** Matches `aud` in the sample Key-Binding JWT fixture below. */
-const dcKbJwtExpectedAud = ClientIdentifier('https://verifier.example.com')
+const dcKbJwtExpectedAud = ClientIdentifier('redirect_uri:verifier.example.com')
 
 /** SD-JWT VP + KB-JWT fixture (x5c SD-JWT; KB-JWT `aud` matches `dcKbJwtExpectedAud`). */
 const fixtureSdJwtWithX5cForKb =
   'eyJhbGciOiJFUzI1NiIsInR5cCI6ImRjK3NkLWp3dCIsIng1YyI6WyJNSUlDSGpDQ0FjT2dBd0lCQWdJVVpYOUJTNUNET0pSVzJ0MUZLMVVETXQvUXdNRXdDZ1lJS29aSXpqMEVBd0l3SVRFTE1Ba0dBMVVFQmhNQ1IwSXhFakFRQmdOVkJBTU1DVTlKUkVZZ1ZHVnpkREFlRncweU5ERXhNalV3T0RNMk1EUmFGdzB6TkRFeE1qTXdPRE0yTURSYU1DRXhDekFKQmdOVkJBWVRBa2RDTVJJd0VBWURWUVFEREFsUFNVUkdJRlJsYzNRd1dUQVRCZ2NxaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUVC9kTHNkNTFMTEJyR1Y2UjIzbzZ2eW1SeEhYZUZCb0k4eXEzMXk1a0ZWMlZWMGdpOXg1WnpFRmlxOERNaUFIdWNMQUNGbmR4THRab3JDaGE5enpuUW80SFlNSUhWTUIwR0ExVWREZ1FXQkJTNWNiZGdBZU1CaTV3eHBicHdJU0doU2hBV0VUQWZCZ05WSFNNRUdEQVdnQlM1Y2JkZ0FlTUJpNXd4cGJwd0lTR2hTaEFXRVRBUEJnTlZIUk1CQWY4RUJUQURBUUgvTUlHQkJnTlZIUkVFZWpCNGdoQjNkM2N1YUdWbGJtRnVMbTFsTG5WcmdoMWtaVzF2TG1ObGNuUnBabWxqWVhScGIyNHViM0JsYm1sa0xtNWxkSUlKYkc5allXeG9iM04wZ2hac2IyTmhiR2h2YzNRdVpXMXZZbWw0TG1OdkxuVnJnaUprWlcxdkxuQnBaQzFwYzNOMVpYSXVZblZ1WkdWelpISjFZMnRsY21WcExtUmxNQW9HQ0NxR1NNNDlCQU1DQTBrQU1FWUNJUUNQYm5MeENJK1dSMXZoT1crQThLem5BV3YxTUpvK1lFYjFNSTQ1TktXL1ZRSWhBTHpzcW94OFZ1QlJ3TjJkbDVMa3BueFA0b0g5cDZIMEFPWm1LUCtZN25YUyJdfQ.eyJfc2QiOlsiMDRVY1lqOEV1T1ExWWZHNzdWUDZQdWdPVWF1dnRNQ0tSU1RvdUR4aldidyIsIkgwdElaUGhWVFVqTnhCd1VzelFrMW95VlVQNU5zZGRLNWo2ZGcyb0NPemMiLCJXelV0Nkd2ZnJyVHlLWmFIRFhTcERYWHJGLUxURm1UME9WTFhvYmFpZnVNIiwiWGVuek44TVl1LU5fMXpGV3g1dVVYb0FWLWhwdG1MV2d5ekczbUVkR0tDZyIsImVMbVlqTGVLY0ZQS2dVN1YwQWlVOVVMeXZ3cWVKLWJ4ZWdDUGlMTWlTMFkiLCJsdmtZMVh3OFE5M1BUOERQRHhHSlhCMzlobHJTNFpOUVZCbkhmcFZOUVZBIiwibXY3T0tCMnRoUWpOV2lxU3ZBTDAxY2VOUG5wTDlDVmhlNGRmNHRSYUxGTSIsIm52Mm9rMjFXejVkN2lsenNkczE1Vk5tRXI1U0VPYlBzVWNxNmpjemxXaEUiXSwiaXNzIjoiaHR0cHM6Ly9pc3N1ZXIuZXVkaXcuZGV2IiwidmN0IjoidXJuOmV1LmV1cm9wYS5lYy5ldWRpOnBpZDoxIiwiX3NkX2FsZyI6InNoYS0yNTYiLCJjbmYiOnsiandrIjp7Imt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJ4IjoiZXpaZ0t3TXVlQXlaTEhVZ1Nwek5rYk9XRGdqSlhUQU9KbjhNZnRPbmF5USIsInkiOiJGeV9VNEt5WlFmLTlqS3BGSnRINk9GRlJYbXdBY3ZleWZ1b0RwMWhTT0ZvIn19LCJpYXQiOjE3NzIwMTU0NjV9.gseVu9AStknO-locvvCKcnj8PnUWSZtMF4wE-SqqXteI4xMOfUaA0zFpZR6hGfNBPUSZL3ROw4RYDLQIOQjsMQ~WyJkMTQ2V0NwTVg1MDZpZzY3UHoxVGtBIiwgImZhbWlseV9uYW1lIiwgIlRFU1QiXQ~WyJzQnE1aUY1dTFibVRfU2dYblF1UmtBIiwgImdpdmVuX25hbWUiLCAiVEFSTyJd~WyJRNG80UjFxdDhacENFSkhIWFRZRmpRIiwgImJpcnRoZGF0ZSIsICIyMDAwLTAzLTAzIl0~WyJHUDRwcXpKaVJ4RGN0TEVlcEZ5VzJBIiwgIm5hdGlvbmFsaXRpZXMiLCBbIkpQIl1d~WyJKX2pYUkZxT0poR18yRmFmOHl4bFBBIiwgImlzc3VpbmdfYXV0aG9yaXR5IiwgIlRlc3QgUElEIGlzc3VlciJd~WyJiNDk2UGotUDdXS05iWkFKMDJ3NVhnIiwgImlzc3VpbmdfY291bnRyeSIsICJGQyJd~WyJ4bGlVZlExX050Y3IyYnBJcGJCN1lnIiwgIjE4IiwgdHJ1ZV0~WyJ3dDJCRVFYVDBfUDNIQ0N4VVVoSmZBIiwgImFnZV9lcXVhbF9vcl9vdmVyIiwgeyJfc2QiOiBbInNDczNOZlNLYVRoR3pRbERVRTd5WnR4VmVBSm5lRGY2dS1nNFk1NVdRekUiXX1d~WyJxcm1aeGpLNUtPZXRGUHFOSGpWN0h3IiwgImxvY2FsaXR5IiwgIkpBUEFOIl0~WyJpc0ZDcF8xREhnUUpZLVBtZWYwRHV3IiwgInBsYWNlX29mX2JpcnRoIiwgeyJfc2QiOiBbIjF1LWszbEFKMHlPV2x4OUJLLWFSVEVaUUZyLXVPUFRrTGdEN3U5aTFlMEUiXX1d~'
 const fixtureKbJwtForSdJwtVp =
-  'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJodHRwczovL3ZlcmlmaWVyLmV4YW1wbGUuY29tIiwiaWF0IjoxNzcyMDE1NDg4LCJub25jZSI6ImJjYjIwMWI3ZTE4NmVkMzgwMTI3YjkxNThhOWQ1N2E2Iiwic2RfaGFzaCI6IkdpNkkxZTFqdVgyU29QVmwwR3pXamZTZHBkaUVxOFowc2FKX3B4Y3poVVkifQ.bHaKF05dNqYM7jOlhgQGjqO958lTMTMM4Pu9YJVM9fjDW_zTVur5ZzDKHWxImq_8lPQ3euAJvXJlz6j7Yj2mtw'
+  'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJyZWRpcmVjdF91cmk6dmVyaWZpZXIuZXhhbXBsZS5jb20iLCJpYXQiOjE3NzIwMTU0ODgsIm5vbmNlIjoiYmNiMjAxYjdlMTg2ZWQzODAxMjdiOTE1OGE5ZDU3YTYiLCJzZF9oYXNoIjoiR2k2STFlMWp1WDJTb1BWbDBHeldqZlNkcGRpRXE4WjBzYUpfcHhjemhVWSJ9.rAYJDskRaMxIEASVW1D2Lyc982n6zpPhFwECsSagtn_zwsl71YiYIFsMMrUTmTuvZWsEN0zxcxBvkbhYZjh76w'
 const fixtureDcSdJwtVpWithKb = fixtureSdJwtWithX5cForKb + fixtureKbJwtForSdJwtVp
 
 describe('sd-jwt provider', () => {
@@ -194,7 +194,7 @@ describe('sd-jwt provider', () => {
     await assert.rejects(
       provider.verify(sdJwt, {
         kind: 'jwt_vp_json',
-        expectedAud: ClientIdentifier('https://dummy'),
+        expectedAud: ClientIdentifier('redirect_uri:dummy'),
       }),
       (err: VcknotsError) => {
         assert.equal(err.name, 'ILLEGAL_ARGUMENT')
