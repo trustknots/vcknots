@@ -17,7 +17,11 @@ import { Certificate } from './signature-key.types'
 import { TransactionId, TransactionRecord } from './transaction-id.types'
 import { DeepPartialUnknown } from './type.utils'
 import { VcknotsContext } from './vcknots.context'
-import { CreateVerifierMetadataInput, VerifierMetadata } from './verifier-metadata.types'
+import {
+  createVerifierMetadataInputSchema,
+  CreateVerifierMetadataInput,
+  VerifierMetadata,
+} from './verifier-metadata.types'
 
 type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
@@ -121,6 +125,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       return verifierMetadata$.fetch(verifierId)
     },
     async createVerifierMetadata(verifierId, metadata, options) {
+      if ('jwks' in metadata) {
+        throw err('INVALID_OPTIONS', {
+          message:
+            'jwks cannot be specified directly. It is generated from the verifier encryption key.',
+        })
+      }
+      const metadataInput = createVerifierMetadataInputSchema.parse(metadata)
       const current = await verifierMetadata$.fetch(verifierId)
       if (current) {
         throw err('DUPLICATE_VERIFIER', {
@@ -129,15 +140,15 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
 
       // encrypted_response_enc_values_supported MUST be present for anything other than the default single value of A128GCM. Otherwise, this SHOULD be absent
-      const encryptedResponseEnc = metadata.encrypted_response_enc_values_supported
+      const encryptedResponseEnc = metadataInput.encrypted_response_enc_values_supported
       const verifierMetadata: VerifierMetadata =
         encryptedResponseEnc?.length === 1 && encryptedResponseEnc[0] === 'A128GCM'
           ? (() => {
               const { encrypted_response_enc_values_supported: _encryptedResponseEnc, ...rest } =
-                metadata
+                metadataInput
               return rest
             })()
-          : { ...metadata }
+          : { ...metadataInput }
       let keyPairsToSave:
         | {
             format: 'pem' | 'jwk'
