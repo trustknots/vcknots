@@ -10,7 +10,7 @@ const TABLE_NAME = 'AuthServersTable'
 const ddbMock = mockClient(DynamoDBDocumentClient)
 
 describe('dynamodbAuthzServerMetadataStore', () => {
-  const md5 = (value: string) => createHash('md5').update(value).digest('base64url')
+  const md5 = (value: string) => createHash('md5').update(value).digest('hex')
 
   const metadata: AuthorizationServerMetadata = {
     issuer: AuthorizationServerIssuer('https://authz.example.com'),

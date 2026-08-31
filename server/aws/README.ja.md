@@ -197,7 +197,7 @@ ISSUER_PORT=9081 ISSUER_BASE_URL=http://localhost:9081 pnpm start:issuer
 
 Issuer はクレデンシャル署名鍵を `kmsIssuerSignatureKeyStore()`（`@trustknots/aws`）経由で AWS KMS に保存します。署名は常に KMS の `Sign` API で実行されます。KMS 内で生成した鍵の場合、秘密鍵は KMS の外に出ません。一方、外部で生成した鍵ペアをインポートする場合は、アプリケーションが秘密鍵を受け取ってラップし、`ImportKeyMaterial` で KMS に送信します — その時点までは秘密鍵は KMS の外に存在します。
 
-- **エイリアス命名規則**: 各鍵はエイリアス `alias/vcknots/issuers/<md5(issuer)>-<alg>`（issuer 識別子の MD5 を base64url 化したもの + JOSE アルゴリズム名。例: `ES256`）で参照されます。鍵ペアを指定しない場合、鍵は一度だけ作成され、以降の `save` では同じエイリアスが再利用されます。外部生成の鍵ペアをインポートする場合は、`save` を呼ぶたびに新しい KMS 鍵が作成され、エイリアスがその鍵に付け替えられます（古い鍵は削除されず残ります）。いずれの場合も追加の環境変数は不要です。
+- **エイリアス命名規則**: 各鍵はエイリアス `alias/vcknots/issuers/<md5(issuer)>-<alg>`（issuer 識別子の MD5 を16進数化したもの + JOSE アルゴリズム名。例: `ES256`）で参照されます。鍵ペアを指定しない場合、鍵は一度だけ作成され、以降の `save` では同じエイリアスが再利用されます。外部生成の鍵ペアをインポートする場合は、`save` を呼ぶたびに新しい KMS 鍵が作成され、エイリアスがその鍵に付け替えられます（古い鍵は削除されず残ります）。いずれの場合も追加の環境変数は不要です。
 - **対応アルゴリズム**: `ES256`・`ES384`・`RS256`・`RS512`・`PS256`・`PS512`。KMS 内での鍵生成はすべてのアルゴリズムに対応しています。外部で生成した鍵ペアのインポートは EC 系（`ES256`/`ES384`）のみ対応です — RSA 秘密鍵は RSAES_OAEP_SHA_256 のラップ上限を超えるため `RSA_AES_KEY_WRAP` が必要になりますが、これは未実装です（Google Cloud プロバイダと同じ制限）。
 - **必要な IAM 権限**（CDK スタックが Issuer Lambda ロールに付与）: `kms:CreateKey`・`kms:TagResource`・`kms:CreateAlias`・`kms:UpdateAlias`・`kms:DescribeKey`・`kms:GetPublicKey`・`kms:Sign`・`kms:GetParametersForImport`・`kms:ImportKeyMaterial`・`kms:ScheduleKeyDeletion`。ローカル実行時は AWS プロファイルに同等の権限が必要です。プロバイダが作成する鍵にはすべてタグ（`vcknots:issuer-signature-key=true`）が付与されます。新規作成直後の鍵にはまだエイリアスが無く、エイリアスによる権限の絞り込みができないため、CDK スタックはこのタグを使って鍵本体への`CreateAlias`/`UpdateAlias`を認可しています。
 
@@ -205,14 +205,14 @@ Issuer はクレデンシャル署名鍵を `kmsIssuerSignatureKeyStore()`（`@t
 
 Verifier は認可リクエストオブジェクト（JAR）の署名鍵を `kmsVerifierSignatureKeyStore()`（`@trustknots/aws`）経由で AWS KMS に保存します。Issuer 用ストアと同じ provider ファクトリから構築されているため、KMS 内での鍵生成・ラップしたインポート・`Sign` API による署名といった挙動は同一で、エイリアス名前空間と鍵に付与するタグだけが異なります。
 
-- **エイリアス命名規則**: 各鍵はエイリアス `alias/vcknots/verifiers/<md5(client_id)>-<alg>`（verifier のクライアント ID の MD5 を base64url 化したもの + JOSE アルゴリズム名）で参照されます。鍵は verifier の登録時（`createVerifierMetadata`）に作成され、その公開鍵が verifier メタデータの `jwks` として公開されます。追加の環境変数は不要です。
+- **エイリアス命名規則**: 各鍵はエイリアス `alias/vcknots/verifiers/<md5(client_id)>-<alg>`（verifier のクライアント ID の MD5 を16進数化したもの + JOSE アルゴリズム名）で参照されます。鍵は verifier の登録時（`createVerifierMetadata`）に作成され、その公開鍵が verifier メタデータの `jwks` として公開されます。追加の環境変数は不要です。
 - **対応アルゴリズム**: Issuer と同じです — KMS 内での生成は `ES256`・`ES384`・`RS256`・`RS512`・`PS256`・`PS512`、外部生成の鍵ペアのインポートは EC 系（`ES256`/`ES384`）のみ対応です。
 - **必要な IAM 権限**（CDK スタックが Verifier Lambda ロールに付与）: Issuer と同じアクション一式を、`alias/vcknots/verifiers/*` 名前空間と `vcknots:verifier-signature-key=true` タグの付いた鍵にスコープを絞って付与しています。
 - **ストア間のズレ**: verifier メタデータは DynamoDB、鍵は KMS と別ストアにあるため、両者がズレることがあります（インメモリ鍵ストアで動かしていた環境を KMS に向けた場合に起こりやすいです）。`createVerifierMetadata` は登録済みの verifier を弾くため自動修復できず、Verifier は起動時に警告を出して処理を続行します（`Verifier metadata exists but no <alg> key is registered in KMS`）。復旧は手動で、verifier を最初に登録する手順と同じです。**登録処理はローカル起動時にしか実行されない**点に注意してください: `handlers/verifier.ts` は `AWS_LAMBDA_FUNCTION_NAME` が設定されていると `initialize()` をスキップし、verifier を登録する HTTP エンドポイントも存在しないため、デプロイ済みの Lambda が自力で登録することはありません。
 
   `initialize()` は常に同梱の `server/samples/verifier_metadata.json` を登録するため、以下の手順は**その verifier が持っていたメタデータを置き換えます**。サンプルメタデータで動かしている verifier にのみ適用してください。
 
-  1. Verifiers テーブルから該当 verifier のアイテムを削除します。パーティションキーはクライアント ID そのものではなく、その MD5 を base64url 化した値です: `node -e "console.log(require('crypto').createHash('md5').update('<client-id>').digest('base64url'))"`
+  1. Verifiers テーブルから該当 verifier のアイテムを削除します。パーティションキーはクライアント ID そのものではなく、その MD5 を16進数化した値です: `node -e "console.log(require('crypto').createHash('md5').update('<client-id>').digest('hex'))"`
   2. ローカルの `.env` を同じテーブルに向け、`VERIFIER_BASE_URL` に復旧対象の verifier を設定します（デプロイ済み環境を直す場合は `localhost` ではなくデプロイ先の API URL）。
   3. `pnpm start:verifier` を一度実行します。その verifier ID へのサンプルメタデータ登録と KMS 鍵の作成が行われるので、完了後は停止して構いません。
 
@@ -232,14 +232,14 @@ Verifier は X.509 証明書チェーンを `secretsManagerVerifierCertificateSt
 
 Authorization Server はアクセストークン / レスポンスの署名鍵を `kmsAuthzSignatureKeyStore()`（`@trustknots/aws`）経由で AWS KMS に保存します。Issuer・Verifier 用ストアと同じ provider ファクトリから構築されているため、KMS 内での鍵生成・ラップしたインポート・`Sign` API による署名といった挙動は同一で、エイリアス名前空間と鍵に付与するタグだけが異なります。
 
-- **エイリアス命名規則**: 各鍵はエイリアス `alias/vcknots/authz/<md5(issuer)>-<alg>`（authorization server の issuer URL の MD5 を base64url 化したもの + JOSE アルゴリズム名）で参照されます。鍵は authorization server の登録時（`createAuthzServerMetadata`）に、常に `ES256` で作成されます（`create-authz-app.ts` はカスタムの `alg` を渡していません）。追加の環境変数は不要です。
+- **エイリアス命名規則**: 各鍵はエイリアス `alias/vcknots/authz/<md5(issuer)>-<alg>`（authorization server の issuer URL の MD5 を16進数化したもの + JOSE アルゴリズム名）で参照されます。鍵は authorization server の登録時（`createAuthzServerMetadata`）に、常に `ES256` で作成されます（`create-authz-app.ts` はカスタムの `alg` を渡していません）。追加の環境変数は不要です。
 - **対応アルゴリズム**: Issuer・Verifier と同じです — KMS 内での生成は `ES256`・`ES384`・`RS256`・`RS512`・`PS256`・`PS512`、外部生成の鍵ペアのインポートは EC 系（`ES256`/`ES384`）のみ対応です。
 - **必要な IAM 権限**（CDK スタックが Authz Lambda ロールに付与）: Issuer・Verifier と同じアクション一式を、`alias/vcknots/authz/*` 名前空間と `vcknots:authz-signature-key=true` タグの付いた鍵にスコープを絞って付与しています。
 - **ストア間のズレ**: authz サーバーメタデータは DynamoDB、鍵は KMS と別ストアにあるため、両者がズレることがあります（インメモリ鍵ストアで動かしていた環境を KMS に向けた場合に起こりやすいです）。`createAuthzServerMetadata` は登録済みの authorization server を弾くため自動修復できず、Authorization Server は起動時に警告を出して処理を続行します（`Authz server metadata exists but no <alg> key is registered in KMS`）。復旧は手動で、authorization server を最初に登録する手順と同じです。**登録処理はローカル起動時にしか実行されない**点に注意してください: `handlers/authz.ts` は `AWS_LAMBDA_FUNCTION_NAME` が設定されていると `initialize()` をスキップし、authorization server を登録する HTTP エンドポイントも存在しないため、デプロイ済みの Lambda が自力で登録することはありません。
 
   `initialize()` は常に同梱の `server/samples/authorization_metadata.json` を登録するため、以下の手順は**その authorization server が持っていたメタデータを置き換えます**。サンプルメタデータで動かしている authorization server にのみ適用してください。
 
-  1. AuthServers テーブルから該当 authorization server のアイテムを削除します。パーティションキーは issuer URL そのものではなく、その MD5 を base64url 化した値です: `node -e "console.log(require('crypto').createHash('md5').update('<issuer-url>').digest('base64url'))"`
+  1. AuthServers テーブルから該当 authorization server のアイテムを削除します。パーティションキーは issuer URL そのものではなく、その MD5 を16進数化した値です: `node -e "console.log(require('crypto').createHash('md5').update('<issuer-url>').digest('hex'))"`
   2. ローカルの `.env` を同じテーブルに向け、`AUTHZ_BASE_URL` に復旧対象の authorization server を設定します（デプロイ済み環境を直す場合は `localhost` ではなくデプロイ先の API URL）。
   3. `pnpm start:authz` を一度実行します。その authorization server へのサンプルメタデータ登録と KMS 鍵の作成が行われるので、完了後は停止して構いません。
 

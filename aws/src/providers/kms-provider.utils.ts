@@ -7,7 +7,7 @@ import { KeySpec, SigningAlgorithmSpec } from '@aws-sdk/client-kms'
  * duplicating this rule.
  */
 export const kmsKeyAlias = (aliasPrefix: string, id: string, alg: string): string => {
-  const md5 = createHash('md5').update(id).digest('base64url')
+  const md5 = createHash('md5').update(id).digest('hex')
   return `${aliasPrefix}${md5}-${alg}`
 }
 

@@ -10,7 +10,7 @@ const TABLE_NAME = 'VerifiersTable'
 const ddbMock = mockClient(DynamoDBDocumentClient)
 
 describe('dynamodbVerifierMetadataStore', () => {
-  const md5 = (value: string) => createHash('md5').update(value).digest('base64url')
+  const md5 = (value: string) => createHash('md5').update(value).digest('hex')
 
   const verifierId = VerifierClientId('https://verifier.example.com')
   const metadata: VerifierMetadata = {

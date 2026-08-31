@@ -8,8 +8,7 @@ export type DynamoDbIssuerMetadataStoreOptions = DynamoDbProviderOptions & {
   tableName: string
 }
 
-const md5 = (issuer: CredentialIssuer): string =>
-  createHash('md5').update(issuer).digest('base64url')
+const md5 = (issuer: CredentialIssuer): string => createHash('md5').update(issuer).digest('hex')
 
 export const dynamodbIssuerMetadataStore = (
   options: DynamoDbIssuerMetadataStoreOptions
