@@ -111,12 +111,14 @@ export const verifierMetadataSchema = z.object({
   software_id: z.string().optional(),
   software_version: z.string().optional(),
   response_types: z.enum(['code', 'token']).optional(),
+  encrypted_response_enc_values_supported: z.array(z.string()).nonempty().optional(),
   vp_formats_supported: vpFormatsSchema,
-  authorization_signed_response_alg: z.string().optional(),
-  authorization_encrypted_response_alg: z.string().optional(),
-  authorization_encrypted_response_enc: z.string().optional(),
+})
+export const createVerifierMetadataInputSchema = verifierMetadataSchema.omit({
+  jwks: true,
 })
 export type VerifierMetadata = z.infer<typeof verifierMetadataSchema>
+export type CreateVerifierMetadataInput = z.infer<typeof createVerifierMetadataInputSchema>
 export const VerifierMetadata = (value?: {
   redirect_uris?: string[]
   token_endpoint_auth_method?: string
@@ -145,9 +147,7 @@ export const VerifierMetadata = (value?: {
   software_id?: string
   software_version?: string
   response_types?: string[]
+  encrypted_response_enc_values_supported?: string[]
   vp_formats_supported?: VpFormatsSupported
-  authorization_signed_response_alg?: string
-  authorization_encrypted_response_alg?: string
-  authorization_encrypted_response_enc?: string
 }) => verifierMetadataSchema.parse(value)
 VerifierMetadata.schema = verifierMetadataSchema

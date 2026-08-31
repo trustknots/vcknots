@@ -1,5 +1,5 @@
 import base64url from 'base64url'
-import { importSPKI } from 'jose'
+import { importJWK, importSPKI } from 'jose'
 import { AuthorizationRequest } from './authorization-request.types'
 import { AuthorizationResponse } from './authorization-response.types'
 import { ClientIdentifier } from './client-id-prefix.types'
@@ -17,7 +17,35 @@ import { Certificate } from './signature-key.types'
 import { TransactionId, TransactionRecord } from './transaction-id.types'
 import { DeepPartialUnknown } from './type.utils'
 import { VcknotsContext } from './vcknots.context'
-import { VerifierMetadata } from './verifier-metadata.types'
+import {
+  createVerifierMetadataInputSchema,
+  CreateVerifierMetadataInput,
+  VerifierMetadata,
+} from './verifier-metadata.types'
+
+const assertAsymmetricPublicJwk = (publicKey: Jwk) => {
+  if (publicKey.kty === 'oct') {
+    throw err('INVALID_OPTIONS', {
+      message: 'publicKey must be an asymmetric public JWK.',
+    })
+  }
+
+  if (
+    'd' in publicKey ||
+    'k' in publicKey ||
+    'p' in publicKey ||
+    'q' in publicKey ||
+    'dp' in publicKey ||
+    'dq' in publicKey ||
+    'qi' in publicKey ||
+    'oth' in publicKey ||
+    'priv' in publicKey
+  ) {
+    throw err('INVALID_OPTIONS', {
+      message: 'publicKey must not contain private or symmetric key material.',
+    })
+  }
+}
 
 type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
@@ -65,7 +93,7 @@ export type VerifierFlow = {
   findVerifierMetadata: (verifierId: ClientId) => Promise<VerifierMetadata | null>
   createVerifierMetadata(
     verifierId: ClientId,
-    metadata: VerifierMetadata,
+    metadata: CreateVerifierMetadataInput,
     options?: CreateVerifierMetadataOptions
   ): Promise<void>
   createAuthzRequest(
@@ -121,13 +149,30 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       return verifierMetadata$.fetch(verifierId)
     },
     async createVerifierMetadata(verifierId, metadata, options) {
+      if ('jwks' in metadata) {
+        throw err('INVALID_OPTIONS', {
+          message:
+            'jwks cannot be specified directly. It is generated from the verifier encryption key.',
+        })
+      }
+      const metadataInput = createVerifierMetadataInputSchema.parse(metadata)
       const current = await verifierMetadata$.fetch(verifierId)
       if (current) {
         throw err('DUPLICATE_VERIFIER', {
           message: `verifier ${verifierId} is already registered.`,
         })
       }
-      const verifierMetadata = metadata
+
+      // encrypted_response_enc_values_supported MUST be present for anything other than the default single value of A128GCM. Otherwise, this SHOULD be absent
+      const encryptedResponseEnc = metadataInput.encrypted_response_enc_values_supported
+      const verifierMetadata: VerifierMetadata =
+        encryptedResponseEnc?.length === 1 && encryptedResponseEnc[0] === 'A128GCM'
+          ? (() => {
+              const { encrypted_response_enc_values_supported: _encryptedResponseEnc, ...rest } =
+                metadataInput
+              return rest
+            })()
+          : { ...metadataInput }
       let keyPairsToSave:
         | {
             format: 'pem' | 'jwk'
@@ -140,10 +185,9 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       let certificatesToSave: Certificate | undefined
       let keyAlg: string | undefined = options?.alg
       if (!options || !keyAlg) {
-        // create new signing key pair (not support x509)
-        keyAlg = metadata.authorization_signed_response_alg ?? 'ES256'
+        // create new key pair (not support x509)
+        keyAlg = 'ES256'
         await keyStore$.save(verifierId, keyAlg)
-        verifierMetadata.authorization_signed_response_alg = keyAlg
       } else if ('publicKey' in options && options.publicKey !== undefined) {
         // use provided signing key pair (not support x509)
         if (!keyAlg) {
@@ -152,14 +196,14 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           })
         }
         if (options.format === 'jwk' && typeof options.publicKey !== 'string') {
-          verifierMetadata.authorization_signed_response_alg = keyAlg
+          assertAsymmetricPublicJwk(options.publicKey)
+          await importJWK(options.publicKey, keyAlg)
         } else if (options.format === 'jwk') {
           throw err('INVALID_OPTIONS', {
             message: 'publicKey must be a JWK when format is jwk.',
           })
         } else if (options.format === 'pem' && typeof options.publicKey === 'string') {
           await importSPKI(options.publicKey, keyAlg)
-          verifierMetadata.authorization_signed_response_alg = keyAlg
         } else {
           throw err('INVALID_OPTIONS', {
             message: 'publicKey must be a PEM string when format is pem.',
@@ -192,7 +236,6 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         const certificate = certificates[0]
         const publicKey = await certificate$.getPublicKey(certificate)
         await importSPKI(publicKey, keyAlg)
-        verifierMetadata.authorization_signed_response_alg = keyAlg
         certificatesToSave = certificates
         keyPairsToSave = {
           format: options.format,
@@ -367,9 +410,12 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         transactionId,
       }
     },
-    async findRequestObject(verifierId, objectId) {
-      const metadata = (await verifierMetadata$.fetch(verifierId)) ?? raise('VERIFIER_NOT_FOUND')
-      const keyAlg = metadata.authorization_signed_response_alg ?? 'ES256'
+    async findRequestObject(verifierId, objectId, options) {
+      const metadata = await verifierMetadata$.fetch(verifierId)
+      if (!metadata) {
+        throw raise('VERIFIER_NOT_FOUND')
+      }
+      const keyAlg = options?.alg ?? 'ES256'
 
       const requestObject = await requestObjectStore$.fetch(objectId)
       if (!requestObject) {
