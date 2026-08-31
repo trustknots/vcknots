@@ -8,7 +8,7 @@ export type DynamoDbAuthzOAuthClientStoreOptions = DynamoDbProviderOptions & {
   tableName: string
 }
 
-const md5 = (value: string): string => createHash('md5').update(value).digest('base64url')
+const md5 = (value: string): string => createHash('md5').update(value).digest('hex')
 
 // issuer is hashed (matches the other authz stores; it's a URL and DynamoDB has no character
 // restriction on partition keys, but hashing keeps parity with dynamodb-authz-metadata-store).
