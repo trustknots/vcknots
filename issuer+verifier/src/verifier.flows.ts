@@ -1,5 +1,5 @@
 import base64url from 'base64url'
-import { importSPKI } from 'jose'
+import { importJWK, importSPKI } from 'jose'
 import { AuthorizationRequest } from './authorization-request.types'
 import { AuthorizationResponse } from './authorization-response.types'
 import { ClientIdentifier } from './client-id-scheme.types'
@@ -172,6 +172,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           })
         }
         if (options.format === 'jwk' && typeof options.publicKey !== 'string') {
+          await importJWK(options.publicKey, keyAlg)
         } else if (options.format === 'jwk') {
           throw err('INVALID_OPTIONS', {
             message: 'publicKey must be a JWK when format is jwk.',
