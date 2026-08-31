@@ -27,7 +27,7 @@ const store = kmsVerifierSignatureKeyStore()
 requireAwsSession()
 
 const keyAlias = (verifier: string, alg: string) => {
-  const md5 = createHash('md5').update(verifier).digest('base64url')
+  const md5 = createHash('md5').update(verifier).digest('hex')
   return `alias/vcknots/verifiers/${md5}-${alg}`
 }
 
