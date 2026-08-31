@@ -23,6 +23,30 @@ import {
   VerifierMetadata,
 } from './verifier-metadata.types'
 
+const assertAsymmetricPublicJwk = (publicKey: Jwk) => {
+  if (publicKey.kty === 'oct') {
+    throw err('INVALID_OPTIONS', {
+      message: 'publicKey must be an asymmetric public JWK.',
+    })
+  }
+
+  if (
+    'd' in publicKey ||
+    'k' in publicKey ||
+    'p' in publicKey ||
+    'q' in publicKey ||
+    'dp' in publicKey ||
+    'dq' in publicKey ||
+    'qi' in publicKey ||
+    'oth' in publicKey ||
+    'priv' in publicKey
+  ) {
+    throw err('INVALID_OPTIONS', {
+      message: 'publicKey must not contain private or symmetric key material.',
+    })
+  }
+}
+
 type CreateVerifierMetadataOptionsBase = {
   format: 'pem' | 'jwk'
   alg: string
@@ -172,6 +196,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           })
         }
         if (options.format === 'jwk' && typeof options.publicKey !== 'string') {
+          assertAsymmetricPublicJwk(options.publicKey)
           await importJWK(options.publicKey, keyAlg)
         } else if (options.format === 'jwk') {
           throw err('INVALID_OPTIONS', {
