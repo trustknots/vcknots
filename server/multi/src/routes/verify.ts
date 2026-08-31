@@ -6,7 +6,7 @@ import {
   VerifierAuthorizationResponse,
   VerifierClientId,
   PresentationExchange,
-  VerifierClientIdScheme,
+  VerifierClientIdPrefix,
   ClientIdentifier,
 } from '@trustknots/vcknots/verifier'
 import { randomUUID } from 'node:crypto'
@@ -17,14 +17,14 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
   const verifierFlow = initializeVerifierFlow(context)
 
-  const canHandleClientIdScheme: VerifierClientIdScheme[] = ['redirect_uri', 'x509_san_dns']
+  const canHandleClientIdScheme: VerifierClientIdPrefix[] = ['redirect_uri', 'x509_san_dns']
   function validateClientIdScheme(client_id: string): ClientIdentifier {
     if (client_id == null || client_id === '') {
       return 'x509_san_dns:localhost'
     }
     const m = client_id.match(/^([^:]+):(.+)$/)
     const prefix = m?.[1]
-    if (!prefix || !canHandleClientIdScheme.includes(prefix as VerifierClientIdScheme)) {
+    if (!prefix || !canHandleClientIdScheme.includes(prefix as VerifierClientIdPrefix)) {
       throw new Error('Invalid client_id format')
     }
     return ClientIdentifier(client_id)

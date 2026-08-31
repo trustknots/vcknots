@@ -7,7 +7,6 @@ import { VerifiableCredential, parseVerifiableCredentialBase } from '../credenti
 import { selectProvider } from './provider.utils'
 import { jwtVpJsonPayloadSchema, VpTokenPayload } from '../presentation.types'
 import { z } from 'zod'
-import { Cnonce } from '../cnonce.types'
 
 export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProvider &
   WithProviderRegistry => {
@@ -37,6 +36,14 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
         throw err('INVALID_VP_TOKEN', {
           message: `Invalid vp_token: ${vp}`,
         })
+      }
+      if (options.allowedAlgs) {
+        const vpAlg = decodedVp.header.alg
+        if (!vpAlg || !options.allowedAlgs.includes(vpAlg)) {
+          throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
+            message: `Algorithm '${vpAlg ?? 'missing'}' is not in jwt_vc_json alg_values. Allowed: ${options.allowedAlgs.join(', ')}`,
+          })
+        }
       }
       let rawPayload: unknown
       if (typeof decodedVp.payload === 'string') {
@@ -74,15 +81,11 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
         })
       }
 
-      const nonce = Cnonce(vpPayload.nonce)
-      const nonceStore$ = this.providers.get('cnonce-store-provider')
-      const nonceValid = await nonceStore$.validate(nonce)
-      if (!nonceValid) {
+      if (options.expectedNonce !== undefined && vpPayload.nonce !== options.expectedNonce) {
         throw err('INVALID_NONCE', {
-          message: 'nonce is not valid.',
+          message: 'nonce does not match.',
         })
       }
-      await nonceStore$.revoke(nonce)
 
       const vcs = vpPayload.vp.verifiableCredential
       if (Array.isArray(vcs)) {
@@ -121,7 +124,9 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
       }
 
       const credential$ = this.providers.get('verify-verifiable-credential-provider')
-      const vcValid = await credential$.verify(credentials[0][1])
+      const vcValid = await credential$.verify(credentials[0][1], {
+        allowedAlgs: options.allowedAlgs,
+      })
       if (!vcValid) {
         throw err('INVALID_CREDENTIAL', {
           message: 'credential is not valid.',

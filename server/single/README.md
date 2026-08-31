@@ -284,14 +284,13 @@ Create authorization request. Generates an authorization request containing a Pr
 ```json
 {
   "credentialId": string (required, example: "UniversityDegreeCredential"),
-  "client_id"?: string (optional, default: "x509_san_dns:localhost")
+  "state": string (required, example: "550e8400e29b41d4a716446655440000"),
+  "client_id"?: string (optional, default: "redirect_uri:localhost")
 }
 ```
 
 **`client_id` format:**
 - `redirect_uri:{uri}` - Redirect URI-based identifier
-- `x509_san_dns:{dns_name}` - X.509 certificate SAN DNS name-based identifier
-- Default: `"x509_san_dns:localhost"`
 
 **Response:**
 - `200 OK` - Text in the format `openid4vp://authorize?{encoded_params}`
@@ -314,6 +313,11 @@ Create Request Object in JAR format.
   "client_id"?: string
 }
 ```
+
+**`client_id` format:**
+- `redirect_uri:{uri}` - Redirect URI-based identifier
+- `x509_san_dns:{dns_name}` - X.509 certificate SAN DNS name-based identifier
+- Default: `"x509_san_dns:localhost"`
 
 **Response:**
 - `200 OK` - Text in the format `openid4vp://authorize?{encoded_params}`

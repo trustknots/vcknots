@@ -256,49 +256,20 @@ func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential
 		panic(fmt.Errorf("no specific credential type found"))
 	}
 
-	// Build field constraints dynamically
-	fieldsJSON := `[
-		{
-			"path": ["$.type"],
-			"filter": {
-				"type": "array",
-				"contains": {"const": "` + specificType + `"}
-			}
-		}`
-
-	for _, field := range subjectFields {
-		if field != "id" { // Skip id field
-			fieldsJSON += `,
-		{
-			"path": ["$.credentialSubject.` + field + `"],
-			"intent_to_retain": false
-		}`
-		}
-	}
-	fieldsJSON += `
-	]`
-
-	// Create presentation definition based on the decoded credential
+	// Create DCQL query based on the decoded credential
 	jsonBody := `{
 		"query": {
-			"presentation_definition": {
-			"id": "dynamic-presentation-` + specificType + `",
-			"input_descriptors": [
-			{
-				"id": "credential-request",
-				"name": "` + specificType + `",
-				"purpose": "Verify credential",
-				"format": {
-				"jwt_vc_json": {
-					"alg": ["ES256"]
-				}
-				},
-				"constraints": {
-				"fields": ` + fieldsJSON + `
-				}
+			"dcql_query": {
+				"credentials": [
+					{
+						"id": "credential-request",
+						"format": "jwt_vc_json",
+						"meta": {
+							"type_values": [["` + specificType + `"]]
+						}
+					}
+				]
 			}
-			]
-		}
 		},
 		"state": "example-state",
 		"base_url": "http://localhost:8080",
@@ -307,7 +278,7 @@ func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential
 		"client_id": "x509_san_dns:localhost"
 	}`
 
-	logger.Info("Generated presentation definition", "json", jsonBody)
+	logger.Info("Generated DCQL query", "json", jsonBody)
 	reqBody := io.NopCloser(strings.NewReader(jsonBody))
 	req, err := http.NewRequest("POST", verifierURL+"/request-object", reqBody)
 	if err != nil {

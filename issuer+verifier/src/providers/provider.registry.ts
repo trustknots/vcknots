@@ -21,8 +21,10 @@ import { preAuthorizedCode } from './pre-authorized-code.provider'
 import { Provider } from './provider.types'
 import { requestObjectId } from './request-object-id.provider'
 import { verifierSignatureKey } from './verifier-signature-key.provider'
+import { verifierEncryptionKey } from './verifier-encryption-key.provider'
 import { certificate } from './certificate.provider'
 import { transactionData } from './transaction-data.provider'
+import { transactionId } from './transaction-id.provider'
 import { verifyVerifiablePresentation } from './verify-presentation-jwt-vp-json.provider'
 import { verifyVerifiablePresentationDcSdJwt } from './verify-presentation-dc-sd-jwt.provider'
 
@@ -68,6 +70,7 @@ const initializeDefaultProviders = (
   verifyCredentialJwt(),
   jwtSignature(),
   holderBinding(),
+  verifierEncryptionKey(),
   verifierSignatureKey(),
   requestObjectId(),
   inMemoryRequestObjectStore(),
@@ -75,6 +78,7 @@ const initializeDefaultProviders = (
   authzRequestJARX5c(),
   certificate(),
   transactionData(),
+  transactionId(),
   verifyVerifiablePresentation(),
   verifyVerifiablePresentationDcSdJwt(),
 ]

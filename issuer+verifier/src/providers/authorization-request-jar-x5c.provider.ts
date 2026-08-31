@@ -1,9 +1,9 @@
-import { AuthzRequestJARProvider } from './provider.types'
-import { RequestObject } from '../request-object.types'
-import { JwtContent } from '../jwt.types'
-import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
 import { ClientId } from '../client-id.types'
 import { raise } from '../errors'
+import { JwtContent } from '../jwt.types'
+import { RequestObject } from '../request-object.types'
+import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
+import { AuthzRequestJARProvider } from './provider.types'
 
 export const authzRequestJARX5c = (): AuthzRequestJARProvider & WithProviderRegistry => {
   return {
@@ -17,12 +17,11 @@ export const authzRequestJARX5c = (): AuthzRequestJARProvider & WithProviderRegi
       verifierId: ClientId,
       requestObject: RequestObject,
       alg: string,
-      nonce?: string,
       wallet_nonce?: string
     ): Promise<JwtContent> {
       const certificateStore$ = this.providers.get('verifier-certificate-store-provider')
       const certificate = await certificateStore$.fetch(verifierId)
-      if (!certificate) {
+      if (certificate.length === 0) {
         throw raise('CERTIFICATE_NOT_FOUND', {
           message: 'Verifier certificate not found.',
         })
@@ -37,10 +36,7 @@ export const authzRequestJARX5c = (): AuthzRequestJARProvider & WithProviderRegi
         ...requestObject,
         iat: Math.floor(Date.now() / 1000),
       }
-      if (nonce) {
-        jwtPayload.nonce = nonce
-      }
-      // https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.11
+      // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.10
       if (wallet_nonce) {
         jwtPayload.wallet_nonce = wallet_nonce
       }
@@ -50,9 +46,9 @@ export const authzRequestJARX5c = (): AuthzRequestJARProvider & WithProviderRegi
         payload: jwtPayload,
       }
     },
-    canHandle(clientIdScheme: string): boolean {
-      const supportClientIdSchemes = ['x509_san_dns', 'x509_san_uri']
-      return supportClientIdSchemes.includes(clientIdScheme)
+    canHandle(clientIdPrefix: string): boolean {
+      const supportClientIdPrefixes = ['x509_san_dns']
+      return supportClientIdPrefixes.includes(clientIdPrefix)
     },
   }
 }

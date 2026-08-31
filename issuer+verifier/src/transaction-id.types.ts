@@ -1,0 +1,36 @@
+import { z } from 'zod'
+import { Dcql } from './dcql.type'
+import { ClientIdentifier } from './client-id-prefix.types'
+import { ClientId } from './client-id.types'
+
+const transactionIdSchema = z.string().brand('TransactionId')
+
+const transactionSchema = z.object({
+  transaction_id: transactionIdSchema,
+  dcqlQuery: Dcql.schema,
+  transaction_data_expires_at: z.number(),
+  clientId: ClientIdentifier.schema,
+  verifierId: ClientId.schema,
+  state: z.string().optional(),
+  nonce: z.string().optional(),
+})
+
+const transactionRecordSchema = z.object({
+  dcqlQuery: Dcql.schema,
+  clientId: ClientIdentifier.schema,
+  verifierId: ClientId.schema,
+  state: z.string().optional(),
+  nonce: z.string().optional(),
+})
+
+export type TransactionId = z.infer<typeof transactionIdSchema>
+export const TransactionId = (value?: string) => transactionIdSchema.parse(value)
+TransactionId.schema = transactionIdSchema
+
+export type Transaction = z.infer<typeof transactionSchema>
+export const Transaction = (value?: Transaction) => transactionSchema.parse(value)
+Transaction.schema = transactionSchema
+
+export type TransactionRecord = z.infer<typeof transactionRecordSchema>
+export const TransactionRecord = (value?: TransactionRecord) => transactionRecordSchema.parse(value)
+TransactionRecord.schema = transactionRecordSchema

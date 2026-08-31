@@ -119,10 +119,11 @@ const verifierId = VerifierClientId(base)
 const metadata: VerifierMetadata = {
 	client_name: 'MyVerifier',
 	client_uri: base,
-	vp_formats: {
-		jwt_vp: {
-			alg: ['ES256']
-		}
+	vp_formats_supported: {
+		'dc+sd-jwt': {
+			'sd-jwt_alg_values': ['ES256', 'ES384'],
+      'kb-jwt_alg_values': ['ES256', 'ES384']
+		},
 	},
 	client_id_scheme: 'redirect_uri'
 }
@@ -137,7 +138,7 @@ Create a request (typically converted to a QR code) for the wallet to prove some
 ```typescript
 const base = 'https://myverifier.example.com'
 const verifierId = VerifierClientId(base)
-const request = await verifier.createAuthzRequest(
+const { request, transactionId } = await verifier.createAuthzRequest(
   verifierId,
   'vp_token',
   `redirect_uri:${base}`, // client_id
@@ -156,6 +157,7 @@ const request = await verifier.createAuthzRequest(
   true, // use request_uri (JAR)
   { base_url: base }
 )
+// Store transactionId alongside session/state — required when calling verifyPresentations.
 
 // Encode authorization request object
 const encoded = Object.entries(request)
@@ -176,7 +178,8 @@ Verify the response sent by the wallet.
 ```typescript
 // req represents the HTTP request submitted by wallet
 const response = VerifierAuthorizationResponse(req.json())
-await verifier.verifyPresentations(verifierId, response)
+// transactionId was returned by createAuthzRequest and stored alongside the session
+await verifier.verifyPresentations(response, transactionId)
 console.log('Verification Successful!')
 ```
 
