@@ -519,6 +519,268 @@ func TestOid4vciReceiver_FetchAccessToken(t *testing.T) {
 	})
 }
 
+func TestOid4vciReceiver_FetchAccessToken_ClientAssertion(t *testing.T) {
+	receiver := &Oid4vciReceiver{}
+
+	t.Run("client_assertion form fields are sent when provided", func(t *testing.T) {
+		httpAllowed := env.IsHTTPAllowed()
+		defer env.SetHTTPAllowed(httpAllowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to parse form: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("client_id"); got != "wallet-id" {
+				handlerErrCh <- fmt.Errorf("expected client_id wallet-id, got %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("client_assertion_type"); got != types.ClientAssertionTypeJWTBearer {
+				handlerErrCh <- fmt.Errorf("expected client_assertion_type jwt-bearer, got %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("client_assertion"); got != "assertion.jwt.value" {
+				handlerErrCh <- fmt.Errorf("expected client_assertion assertion.jwt.value, got %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+			mockserver.JSONResponse(w, http.StatusOK, map[string]string{
+				"access_token": "tok",
+				"token_type":   "Bearer",
+			})
+		})
+
+		captureURL, err := url.Parse(captureServer.URL() + "/token")
+		require.NoError(t, err)
+		token, err := receiver.FetchAccessToken(
+			types.Oid4vci,
+			common.URIField(*captureURL),
+			"code",
+			"",
+			types.WithClientAssertion("wallet-id", "assertion.jwt.value"),
+		)
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		require.NoError(t, <-handlerErrCh)
+	})
+
+	t.Run("client_assertion form fields are absent when not provided", func(t *testing.T) {
+		httpAllowed := env.IsHTTPAllowed()
+		defer env.SetHTTPAllowed(httpAllowed)
+		env.SetHTTPAllowed(true)
+
+		captureServer := mockserver.NewMockServer()
+		defer captureServer.Close()
+
+		handlerErrCh := make(chan error, 1)
+		captureServer.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				handlerErrCh <- fmt.Errorf("failed to parse form: %w", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("client_assertion"); got != "" {
+				handlerErrCh <- fmt.Errorf("client_assertion must be absent, got %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if got := r.Form.Get("client_id"); got != "" {
+				handlerErrCh <- fmt.Errorf("client_id must be absent, got %q", got)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerErrCh <- nil
+			mockserver.JSONResponse(w, http.StatusOK, map[string]string{
+				"access_token": "tok",
+				"token_type":   "Bearer",
+			})
+		})
+
+		captureURL, err := url.Parse(captureServer.URL() + "/token")
+		require.NoError(t, err)
+		token, err := receiver.FetchAccessToken(types.Oid4vci, common.URIField(*captureURL), "code", "")
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		require.NoError(t, <-handlerErrCh)
+	})
+}
+
+// countingTransport records how many requests actually left the HTTP client.
+type countingTransport struct {
+	attempts int
+}
+
+func (c *countingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	c.attempts++
+	return nil, fmt.Errorf("no request should have been attempted")
+}
+
+// withCountedTokenTransport swaps the token client's transport so that a test
+// can prove nothing was sent, and restores it afterwards.
+func withCountedTokenTransport(t *testing.T) *countingTransport {
+	t.Helper()
+	counter := &countingTransport{}
+	original := tokenHTTPClient.Transport
+	tokenHTTPClient.Transport = counter
+	t.Cleanup(func() { tokenHTTPClient.Transport = original })
+	return counter
+}
+
+func TestOid4vciReceiver_FetchAccessToken_RefusesClientAssertionOverPlainHTTP(t *testing.T) {
+	receiver := &Oid4vciReceiver{}
+
+	// HTTP is allowed, which is what makes this worth testing: the assertion
+	// must still be refused on a host that is not this machine.
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	tests := []struct {
+		name    string
+		rawURL  string
+		allowed bool
+	}{
+		{name: "remote host over http", rawURL: "http://as.example.com/token", allowed: false},
+		{name: "private network address over http", rawURL: "http://10.0.0.1:8080/token", allowed: false},
+		{name: "host merely named like localhost", rawURL: "http://localhost.evil.com/token", allowed: false},
+		{name: "loopback name over http", rawURL: "http://localhost:8080/token", allowed: true},
+		{name: "loopback address over http", rawURL: "http://127.0.0.1:8080/token", allowed: true},
+		{name: "IPv6 loopback over http", rawURL: "http://[::1]:8080/token", allowed: true},
+		{name: "remote host over https", rawURL: "https://as.example.com/token", allowed: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			counter := withCountedTokenTransport(t)
+
+			tokenURL, err := url.Parse(tt.rawURL)
+			require.NoError(t, err)
+
+			_, err = receiver.FetchAccessToken(
+				types.Oid4vci,
+				common.URIField(*tokenURL),
+				"code",
+				"",
+				types.WithClientAssertion("wallet-id", "assertion.jwt.value"),
+			)
+			require.Error(t, err)
+
+			if tt.allowed {
+				// The transport is reached, which is as far as this test goes;
+				// it deliberately fails there rather than contacting anything.
+				assert.Equal(t, 1, counter.attempts)
+				assert.NotContains(t, err.Error(), "https is required")
+				return
+			}
+
+			assert.Contains(t, err.Error(), "https is required for any host other than loopback")
+			assert.Zero(t, counter.attempts, "the client assertion must not be sent at all")
+		})
+	}
+}
+
+func TestOid4vciReceiver_FetchAccessToken_PlainHTTPStaysAllowedWithoutAssertion(t *testing.T) {
+	receiver := &Oid4vciReceiver{}
+
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	// Without a client assertion the existing VCKNOTS_WALLET_HTTP_ALLOWED
+	// behaviour is unchanged, so the restriction stays scoped to the assertion.
+	counter := withCountedTokenTransport(t)
+
+	tokenURL, err := url.Parse("http://as.example.com/token")
+	require.NoError(t, err)
+
+	_, err = receiver.FetchAccessToken(types.Oid4vci, common.URIField(*tokenURL), "code", "")
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "https is required")
+	assert.Equal(t, 1, counter.attempts, "the request must still be attempted")
+}
+
+func TestOid4vciReceiver_FetchAccessToken_RequiresClientIDWithAssertion(t *testing.T) {
+	receiver := &Oid4vciReceiver{}
+
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		mockserver.JSONResponse(w, http.StatusOK, map[string]string{
+			"access_token": "tok",
+			"token_type":   "Bearer",
+		})
+	}))
+	defer server.Close()
+
+	tokenURL, err := url.Parse(server.URL + "/token")
+	require.NoError(t, err)
+
+	token, err := receiver.FetchAccessToken(
+		types.Oid4vci,
+		common.URIField(*tokenURL),
+		"code",
+		"",
+		types.WithClientAssertion("  ", "assertion.jwt.value"),
+	)
+	require.Error(t, err)
+	assert.Nil(t, token)
+	assert.Contains(t, err.Error(), "client_id is required when a client assertion is sent")
+	assert.Zero(t, requests, "the request must not be sent at all")
+}
+
+func TestOid4vciReceiver_FetchAccessToken_DoesNotFollowRedirects(t *testing.T) {
+	receiver := &Oid4vciReceiver{}
+
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	// A 307 keeps the method and body, so following the redirect would replay
+	// the client_assertion against this second origin.
+	var relayedRequests int
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		relayedRequests++
+		mockserver.JSONResponse(w, http.StatusOK, map[string]string{
+			"access_token": "leaked",
+			"token_type":   "Bearer",
+		})
+	}))
+	defer relay.Close()
+
+	redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, relay.URL+"/token", http.StatusTemporaryRedirect)
+	}))
+	defer redirecting.Close()
+
+	tokenURL, err := url.Parse(redirecting.URL + "/token")
+	require.NoError(t, err)
+
+	token, err := receiver.FetchAccessToken(
+		types.Oid4vci,
+		common.URIField(*tokenURL),
+		"code",
+		"",
+		types.WithClientAssertion("wallet-id", "assertion.jwt.value"),
+	)
+	require.Error(t, err)
+	assert.Nil(t, token)
+	assert.Contains(t, err.Error(), "redirects are not followed for token requests")
+	assert.Zero(t, relayedRequests, "the client_assertion must not reach the redirect target")
+}
+
 func TestOid4vciReceiver_ReceiveCredential(t *testing.T) {
 	receiver := &Oid4vciReceiver{}
 	accessToken := types.CredentialIssuanceAccessToken{Token: "test_token", TokenType: "bearer"}

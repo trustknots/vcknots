@@ -1,8 +1,13 @@
 package mockserver
 
 import (
+	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
+	"time"
+
+	"github.com/go-jose/go-jose/v4"
 )
 
 // OID4VCIIssuerConfig holds configuration for an OID4VCI issuer mock server
@@ -13,6 +18,23 @@ type OID4VCIIssuerConfig struct {
 	TokenResponse               map[string]interface{}
 	PreAuthorizedGrantAnonymous bool
 	CustomCredentials           map[string]string
+	OmitAuthorizationServers    bool
+	EmptyAuthorizationServers   bool
+
+	// TokenEndpointAuthMethodsSupported is advertised in the authorization
+	// server metadata as token_endpoint_auth_methods_supported.
+	TokenEndpointAuthMethodsSupported []string
+	TokenEndpointAuthSigningAlgs      []string
+	// RequireClientAssertion, when true, makes /token require a valid
+	// private_key_jwt client_assertion signed by ClientAuthPublicKey.
+	RequireClientAssertion bool
+	ClientAuthPublicKey    *jose.JSONWebKey
+	ExpectedClientID       string
+	// ClientAssertionAudience is the registered aud value that client_assertion
+	// must carry. It must be set before a token request is validated. Deriving
+	// it from the incoming request would make the aud check tautological,
+	// because the wallet resolves the same value from this server's metadata.
+	ClientAssertionAudience string
 }
 
 // DefaultOID4VCIIssuerConfig creates a default configuration for OID4VCI issuer
@@ -91,8 +113,13 @@ func (is *OID4VCIIssuerServer) handleCredentialIssuerMetadata(w http.ResponseWri
 		"credential_issuer":                   baseURL,
 		"credential_endpoint":                 baseURL + "/credential",
 		"nonce_endpoint":                      baseURL + "/nonce",
-		"authorization_servers":               []string{baseURL},
 		"credential_configurations_supported": is.config.CredentialConfigurations,
+	}
+	if !is.config.OmitAuthorizationServers {
+		metadata["authorization_servers"] = []string{baseURL}
+	}
+	if is.config.EmptyAuthorizationServers {
+		metadata["authorization_servers"] = []string{}
 	}
 
 	JSONResponse(w, http.StatusOK, metadata)
@@ -109,6 +136,13 @@ func (is *OID4VCIIssuerServer) handleAuthServerMetadata(w http.ResponseWriter, r
 		"response_types_supported":                        []string{"code"},
 	}
 
+	if len(is.config.TokenEndpointAuthMethodsSupported) > 0 {
+		metadata["token_endpoint_auth_methods_supported"] = is.config.TokenEndpointAuthMethodsSupported
+	}
+	if len(is.config.TokenEndpointAuthSigningAlgs) > 0 {
+		metadata["token_endpoint_auth_signing_alg_values_supported"] = is.config.TokenEndpointAuthSigningAlgs
+	}
+
 	JSONResponse(w, http.StatusOK, metadata)
 }
 
@@ -119,7 +153,92 @@ func (is *OID4VCIIssuerServer) handleToken(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if is.config.RequireClientAssertion {
+		if err := is.validateClientAssertion(r); err != nil {
+			JSONResponse(w, http.StatusBadRequest, map[string]interface{}{
+				"error":             "invalid_client",
+				"error_description": err.Error(),
+			})
+			return
+		}
+	}
+
 	JSONResponse(w, http.StatusOK, is.config.TokenResponse)
+}
+
+// validateClientAssertion validates a private_key_jwt client_assertion sent in a
+// token request against the configured public key.
+func (is *OID4VCIIssuerServer) validateClientAssertion(r *http.Request) error {
+	if err := r.ParseForm(); err != nil {
+		return fmt.Errorf("failed to parse form: %w", err)
+	}
+
+	assertionType := r.FormValue("client_assertion_type")
+	if assertionType != "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
+		return fmt.Errorf("client_assertion_type must be urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
+	}
+
+	assertion := r.FormValue("client_assertion")
+	if assertion == "" {
+		return fmt.Errorf("client_assertion is required")
+	}
+
+	clientID := r.FormValue("client_id")
+	expectedID := is.config.ExpectedClientID
+	if expectedID == "" {
+		expectedID = clientID
+	}
+	if clientID == "" {
+		return fmt.Errorf("client_id is required")
+	}
+
+	token, err := jose.ParseSigned(assertion, []jose.SignatureAlgorithm{jose.ES256})
+	if err != nil {
+		return fmt.Errorf("failed to parse client_assertion: %w", err)
+	}
+
+	if is.config.ClientAuthPublicKey == nil {
+		return fmt.Errorf("server has no client auth public key configured")
+	}
+
+	verified, err := token.Verify(is.config.ClientAuthPublicKey)
+	if err != nil {
+		return fmt.Errorf("client_assertion signature verification failed: %w", err)
+	}
+
+	var claims struct {
+		ISS string `json:"iss"`
+		SUB string `json:"sub"`
+		AUD string `json:"aud"`
+		EXP int64  `json:"exp"`
+		NBF int64  `json:"nbf"`
+	}
+	if err := json.Unmarshal(verified, &claims); err != nil {
+		return fmt.Errorf("failed to parse client_assertion claims: %w", err)
+	}
+
+	if claims.ISS != expectedID || claims.SUB != expectedID {
+		return fmt.Errorf("client_assertion iss/sub must match client_id")
+	}
+	expectedAudience := is.config.ClientAssertionAudience
+	if expectedAudience == "" {
+		return fmt.Errorf("ClientAssertionAudience must be configured to validate client_assertion aud")
+	}
+	if claims.AUD != expectedAudience {
+		return fmt.Errorf("client_assertion aud must match registered authorization server audience")
+	}
+	if claims.EXP == 0 {
+		return fmt.Errorf("client_assertion exp is required")
+	}
+	now := time.Now().Unix()
+	if claims.EXP <= now {
+		return fmt.Errorf("client_assertion has expired")
+	}
+	if claims.NBF > now {
+		return fmt.Errorf("client_assertion is not yet valid")
+	}
+
+	return nil
 }
 
 // handleNonce handles the nonce endpoint

@@ -10,7 +10,7 @@ const TABLE_NAME = 'IssuersTable'
 const ddbMock = mockClient(DynamoDBDocumentClient)
 
 describe('dynamodbIssuerMetadataStore', () => {
-  const md5 = (value: string) => createHash('md5').update(value).digest('base64url')
+  const md5 = (value: string) => createHash('md5').update(value).digest('hex')
 
   const metadata: CredentialIssuerMetadata = {
     credential_issuer: CredentialIssuer('https://example.com/issuer'),

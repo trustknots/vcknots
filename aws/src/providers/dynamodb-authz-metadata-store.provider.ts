@@ -9,7 +9,7 @@ export type DynamoDbAuthzServerMetadataStoreOptions = DynamoDbProviderOptions & 
 }
 
 const md5 = (issuer: AuthorizationServerIssuer): string =>
-  createHash('md5').update(issuer).digest('base64url')
+  createHash('md5').update(issuer).digest('hex')
 
 export const dynamodbAuthzServerMetadataStore = (
   options: DynamoDbAuthzServerMetadataStoreOptions
