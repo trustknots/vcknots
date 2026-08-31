@@ -10,7 +10,7 @@ const TABLE_NAME = 'AuthzOAuthPoliciesTable'
 const ddbMock = mockClient(DynamoDBDocumentClient)
 
 describe('dynamodbAuthzOAuthPolicyStore', () => {
-  const md5 = (value: string) => createHash('md5').update(value).digest('base64url')
+  const md5 = (value: string) => createHash('md5').update(value).digest('hex')
 
   const issuer = AuthorizationServerIssuer('https://authz.example.com')
   const policy = AuthzOAuthPolicy({
