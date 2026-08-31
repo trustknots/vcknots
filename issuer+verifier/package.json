@@ -51,7 +51,7 @@
 		"@sd-jwt/decode": "0.19.0",
 		"base64url": "3.0.1",
 		"did-resolver": "5.0.1",
-		"jose": "6.2.9",
+		"jose": "6.2.10",
 		"jsonwebtoken": "9.0.3",
 		"key-did-resolver": "4.0.0",
 		"zod": "4.3.6"

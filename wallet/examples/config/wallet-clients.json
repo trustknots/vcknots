@@ -1,0 +1,23 @@
+{
+  "clients": [
+    {
+      "client_id": "test-client-id",
+      "token_endpoint_auth_method": "private_key_jwt",
+      "token_endpoint_auth_signing_alg": "ES256",
+      "client_assertion_audience": "https://authz.example.com",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "client-key-1",
+            "use": "sig",
+            "alg": "ES256",
+            "x": "ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ",
+            "y": "Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo"
+          }
+        ]
+      }
+    }
+  ]
+}

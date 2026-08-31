@@ -9,7 +9,7 @@ export type DynamoDbVerifierMetadataStoreOptions = DynamoDbProviderOptions & {
 }
 
 const md5 = (verifier: VerifierClientId): string =>
-  createHash('md5').update(verifier).digest('base64url')
+  createHash('md5').update(verifier).digest('hex')
 
 export const dynamodbVerifierMetadataStore = (
   options: DynamoDbVerifierMetadataStoreOptions

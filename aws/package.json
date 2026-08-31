@@ -25,10 +25,11 @@
 	"dependencies": {
 		"@aws-sdk/client-dynamodb": "^3.1064.0",
 		"@aws-sdk/client-kms": "^3.1089.0",
+		"@aws-sdk/client-secrets-manager": "^3.1104.0",
 		"@aws-sdk/lib-dynamodb": "^3.1064.0",
 		"@trustknots/vcknots": "workspace:*",
 		"ecdsa-sig-formatter": "1.0.11",
-		"jose": "6.2.9"
+		"jose": "6.2.10"
 	},
 	"devDependencies": {
 		"@aws-sdk/client-sts": "^3.1064.0",

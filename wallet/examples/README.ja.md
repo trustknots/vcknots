@@ -1,14 +1,28 @@
-# vcknots-wallet サーバー統合・コンフォーマンステストサンプル
+# vcknots-wallet ローカルサーバー統合テスト・コンフォーマンステストサンプル
 
 このディレクトリには、vcknots-walletの2つの主要なテストシナリオを実演するサンプルコードが含まれています：
 
-1. **サーバー統合テスト**: ローカルのvcknotsサーバーとの統合をテスト
-2. **コンフォーマンステスト**: 外部のOpenID4VPコンフォーマンステストサービスとの統合をテスト
+1. **ローカルサーバー統合テストモード**: ローカルのvcknotsサーバーとの統合をテスト
+2. **コンフォーマンステストモード**: 外部のOpenID4VPコンフォーマンステストサービスとの統合をテスト
 
 どちらのモードも、同じプログラム（`server_integration_sdjwt.go`）でコマンドライン引数の有無により切り替わります。
-両モードとも同一のフロー（クレデンシャルのシード → ウォレット構築 → OpenID4VPリクエストURI取得 → プレゼンテーション）に従います。
+ローカルサーバー統合テストモードでは、OpenID4VCI でクレデンシャルを取得した後、OpenID4VP で提示します。
+コンフォーマンステストモードでは、ローカルに用意したクレデンシャルを使い、OpenID4VP の提示フローだけをテストします。
+
+## サンプルで確認できる機能
+
+| サンプル | OpenID4VCI によるクレデンシャル発行 | OpenID4VP による提示 | キーバインディング |
+| --- | --- | --- | --- |
+| `server_integration_jwtvc` | JWT-VC | JWT-VC | 対象外 |
+| `server_integration_sdjwt` | SD-JWT VC（`dc+sd-jwt`） | 選択的開示 | KB-JWT なし |
+| `server_integration_sdjwt+kbjwt` | SD-JWT VC（`dc+sd-jwt`） | 選択的開示 | KB-JWT あり |
+
+上表のクレデンシャル形式にかかわらず、ローカルサーバー統合テストモードのサンプルはいずれも `private_key_jwt` によるクライアント認証と DPoP を使用します。
 
 ## 前提条件
+
+ローカルサーバー統合テストモードでは、Go に加えて Node.js と pnpm が必要です。
+コンフォーマンステストモードでは、ローカルの Node.js サーバーは必要ありません。
 
 ### 1. mise のインストール
 
@@ -33,8 +47,8 @@ cd /path/to/vcknots/wallet
 mise install
 ```
 
-これにより、`mise.toml`に基づいてGo 1.24.5が自動的にインストールされ、必要な環境変数が設定されます。
-miseを利用しない場合は、Go 1.24.5を手動でインストールし、`GOPRIVATE`環境変数を設定してください：
+これにより、`mise.toml`に基づいてGo 1.26.6が自動的にインストールされ、必要な環境変数が設定されます。
+miseを利用しない場合は、Go 1.26.6を手動でインストールし、`GOPRIVATE`環境変数を設定してください：
 
 ```bash
 export GOPRIVATE="github.com/trustknots/vcknots/wallet"
@@ -50,15 +64,29 @@ go mod download
 
 ## サンプルの実行方法
 
-このサンプルプログラムは2つのモードで動作します。
+2つのモードで動作するのは `server_integration_sdjwt` です。他の2つは、ローカルサーバー統合テストモード専用です。
 
-### モード1: サーバー統合テスト（推奨：初回実行）
+| サンプル | 対応モード | コマンドライン引数 |
+| --- | --- | --- |
+| `server_integration_sdjwt` | 両モード | 位置引数の OpenID4VP URI、`--credential-offer-uri`、`--tx-code` |
+| `server_integration_jwtvc` | ローカルサーバー統合テストモードのみ | `--credential-offer-uri`、`--tx-code` |
+| `server_integration_sdjwt+kbjwt` | ローカルサーバー統合テストモードのみ | 受け取らない |
+
+### モード1: ローカルサーバー統合テストモード（推奨：初回実行）
 
 ローカルのvcknotsサーバーとの統合をテストします。
 
-#### ステップ1: Issuer、Verifierサーバーの起動
+#### ステップ1: Issuer、Authorization Server、Verifier の起動
 
-サンプルを実行するためには、verifierサーバーが動作している必要があります。サーバーディレクトリに移動してサーバーを起動します：
+ローカルサーバーは**1つのプロセス**として起動し、`http://localhost:8080` で次の3つの役割をまとめて提供します。3つを個別に起動する必要はありません。
+
+| 役割 | 担当する処理 | 主なエンドポイント |
+| --- | --- | --- |
+| Issuer | クレデンシャルの発行 | `/configurations/:configuration/offer`、`/credentials`、`/.well-known/openid-credential-issuer`、`/.well-known/jwt-vc-issuer` |
+| Authorization Server | アクセストークンの発行 | `/token`、`/.well-known/oauth-authorization-server` |
+| Verifier | 提示されたクレデンシャルの検証 | `/request`、`/request-object`、`/request.jwt/:request-object-Id`、`/callback` |
+
+リポジトリのルートへ移動して起動します：
 
 ```bash
 # walletディレクトリから、vcknotsルートディレクトリへ移動(/path/to/vcknots)
@@ -117,9 +145,48 @@ Authz metadata initialized
 サーバーはデフォルトで`http://localhost:8080`で起動します。
 テスト用スクリプトも上記のURLを使用します。
 
+#### ローカルサーバー統合テストモードのクライアント認証
+
+ローカルサーバー統合テストモードの各サンプルは、クライアント認証に `private_key_jwt` を使い、DPoP も有効にします。そのため、Token Request には次が含まれます。
+
+| 位置 | 名前 | 値 |
+| --- | --- | --- |
+| フォームパラメータ | `client_id` | `test-client-id` |
+| フォームパラメータ | `client_assertion_type` | `urn:ietf:params:oauth:client-assertion-type:jwt-bearer` |
+| フォームパラメータ | `client_assertion` | ES256 で署名した JWT |
+| HTTP ヘッダー | `DPoP` | DPoP Proof JWT（RFC 9449） |
+
+各サンプルはこの登録情報を `examples/config/` から読み込みます。読み込みには `wallet/clientconfig` パッケージを使います。
+
+| ファイル | 内容 |
+| --- | --- |
+| `examples/config/wallet-clients.json` | クライアントメタデータ。`client_id`、`token_endpoint_auth_method`、`token_endpoint_auth_signing_alg`、`client_assertion_audience`、および公開鍵の `jwks` |
+| `examples/config/client-private.sample.jwks.json` | `client_assertion` の署名に使う秘密鍵 JWK |
+
+```go
+clientAuth, err := clientconfig.Load(
+	"../config/wallet-clients.json",
+	clientconfig.WithClientID("test-client-id"),
+	clientconfig.WithPrivateJWKFile("../config/client-private.sample.jwks.json"),
+)
+if err != nil {
+	return err
+}
+
+w, err := wallet.NewWalletWithConfig(wallet.Config{ClientAuth: clientAuth})
+```
+
+2つのファイルを分けているのは意図的です。OpenID Connect Dynamic Client Registration 1.0 は `jwks` に秘密鍵を含めてはならない（MUST NOT）と規定しているため、`wallet-clients.json` は公開鍵だけを持ち、そのまま認可サーバーへ渡せます。`clientconfig.Load` は `jwks` に秘密鍵が含まれていればエラーにし、秘密鍵ファイルにはパーミッション `0600` を要求します。
+
+`examples/config/wallet-clients.json` の公開鍵は、`server/samples/oauth-clients.json` の `test-client-id` に登録された公開 JWK と同一です。また、`server/samples/authorization_metadata.json` では `private_key_jwt` と ES256 の両方を明示的に広告しています。Wallet は両方が広告されている場合にだけ、この認証方式を利用します。
+
+Go のコードで直接設定する方法も同様に使えます。`clientconfig.Load` の戻り値は `wallet.ClientAuthConfig` で、これをそのまま `wallet.Config.ClientAuth` に渡します。HSM やセキュアエンクレーブ内の鍵などファイルに書き出せない鍵は、`clientconfig.WithKeyEntry` で渡します。
+
+> ⚠️ **警告**: サンプルの秘密鍵は、clone 直後にサンプルが動くようリポジトリにコミットしてあります（各サンプルが `clientconfig.AllowInsecureFilePermissions()` を渡しているのもこのためです）。この鍵はローカルサンプル専用です。実環境では別の鍵を生成し、パーミッション `0600` でリポジトリ外に保管したうえで、対応する公開 JWK を認可サーバーへ登録してください。
+
 #### ステップ2: 統合テスト用のスクリプト実行（引数なし）
 
-新しいターミナルで、各テストディレクトリに移動してサーバー統合テスト用のスクリプトを実行します：
+新しいターミナルで、各テストディレクトリに移動してローカルサーバー統合テストモード用のスクリプトを実行します：
 
 ```bash
 # JWT-VC 統合テスト
@@ -179,10 +246,11 @@ time=2025-11-27T14:03:25.174+09:00 level=INFO msg="Credential presented successf
 ```
 
 `Credential presented successfully`と表示されれば、成功です。
+ここまで成功した場合、アクセストークン取得時の Client Assertion と DPoP Proof も認可サーバーで受理されています。
 
 ---
 
-### モード2: コンフォーマンステスト（外部URL使用）
+### モード2: コンフォーマンステストモード（外部URL使用）
 
 外部のOpenID4VPコンフォーマンステストサービスに対してテストを実行します。
 コンフォーマンステスト用のURLは、[OIDF Conformance Testing for OpenID for Verifiable Presentations](https://openid.net/certification/conformance-testing-for-openid-for-verifiable-presentations/) ページから取得できます。
@@ -206,6 +274,7 @@ go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_
 - **選択クレーム**: `given_name`と`family_name`を選択
 - **キーバインディング**: 必須（`RequireKeyBinding: true`）
 - **Audience/Nonce**: リクエストURIから自動的に抽出
+- **OID4VCI クライアント認証と DPoP**: 設定しない（このモードでは OpenID4VP の提示フローだけをテスト）
 
 > ⚠️ **警告**: `InsecureSkipX509Verify: true` はコンフォーマンステストやローカル開発時のみ有効です。本番環境では**絶対に**使用しないでください。
 
@@ -217,7 +286,7 @@ go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_
 
 `server_integration_sdjwt/server_integration_sdjwt.go` は2つのモードで動作します：
 
-**モード1: サーバー統合テスト（引数なし）**
+**モード1: ローカルサーバー統合テストモード（引数なし）**
 ```bash
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go
@@ -230,7 +299,7 @@ go run server_integration_sdjwt.go --credential-offer-uri "$OFFER_URI" --tx-code
 - `--tx-code` は任意で、OpenID4VCI の token request に `tx_code` として渡されます
 - `--credential-offer-uri` を指定すると、新しい offer を取得せず、指定した OpenID4VCI offer URI を使います
 
-**モード2: コンフォーマンステスト（OpenID4VP URI引数あり）**
+**モード2: コンフォーマンステストモード（OpenID4VP URI引数あり）**
 ```bash
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go "openid4vp://authorize?..."
@@ -243,6 +312,10 @@ go run server_integration_sdjwt.go "openid4vp://authorize?..."
 
 ```
 examples/
+├── common/                            # サンプル共通のセットアップ（Wallet 構築、モック鍵）
+├── config/
+│   ├── wallet-clients.json            # クライアント認証メタデータ（公開鍵のみ）
+│   └── client-private.sample.jwks.json # client_assertion 署名用サンプル鍵（ローカル専用）
 ├── server_integration_jwtvc/
 │   └── server_integration_jwtvc.go   # JWT-VC 統合テスト
 ├── server_integration_sdjwt/
@@ -253,7 +326,8 @@ examples/
 │   └── example_sd_jwt.txt                 # サンプル SD-JWT クレデンシャル
 ├── custom_dispatcher/                 # カスタムディスパッチャー実装例
 ├── custom_plugin/                     # カスタムプラグイン実装例
-└── README.md                          # このファイル
+├── README.md                          # 英語版
+└── README.ja.md                       # このファイル
 ```
 
 **注意**: 証明書ファイルと SD-JWT サンプルファイルは、各テストディレクトリからの相対パスで読み込まれます。デフォルトでは：
@@ -275,7 +349,7 @@ VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
 
 | 環境変数 | 既定値 | 説明 |
 | :---- | :---- | :---- |
-| `VCKNOTS_WALLET_HTTP_ALLOWED` | `false`（未設定/空） | `true` を設定すると、Wallet の HTTP 通信で HTTP エンドポイントを許可します（ローカル開発/テスト用途）。 |
+| `VCKNOTS_WALLET_HTTP_ALLOWED` | `false`（未設定/空） | `true` を設定すると、Wallet の HTTP 通信で HTTP エンドポイントを許可します（ローカル開発/テスト用途）。ただし client assertion だけは例外で、平文 HTTP で送るのはループバックホスト宛てに限られます。リモートの `http://` エンドポイントへの `private_key_jwt` は、この設定を有効にしても拒否されます。 |
 | `VCKNOTS_WALLET_DEBUG` | `false`（未設定/空） | デバッグモードを有効化します。デバッグモード時は HTTP 許可動作も有効になります。 |
 
 挙動の要点:
@@ -296,7 +370,7 @@ export VCKNOTS_WALLET_DEBUG=true
 
 ## トラブルシューティング
 
-### `client_id` 検証エラー（コンフォーマンステスト）
+### `client_id` 検証エラー（コンフォーマンステストモード）
 
 コンフォーマンステストは、意図的に不正な `client_id` を送信してウォレットの検証ロジックをテストします。
 
@@ -309,6 +383,6 @@ export VCKNOTS_WALLET_DEBUG=true
 
 コンフォーマンステストサーバーは、テスト目的で自己署名証明書や非標準的な証明書構造を使用することがあります。
 
-- **状況**: サーバー統合テスト（`引数なしモード`）で発生する場合、証明書ファイルが正しく設定されていない可能性があります。
-- **状況**: コンフォーマンステスト（`引数ありモード`）では `InsecureSkipX509Verify: true` が自動設定されるため、通常は発生しません。
-- **解決策（サーバー統合テスト向け）**: 正しい証明書ファイルが `../../../server/samples/certificate-openid-test/certificate_openid.pem` に配置されていることを確認するか、`VCKNOTS_CERT_PATH` で指定してください.
+- **状況**: ローカルサーバー統合テストモード（引数なし）で発生する場合、証明書ファイルが正しく設定されていない可能性があります。
+- **状況**: コンフォーマンステストモード（引数あり）では `InsecureSkipX509Verify: true` が自動設定されるため、通常は発生しません。
+- **解決策（ローカルサーバー統合テストモード向け）**: 正しい証明書ファイルが `../../../server/samples/certificate-openid-test/certificate_openid.pem` に配置されていることを確認するか、`VCKNOTS_CERT_PATH` で指定してください。

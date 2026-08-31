@@ -31,7 +31,7 @@ import {
 } from '../src/providers/kms-issuer-signature-key-store.provider'
 
 const issuer = CredentialIssuer('https://example.com/issuer')
-const md5 = (value: string) => createHash('md5').update(value).digest('base64url')
+const md5 = (value: string) => createHash('md5').update(value).digest('hex')
 const issuerKeyAlias = (alg: string) => `alias/vcknots/issuers/${md5(issuer)}-${alg}`
 
 const kmsMock = mockClient(KMSClient)

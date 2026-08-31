@@ -31,7 +31,7 @@ import {
 } from '../src/providers/kms-verifier-signature-key-store.provider'
 
 const verifier = VerifierClientId('https://example.com/verifier')
-const md5 = (value: string) => createHash('md5').update(value).digest('base64url')
+const md5 = (value: string) => createHash('md5').update(value).digest('hex')
 const verifierKeyAlias = (alg: string) => `alias/vcknots/verifiers/${md5(verifier)}-${alg}`
 
 const kmsMock = mockClient(KMSClient)
