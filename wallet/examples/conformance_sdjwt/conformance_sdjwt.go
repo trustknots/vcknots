@@ -21,6 +21,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/trustknots/vcknots/wallet"
 	"github.com/trustknots/vcknots/wallet/credential"
@@ -30,7 +31,54 @@ import (
 
 const preAuthorizedGrantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
 
+const (
+	credentialOfferRequestTimeout  = 10 * time.Second
+	maxCredentialOfferResponseSize = 1 << 20
+)
+
 var txCodeInDescriptionPattern = regexp.MustCompile(`<([^<>]+)>`)
+
+var credentialOfferHTTPClient = &http.Client{
+	Timeout: credentialOfferRequestTimeout,
+	CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+		if !strings.EqualFold(req.URL.Scheme, "https") {
+			return fmt.Errorf("credential_offer_uri redirect must use HTTPS")
+		}
+		return nil
+	},
+}
+
+func fetchCredentialOffer(credentialOfferURI string) (string, error) {
+	parsedURI, err := url.Parse(credentialOfferURI)
+	if err != nil {
+		return "", fmt.Errorf("invalid credential_offer_uri: %w", err)
+	}
+	if !strings.EqualFold(parsedURI.Scheme, "https") {
+		return "", fmt.Errorf("credential_offer_uri must use HTTPS")
+	}
+
+	resp, err := credentialOfferHTTPClient.Get(parsedURI.String())
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch credential_offer_uri: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCredentialOfferResponseSize+1))
+	if err != nil {
+		return "", fmt.Errorf("failed to read credential_offer_uri response: %w", err)
+	}
+	if int64(len(body)) > maxCredentialOfferResponseSize {
+		return "", fmt.Errorf("credential_offer_uri response exceeds %d bytes", maxCredentialOfferResponseSize)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("credential_offer_uri request failed: status=%d", resp.StatusCode)
+	}
+	if strings.TrimSpace(string(body)) == "" {
+		return "", fmt.Errorf("credential_offer_uri response body is empty")
+	}
+
+	return string(body), nil
+}
 
 // parseCredentialOffer resolves an openid-credential-offer:// URI into a wallet.CredentialOffer.
 // It supports both by_value (credential_offer param) and by_reference (credential_offer_uri param).
@@ -46,30 +94,16 @@ func parseCredentialOffer(offerURI string, logger *slog.Logger) *wallet.Credenti
 		// by_value: JSON is embedded directly in the URL parameter
 		offerJSON = v
 	} else if uri := parsed.Query().Get("credential_offer_uri"); uri != "" {
-		// by_reference: fetch the JSON document from the given URI
-		resp, err := http.Get(uri) //nolint:noctx
+		offerJSON, err = fetchCredentialOffer(uri)
 		if err != nil {
-			logger.Error("Failed to fetch credential_offer_uri", "uri", uri, "error", err)
+			logger.Error("Failed to fetch credential_offer_uri", "error", err)
 			panic(err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			panic(fmt.Errorf("credential_offer_uri request failed: status=%d uri=%s", resp.StatusCode, uri))
-		}
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			logger.Error("Failed to read credential_offer_uri response", "error", err)
-			panic(err)
-		}
-		offerJSON = string(body)
-		if strings.TrimSpace(offerJSON) == "" {
-			panic(fmt.Errorf("credential_offer_uri response body is empty: uri=%s", uri))
 		}
 	} else {
-		panic(fmt.Errorf("neither credential_offer nor credential_offer_uri found in URI: %s", offerURI))
+		panic(fmt.Errorf("neither credential_offer nor credential_offer_uri found in URI"))
 	}
 
-	logger.Info("Credential offer JSON", "json", offerJSON)
+	logger.Info("Credential offer received")
 
 	var offerData struct {
 		CredentialIssuer           string                                  `json:"credential_issuer"`
@@ -131,7 +165,7 @@ func resolveTxCode(offer *wallet.CredentialOffer, explicitTxCode string, logger 
 		if m := txCodeInDescriptionPattern.FindStringSubmatch(grant.TxCode.Description); len(m) == 2 {
 			derived := strings.TrimSpace(m[1])
 			if derived != "" {
-				logger.Info("Using tx_code extracted from credential offer description", "tx_code", derived)
+				logger.Info("Using tx_code extracted from credential offer description")
 				return derived, nil
 			}
 		}
@@ -192,5 +226,5 @@ func main() {
 	logger.Info("Entry ID", "id", savedCredential.Entry.Id)
 	logger.Info("MimeType", "mime_type", savedCredential.Entry.MimeType)
 	logger.Info("Received At", "received_at", savedCredential.Entry.ReceivedAt)
-	logger.Info("Raw", "raw", string(savedCredential.Entry.Raw))
+	logger.Info("Credential payload stored")
 }
