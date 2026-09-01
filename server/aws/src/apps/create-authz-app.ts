@@ -11,6 +11,7 @@ import { createAuthzRouter } from '@trustknots/server-core/routes/authz'
 import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
+  AuthzOAuthClients,
   initializeAuthzFlow,
 } from '@trustknots/vcknots/authz'
 import type { VcknotsOptions } from '@trustknots/vcknots'
@@ -58,6 +59,7 @@ export function createAuthzApp(options?: VcknotsOptions) {
   async function initialize(baseUrl: string) {
     const authzId = AuthorizationServerIssuer(baseUrl)
     const authzFlow = initializeAuthzFlow(context)
+    const samplesDir = join(dirname(fileURLToPath(import.meta.url)), '../../../samples')
 
     const existing = await authzFlow.findAuthzServerMetadata(authzId)
     if (existing) {
@@ -81,21 +83,36 @@ export function createAuthzApp(options?: VcknotsOptions) {
       } catch (error) {
         console.warn(`Could not check the authz server ${keyAlg} signing key in KMS: ${error}`)
       }
-      return
+    } else {
+      const sampleAuthzMetadata = JSON.parse(
+        readFileSync(join(samplesDir, 'authorization_metadata.json'), 'utf-8')
+      )
+      const metadata = AuthorizationServerMetadata({
+        ...sampleAuthzMetadata,
+        issuer: baseUrl,
+        authorization_endpoint: `${baseUrl}/authorize`,
+        token_endpoint: `${baseUrl}/token`,
+      })
+      await authzFlow.createAuthzServerMetadata(metadata)
+      console.log('Authz server metadata initialized')
     }
 
-    const samplesDir = join(dirname(fileURLToPath(import.meta.url)), '../../../samples')
-    const sampleAuthzMetadata = JSON.parse(
-      readFileSync(join(samplesDir, 'authorization_metadata.json'), 'utf-8')
+    // Independent of metadata skip, matching server-core: existing clients are left alone and
+    // only missing sample clients are inserted. handlers/authz.ts skips initialize() in Lambda.
+    const oauthClientsConfig = AuthzOAuthClients(
+      JSON.parse(readFileSync(join(samplesDir, 'oauth-clients.json'), 'utf-8'))
     )
-    const metadata = AuthorizationServerMetadata({
-      ...sampleAuthzMetadata,
-      issuer: baseUrl,
-      authorization_endpoint: `${baseUrl}/authorize`,
-      token_endpoint: `${baseUrl}/token`,
-    })
-    await authzFlow.createAuthzServerMetadata(metadata)
-    console.log('Authz server metadata initialized')
+    for (const client of oauthClientsConfig.clients) {
+      const current = await authzFlow.findAuthzOAuthClient(authzId, client.client_id)
+      if (current) {
+        console.log(
+          `Authz OAuth client already exists, skipping initialization: ${client.client_id}`
+        )
+        continue
+      }
+      await authzFlow.createAuthzOAuthClient(authzId, client)
+      console.log(`Authz OAuth client initialized: ${client.client_id}`)
+    }
   }
 
   return { app, initialize }
