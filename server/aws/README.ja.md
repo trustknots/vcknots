@@ -132,6 +132,7 @@ Issuer is running on http://localhost:8081
 
 ```text
 Authz server metadata initialized
+Authz OAuth policy initialized
 Authz OAuth client initialized: https://wallet.example.com
 Authz OAuth client initialized: https://wallet-rotation.example.com
 Authz OAuth client initialized: https://public-wallet.example.com
@@ -153,6 +154,7 @@ Issuer is running on http://localhost:8081
 
 ```text
 Authz server metadata already exists, skipping initialization
+Authz OAuth policy already exists, skipping initialization
 Authz OAuth client already exists, skipping initialization: https://wallet.example.com
 Authz OAuth client already exists, skipping initialization: https://wallet-rotation.example.com
 Authz OAuth client already exists, skipping initialization: https://public-wallet.example.com
@@ -246,13 +248,14 @@ Authorization Server はアクセストークン / レスポンスの署名鍵�
 - **対応アルゴリズム**: Issuer・Verifier と同じです — KMS 内での生成は `ES256`・`ES384`・`RS256`・`RS512`・`PS256`・`PS512`、外部生成の鍵ペアのインポートは EC 系（`ES256`/`ES384`）のみ対応です。
 - **必要な IAM 権限**（CDK スタックが Authz Lambda ロールに付与）: Issuer・Verifier と同じアクション一式を、`alias/vcknots/authz/*` 名前空間と `vcknots:authz-signature-key=true` タグの付いた鍵にスコープを絞って付与しています。
 - **ストア間のズレ**: authz サーバーメタデータは DynamoDB、鍵は KMS と別ストアにあるため、両者がズレることがあります（インメモリ鍵ストアで動かしていた環境を KMS に向けた場合に起こりやすいです）。`createAuthzServerMetadata` は登録済みの authorization server を弾くため自動修復できず、Authorization Server は起動時に警告を出して処理を続行します（`Authz server metadata exists but no <alg> key is registered in KMS`）。復旧は手動で、authorization server を最初に登録する手順と同じです。**登録処理はローカル起動時にしか実行されない**点に注意してください: `handlers/authz.ts` は `AWS_LAMBDA_FUNCTION_NAME` が設定されていると `initialize()` をスキップし、authorization server を登録する HTTP エンドポイントも存在しないため、デプロイ済みの Lambda が自力で登録することはありません。
+- **OAuth policy**: ローカルの `start:authz` は `server/samples/oauth-server.json` の `authorization_server` オブジェクトを Authz OAuth policies テーブル（`AUTHZ_OAUTH_POLICIES_TABLE_NAME`）へも投入します。ポリシーが未登録の場合のみ挿入し、既存のポリシーは上書きしません。authz metadata が既にあってもこの処理は走ります。デプロイ済み Authz Lambda はポリシーをシードしないので、同じテーブルに対して `start:authz` を一度実行するか、アイテムを手動で書いてください。同梱のサンプルは `default_client`・`anonymous_client` の両方で `senderConstrainedAccessToken.dpop.mode` を `optional` に設定しているため、Token Endpoint が DPoP を受け付けるようになります。ただし Credential Endpoint は Issuer 側の provider registry を通して同じポリシーを解決しており、`create-issuer-app.ts` はまだ DynamoDB のポリシーストアを登録していないため、空のインメモリストアを読んで DPoP を `off` として扱う点に注意してください。
 - **OAuth client**: ローカルの `start:authz` は `server/samples/oauth-clients.json` を Authz OAuth clients テーブル（`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`）へも投入します。`client_id` ごとに未登録のものだけ挿入し、既存行は上書きしません。authz metadata が既にあってもこの処理は走ります。デプロイ済み Authz Lambda は client をシードしないので、同じテーブルに対して `start:authz` を一度実行するか、アイテムを手動で書いてください。
 
   `initialize()` は常に同梱の `server/samples/authorization_metadata.json` を登録するため、以下の手順は**その authorization server が持っていたメタデータを置き換えます**。サンプルメタデータで動かしている authorization server にのみ適用してください。
 
   1. AuthServers テーブルから該当 authorization server のアイテムを削除します。パーティションキーは issuer URL そのものではなく、その MD5 を16進数化した値です: `node -e "console.log(require('crypto').createHash('md5').update('<issuer-url>').digest('hex'))"`
   2. ローカルの `.env` を同じテーブルに向け、`AUTHZ_BASE_URL` に復旧対象の authorization server を設定します（デプロイ済み環境を直す場合は `localhost` ではなくデプロイ先の API URL）。
-  3. `pnpm start:authz` を一度実行します。その authorization server へのサンプルメタデータ登録と KMS 鍵の作成、未登録のサンプル OAuth client の投入が行われるので、完了後は停止して構いません。
+  3. `pnpm start:authz` を一度実行します。その authorization server へのサンプルメタデータ登録と KMS 鍵の作成、ポリシー未登録時のサンプル OAuth policy の投入、未登録のサンプル OAuth client の投入が行われるので、完了後は停止して構いません。
 
 ## 注意事項
 
