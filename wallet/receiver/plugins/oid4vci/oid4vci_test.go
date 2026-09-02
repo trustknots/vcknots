@@ -1238,7 +1238,7 @@ func TestOid4vciReceiver_MetadataDiscovery_UrlPatterns(t *testing.T) {
 		{
 			name:         "Auth Server (With Trailing Slash)",
 			identifier:   "/tenant1/",
-			expectedPath: "/.well-known/oauth-authorization-server/tenant1/",
+			expectedPath: "/.well-known/oauth-authorization-server/tenant1",
 			discovery: func(u common.URIField) error {
 				_, err := receiver.FetchAuthorizationServerMetadata(u, types.Oid4vci)
 				return err

@@ -80,6 +80,7 @@ cp .env.example .env
 | `NONCES_TABLE_NAME` | Issuer **必須** | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
 | `PRE_CODES_TABLE_NAME` | Issuer・Authz **必須** | DynamoDB テーブル名（Issuer/Authz 共通、スタック出力: `PreCodesTableName`） |
 | `AUTH_SERVERS_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthServersTableName`） |
+| `AUTHZ_OAUTH_CLIENTS_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthzOAuthClientsTableName`） |
 | `AUTHZ_OAUTH_POLICIES_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthzOAuthPoliciesTableName`） |
 | `VERIFIERS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `VerifiersTableName`） |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `RequestObjectsTableName`） |
@@ -93,7 +94,7 @@ cp .env.example .env
 | `VERIFIER_CERTIFICATE_SECRET_PREFIX` | Verifier（任意） | Verifier 証明書を保存する Secrets Manager のシークレット名プレフィックス（デフォルト: `vcknots/verifier-certificates`）。変更する場合は `server/aws/resources` の IAM 許可も合わせて更新が必要 |
 | `PRIVATE_KEY_PATH` / `CERTIFICATE_PATH` | Verifier（`VERIFIER_BASE_URL` が非localの場合は必須） | 初回起動時に登録する秘密鍵（PEM）と X.509 証明書のファイルパス（`VERIFIER_BASE_URL` がlocalの場合のデフォルト: `server/samples/certificate-openid-test/` の同梱サンプル） |
 
-**`ISSUERS_TABLE_NAME`・`PRE_CODES_TABLE_NAME`（Issuer・Authz）・`NONCES_TABLE_NAME`（Issuer と Verifier）・`AUTH_SERVERS_TABLE_NAME`・`AUTHZ_OAUTH_POLICIES_TABLE_NAME`・`VERIFIERS_TABLE_NAME`・`REQUEST_OBJECTS_TABLE_NAME` は必須**です。必要なテーブル名が未設定の場合、該当サーバーは起動時に終了します。
+**`ISSUERS_TABLE_NAME`・`PRE_CODES_TABLE_NAME`（Issuer・Authz）・`NONCES_TABLE_NAME`（Issuer と Verifier）・`AUTH_SERVERS_TABLE_NAME`・`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`・`AUTHZ_OAUTH_POLICIES_TABLE_NAME`・`VERIFIERS_TABLE_NAME`・`REQUEST_OBJECTS_TABLE_NAME` は必須**です。必要なテーブル名が未設定の場合、該当サーバーは起動時に終了します。
 
 **`TX_CODE_PEPPER` は全サーバーで必須**です。`tx_code` を DynamoDB に保存する前に HMAC-SHA256 でハッシュ化するための秘密値（pepper）です。`@trustknots/aws` は import 時にこの値を評価するため、未設定の場合は Issuer・Authorization Server・Verifier のいずれも起動時に `TX_CODE_PEPPER environment variable is required` でエラーになります。十分に長いランダム文字列を設定し、環境ごとに固定して運用してください（変更すると既存データの `tx_code` 検証に失敗します）。
 
@@ -131,6 +132,10 @@ Issuer is running on http://localhost:8081
 
 ```text
 Authz server metadata initialized
+Authz OAuth client initialized: https://wallet.example.com
+Authz OAuth client initialized: https://wallet-rotation.example.com
+Authz OAuth client initialized: https://public-wallet.example.com
+Authz OAuth client initialized: test-client-id
 Authz is running on http://localhost:8082
 ```
 
@@ -148,6 +153,10 @@ Issuer is running on http://localhost:8081
 
 ```text
 Authz server metadata already exists, skipping initialization
+Authz OAuth client already exists, skipping initialization: https://wallet.example.com
+Authz OAuth client already exists, skipping initialization: https://wallet-rotation.example.com
+Authz OAuth client already exists, skipping initialization: https://public-wallet.example.com
+Authz OAuth client already exists, skipping initialization: test-client-id
 Authz is running on http://localhost:8082
 ```
 
@@ -237,12 +246,13 @@ Authorization Server はアクセストークン / レスポンスの署名鍵�
 - **対応アルゴリズム**: Issuer・Verifier と同じです — KMS 内での生成は `ES256`・`ES384`・`RS256`・`RS512`・`PS256`・`PS512`、外部生成の鍵ペアのインポートは EC 系（`ES256`/`ES384`）のみ対応です。
 - **必要な IAM 権限**（CDK スタックが Authz Lambda ロールに付与）: Issuer・Verifier と同じアクション一式を、`alias/vcknots/authz/*` 名前空間と `vcknots:authz-signature-key=true` タグの付いた鍵にスコープを絞って付与しています。
 - **ストア間のズレ**: authz サーバーメタデータは DynamoDB、鍵は KMS と別ストアにあるため、両者がズレることがあります（インメモリ鍵ストアで動かしていた環境を KMS に向けた場合に起こりやすいです）。`createAuthzServerMetadata` は登録済みの authorization server を弾くため自動修復できず、Authorization Server は起動時に警告を出して処理を続行します（`Authz server metadata exists but no <alg> key is registered in KMS`）。復旧は手動で、authorization server を最初に登録する手順と同じです。**登録処理はローカル起動時にしか実行されない**点に注意してください: `handlers/authz.ts` は `AWS_LAMBDA_FUNCTION_NAME` が設定されていると `initialize()` をスキップし、authorization server を登録する HTTP エンドポイントも存在しないため、デプロイ済みの Lambda が自力で登録することはありません。
+- **OAuth client**: ローカルの `start:authz` は `server/samples/oauth-clients.json` を Authz OAuth clients テーブル（`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`）へも投入します。`client_id` ごとに未登録のものだけ挿入し、既存行は上書きしません。authz metadata が既にあってもこの処理は走ります。デプロイ済み Authz Lambda は client をシードしないので、同じテーブルに対して `start:authz` を一度実行するか、アイテムを手動で書いてください。
 
   `initialize()` は常に同梱の `server/samples/authorization_metadata.json` を登録するため、以下の手順は**その authorization server が持っていたメタデータを置き換えます**。サンプルメタデータで動かしている authorization server にのみ適用してください。
 
   1. AuthServers テーブルから該当 authorization server のアイテムを削除します。パーティションキーは issuer URL そのものではなく、その MD5 を16進数化した値です: `node -e "console.log(require('crypto').createHash('md5').update('<issuer-url>').digest('hex'))"`
   2. ローカルの `.env` を同じテーブルに向け、`AUTHZ_BASE_URL` に復旧対象の authorization server を設定します（デプロイ済み環境を直す場合は `localhost` ではなくデプロイ先の API URL）。
-  3. `pnpm start:authz` を一度実行します。その authorization server へのサンプルメタデータ登録と KMS 鍵の作成が行われるので、完了後は停止して構いません。
+  3. `pnpm start:authz` を一度実行します。その authorization server へのサンプルメタデータ登録と KMS 鍵の作成、未登録のサンプル OAuth client の投入が行われるので、完了後は停止して構いません。
 
 ## 注意事項
 

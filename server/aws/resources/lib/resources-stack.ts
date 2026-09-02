@@ -51,6 +51,10 @@ export class ResourcesStack extends cdk.Stack {
       value: dataStores.requestObjectsTable.tableName,
       description: 'Request objects DynamoDB table name',
     });
+    new cdk.CfnOutput(this, 'AuthzOAuthClientsTableName', {
+      value: dataStores.authzOAuthClientsTable.tableName,
+      description: 'Authz OAuth clients DynamoDB table name',
+    });
     new cdk.CfnOutput(this, 'AuthzOAuthPoliciesTableName', {
       value: dataStores.authzOAuthPoliciesTable.tableName,
       description: 'Authz OAuth policies DynamoDB table name',

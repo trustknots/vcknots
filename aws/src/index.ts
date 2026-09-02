@@ -27,6 +27,10 @@ export {
   dynamodbNonceStore,
 } from './providers/dynamodb-nonce-store.provider'
 export {
+  DynamoDbAuthzOAuthClientStoreOptions,
+  dynamodbAuthzOAuthClientStore,
+} from './providers/dynamodb-authz-oauth-client-store.provider'
+export {
   DynamoDbAuthzOAuthPolicyStoreOptions,
   dynamodbAuthzOAuthPolicyStore,
 } from './providers/dynamodb-authz-oauth-policy-store.provider'
