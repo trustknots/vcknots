@@ -192,9 +192,14 @@ func (o *Oid4vciReceiver) FetchAccessToken(
 		if strings.TrimSpace(requestConfig.ClientID) == "" {
 			return nil, fmt.Errorf("client_id is required when a client assertion is sent")
 		}
-		formData.Set("client_id", requestConfig.ClientID)
 		formData.Set("client_assertion", requestConfig.ClientAssertion)
 		formData.Set("client_assertion_type", types.ClientAssertionTypeJWTBearer)
+	}
+	// Sent for both authenticated and unauthenticated requests: client_id is
+	// OPTIONAL for the pre-authorized code grant, so it is included whenever the
+	// caller configured one.
+	if strings.TrimSpace(requestConfig.ClientID) != "" {
+		formData.Set("client_id", requestConfig.ClientID)
 	}
 	endpointURLString := types.ResolveTokenEndpointURL(endpoint)
 	endpointURL, err := url.Parse(endpointURLString)
