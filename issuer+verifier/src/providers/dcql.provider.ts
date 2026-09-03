@@ -21,7 +21,7 @@ const validateMetaKeysByFormat = (credentials: unknown[]) => {
 
     const invalid = Object.keys(meta).filter((k) => !allowed.includes(k))
     if (invalid.length > 0) {
-      throw err('INVALID_REQUEST', {
+      throw err('invalid_request', {
         message: `credential format '${format}' meta must only contain [${allowed.map((k) => `'${k}'`).join(', ')}], found invalid keys: [${invalid.map((k) => `'${k}'`).join(', ')}]`,
       })
     }
@@ -44,7 +44,7 @@ export const dcql = (): CredentialQueryProvider => {
         }
         return Dcql({ dcql_query: parsed })
       } catch (e) {
-        throw err('INVALID_REQUEST', {
+        throw err('invalid_request', {
           message: `invalid dcql query: ${e}`,
         })
       }

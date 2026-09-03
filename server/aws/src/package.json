@@ -1,0 +1,33 @@
+{
+	"name": "@trustknots/server-aws",
+	"version": "0.1.1",
+	"description": "",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"build": "tsc",
+		"start:issuer": "tsx handlers/issuer.ts",
+		"start:authz": "tsx handlers/authz.ts",
+		"start:verifier": "tsx handlers/verifier.ts",
+		"typecheck": "tsc --noEmit",
+		"test": "node --import tsx --test test/**/*.spec.ts",
+		"lint": "biome lint ./apps ./context ./handlers ./utils",
+		"format": "biome format --write ./apps ./context ./handlers ./utils"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "Apache-2.0",
+	"dependencies": {
+		"@hono/node-server": "2.0.12",
+		"@trustknots/aws": "workspace:*",
+		"@trustknots/server-core": "workspace:*",
+		"@trustknots/vcknots": "workspace:*",
+		"dotenv": "17.3.1",
+		"hono": "4.12.34"
+	},
+	"devDependencies": {
+		"@types/aws-lambda": "^8.10.161",
+		"@types/node": "^24.12.4",
+		"typescript": "~5.9.3"
+	}
+}

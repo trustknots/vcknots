@@ -7,8 +7,9 @@ import { ClientIdentifier } from '../../src/client-id-prefix.types'
 import { VcknotsError } from '../../src/errors/vcknots.error'
 import { Jwk } from '../../src/jwk.type'
 // import { VerifyVerifiablePresentationProvider } from '../../src/providers/provider.types'
-import { CnonceStoreProvider } from '../../src/providers/provider.types'
 import { verifyVerifiablePresentationDcSdJwt } from '../../src/providers/verify-presentation-dc-sd-jwt.provider'
+import type { Nonce } from '../../src/nonce.types'
+import { NonceStoreProvider } from '../../src/providers/provider.types'
 
 const issuer = 'https://issuer.example.com'
 const kid = 'test-kid'
@@ -27,7 +28,7 @@ const fixtureDcSdJwtVpWithKb = fixtureSdJwtWithX5cForKb + fixtureKbJwtForSdJwtVp
 describe('sd-jwt provider', () => {
   // let provider: VerifyVerifiablePresentationProvider
   let provider: ReturnType<typeof verifyVerifiablePresentationDcSdJwt>
-  let mockCnonceStore: CnonceStoreProvider
+  let mockCnonceStore: NonceStoreProvider
   let publicJwk: Jwk
   let privateJwk: Jwk
 
@@ -58,18 +59,19 @@ describe('sd-jwt provider', () => {
     publicJwk = { ...keyPair.publicKey, kid }
     privateJwk = { ...keyPair.privateKey, kid }
     mockCnonceStore = {
-      kind: 'cnonce-store-provider',
+      kind: 'nonce-store-provider',
       name: 'mock-cnonce-store',
       single: true,
-      validate: mock.fn(async (nonce: string) => nonce === 'bcb201b7e186ed380127b9158a9d57a6'),
-      revoke: mock.fn(async () => {}),
+      validate: mock.fn(async (nonce: Nonce) => nonce.nonce === 'bcb201b7e186ed380127b9158a9d57a6'),
+      revoke: mock.fn(async () => true),
+      consume: mock.fn(async () => true),
       save: mock.fn(async () => {}),
     }
 
     Object.defineProperty(provider, 'providers', {
       value: {
         get: (kind: string) => {
-          if (kind === 'cnonce-store-provider') {
+          if (kind === 'nonce-store-provider') {
             return mockCnonceStore
           }
           return undefined
@@ -181,7 +183,7 @@ describe('sd-jwt provider', () => {
         expectedAud: dcExpectedAud,
       }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_SD_JWT')
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /Failed to fetch JWKS/)
         return true
       }
@@ -197,7 +199,7 @@ describe('sd-jwt provider', () => {
         expectedAud: ClientIdentifier('redirect_uri:dummy'),
       }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'ILLEGAL_ARGUMENT')
+        assert.equal(err.name, 'illegal_argument')
         return true
       }
     )
@@ -210,7 +212,7 @@ describe('sd-jwt provider', () => {
     await assert.rejects(
       provider.verify(sdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_SD_JWT')
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /Failed to fetch issuer metadata/)
         return true
       }
@@ -240,7 +242,7 @@ describe('sd-jwt provider', () => {
     await assert.rejects(
       provider.verify(sdJwtNoKid, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_SD_JWT')
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /SD-JWT header missing kid for JWKs/)
         return true
       }
@@ -256,7 +258,7 @@ describe('sd-jwt provider', () => {
     await assert.rejects(
       provider.verify(sdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_SD_JWT')
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /No matching JWK found for kid/)
         return true
       }
@@ -270,7 +272,7 @@ describe('sd-jwt provider', () => {
     await assert.rejects(
       provider.verify(sdJwt, { kind: 'dc+sd-jwt', isKbJwt: true, expectedAud: dcExpectedAud }),
       (err: VcknotsError) => {
-        assert.equal(err.name, 'INVALID_SD_JWT')
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /Expected Key-Binding JWT, but it was not present./)
         return true
       }
@@ -291,7 +293,7 @@ describe('sd-jwt provider', () => {
     assert.equal(provider.canHandle('jwt_vc_json'), false)
   })
 
-  it('throws VERIFIER_VP_FORMATS_NOT_SUPPORTED when SD-JWT alg is not in allowedSdJwtAlgs', async () => {
+  it('throws verifier_vp_formats_not_supported when SD-JWT alg is not in allowedSdJwtAlgs', async () => {
     const sdJwt = await issueSdJwt(issuer)
     await assert.rejects(
       provider.verify(sdJwt, {
@@ -299,14 +301,14 @@ describe('sd-jwt provider', () => {
         allowedSdJwtAlgs: ['RS256'],
       }),
       (e: VcknotsError) => {
-        assert.equal(e.name, 'VERIFIER_VP_FORMATS_NOT_SUPPORTED')
+        assert.equal(e.name, 'verifier_vp_formats_not_supported')
         assert.match(e.message, /sd-jwt_alg_values/)
         return true
       }
     )
   })
 
-  it('throws VERIFIER_VP_FORMATS_NOT_SUPPORTED when KB-JWT alg is not in allowedKbJwtAlgs', async () => {
+  it('throws verifier_vp_formats_not_supported when KB-JWT alg is not in allowedKbJwtAlgs', async () => {
     await assert.rejects(
       provider.verify(fixtureDcSdJwtVpWithKb, {
         kind: 'dc+sd-jwt',
@@ -314,7 +316,7 @@ describe('sd-jwt provider', () => {
         allowedKbJwtAlgs: ['RS256'],
       }),
       (e: VcknotsError) => {
-        assert.equal(e.name, 'VERIFIER_VP_FORMATS_NOT_SUPPORTED')
+        assert.equal(e.name, 'verifier_vp_formats_not_supported')
         assert.match(e.message, /kb-jwt_alg_values/)
         return true
       }

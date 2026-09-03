@@ -22,7 +22,7 @@ export const authzRequestJARX5c = (): AuthzRequestJARProvider & WithProviderRegi
       const certificateStore$ = this.providers.get('verifier-certificate-store-provider')
       const certificate = await certificateStore$.fetch(verifierId)
       if (certificate.length === 0) {
-        throw raise('CERTIFICATE_NOT_FOUND', {
+        throw raise('certificate_not_found', {
           message: 'Verifier certificate not found.',
         })
       }

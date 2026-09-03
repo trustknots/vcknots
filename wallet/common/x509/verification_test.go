@@ -102,12 +102,12 @@ func setupOCSPServer(t *testing.T, tc *testCerts, status int, stale bool) *httpt
 
 func setupCRLServer(t *testing.T, issuer *x509.Certificate, issuerKey *ecdsa.PrivateKey, revoked bool, stale bool, signWithOther bool, includeNonMatching bool) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		revokedEntries := []pkix.RevokedCertificate{}
+		revokedEntries := []x509.RevocationListEntry{}
 		if revoked {
-			revokedEntries = append(revokedEntries, pkix.RevokedCertificate{SerialNumber: big.NewInt(2), RevocationTime: time.Now()})
+			revokedEntries = append(revokedEntries, x509.RevocationListEntry{SerialNumber: big.NewInt(2), RevocationTime: time.Now()})
 		}
 		if includeNonMatching {
-			revokedEntries = append(revokedEntries, pkix.RevokedCertificate{SerialNumber: big.NewInt(9999), RevocationTime: time.Now()})
+			revokedEntries = append(revokedEntries, x509.RevocationListEntry{SerialNumber: big.NewInt(9999), RevocationTime: time.Now()})
 		}
 		nextUpdate := time.Now().Add(30 * time.Minute)
 		if stale {
@@ -119,11 +119,11 @@ func setupCRLServer(t *testing.T, issuer *x509.Certificate, issuerKey *ecdsa.Pri
 			signingKey = k
 		}
 		crlBytes, err := x509.CreateRevocationList(rand.Reader, &x509.RevocationList{
-			Issuer:              issuer.Subject,
-			ThisUpdate:          time.Now().Add(-5 * time.Minute),
-			NextUpdate:          nextUpdate,
-			RevokedCertificates: revokedEntries,
-			Number:              big.NewInt(1),
+			Issuer:                    issuer.Subject,
+			ThisUpdate:                time.Now().Add(-5 * time.Minute),
+			NextUpdate:                nextUpdate,
+			RevokedCertificateEntries: revokedEntries,
+			Number:                    big.NewInt(1),
 		}, issuer, signingKey)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)

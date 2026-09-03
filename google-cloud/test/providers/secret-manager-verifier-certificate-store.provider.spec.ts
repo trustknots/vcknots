@@ -148,7 +148,7 @@ describe('secretManagerVerifierCertificateStoreProvider', () => {
 
     await assert.rejects(provider.fetch(verifier), (error: unknown) => {
       assert.ok(error instanceof VcknotsError)
-      assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
+      assert.equal(error.name, 'internal_server_error')
       assert.equal(error.message, 'Failed to load verifier certificate from Secret Manager.')
       return true
     })
@@ -167,7 +167,7 @@ describe('secretManagerVerifierCertificateStoreProvider', () => {
 
     await assert.rejects(provider.save(verifier, certificate), (error: unknown) => {
       assert.ok(error instanceof VcknotsError)
-      assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
+      assert.equal(error.name, 'internal_server_error')
       assert.equal(error.message, 'Failed to store verifier certificate in Secret Manager.')
       return true
     })

@@ -20,12 +20,12 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
 
     async verify(vp, options): Promise<VpTokenPayload> {
       if (!options) {
-        throw err('ILLEGAL_ARGUMENT', {
+        throw err('illegal_argument', {
           message: 'verify options are required for dc+sd-jwt.',
         })
       }
       if (options.kind !== 'dc+sd-jwt') {
-        throw err('ILLEGAL_ARGUMENT', {
+        throw err('illegal_argument', {
           message: `${options.kind} is not supported.`,
         })
       }
@@ -34,7 +34,7 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       const isKbJwt = options.isKbJwt ?? false
 
       if (isKbJwt && vp.endsWith('~')) {
-        throw err('INVALID_SD_JWT', {
+        throw err('invalid_sd_jwt', {
           message: 'Expected Key-Binding JWT, but it was not present.',
         })
       }
@@ -45,7 +45,7 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       const sdJwtAlg = typeof sdJwtHeader.alg === 'string' ? sdJwtHeader.alg : undefined
       if (options.allowedSdJwtAlgs) {
         if (!sdJwtAlg || !options.allowedSdJwtAlgs.includes(sdJwtAlg)) {
-          throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
+          throw err('verifier_vp_formats_not_supported', {
             message: `Algorithm '${sdJwtAlg ?? 'missing'}' is not in dc+sd-jwt sd-jwt_alg_values. Allowed: ${options.allowedSdJwtAlgs.join(', ')}`,
           })
         }
@@ -58,11 +58,11 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
           try {
             kbHeader = JSON.parse(Buffer.from(kbJwtStr.split('.')[0], 'base64url').toString())
           } catch {
-            throw err('INVALID_SD_JWT', { message: 'KB-JWT header is malformed' })
+            throw err('invalid_sd_jwt', { message: 'KB-JWT header is malformed' })
           }
           const kbAlg = typeof kbHeader.alg === 'string' ? kbHeader.alg : undefined
           if (!kbAlg || !options.allowedKbJwtAlgs.includes(kbAlg)) {
-            throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
+            throw err('verifier_vp_formats_not_supported', {
               message: `KB-JWT algorithm '${kbAlg ?? 'missing'}' is not in dc+sd-jwt kb-jwt_alg_values. Allowed: ${options.allowedKbJwtAlgs.join(', ')}`,
             })
           }
@@ -77,7 +77,7 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       ) {
         const issUri = new URL(decodedSdJwt.jwt.payload.iss)
         if (issUri.hostname !== 'localhost' && issUri.protocol !== 'https:') {
-          throw err('INVALID_SD_JWT', {
+          throw err('invalid_sd_jwt', {
             message: 'Issuer URI must use https scheme',
           })
         }
@@ -98,17 +98,17 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
         }
         const metadataResponse = await fetch(metadataUrl)
         if (!metadataResponse.ok) {
-          throw err('INVALID_SD_JWT', {
+          throw err('invalid_sd_jwt', {
             message: `Failed to fetch issuer metadata: ${metadataResponse.statusText}`,
           })
         }
         const metadata = await metadataResponse.json().catch(() => {
-          throw err('INVALID_SD_JWT', {
+          throw err('invalid_sd_jwt', {
             message: `Issuer metadata at ${metadataUrl} is not valid JSON`,
           })
         })
         if (metadata.issuer !== decodedSdJwt.jwt.payload.iss) {
-          throw err('INVALID_SD_JWT', {
+          throw err('invalid_sd_jwt', {
             message: 'Issuer in metadata does not match SD-JWT issuer',
           })
         }
@@ -117,19 +117,19 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
         if (metadata.jwks_uri && typeof metadata.jwks_uri === 'string') {
           const jwksResponse = await fetch(metadata.jwks_uri)
           if (!jwksResponse.ok) {
-            throw err('INVALID_SD_JWT', {
+            throw err('invalid_sd_jwt', {
               message: `Failed to fetch JWKS: ${jwksResponse.statusText}`,
             })
           }
           jwks = await jwksResponse.json().catch(() => {
-            throw err('INVALID_SD_JWT', {
+            throw err('invalid_sd_jwt', {
               message: `JWKS at ${metadata.jwks_uri} is not valid JSON`,
             })
           })
         } else if (metadata.jwks && typeof metadata.jwks === 'object') {
           jwks = metadata.jwks as jose.JSONWebKeySet
         } else {
-          throw err('INVALID_SD_JWT', {
+          throw err('invalid_sd_jwt', {
             message: 'No JWKS or JWKS URI found in issuer metadata',
           })
         }
@@ -137,13 +137,13 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
         if (sdJwtHeader.kid && typeof sdJwtHeader.kid === 'string') {
           jwkFound = jwks.keys.find((key) => key.kid === sdJwtHeader.kid)
           if (!jwkFound) {
-            throw err('INVALID_SD_JWT', {
+            throw err('invalid_sd_jwt', {
               message: `No matching JWK found for kid: ${sdJwtHeader.kid}`,
             })
           }
           publicJwk = jwkFound
         } else {
-          throw err('INVALID_SD_JWT', {
+          throw err('invalid_sd_jwt', {
             message: 'SD-JWT header missing kid for JWKs',
           })
         }
@@ -155,18 +155,18 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
             : new X509Certificate(Buffer.from(leafCert, 'base64'))
           publicJwk = await jose.exportJWK(cert.publicKey)
         } catch (error) {
-          throw err('INVALID_SD_JWT', {
+          throw err('invalid_sd_jwt', {
             message: 'Invalid x5c certificate in SD-JWT header',
           })
         }
       } else {
-        throw err('INVALID_SD_JWT', {
+        throw err('invalid_sd_jwt', {
           message: 'No method to obtain public JWK for SD-JWT verification',
         })
       }
 
       if (!publicJwk) {
-        throw err('INVALID_SD_JWT', {
+        throw err('invalid_sd_jwt', {
           message: 'Unable to obtain public JWK for SD-JWT verification',
         })
       }
@@ -175,7 +175,7 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       const cnf = decodedSdJwt.jwt.payload.cnf as { jwk: jose.JWK }
       if (isKbJwt) {
         if (!cnf || !cnf.jwk) {
-          throw err('INVALID_SD_JWT', {
+          throw err('invalid_sd_jwt', {
             message: 'Key binding JWT verification failed: cnf claim with jwk is missing',
           })
         }
@@ -191,7 +191,7 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       if (isKbJwt) {
         const { kbJwt } = splitSdJwt(vp)
         if (!kbJwt) {
-          throw err('INVALID_SD_JWT', {
+          throw err('invalid_sd_jwt', {
             message: 'Key binding JWT is missing in SD-JWT VP',
           })
         }
@@ -199,13 +199,13 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
         nonce = kbSdJwtDecoded.nonce
         const { expectedAud } = options
         if (kbSdJwtDecoded.aud !== expectedAud) {
-          throw err('INVALID_SD_JWT', {
+          throw err('invalid_sd_jwt', {
             message: 'Key binding JWT aud does not match expected client_id.',
           })
         }
       }
       if (isKbJwt && options.expectedNonce !== undefined && nonce !== options.expectedNonce) {
-        throw err('INVALID_NONCE', {
+        throw err('invalid_nonce', {
           message: 'nonce does not match.',
         })
       }
@@ -215,7 +215,7 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       })
       const parseResult = sdJwtPayloadSchema().safeParse(claims)
       if (!parseResult.success) {
-        throw err('INVALID_SD_JWT', {
+        throw err('invalid_sd_jwt', {
           message: `SD-JWT payload does not match expected schema: ${parseResult.error.message}`,
         })
       }

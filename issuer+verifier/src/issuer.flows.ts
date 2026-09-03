@@ -1,38 +1,92 @@
-import { base64url, exportJWK } from 'jose'
-import { Cnonce } from './cnonce.types'
+import { Nonce } from './nonce.types'
+import { exportJWK } from 'jose'
 import {
   CredentialConfigurationId,
   CredentialIssuer,
   CredentialIssuerMetadata,
 } from './credential-issuer.types'
 import { CredentialOffer } from './credential-offer.types'
-import { CredentialRequest, ProofTypes } from './credential-request.types'
+import { CredentialRequest } from './credential-request.types'
 import { CredentialResponse } from './credential-response.types'
 import { err, raise } from './errors/vcknots.error'
+import type { CredentialProofJwtVerifyContext } from './credential-proof-jwt.types'
 import { selectProvider } from './providers/provider.utils'
 import { VcknotsContext } from './vcknots.context'
 import { JwtVcIssuerResponse } from './jwt-vc-issuer.types'
+import { DiVpProof, Proofs, ProofTypes } from './proofs.types'
+import { ProofJwt } from './credential.types'
+import { calculateJwkThumbprint } from 'jose'
 import { jwkSchema } from './jwk.type'
+import type { CredentialEndpointAuthorizationContext } from './authz.flows'
 
 type OfferOptions =
   | {
       usePreAuth: false
       state?: unknown
+      authorizationServer?: string
     }
   | {
       usePreAuth: true
       txCode?: {
-        inputMode?: 'numeric' | 'text'
+        input_mode?: 'numeric' | 'text'
         length?: number
         description?: string
       }
+      ttlSec?: number
+      authorizationServer?: string
     }
-type IssueOptions = {
+export type IssueOptions = {
+  authorizationContext: CredentialEndpointAuthorizationContext
   alg: string
   cnonce?: {
     c_nonce_expires_in: number
   }
   claims?: Record<string, unknown>
+  subject?: string
+  /** OID4VCI JWT proof context: usePreAuth means the grant type is pre-authorized_code. */
+  proofJwt?: {
+    usePreAuth: boolean
+  }
+}
+
+export const isUri = (value: string): boolean => {
+  if (!value || /\s/.test(value)) {
+    return false
+  }
+
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:[^\s]+$/.test(value)
+}
+function getProofType(
+  proofs: Proofs
+):
+  | { proofType: 'jwt'; proofValue: string[] }
+  | { proofType: 'di_vp'; proofValue: DiVpProof[] }
+  | { proofType: 'attestation'; proofValue: string[] } {
+  if (ProofTypes.JWT in proofs) {
+    return {
+      proofType: ProofTypes.JWT,
+      proofValue: proofs.jwt,
+    }
+  }
+  if (ProofTypes.DI_VP in proofs) {
+    return {
+      proofType: ProofTypes.DI_VP,
+      proofValue: proofs.di_vp,
+    }
+  }
+  if (ProofTypes.ATTESTATION in proofs) {
+    return {
+      proofType: ProofTypes.ATTESTATION,
+      proofValue: proofs.attestation,
+    }
+  }
+  throw err('invalid_credential_request', {
+    message: 'Unsupported proof type',
+  })
+}
+type CredentialOfferResponse = {
+  offer: CredentialOffer
+  tx_code?: string | number
 }
 
 export type IssuerFlow = {
@@ -43,11 +97,14 @@ export type IssuerFlow = {
     issuer: CredentialIssuer,
     configurations: CredentialConfigurationId[],
     options?: OfferOptions
-  ): Promise<CredentialOffer>
+  ): Promise<CredentialOfferResponse>
+  createNonce(ttlMs?: number): Promise<string>
+  validateNonce(nonce: string): Promise<boolean>
+  revokeNonce(nonce: string): Promise<boolean>
   issueCredential(
     issuer: CredentialIssuer,
     credentialRequest: CredentialRequest,
-    options?: IssueOptions
+    options: IssueOptions
   ): Promise<CredentialResponse>
 }
 
@@ -57,14 +114,39 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
   const offer$ = context.providers.get('credential-offer-provider')
   const codeStore$ = context.providers.get('pre-authorized-code-store-provider')
   const issueCredential$ = context.providers.get('issue-credential-provider')
-  const cnonce$ = context.providers.get('cnonce-provider')
-  const cnonceStore$ = context.providers.get('cnonce-store-provider')
+  const cnonce$ = context.providers.get('nonce-provider')
+  const cnonceStore$ = context.providers.get('nonce-store-provider')
   const keyStore$ = context.providers.get('issuer-signature-key-store-provider')
   const credentialProof$ = context.providers.get('credential-proof-provider')
+  const transactionCode$ = context.providers.get('transaction-code-provider')
+  const allowedCredentialConfigurationStore$ = context.providers.get(
+    'allowed-credential-configuration-store-provider'
+  )
+
+  const rejectInsecureIssuerMetadata = (metadata: CredentialIssuerMetadata | null) => {
+    if (metadata) {
+      if (context.options?.debug) {
+        return
+      }
+      const credentialEndpoints = [
+        ['credential_endpoint', metadata.credential_endpoint],
+        ['deferred_credential_endpoint', metadata.deferred_credential_endpoint],
+      ].filter((url): url is [string, string] => !!url[1])
+
+      for (const [field, url] of credentialEndpoints) {
+        if (new URL(url).protocol === 'http:') {
+          throw err('insecure_http_not_allowed', {
+            message: `CredentialIssuerMetadata contains insecure http url in ${field}: ${url}`,
+          })
+        }
+      }
+    }
+  }
 
   return {
     async findIssuerMetadata(id) {
       const metadata = await metadataStore$.fetch(id)
+      rejectInsecureIssuerMetadata(metadata)
       return metadata
     },
     async findJwtVcIssuerMetadata(id) {
@@ -72,6 +154,7 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       if (!metadata) {
         return null
       }
+      rejectInsecureIssuerMetadata(metadata)
       const jwtVcIssuerMetadata: JwtVcIssuerResponse = {
         issuer: metadata.credential_issuer,
       }
@@ -91,7 +174,21 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
             if (!issuerKey) {
               return null
             }
-            return jwkSchema.parse(await exportJWK(issuerKey))
+            const jwk = jwkSchema.parse(await exportJWK(issuerKey))
+            if (!jwk.kid) {
+              try {
+                const kid = await calculateJwkThumbprint(jwk)
+                return {
+                  ...jwk,
+                  kid,
+                }
+              } catch (e) {
+                throw err('invalid_issuer_key', {
+                  message: `Failed to calculate kid for issuer ${id} key.`,
+                })
+              }
+            }
+            return jwk
           })
         )
       ).filter((key) => key !== null)
@@ -103,9 +200,10 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
       return jwtVcIssuerMetadata
     },
     async createIssuerMetadata(issuer) {
+      rejectInsecureIssuerMetadata(issuer)
       const current = await metadataStore$.fetch(issuer.credential_issuer)
       if (current) {
-        throw err('DUPLICATE_ISSUER', {
+        throw err('duplicate_issuer', {
           message: `issuer ${issuer.credential_issuer} is already registered.`,
         })
       }
@@ -127,158 +225,243 @@ export const initializeIssuerFlow = (context: VcknotsContext): IssuerFlow => {
     },
     async offerCredential(issuer, configurations, options) {
       if (options && !options.usePreAuth) {
-        throw err('FEATURE_NOT_IMPLEMENTED_YET', {
+        throw err('unsupported_grant_type', {
           message: 'Authorization code flow is not supported.',
         })
       }
 
       const metadata =
         (await metadataStore$.fetch(issuer)) ??
-        raise('ISSUER_NOT_FOUND', {
+        raise('issuer_not_found', {
           message: `Issuer metadata for ${issuer} not found.`,
         })
+      rejectInsecureIssuerMetadata(metadata)
+
+      if (new Set(configurations).size !== configurations.length) {
+        throw err('invalid_credential_request', {
+          message: 'credential_configuration_ids must be unique.',
+        })
+      }
+
+      if (options?.authorizationServer) {
+        if (
+          metadata.authorization_servers === undefined ||
+          metadata.authorization_servers.length <= 1
+        ) {
+          throw err('invalid_credential_request', {
+            message:
+              'authorization_server can only be used when authorization_servers has multiple entries.',
+          })
+        }
+
+        if (!metadata.authorization_servers.includes(options.authorizationServer)) {
+          throw err('invalid_credential_request', {
+            message: `Authorization server ${options.authorizationServer} is not supported by issuer ${issuer}.`,
+          })
+        }
+      }
 
       for (const configId of configurations) {
         if (metadata.credential_configurations_supported[configId] === undefined) {
-          throw err('UNSUPPORTED_CREDENTIAL_TYPE', {
+          throw err('unknown_credential_configuration', {
             message: `Credential configuration ${configId} is not supported by issuer ${issuer}.`,
           })
         }
       }
 
+      let tx_code: string | number | undefined = undefined
+      if (options?.txCode) {
+        tx_code = transactionCode$.generate(
+          options.txCode?.input_mode,
+          options.txCode?.length,
+          options.txCode?.description
+        )
+      }
+      const preAuthorizedCodeStoreOptions = {
+        ...(options?.ttlSec != null && { ttlSec: options.ttlSec }),
+        ...(options?.txCode?.input_mode && { tx_code_input_mode: options.txCode.input_mode }),
+      }
+
       const code = await auth$.generate()
-      await codeStore$.save(code)
+      await codeStore$.save(code, configurations, tx_code, preAuthorizedCodeStoreOptions)
       const offer = await offer$.create(metadata, configurations, {
         usePreAuth: true,
         code,
-        ...(options?.txCode && { txCode: options.txCode }),
+        ...(options?.txCode && {
+          txCode: {
+            inputMode: options.txCode.input_mode,
+            length: options.txCode.length,
+            description: options.txCode.description,
+          },
+        }),
+        ...(options?.authorizationServer && { authorizationServer: options.authorizationServer }),
       })
-      return offer
+      return {
+        offer,
+        ...(tx_code !== undefined && { tx_code }),
+      }
+    },
+    async createNonce(ttlMs) {
+      const nonce = await cnonce$.generate({ nonce_expires_in: ttlMs })
+      await cnonceStore$.save(nonce)
+      return nonce.nonce
+    },
+    async validateNonce(nonce) {
+      const lookupNonce = Nonce({ nonce })
+      return cnonceStore$.validate(lookupNonce)
+    },
+    async revokeNonce(nonce) {
+      const lookupNonce = Nonce({ nonce })
+      return cnonceStore$.revoke(lookupNonce)
     },
     async issueCredential(issuer, credentialRequest, options) {
+      const { authorizationContext } = options
+      if (options.subject && !isUri(options.subject)) {
+        throw err('invalid_credential_request', {
+          message: 'Invalid options: subject must be a URI.',
+        })
+      }
       const metadata =
         (await metadataStore$.fetch(issuer)) ??
-        raise('ISSUER_NOT_FOUND', {
+        raise('issuer_not_found', {
           message: `Issuer metadata for ${issuer} not found.`,
         })
+      rejectInsecureIssuerMetadata(metadata)
 
-      const format = credentialRequest.format
-      if (!format) {
-        throw err('INVALID_REQUEST', {
-          message: 'Credential request format is not specified.',
+      const credentialIdentifier = credentialRequest.credential_identifier
+      const credentialConfigurationId = credentialRequest.credential_configuration_id
+      const hasCredentialIdentifier = credentialIdentifier !== undefined
+      const hasCredentialConfigurationId = credentialConfigurationId !== undefined
+
+      if (hasCredentialIdentifier && hasCredentialConfigurationId) {
+        throw err('invalid_credential_request', {
+          message:
+            'credential_identifier and credential_configuration_id must not be used together.',
         })
       }
-      const issueCredentialProvider = selectProvider(issueCredential$, format)
+
+      if (hasCredentialIdentifier) {
+        // TODO: Resolve identifiers issued in the Token Response and verify that
+        // the identifier is authorized for the presented access token.
+        throw err('unknown_credential_identifier', {
+          message: `Credential identifier ${credentialIdentifier} is unknown.`,
+        })
+      }
+
+      if (!hasCredentialConfigurationId) {
+        throw err('invalid_credential_request', {
+          message: 'Credential configuration id is not specified.',
+        })
+      }
 
       // https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-ID1.html#name-credential-request-2
-      const credentialConfiguration = metadata.credential_configurations_supported
-      if (!credentialConfiguration) {
-        throw err('UNSUPPORTED_CREDENTIAL_TYPE', {
-          message: `No configuration found for: ${credentialRequest.credential_definition.type}`,
-        })
-      }
-      const configuration = Object.values(credentialConfiguration).find((configuration) => {
-        const left = new Set(configuration.credential_definition.type)
-        const right = new Set(credentialRequest.credential_definition.type)
-        return left.size === right.size && [...left].every((it) => right.has(it))
-      })
+      const credentialConfigurationSupported = metadata.credential_configurations_supported
+      const configuration = credentialConfigurationSupported[credentialConfigurationId]
       if (!configuration) {
-        throw err('UNSUPPORTED_CREDENTIAL_TYPE', {
-          message: `No configuration found for: ${credentialRequest.credential_definition.type}`,
+        throw err('unknown_credential_configuration', {
+          message: `Credential configuration ${credentialConfigurationId} is not supported by issuer ${issuer}.`,
         })
       }
+      if (!authorizationContext.allowedCredentialConfigurationKey) {
+        throw err('invalid_credential_request', {
+          message: 'allowed credential configuration key is missing.',
+        })
+      }
+      const allowedCredentialConfigurationIds = await allowedCredentialConfigurationStore$.fetch(
+        authorizationContext.allowedCredentialConfigurationKey
+      )
+      if (!allowedCredentialConfigurationIds) {
+        throw err('invalid_credential_request', {
+          message: 'Allowed credential configurations for this access token were not found',
+        })
+      }
+      const requestedCredentialConfigurationId =
+        CredentialConfigurationId(credentialConfigurationId)
+
+      if (!allowedCredentialConfigurationIds.includes(requestedCredentialConfigurationId)) {
+        throw err('invalid_credential_request', {
+          message: 'Requested credential_configuration_id is not allowed for this access token.',
+        })
+      }
+
+      const issueCredentialProvider = selectProvider(issueCredential$, configuration.format)
 
       const supports = Object.keys(configuration.proof_types_supported ?? {})
 
-      const proof = credentialRequest.proof
-      if (proof && proof.proof_type !== ProofTypes.JWT) {
-        throw err('UNSUPPORTED_CREDENTIAL_TYPE', {
-          message: `Credential proof type ${proof?.proof_type} is not supported.`,
-        })
-      }
-      if (!proof || !proof.proof_type || !proof[proof.proof_type] || !proof.jwt) {
-        throw err('INVALID_CREDENTIAL_REQUEST', {
-          message: 'No proof object found.',
-        })
-      }
-      if (!supports.includes(proof.proof_type)) {
-        throw err('INVALID_CREDENTIAL_REQUEST', {
-          message: 'Request contain no proofs supported by credential configuration.',
-        })
-      }
+      let subject: string | undefined = undefined
+      let verifyProof: ProofJwt | null = null
+      if (credentialRequest.proofs) {
+        const proofsObjects = getProofType(credentialRequest.proofs)
+        if (!supports.includes(proofsObjects.proofType)) {
+          throw err('invalid_credential_request', {
+            message: 'Request contain no proofs supported by credential configuration.',
+          })
+        }
 
-      const proofJwt = proof.jwt
-      const credentialProofProvider = selectProvider(credentialProof$, proof.proof_type)
-      const verifyProof = await credentialProofProvider.verifyProof(proofJwt)
-      if (!verifyProof) {
-        throw err('INVALID_PROOF', {
-          message: 'Failed to verify Proof.',
-        })
-      }
-      if (!verifyProof.header.kid) {
-        throw err('INVALID_PROOF', {
-          message: 'Unsupported proof header.',
-        })
-      }
-
-      let nonce = undefined
-      if (options?.cnonce) {
-        if (typeof verifyProof.payload.nonce === 'string') {
-          const code = await cnonceStore$.validate(Cnonce(verifyProof.payload.nonce))
-          if (!code) {
-            throw err('INVALID_PROOF', {
-              message: 'Nonce not found.',
+        const credentialProofProvider = selectProvider(credentialProof$, proofsObjects.proofType)
+        // not support multiple proofs for now, just verify the first one
+        // not support batch_credential_issuance
+        for (const proof of proofsObjects.proofValue) {
+          const proofJwtCtx: CredentialProofJwtVerifyContext | undefined =
+            proofsObjects.proofType === ProofTypes.JWT
+              ? options.proofJwt?.usePreAuth === true
+                ? {
+                    usePreAuth: true,
+                    credentialIssuer: metadata.credential_issuer,
+                    ...(authorizationContext.clientId
+                      ? { clientId: authorizationContext.clientId }
+                      : {}),
+                  }
+                : {
+                    usePreAuth: false,
+                    credentialIssuer: metadata.credential_issuer,
+                    clientId: authorizationContext.clientId,
+                  }
+              : undefined
+          verifyProof = await credentialProofProvider.verifyProof(proof, proofJwtCtx)
+          if (!verifyProof) {
+            throw err('invalid_proof', {
+              message: 'Failed to verify Proof.',
             })
           }
-          await cnonceStore$.revoke(Cnonce(verifyProof.payload.nonce))
-          nonce = await cnonce$.generate()
-          await cnonceStore$.save(Cnonce(nonce))
+          subject = verifyProof.header.kid
+
+          if (options.cnonce) {
+            if (typeof verifyProof.payload.nonce === 'string') {
+              const code = await cnonceStore$.validate(Nonce({ nonce: verifyProof.payload.nonce }))
+              if (!code) {
+                throw err('invalid_nonce', {
+                  message: 'Nonce not found.',
+                })
+              }
+              await cnonceStore$.revoke(Nonce({ nonce: verifyProof.payload.nonce }))
+            }
+          }
         }
       }
+      if (!verifyProof) {
+        throw err('invalid_proof', {
+          message: 'Proof is required to issue credential.',
+        })
+      }
 
-      const verifiableCredential = issueCredentialProvider.createCredential(
+      const verifiableCredential = await issueCredentialProvider.createCredential(
         issuer,
         configuration,
-        verifyProof,
-        options?.claims
+        {
+          subject: options.subject ?? subject,
+          claims: options.claims,
+          keyAlg: options.alg ?? 'ES256',
+          proofHeader: verifyProof.header,
+        }
       )
-      const keyAlg = options?.alg ?? 'ES256'
-      if (
-        !configuration.credential_signing_alg_values_supported ||
-        !configuration.credential_signing_alg_values_supported.includes(keyAlg)
-      ) {
-        throw err('UNSUPPORTED_ISSUER_KEY_ALG', {
-          message: 'Unsupported key algorithm.',
-        })
-      }
-      const jwtHeader = {
-        alg: keyAlg,
-        typ: 'JWT',
-      }
-      const jwtPayload = {
-        vc: verifiableCredential,
-        iss: verifiableCredential.issuer,
-        sub: verifyProof.header.kid,
-      }
-      const issuerKeys = await keyStore$.fetch(issuer, keyAlg)
-      if (!issuerKeys) {
-        throw err('AUTHZ_ISSUER_KEY_NOT_FOUND', {
-          message: 'Issuer key not found.',
-        })
-      }
-      const signature = await keyStore$.sign(issuer, keyAlg, jwtPayload, jwtHeader)
-      if (!signature) {
-        throw err('INTERNAL_SERVER_ERROR', {
-          message: 'Cannot sign credentials.',
-        })
-      }
-      const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
-      const credential = `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`
 
       return {
-        credential: credential,
-        c_nonce: nonce,
-        c_nonce_expires_in: options?.cnonce?.c_nonce_expires_in ?? 86400,
+        credentials: [
+          {
+            credential: verifiableCredential,
+          },
+        ],
       }
     },
   }

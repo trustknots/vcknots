@@ -1,14 +1,28 @@
-# vcknots-wallet Server Integration and Conformance Test Sample
+# vcknots-wallet Local Server Integration Test and Conformance Test Sample
 
 This directory contains sample code that demonstrates two key testing scenarios for vcknots-wallet:
 
-1. **Server Integration Test**: Tests integration with a local vcknots server
-2. **Conformance Test**: Tests against external OID4VP conformance test services
+1. **Local server integration test mode**: Tests integration with a local vcknots server
+2. **Conformance test mode**: Tests against external OpenID4VP conformance test services
 
 Both modes are supported by the same program (`server_integration_sdjwt.go`) and are selected based on command-line arguments.
-Both follow the same flow: seed credential → build wallet → get OID4VP request URI → present.
+In local server integration test mode, the wallet obtains a credential through OpenID4VCI and then presents it through OpenID4VP.
+Conformance test mode seeds a local credential and tests only the OpenID4VP presentation flow.
+
+## Features Covered by the Samples
+
+| Sample | OpenID4VCI credential issuance | OpenID4VP presentation | Key binding |
+| --- | --- | --- | --- |
+| `server_integration_jwtvc` | JWT-VC | JWT-VC | Not applicable |
+| `server_integration_sdjwt` | SD-JWT VC (`dc+sd-jwt`) | Selective disclosure | Without KB-JWT |
+| `server_integration_sdjwt+kbjwt` | SD-JWT VC (`dc+sd-jwt`) | Selective disclosure | With KB-JWT |
+
+Regardless of the credential format shown above, every local server integration test mode sample uses `private_key_jwt` client authentication and DPoP.
 
 ## Prerequisites
+
+Local server integration test mode requires Node.js and pnpm in addition to Go.
+Conformance test mode does not require the local Node.js server.
 
 ### 1. Install mise
 
@@ -33,8 +47,8 @@ cd /path/to/vcknots/wallet
 mise install
 ```
 
-This automatically installs Go 1.24.5 and configures the necessary environment variables based on `mise.toml`.
-If you prefer not to use mise, install Go 1.24.5 manually and set the `GOPRIVATE` environment variable:
+This automatically installs Go 1.26.6 and configures the necessary environment variables based on `mise.toml`.
+If you prefer not to use mise, install Go 1.26.6 manually and set the `GOPRIVATE` environment variable:
 
 ```bash
 export GOPRIVATE="github.com/trustknots/vcknots/wallet"
@@ -50,15 +64,29 @@ go mod download
 
 ## How to Run the Sample
 
-This sample program operates in two distinct modes:
+`server_integration_sdjwt` is the sample that operates in two modes. The other two support the local server integration test mode only.
 
-### Mode 1: Server Integration Test (Recommended for First Run)
+| Sample | Supported modes | Command-line arguments |
+| --- | --- | --- |
+| `server_integration_sdjwt` | Both modes | Positional OpenID4VP URI, `--credential-offer-uri`, `--tx-code` |
+| `server_integration_jwtvc` | Local server integration test mode only | `--credential-offer-uri`, `--tx-code` |
+| `server_integration_sdjwt+kbjwt` | Local server integration test mode only | None |
+
+### Mode 1: Local Server Integration Test Mode (Recommended for First Run)
 
 Tests integration with a local vcknots server.
 
-#### Step 1: Start the Issuer and Verifier servers
+#### Step 1: Start the Issuer, Authorization Server, and Verifier
 
-The verifier server must be running to execute the sample. Move to the server directory and start the server:
+The local server runs as **a single process** and provides all three roles together at `http://localhost:8080`. You do not need to start them separately.
+
+| Role | Responsibility | Main endpoints |
+| --- | --- | --- |
+| Issuer | Issues credentials | `/configurations/:configuration/offer`, `/credentials`, `/.well-known/openid-credential-issuer`, `/.well-known/jwt-vc-issuer` |
+| Authorization Server | Issues access tokens | `/token`, `/.well-known/oauth-authorization-server` |
+| Verifier | Verifies presented credentials | `/request`, `/request-object`, `/request.jwt/:request-object-Id`, `/callback` |
+
+Move to the repository root and start it:
 
 ```bash
 # From the wallet directory, move to the vcknots root (/path/to/vcknots)
@@ -117,9 +145,48 @@ Authz metadata initialized
 By default the server listens on `http://localhost:8080`.
 The test scripts also use this URL.
 
+#### Client authentication in local server integration test mode
+
+The local server integration test mode samples use `private_key_jwt` for client authentication and enable DPoP. The token request therefore includes:
+
+| Location | Name | Value |
+| --- | --- | --- |
+| Form parameter | `client_id` | `test-client-id` |
+| Form parameter | `client_assertion_type` | `urn:ietf:params:oauth:client-assertion-type:jwt-bearer` |
+| Form parameter | `client_assertion` | An ES256-signed JWT |
+| HTTP header | `DPoP` | A DPoP proof JWT (RFC 9449) |
+
+The samples read this registration from `examples/config/`, which the wallet loads with the `wallet/clientconfig` package:
+
+| File | Contents |
+| --- | --- |
+| `examples/config/wallet-clients.json` | Client metadata: `client_id`, `token_endpoint_auth_method`, `token_endpoint_auth_signing_alg`, `client_assertion_audience`, and the public `jwks` |
+| `examples/config/client-private.sample.jwks.json` | The matching private JWK used to sign the `client_assertion` |
+
+```go
+clientAuth, err := clientconfig.Load(
+	"../config/wallet-clients.json",
+	clientconfig.WithClientID("test-client-id"),
+	clientconfig.WithPrivateJWKFile("../config/client-private.sample.jwks.json"),
+)
+if err != nil {
+	return err
+}
+
+w, err := wallet.NewWalletWithConfig(wallet.Config{ClientAuth: clientAuth})
+```
+
+The two files are kept apart on purpose. OpenID Connect Dynamic Client Registration 1.0 states that a `jwks` member MUST NOT contain private key values, so `wallet-clients.json` holds public keys only and can be handed to the authorization server as-is. `clientconfig.Load` rejects a `jwks` that carries a private key, and requires the private JWK file to be mode `0600`.
+
+The public key in `examples/config/wallet-clients.json` is the one registered for `test-client-id` in `server/samples/oauth-clients.json`. The authorization server metadata in `server/samples/authorization_metadata.json` explicitly advertises both `private_key_jwt` and ES256; the wallet uses this authentication method only when both are advertised.
+
+Configuring the wallet in Go is equally supported: `clientconfig.Load` returns a `wallet.ClientAuthConfig`, which you pass through `wallet.Config.ClientAuth` yourself. Keys that cannot be exported into a file, such as those held in an HSM or a secure enclave, are supplied with `clientconfig.WithKeyEntry`.
+
+> ⚠️ **Warning**: The sample private key is committed so that the examples run straight after a clone, which is also why they pass `clientconfig.AllowInsecureFilePermissions()`. It is for this local sample only. In a real deployment generate a separate key, keep it out of the repository with mode `0600`, and register its public JWK with the authorization server.
+
 #### Step 2: Run the integration test script (no arguments)
 
-Open a new terminal, navigate to each test directory, and run the server integration script:
+Open a new terminal, navigate to each test directory, and run the local server integration test mode script:
 
 ```bash
 # JWT-VC integration test
@@ -133,6 +200,19 @@ go run server_integration_sdjwt.go
 # SD-JWT integration test (with kb-jwt)
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt+kbjwt
 go run server_integration_sdjwt_kbjwt.go
+```
+
+Set `VCKNOTS_SERVER_URL` when the server is not running on `http://localhost:8080`:
+
+```bash
+VCKNOTS_SERVER_URL=http://localhost:18080 go run server_integration_sdjwt.go
+```
+
+To run against an offer URI created separately, pass it via `--credential-offer-uri`. If the offer requires a transaction code, also pass `--tx-code` (`--tx_code` is also accepted).
+
+```bash
+OFFER_URI='openid-credential-offer://?...'
+go run server_integration_sdjwt.go --credential-offer-uri "$OFFER_URI" --tx-code 123456
 ```
 
 
@@ -166,12 +246,13 @@ time=2025-11-27T14:03:25.174+09:00 level=INFO msg="Credential presented successf
 ```
 
 If `Credential presented successfully` appears, the sample succeeded.
+Reaching this point also means that the authorization server accepted the client assertion and DPoP proof used to obtain the access token.
 
 ---
 
-### Mode 2: Conformance Test (External URL)
+### Mode 2: Conformance Test Mode (External URL)
 
-Tests against external OID4VP conformance test services.
+Tests against external OpenID4VP conformance test services.
 The conformance test URI can be obtained from the [OIDF Conformance Testing for OpenID for Verifiable Presentations](https://openid.net/certification/conformance-testing-for-openid-for-verifiable-presentations/) page.
 Click the `Testing a wallet` button to proceed.
 
@@ -182,7 +263,7 @@ cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_uri=..."
 ```
 
-**Important**: Providing an OID4VP URI as an argument automatically uses Conformance Test mode.
+**Important**: Providing an OpenID4VP URI as an argument automatically uses Conformance Test mode.
 
 #### Differences in Behavior
 
@@ -193,6 +274,7 @@ Conformance Test mode automatically applies the following settings:
 - **Selected Claims**: Selects `given_name` and `family_name`
 - **Key Binding**: Required (`RequireKeyBinding: true`)
 - **Audience/Nonce**: Automatically extracted from the request URI
+- **OID4VCI Client Authentication and DPoP**: Not configured; this mode tests the OpenID4VP presentation flow only
 
 > ⚠️ **Warning**: `InsecureSkipX509Verify: true` should only be used in conformance tests and local development. **Never** use this in production environments.
 
@@ -204,21 +286,25 @@ Conformance Test mode automatically applies the following settings:
 
 `server_integration_sdjwt/server_integration_sdjwt.go` operates in two modes:
 
-**Mode 1: Server Integration Test (no arguments)**
+**Mode 1: Local server integration test mode (no arguments)**
 ```bash
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go
+VCKNOTS_SERVER_URL=http://localhost:18080 go run server_integration_sdjwt.go
+go run server_integration_sdjwt.go --credential-offer-uri "$OFFER_URI" --tx-code 123456
 ```
 - Tests integration with a local vcknots server
 - Strict certificate verification (uses a specific certificate file)
 - Server must be running on http://localhost:8080
+- `--tx-code` is optional and is forwarded to the OpenID4VCI token request as `tx_code`
+- `--credential-offer-uri` skips fetching a new offer and uses the provided OpenID4VCI offer URI
 
-**Mode 2: Conformance Test (with OID4VP URI argument)**
+**Mode 2: Conformance test mode (with OpenID4VP URI argument)**
 ```bash
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go "openid4vp://authorize?..."
 ```
-- Tests against external OID4VP conformance test services
+- Tests against external OpenID4VP conformance test services
 - Uses system root certificate pool
 - `InsecureSkipX509Verify: true` is automatically set (supports non-standard certificates)
 
@@ -226,6 +312,10 @@ go run server_integration_sdjwt.go "openid4vp://authorize?..."
 
 ```
 examples/
+├── common/                            # Shared sample setup (wallet construction, mock key)
+├── config/
+│   ├── wallet-clients.json            # Client authentication metadata (public keys only)
+│   └── client-private.sample.jwks.json # Sample client_assertion signing key (local use only)
 ├── server_integration_jwtvc/
 │   └── server_integration_jwtvc.go   # JWT-VC integration test
 ├── server_integration_sdjwt/
@@ -236,7 +326,8 @@ examples/
 │   └── example_sd_jwt.txt                 # Sample SD-JWT credential
 ├── custom_dispatcher/                 # Example: custom dispatcher implementation
 ├── custom_plugin/                     # Example: custom plugin implementation
-└── README.md                          # This file
+├── README.md                          # This file
+└── README.ja.md                       # Japanese version
 ```
 
 **Note**: The certificate file and SD-JWT sample file are loaded using relative paths from each test directory. By default:
@@ -258,7 +349,7 @@ In addition to `VCKNOTS_CERT_PATH`, the wallet runtime behavior is controlled by
 
 | Variable | Default | Description |
 | :---- | :---- | :---- |
-| `VCKNOTS_WALLET_HTTP_ALLOWED` | `false` (unset/empty) | When set to `true`, HTTP endpoints are allowed for wallet HTTP calls (for local development/testing). |
+| `VCKNOTS_WALLET_HTTP_ALLOWED` | `false` (unset/empty) | When set to `true`, HTTP endpoints are allowed for wallet HTTP calls (for local development/testing). A client assertion is the exception: it is sent over plain HTTP only to a loopback host, so `private_key_jwt` against a remote `http://` endpoint is refused even with this set. |
 | `VCKNOTS_WALLET_DEBUG` | `false` (unset/empty) | Enables debug mode. Debug mode also enables HTTP allowance behavior. |
 
 Behavior summary:
@@ -279,7 +370,7 @@ export VCKNOTS_WALLET_DEBUG=true
 
 ## Troubleshooting
 
-### `client_id` Validation Errors (Conformance Test)
+### `client_id` Validation Errors (Conformance Test Mode)
 
 The conformance test suite intentionally sends malformed `client_id` values to test the wallet's validation logic.
 
@@ -292,5 +383,5 @@ The conformance test suite intentionally sends malformed `client_id` values to t
 
 Conformance test servers may use self-signed or non-standard certificate structures for testing purposes.
 
-- **When running server integration test (no arguments)**: Check that the certificate file is correctly placed at `../../../server/samples/certificate-openid-test/certificate_openid.pem`, or specify it via `VCKNOTS_CERT_PATH`.
-- **When running conformance test (with URI argument)**: `InsecureSkipX509Verify: true` is set automatically, so this error should not appear.
+- **When running local server integration test mode (no arguments)**: Check that the certificate file is correctly placed at `../../../server/samples/certificate-openid-test/certificate_openid.pem`, or specify it via `VCKNOTS_CERT_PATH`.
+- **When running conformance test mode (with URI argument)**: `InsecureSkipX509Verify: true` is set automatically, so this error should not appear.

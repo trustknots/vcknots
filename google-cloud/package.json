@@ -1,6 +1,6 @@
 {
 	"name": "@trustknots/google-cloud",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "",
 	"main": "lib/index.js",
 	"private": true,
@@ -12,23 +12,23 @@
 		"build": "tsc",
 		"format": "biome format --write ./src/**/*.ts",
 		"lint": "biome lint ./src/**/*.ts",
-		"test": "node --import tsx --test test/**/*.spec.ts",
-		"test:ci": "node --import tsx --test --experimental-test-coverage \"test/**/*.spec.ts\"",
-		"test:all": "node --import tsx --test --experimental-test-coverage --test-coverage-include=\"src/**/*.ts\" --test-coverage-exclude=\"test/**/*.ts\" --test-coverage-lines=80 --test-coverage-functions=80 --test-coverage-branches=80 \"test/**/*.spec.ts\"",
+		"test": "node --env-file=.env.test --import tsx --test test/**/*.spec.ts",
+		"test:ci": "node --env-file=.env.test --import tsx --test --experimental-test-coverage --test-coverage-include=\"src/**/*.ts\" --test-coverage-exclude=\"test/**/*.ts\" \"test/**/*.spec.ts\"",
+		"test:all": "node --env-file=.env.test --import tsx --test --experimental-test-coverage --test-coverage-include=\"src/**/*.ts\" --test-coverage-exclude=\"test/**/*.ts\" --test-coverage-lines=80 --test-coverage-functions=80 --test-coverage-branches=80 \"test/**/*.spec.ts\"",
 		"typecheck": "tsc --noEmit"
 	},
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@10.33.4",
+	"packageManager": "pnpm@11.10.0",
 	"dependencies": {
-		"@google-cloud/kms": "5.5.0",
-		"@node-rs/crc32": "1.10.6",
-		"@google-cloud/secret-manager": "6.1.2",
+		"@google-cloud/kms": "5.5.1",
+		"@node-rs/crc32": "1.10.7",
+		"@google-cloud/secret-manager": "6.2.0",
 		"@trustknots/vcknots": "workspace:*",
 		"ecdsa-sig-formatter": "1.0.11",
-		"firebase-admin": "13.10.0",
-		"jose": "6.2.3",
+		"firebase-admin": "14.1.0",
+		"jose": "6.2.10",
 		"zod": "4.4.3"
 	}
 }

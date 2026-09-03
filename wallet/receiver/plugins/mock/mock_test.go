@@ -48,7 +48,7 @@ func TestMockReceiver_FetchAccessToken(t *testing.T) {
 	endpoint, _ := common.ParseURIField("mock://test")
 
 	// Test with correct receiving type
-	token, err := receiver.FetchAccessToken(types.Mock, *endpoint, "test_code")
+	token, err := receiver.FetchAccessToken(types.Mock, *endpoint, "test_code", "")
 	require.NoError(t, err)
 	assert.NotNil(t, token)
 	assert.Equal(t, "mock_access_token", token.Token)
@@ -56,7 +56,7 @@ func TestMockReceiver_FetchAccessToken(t *testing.T) {
 	assert.Equal(t, 3600, token.ExpiresIn)
 
 	// Test with incorrect receiving type
-	_, err = receiver.FetchAccessToken(types.Oid4vci, *endpoint, "test_code")
+	_, err = receiver.FetchAccessToken(types.Oid4vci, *endpoint, "test_code", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported receiving type")
 }
@@ -95,6 +95,7 @@ func TestMockReceiver_ReceiveCredential(t *testing.T) {
 		types.Mock,
 		*endpoint,
 		"jwt_vc_json",
+		nil,
 		accessToken,
 		nil,
 		nil,
@@ -108,6 +109,7 @@ func TestMockReceiver_ReceiveCredential(t *testing.T) {
 		types.Oid4vci,
 		*endpoint,
 		"jwt_vc_json",
+		nil,
 		accessToken,
 		nil,
 		nil,
@@ -121,6 +123,7 @@ func TestMockReceiver_ReceiveCredential(t *testing.T) {
 		types.Mock,
 		*nonExistentEndpoint,
 		"jwt_vc_json",
+		nil,
 		accessToken,
 		nil,
 		nil,
@@ -153,6 +156,7 @@ func TestMockReceiver_ReceiveCredential_WithExtension(t *testing.T) {
 		types.Mock,
 		*endpoint,
 		"jwt_vc_json",
+		nil,
 		accessToken,
 		nil,
 		nil,

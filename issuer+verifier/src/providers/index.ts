@@ -1,6 +1,8 @@
 export * from './provider.types'
 export * from './provider.registry'
 
+export * from './credential-proof-jwt.provider'
+export * from './dpop-proof.provider'
 export * from './credential-offer.provider'
 
 export * from './dcql.provider'

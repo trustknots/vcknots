@@ -3,11 +3,16 @@ import { App } from 'firebase-admin/app'
 import { Firestore, getFirestore } from 'firebase-admin/firestore'
 import { firestoreIssuerMetadataStore } from './firestore-issuer-metadata-store.provider'
 import { firestoreVerifierMetadataStore } from './firestore-verifier-metadata-store.provider'
+import { firestoreNonceStore } from './firestore-nonce-store.provider'
 import { firestoreAuthzServerMetadataStore } from './firestore-authz-metadata-store.provider'
+import { firestoreAuthzOAuthClientStore } from './firestore-authz-oauth-client-store.provider'
+import { firestoreAuthzOAuthPolicyStore } from './firestore-authz-oauth-policy-store.provider'
+import { firestoreDpopProofJtiStore } from './firestore-dpop-proof-jti-store.provider'
+import { firestoreOAuthClientAssertionJtiStore } from './firestore-oauth-client-assertion-jti-store.provider'
 import { firestorePreAuthorizedCodeStore } from './firestore-pre-authorized-code-store.provider'
 import { firestoreRequestObjectStore } from './firestore-request-object-store.provider'
-import { firestoreCnonceStore } from './firestore-cnonce-store.provider'
 import { firestoreVerifierTransactionDataStore } from './firestore-verifier-transaction-store.provider'
+import { firestoreAllowedCredentialConfigurationStore } from './firestore-allowed-credential-configuration-store.provider'
 
 const configuredInstances = new WeakSet<Firestore>()
 
@@ -58,10 +63,15 @@ export const firestore = (options?: FirestoreProviderOptions): Provider[] => {
   return [
     firestoreIssuerMetadataStore(options),
     firestoreVerifierMetadataStore(options),
+    firestoreNonceStore(options),
     firestoreAuthzServerMetadataStore(options),
+    firestoreAuthzOAuthPolicyStore(options),
+    firestoreAuthzOAuthClientStore(options),
+    firestoreOAuthClientAssertionJtiStore(options),
     firestorePreAuthorizedCodeStore(options),
     firestoreRequestObjectStore(options),
-    firestoreCnonceStore(options),
     firestoreVerifierTransactionDataStore(options),
+    firestoreDpopProofJtiStore(options),
+    firestoreAllowedCredentialConfigurationStore(options),
   ]
 }

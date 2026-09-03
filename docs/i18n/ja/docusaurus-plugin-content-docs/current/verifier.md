@@ -1,5 +1,5 @@
-﻿---
-sidebar_position: 3
+---
+sidebar_position: 12
 ---
 
 
@@ -568,9 +568,9 @@ createVerifierMetadata(
 - なし
 
 **エラーケース**:
-- `DUPLICATE_VERIFIER`: 既に同じ`verifierId`のメタデータが登録済み
-- `INTERNAL_SERVER_ERROR`: `options.alg`が未指定（公開鍵/証明書を指定する場合は必須）
-- `INVALID_CERTIFICATE`: 提供された証明書が無効
+- `duplicate_verifier`: 既に同じ`verifierId`のメタデータが登録済み
+- `internal_server_error`: `options.alg`が未指定（公開鍵/証明書を指定する場合は必須）
+- `invalid_certificate`: 提供された証明書が無効
 
 #### CreateVerifierMetadataOptions {#CreateVerifierMetadataOptions}
 
@@ -635,10 +635,10 @@ createAuthzRequest(
   - `transactionId` (string): `verifyPresentations` 呼び出し時に必要なトランザクション ID。セッションや状態管理の仕組みと紐づけて保管してください。
 
 **エラーケース**:
-- `UNSUPPORTED_CLIENT_ID_PREFIX`: 未対応のclient_id_prefixが指定された
-- `CERTIFICATE_NOT_FOUND`: x509_san_dns利用時に証明書未登録
-- `INVALID_REQUEST`: isRequestUri = trueなのにoptions.base_urlが未指定
-- `VERIFIER_VP_FORMATS_NOT_SUPPORTED`: クエリで指定した VP フォーマットが Verifier のメタデータで未対応
+- `unsupported_client_id_prefix`: 未対応のclient_id_prefixが指定された
+- `certificate_not_found`: x509_san_dns利用時に証明書未登録
+- `invalid_request`: isRequestUri = trueなのにoptions.base_urlが未指定
+- `verifier_vp_formats_not_supported`: クエリで指定した VP フォーマットが Verifier のメタデータで未対応
 
 
 
@@ -682,11 +682,11 @@ findRequestObject(
 {base64url(header)}.{base64url(payload)}.{signature}
 ```
 **エラーケース**:
-- `VERIFIER_NOT_FOUND`: 指定したVerifierが存在しない
-- `REQUEST_OBJECT_NOT_FOUND`: 指定したRequest Objectが存在しない
-- `PROVIDER_NOT_FOUND`: Authorization Request JARのプロバイダが見つからない
-- `AUTHZ_VERIFIER_KEY_NOT_FOUND`: 指定アルゴリズムの署名鍵プロバイダが見つからない
-- `INTERNAL_SERVER_ERROR`: Request Objectの署名生成に失敗
+- `verifier_not_found`: 指定したVerifierが存在しない
+- `request_object_not_found`: 指定したRequest Objectが存在しない
+- `provider_not_found`: Authorization Request JARのプロバイダが見つからない
+- `authz_verifier_key_not_found`: 指定アルゴリズムの署名鍵プロバイダが見つからない
+- `internal_server_error`: Request Objectの署名生成に失敗
 
 **注意事項**:
 - リクエストオブジェクトは取得は一度のみとなります。
@@ -764,15 +764,15 @@ Verifier アプリから VP／クレデンシャル形式ごとの検査に渡�
 - **実装者側の扱い**: 本ライブラリは検証済みペイロードを**自動では保存・管理しません**。セッションやデータベースへの紐づけ、保管期間、監査ログの有無などは、**利用者（実装者）のアプリケーション**が、業務要件に従って設計・実装してください。
 
 **エラーケース**:
-- `VERIFIER_NOT_FOUND`: Verifierが存在しない
-- `TRANSACTION_ID_NOT_FOUND`: 指定した `transactionId` に対応するトランザクションが存在しない（既に使用済みまたは無効）
-- `ILLEGAL_ARGUMENT`: 引数不備（例: 未知のクレデンシャルクエリ ID、プロバイダがオプションを拒否）
-- `UNSUPPORTED_VP_TOKEN`: `vp_token` の形式が未対応（非文字列形式など）
-- `INVALID_REQUEST`: レスポンスの `state` がトランザクションに保存された `state` と一致しない
-- `INVALID_VP_TOKEN`: DCQL の必須クレデンシャルが不足、または VP 構造が不正
-- `INVALID_NONCE`: 認可リクエストの `nonce` が VP に無い、または一致しない
-- `INVALID_CREDENTIAL`: 内包 VC が無効（`jwt_vp_json` 経路）、発行者メタデータ／JWKS 取得失敗など
-- `INVALID_SD_JWT` / `HOLDER_BINDING_FAILED`: SD-JWT または Key Binding の検証失敗
+- `verifier_not_found`: Verifierが存在しない
+- `transaction_id_not_found`: 指定した `transactionId` に対応するトランザクションが存在しない（既に使用済みまたは無効）
+- `illegal_argument`: 引数不備（例: 未知のクレデンシャルクエリ ID、プロバイダがオプションを拒否）
+- `unsupported_vp_token`: `vp_token` の形式が未対応（非文字列形式など）
+- `invalid_request`: レスポンスの `state` がトランザクションに保存された `state` と一致しない
+- `invalid_vp_token`: DCQL の必須クレデンシャルが不足、または VP 構造が不正
+- `invalid_nonce`: 認可リクエストの `nonce` が VP に無い、または一致しない
+- `invalid_credential`: 内包 VC が無効（`jwt_vp_json` 経路）、発行者メタデータ／JWKS 取得失敗など
+- `invalid_sd_jwt` / `holder_binding_failed`: SD-JWT または Key Binding の検証失敗
 
 **注意事項**:
 - `client_id`（`expectedAud`）はトランザクションから自動的に取得されます。Wallet が VP／KB-JWT に設定する `aud` は、`createAuthzRequest` に渡した `client_id` と一致している必要があります。
@@ -822,7 +822,7 @@ Verifierが保持する証明書チェーンを表す型です（PEM形式の文
 ## 9. トラブルシューティング
 
 
-- **Q：証明書の関連のエラー**:`INVALID_CERTIFICATE`
+- **Q：証明書の関連のエラー**:`invalid_certificate`
     - **A：** 証明書ファイルのパスが正しいか、ファイルが存在するかを確認してください。また、有効な証明書であることを確認してください。
 
 - **Q:メタデータのバリデーションエラー**:
@@ -831,10 +831,10 @@ Verifierが保持する証明書チェーンを表す型です（PEM形式の文
 - **Q:認可リクエストの作成エラー**:`invalid_request`
     - **A：**  必要なパラメータがすべて提供されているかを確認してください。
 
-- **Q:リクエストオブジェクト取得エラー**:`REQUEST_OBJECT_NOT_FOUND`
+- **Q:リクエストオブジェクト取得エラー**:`request_object_not_found`
     - **A：**  リクエストオブジェクトの取得は一度のみとなります。同じRequest Object IDで複数回呼び出すとエラーになります。
 
-- **Q:vp_tokenのnonce検証エラー**: `INVALID_NONCE` - nonce is not valid で失敗する。
+- **Q:vp_tokenのnonce検証エラー**: `invalid_nonce` - nonce is not valid で失敗する。
    -  **A：** 以下の原因と解決方法を確認してください。
    - **原因**: 
      - `vp_token`内のnonceが認可リクエスト時に生成されたものと一致しない
@@ -845,4 +845,3 @@ Verifierが保持する証明書チェーンを表す型です（PEM形式の文
      - 同じnonceで複数回の認証を試行していないか確認
      - nonceの生成と保存処理が正しく動作しているか確認
      - 時計の同期が取れているか確認（有効期限チェックのため）
-

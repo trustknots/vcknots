@@ -13,12 +13,14 @@ const preAuthorizedCodeGrantSchema = z
   .object({
     'pre-authorized_code': z.string(),
     tx_code: txCodeSchema,
+    authorization_server: z.string().url().optional(),
   })
   .optional()
 
 const authorizationCodeGrantSchema = z
   .object({
     issuer_state: z.string().optional(),
+    authorization_server: z.string().url().optional(),
   })
   .optional()
 
@@ -32,7 +34,7 @@ const grantsSchema = z
 export const credentialOfferSchema = z.object({
   credential_issuer: CredentialIssuer.schema,
   grants: grantsSchema,
-  credential_configuration_ids: z.array(CredentialConfigurationId.schema).optional(),
+  credential_configuration_ids: z.array(CredentialConfigurationId.schema),
 })
 
 export type CredentialOffer = z.infer<typeof credentialOfferSchema>
@@ -44,7 +46,7 @@ export type TxCode = z.infer<typeof txCodeSchema>
 export const CredentialOffer = (value?: {
   credential_issuer?: string
   grants?: unknown // TODO: Define the appropriate type
-  credential_configuration_ids?: string[]
+  credential_configuration_ids: string[]
 }) => credentialOfferSchema.parse(value)
 CredentialOffer.schema = credentialOfferSchema
 

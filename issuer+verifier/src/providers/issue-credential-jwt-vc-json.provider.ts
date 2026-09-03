@@ -1,22 +1,42 @@
+import { base64url, exportJWK } from 'jose'
 import { randomUUID } from 'node:crypto'
 import * as z from 'zod'
-import { CredentialConfiguration, CredentialIssuer } from '../credential-issuer.types'
+import { CredentialConfigurationSupported, CredentialIssuer } from '../credential-issuer.types'
 import { CredentialFormats } from '../credential-request.types'
-import { JwtVcJson, ProofJwt, VerifiableCredential } from '../credential.types'
 import { raise } from '../errors/vcknots.error'
-import { IssueCredentialProvider } from './provider.types'
+import { getClaimValue, setClaimValue } from './issue-credential.utils'
+import { IssueCredentialProvider, IssueCredentialCreateCredentialOptions } from './provider.types'
+import { withProviderRegistry, WithProviderRegistry } from './provider.registry'
+import * as jose from 'jose'
+import { jwkSchema } from '../jwk.type'
 
 export type IssueCredentialProviderOptions = {
   identifier?: () => string
 }
 
+// const credentialSubjectPath = (path: string[]) =>
+//   path[0] === 'credentialSubject' ? path.slice(1) : path
+
+const credentialSubjectPath = (path: string[]) => {
+  if (path[0] !== 'credentialSubject') {
+    return path
+  }
+  const subjectPath = path.slice(1)
+  if (subjectPath.length === 0) {
+    throw raise('invalid_configuration', {
+      message: 'credential_metadata.claims[].path must point to a claim under credentialSubject.',
+    })
+  }
+  return subjectPath
+}
+
 export const issueCredentialJwt = (
-  options?: IssueCredentialProviderOptions
-): IssueCredentialProvider => {
-  if (options?.identifier) {
-    const id = options.identifier()
+  providerOptions?: IssueCredentialProviderOptions
+): IssueCredentialProvider & WithProviderRegistry => {
+  if (providerOptions?.identifier) {
+    const id = providerOptions.identifier()
     if (!z.string().url().safeParse(id).success) {
-      throw raise('INVALID_OPTIONS', {
+      throw raise('invalid_options', {
         message: 'Identifier must be a valid URL.',
       })
     }
@@ -26,44 +46,43 @@ export const issueCredentialJwt = (
     name: 'default-issue-credential-w3c-jwt-vc-json-provider',
     single: false,
 
-    createCredential(
+    ...withProviderRegistry,
+
+    async createCredential(
       credentialIssuer: CredentialIssuer,
-      configuration: CredentialConfiguration,
-      proof: ProofJwt,
-      claimsOptions?: Record<string, unknown>
-    ): VerifiableCredential<JwtVcJson> {
-      const today = new Date()
-      const kid = proof.header.kid
-      if (!kid) {
-        throw raise('INVALID_PROOF', {
-          message: 'Unsupported proof header.',
+      configuration: CredentialConfigurationSupported,
+      options?: IssueCredentialCreateCredentialOptions
+    ): Promise<string> {
+      if (!configuration.credential_definition || configuration.format !== 'jwt_vc_json') {
+        throw raise('invalid_configuration', {
+          message: 'Invalid credential configuration.',
         })
       }
-
-      const credentialClaims: Record<string, unknown> = {}
-      const credentialSubject = configuration.credential_definition.credentialSubject
-      if (credentialSubject && Object.keys(credentialSubject).length > 0 && claimsOptions) {
-        for (const [key, value] of Object.entries(credentialSubject)) {
-          if (value.mandatory === true && !(key in claimsOptions)) {
-            throw raise('INVALID_CLAIMS', {
-              message: `Claim ${key} is not defined as mandatory in the credential definition.`,
+      const today = new Date()
+      const credentialSubject: Record<string, unknown> = {}
+      const claimsSource = options?.claims ?? {}
+      const defCredentialMetadataClaims = configuration.credential_metadata?.claims
+      if (defCredentialMetadataClaims && defCredentialMetadataClaims.length > 0) {
+        for (const claim of defCredentialMetadataClaims) {
+          const subjectPath = credentialSubjectPath(claim.path)
+          let value = getClaimValue(claimsSource, claim.path)
+          if (value === undefined && subjectPath.length !== claim.path.length) {
+            value = getClaimValue(claimsSource, subjectPath)
+          }
+          // const value = getClaimValue(claimsSource, subjectPath)
+          if (claim.mandatory === true && value === undefined) {
+            throw raise('invalid_claims', {
+              message: `Claim ${claim.path.join('.')} is not defined as mandatory in the credential definition.`,
             })
           }
-          if (key in claimsOptions) {
-            // unsupported  image media types such as image/jpeg as defined in IANA media type registry for images (https://www.iana.org/assignments/media-types/media-types.xhtml#image)
-            if (value.value_type === 'string') {
-              credentialClaims[key] = String(claimsOptions[key])
-            } else if (value.value_type === 'number') {
-              credentialClaims[key] = Number(claimsOptions[key])
-            } else {
-              credentialClaims[key] = claimsOptions[key]
-            }
+          if (value !== undefined) {
+            setClaimValue(credentialSubject, subjectPath, value)
           }
         }
       }
 
-      const id = options?.identifier
-        ? options.identifier()
+      const id = providerOptions?.identifier
+        ? providerOptions.identifier()
         : `${credentialIssuer}/vc/${randomUUID().replaceAll('-', '')}`
 
       const verifiableCredential = {
@@ -73,12 +92,51 @@ export const issueCredentialJwt = (
         issuer: credentialIssuer,
         issuanceDate: today.toISOString(),
         credentialSubject: {
-          id: kid,
-          ...credentialClaims,
+          ...(options?.subject !== undefined ? { id: options.subject } : {}),
+          ...credentialSubject,
         },
       }
 
-      return verifiableCredential
+      const keyAlg = options?.keyAlg ?? 'ES256'
+      if (
+        configuration.credential_signing_alg_values_supported &&
+        !configuration.credential_signing_alg_values_supported.includes(keyAlg)
+      ) {
+        throw raise('unsupported_issuer_key_alg', {
+          message: 'Unsupported key algorithm.',
+        })
+      }
+      const keyStore$ = this.providers.get('issuer-signature-key-store-provider')
+      const issuerKey = await keyStore$.fetch(credentialIssuer, keyAlg)
+      if (!issuerKey) {
+        throw raise('authz_issuer_key_not_found', {
+          message: 'Issuer key not found.',
+        })
+      }
+      const jwk = jwkSchema.parse(await exportJWK(issuerKey))
+      const kid = await jose.calculateJwkThumbprint(jwk)
+
+      const jwtHeader = {
+        alg: keyAlg,
+        kid,
+        typ: 'JWT',
+      }
+      const jwtPayload = {
+        vc: verifiableCredential,
+        iss: verifiableCredential.issuer,
+        ...(options?.subject !== undefined ? { sub: options.subject } : {}),
+      }
+
+      const signature = await keyStore$.sign(credentialIssuer, keyAlg, jwtPayload, jwtHeader)
+      if (!signature) {
+        throw raise('internal_server_error', {
+          message: 'Cannot sign credentials.',
+        })
+      }
+      const encode = (x: unknown) => base64url.encode(JSON.stringify(x))
+      const credential = `${encode(jwtHeader)}.${encode(jwtPayload)}.${signature}`
+
+      return credential
     },
     canHandle(format: CredentialFormats): boolean {
       return format === 'jwt_vc_json'

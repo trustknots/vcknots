@@ -1,18 +1,31 @@
-# VCKnots
+# VC Knots
 
-<p align="center">Pluggable framework for building Verifiable Credentials ecosystems.</p>
+<h3 align="center">A pluggable framework for building Verifiable Credentials ecosystems.</h3>
 
 ## Overview
 
 VCKnots is an open-source library for building Verifiable Credentials ecosystems.
-It implements OID4VCI (OpenID for Verifiable Credential Issuance) and OID4VP (OpenID for Verifiable Presentations), with core wallet functionalities for identifier and key management.
+It implements OpenID4VCI (OpenID for Verifiable Credential Issuance) and OpenID4VP (OpenID for Verifiable Presentations), with core wallet functionalities for identifier and key management.
 
 The framework supports pluggable extensions for data serialization formats, protocol flavors, and cryptographic algorithms.
 
 **Key Features:**
-- OID4VCI and OID4VP implementations
+- OpenID4VCI and OpenID4VP implementations
 - Core wallet functionalities (identifier and key management)
 - Pluggable architecture (extensible formats, protocols, and algorithms)
+
+## Start Here
+
+Choose the documentation that matches your goal.
+
+| Goal | Documentation |
+| --- | --- |
+| Learn how to use VC Knots | [User Documentation](https://trustknots.github.io/vcknots/) |
+| Build an Issuer | [Issuer Guide](https://trustknots.github.io/vcknots/docs/issuer) |
+| Implement a Wallet | [Wallet Guide](https://trustknots.github.io/vcknots/docs/wallet) |
+| Build a Verifier | [Verifier Guide](https://trustknots.github.io/vcknots/docs/verifier) |
+| Check OpenID4VCI / OpenID4VP support | [Support Matrix](https://trustknots.github.io/vcknots/docs/support-matrix) |
+| Run the sample server | [Single Server README](./server/single/README.md) |
 
 ## Installation
 
@@ -32,14 +45,13 @@ vcknots/
 │                       # Issuer, Verifier, and Authorization Server library
 ├── wallet/             # Wallet library (Go)
 │                       # Credential operations and key management
-├── server/             # @trustknots/server (TypeScript)
-│                       # Sample server implementation
-└── google-cloud/       # @trustknots/google-cloud (TypeScript)
-                        # Google Cloud integration
+├── aws/                # @trustknots/aws (TypeScript)
+│                       # AWS providers (DynamoDB, KMS, Secrets Manager)
+└── server/             # Sample server implementations (TypeScript)
+    ├── single/         # @trustknots/server-single — single-tenant server
+    ├── google-cloud/   # @trustknots/server-google-cloud — Google Cloud integration
+    └── aws/            # @trustknots/server-aws — AWS Lambda handlers + CDK stack
 ```
-
-## User Documentation
-For detailed user documentation, please visit the [VCKnots Documentation Site](https://trustknots.github.io/vcknots/).
 
 ## Contributing
 

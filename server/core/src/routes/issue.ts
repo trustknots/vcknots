@@ -1,29 +1,152 @@
 import { VcknotsContext } from '@trustknots/vcknots'
 import {
-  CredentialConfigurationId,
   CredentialRequest,
   CredentialIssuer,
   initializeIssuerFlow,
+  CredentialConfigurationId,
 } from '@trustknots/vcknots/issuer'
-import { AuthorizationServerIssuer, initializeAuthzFlow } from '@trustknots/vcknots/authz'
-import { Hono } from 'hono'
+import {
+  AuthorizationServerIssuer,
+  initializeAuthzFlow,
+  type CredentialEndpointAuthorizationContext,
+} from '@trustknots/vcknots/authz'
+import { VcknotsError } from '@trustknots/vcknots/errors'
+import { Context, Hono } from 'hono'
+import { ZodError } from 'zod'
 import { handleError } from '../utils/error-handler.js'
+import {
+  buildBearerAuthenticateHeader,
+  buildDpopAuthenticateHeader,
+} from '../utils/www-authenticate.js'
+
+const C_NONCE_TTL_MS = 2 * 60 * 1000
+const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
+const PRE_CODE_TTL_SEC = 10 * 60
 
 export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   const issueApp = new Hono()
 
   const issuerFlow = initializeIssuerFlow(context)
   const authzFlow = initializeAuthzFlow(context)
+  const realm = baseUrl
+
+  const unauthorized = (
+    c: Context,
+    body: { error: string; error_description: string },
+    challenge: { error?: 'invalid_request' | 'invalid_token' | 'insufficient_scope' } = {}
+  ) => {
+    c.header(
+      'WWW-Authenticate',
+      buildBearerAuthenticateHeader({
+        realm,
+        error: challenge.error,
+        errorDescription: challenge.error ? body.error_description : undefined,
+      })
+    )
+    return c.json(body, 401)
+  }
+  type OfferOptions = {
+    tx_code?: {
+      input_mode?: 'numeric' | 'text'
+      length?: number
+      description?: string
+    }
+    authorization_server?: string
+  }
+  const dpopNonceResponse = async (c: Context) => {
+    const dpopNonce = await authzFlow.createDpopNonceChallenge(DPOP_NONCE_TTL_MS)
+    const errorDescription = 'Credential issuer requires nonce in DPoP proof.'
+    c.header('DPoP-Nonce', dpopNonce)
+    c.header(
+      'WWW-Authenticate',
+      buildDpopAuthenticateHeader({
+        realm,
+        error: 'use_dpop_nonce',
+        errorDescription,
+      })
+    )
+    console.log('[credentials-route] DPoP nonce response', {
+      headers: {
+        'DPoP-Nonce': dpopNonce,
+        'WWW-Authenticate': buildDpopAuthenticateHeader({
+          realm,
+          error: 'use_dpop_nonce',
+          errorDescription,
+        }),
+      },
+      payload: {
+        error: 'use_dpop_nonce',
+        error_description: errorDescription,
+      },
+    })
+    return c.json(
+      {
+        error: 'use_dpop_nonce',
+        error_description: errorDescription,
+      },
+      401
+    )
+  }
+
+  const invalidDpopProof = (c: Context, errorDescription: string) => {
+    c.header(
+      'WWW-Authenticate',
+      buildDpopAuthenticateHeader({
+        realm,
+        error: 'invalid_dpop_proof',
+        errorDescription,
+      })
+    )
+    return c.json(
+      {
+        error: 'invalid_dpop_proof',
+        error_description: errorDescription,
+      },
+      401
+    )
+  }
 
   issueApp.post('/configurations/:configuration/offer', async (c) => {
     try {
       const issuer = CredentialIssuer(baseUrl)
-      const configurations = [CredentialConfigurationId(c.req.param('configuration'))]
+      const parseResult = CredentialConfigurationId.schema.safeParse(c.req.param('configuration'))
+      if (!parseResult.success) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Invalid credential configuration ID.',
+          },
+          400
+        )
+      }
+      const configurations = [parseResult.data]
+
+      const rawBody = await c.req.text()
+
+      let options: OfferOptions | undefined
+      if (rawBody.trim().length > 0) {
+        try {
+          options = JSON.parse(rawBody) as OfferOptions
+        } catch {
+          return c.json(
+            {
+              error: 'invalid_request',
+              error_description: 'Request body must be valid JSON.',
+            },
+            400
+          )
+        }
+      }
 
       // It only accepts a domain as an argument
-      const offer = await issuerFlow.offerCredential(issuer, configurations, {
+      const { offer, tx_code } = await issuerFlow.offerCredential(issuer, configurations, {
         usePreAuth: true,
+        txCode: options?.tx_code,
+        ttlSec: PRE_CODE_TTL_SEC,
+        authorizationServer: options?.authorization_server,
       })
+      // TODO: Share tx_code with user (e.g., display on issuance screen or send via email)
+      console.log('tx_code:', tx_code)
       return c.text(
         `openid-credential-offer://?credential_offer=${encodeURIComponent(JSON.stringify(offer))}`
       )
@@ -40,43 +163,81 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
       family_name: 'taro',
       degree: '5',
       gpa: 'test',
+      address: {
+        country: 'fuga',
+        region: 'xyz',
+      },
     }
 
     try {
       const issuer = CredentialIssuer(baseUrl)
       const authz = AuthorizationServerIssuer(baseUrl)
 
-      const request = await c.req.json()
-      const parse = CredentialRequest(request)
-      // Verify AccessToken
-      const accessToken = c.req.header('Authorization')?.replace('Bearer ', '')
-      if (!accessToken) {
+      let authorizationContext: CredentialEndpointAuthorizationContext
+      try {
+        authorizationContext = await authzFlow.authorizeCredentialEndpointAccess(authz, {
+          authorizationHeader: c.req.header('Authorization'),
+          dpopHeader: c.req.header('DPoP'),
+          htm: c.req.method,
+          htu: `${baseUrl}/credentials`,
+          nonceRequired: true,
+        })
+      } catch (err) {
+        if (err instanceof VcknotsError && err.name === 'invalid_access_token') {
+          return unauthorized(
+            c,
+            {
+              error: 'invalid_token',
+              error_description: err.message,
+            },
+            { error: 'invalid_token' }
+          )
+        }
+        if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {
+          return invalidDpopProof(c, err.message)
+        }
+        if (err instanceof VcknotsError && err.name === 'use_dpop_nonce') {
+          return dpopNonceResponse(c)
+        }
+        throw err
+      }
+      const request = await c.req.json().catch(() => null)
+      if (!request) {
         return c.json(
           {
-            error: 'invalid_token',
-            error_description: 'Access token is required.',
+            error: 'invalid_credential_request',
+            error_description: 'Request body must be a valid JSON.',
           },
-          401
+          400
         )
       }
-      const isValid = await authzFlow.verifyAccessToken(authz, accessToken)
-      console.log('isValid:', isValid)
-      if (!isValid) {
-        return c.json(
-          {
-            error: 'invalid_token',
-            error_description: 'Access token is invalid.',
-          },
-          401
-        )
+      let parse: CredentialRequest
+      try {
+        parse = CredentialRequest(request)
+      } catch (err) {
+        if (err instanceof ZodError) {
+          return c.json(
+            {
+              error: 'invalid_credential_request',
+              error_description: 'Request body does not conform to CredentialRequest schema.',
+            },
+            400
+          )
+        }
+        throw err
       }
+
       // Issue Credential
       const credential = await issuerFlow.issueCredential(issuer, parse, {
+        authorizationContext,
         alg: 'ES256',
         cnonce: {
           c_nonce_expires_in: 60 * 5 * 1000,
         },
         claims: issueClaimsSample,
+        proofJwt: {
+          usePreAuth: true,
+        },
       })
       return c.json(credential)
     } catch (err) {
@@ -121,6 +282,62 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
         )
       }
       return c.json(metadata)
+    } catch (err) {
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
+    }
+  })
+  issueApp.post('/nonce', async (c) => {
+    try {
+      const cnonce = await issuerFlow.createNonce(C_NONCE_TTL_MS)
+      const authz = AuthorizationServerIssuer(baseUrl)
+      const dpopMode = await authzFlow.resolveAuthzPolicyDpopMode(authz, 'default_client')
+      const headers: Record<string, string> = {
+        'Cache-Control': 'no-store',
+      }
+      const payload = {
+        c_nonce: cnonce,
+      }
+
+      c.header('Cache-Control', 'no-store')
+      if (dpopMode !== 'off') {
+        const dpopNonce = await issuerFlow.createNonce(DPOP_NONCE_TTL_MS)
+        headers['DPoP-Nonce'] = dpopNonce
+        c.header('DPoP-Nonce', dpopNonce)
+      }
+      console.log('[nonce-route] response', {
+        headers,
+        payload,
+      })
+      return c.json(payload, 200)
+    } catch (err) {
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
+    }
+  })
+
+  issueApp.get('/nonce/:nonce', async (c) => {
+    try {
+      const nonce = c.req.param('nonce')
+      const valid = await issuerFlow.validateNonce(nonce)
+      return c.json({ valid })
+    } catch (err) {
+      const errorResponse = handleError(err)
+      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
+      return c.json(errorResponse, status)
+    }
+  })
+
+  issueApp.delete('/nonce/:nonce', async (c) => {
+    try {
+      const nonce = c.req.param('nonce')
+      const deleted = await issuerFlow.revokeNonce(nonce)
+      if (!deleted) {
+        return c.json({ error: 'not_found', error_description: 'Nonce not found.' }, 404)
+      }
+      return c.json({ deleted: true }, 200)
     } catch (err) {
       const errorResponse = handleError(err)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400

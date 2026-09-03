@@ -33,7 +33,7 @@ export const kmsVerifierEncryptionKeyStore = (
       }),
     })
   if (!projectId) {
-    raise('INTERNAL_SERVER_ERROR', {
+    raise('internal_server_error', {
       message: 'Missing projectId in CloudKmsProviderOptions or GOOGLE_CLOUD_PROJECT_ID env var',
     })
   }
@@ -61,7 +61,7 @@ export const kmsVerifierEncryptionKeyStore = (
     async save(verifier, keyAlg) {
       const kmsAlgorithm = joseAlgorithmToKmsAlgorithm(keyAlg)
       if (!kmsAlgorithm) {
-        raise('INTERNAL_SERVER_ERROR', {
+        raise('internal_server_error', {
           message: `Unsupported verifier encryption key algorithm: ${keyAlg}`,
         })
       }

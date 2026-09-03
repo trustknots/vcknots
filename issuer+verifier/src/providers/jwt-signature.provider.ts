@@ -12,7 +12,7 @@ export const jwtSignature = (): JwtSignatureProvider => {
 
     async verify(token, publicKey): Promise<boolean> {
       if (typeof token !== 'string') {
-        throw err('INVALID_TOKEN', {
+        throw err('invalid_token', {
           message: 'Token is not supported.',
         })
       }
@@ -25,12 +25,12 @@ export const jwtSignature = (): JwtSignatureProvider => {
         jwt.verify(token, pemKey)
       } catch (e: unknown) {
         if (e instanceof jwt.JsonWebTokenError) {
-          throw err('INVALID_JWT', {
+          throw err('invalid_jwt', {
             message: 'Invalid signature detected.',
           })
         }
 
-        throw err('INTERNAL_SERVER_ERROR', {
+        throw err('internal_server_error', {
           message: `Unexpected error: ${e}.`,
         })
       }

@@ -1,15 +1,18 @@
 package jose
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"math/big"
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/stretchr/testify/require"
 )
 
 // mockKeyEntry implements keystore.KeyEntry for testing
@@ -31,10 +34,25 @@ func (m *mockKeyEntry) PublicKey() jose.JSONWebKey {
 func (m *mockKeyEntry) Sign(data []byte) ([]byte, error) {
 	// Only ECDSA is currently tested
 	if ecdsaKey, ok := m.privateKey.(*ecdsa.PrivateKey); ok {
-		hash := sha256.Sum256(data)
-		return ecdsa.SignASN1(rand.Reader, ecdsaKey, hash[:])
+		return ecdsa.SignASN1(rand.Reader, ecdsaKey, digestForAlgorithm(m.algorithm, data))
 	}
 	return nil, nil
+}
+
+// digestForAlgorithm returns the digest RFC 7518 section 3.4 pairs with the
+// algorithm: SHA-256 for ES256, SHA-384 for ES384 and SHA-512 for ES512.
+func digestForAlgorithm(alg string, data []byte) []byte {
+	switch alg {
+	case string(jose.ES384):
+		sum := sha512.Sum384(data)
+		return sum[:]
+	case string(jose.ES512):
+		sum := sha512.Sum512(data)
+		return sum[:]
+	default:
+		sum := sha256.Sum256(data)
+		return sum[:]
+	}
 }
 
 func createMockECDSAKey(curve elliptic.Curve, alg string) *mockKeyEntry {
@@ -132,8 +150,22 @@ func TestJWKSigner_SignPayload(t *testing.T) {
 				return ecdsa.Verify(pubKey, hash, r, s)
 			},
 		},
-		// Note: ES512 (P-521) test is skipped due to variable-length DER encoding issues
-		// Will be implemented using RFC 7515 test vectors
+		{
+			name:           "ES512 signature",
+			curve:          elliptic.P521(),
+			signerAlg:      jose.ES512,
+			requestedAlg:   jose.ES512,
+			expectedSigLen: 132,
+			wantErr:        false,
+			verifyFunc: func(pubKey *ecdsa.PublicKey, hash []byte, sig []byte) bool {
+				if len(sig) != 132 {
+					return false
+				}
+				r := new(big.Int).SetBytes(sig[:66])
+				s := new(big.Int).SetBytes(sig[66:])
+				return ecdsa.Verify(pubKey, hash, r, s)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -161,16 +193,27 @@ func TestJWKSigner_SignPayload(t *testing.T) {
 				t.Errorf("expected signature length %d, got %d", tt.expectedSigLen, len(signature))
 			}
 
-			// Verify signature cryptographically
+			// Verify signature cryptographically, against the digest the
+			// signing algorithm requires rather than a fixed SHA-256.
 			if tt.verifyFunc != nil {
 				pubKey := keyEntry.publicKey.Key.(*ecdsa.PublicKey)
-				hash := sha256.Sum256(payload)
-				if !tt.verifyFunc(pubKey, hash[:], signature) {
+				hash := digestForAlgorithm(string(tt.signerAlg), payload)
+				if !tt.verifyFunc(pubKey, hash, signature) {
 					t.Error("signature verification failed")
 				}
 			}
 		})
 	}
+}
+
+// derSignature encodes r and s as SEQUENCE { INTEGER, INTEGER }, short-form only.
+func derSignature(r, s []byte) []byte {
+	var body []byte
+	for _, component := range [][]byte{r, s} {
+		body = append(body, 0x02, byte(len(component)))
+		body = append(body, component...)
+	}
+	return append([]byte{0x30, byte(len(body))}, body...)
 }
 
 func TestConvertDERToRaw(t *testing.T) {
@@ -221,17 +264,65 @@ func TestConvertDERToRaw(t *testing.T) {
 			expectedLen: 0,
 			wantErr:     true,
 		},
+		{
+			name:        "DER signature with trailing data",
+			input:       append(derSignature(bytes.Repeat([]byte{0x01}, 32), bytes.Repeat([]byte{0x02}, 32)), 0x00),
+			keySize:     32,
+			expectedLen: 0,
+			wantErr:     true,
+		},
+		{
+			name:        "DER component wider than the key size",
+			input:       derSignature(bytes.Repeat([]byte{0x01}, 33), bytes.Repeat([]byte{0x02}, 32)),
+			keySize:     32,
+			expectedLen: 0,
+			wantErr:     true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rawSig, err := ConvertDERToRaw(tt.input, tt.keySize)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ConvertDERToRaw() error = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr {
+				require.Error(t, err)
 				return
 			}
-			if !tt.wantErr && len(rawSig) != tt.expectedLen {
-				t.Errorf("expected length %d, got %d", tt.expectedLen, len(rawSig))
+			require.NoError(t, err)
+			require.Len(t, rawSig, tt.expectedLen)
+		})
+	}
+}
+
+func TestConvertDERToRawAcceptsASN1Signatures(t *testing.T) {
+	tests := []struct {
+		name    string
+		curve   elliptic.Curve
+		keySize int
+	}{
+		{"P-256 (ES256)", elliptic.P256(), 32},
+		{"P-384 (ES384)", elliptic.P384(), 48},
+		// P-521 DER runs past 127 bytes, so its SEQUENCE length is long-form.
+		{"P-521 (ES512)", elliptic.P521(), 66},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, err := ecdsa.GenerateKey(tt.curve, rand.Reader)
+			require.NoError(t, err)
+			hash := sha256.Sum256([]byte("payload"))
+
+			// R and S differ per signature, so repeat to also hit short components.
+			for i := 0; i < 20; i++ {
+				derSig, err := ecdsa.SignASN1(rand.Reader, key, hash[:])
+				require.NoError(t, err)
+
+				rawSig, err := ConvertDERToRaw(derSig, tt.keySize)
+				require.NoError(t, err, "DER length %d", len(derSig))
+				require.Len(t, rawSig, tt.keySize*2)
+
+				r := new(big.Int).SetBytes(rawSig[:tt.keySize])
+				s := new(big.Int).SetBytes(rawSig[tt.keySize:])
+				require.True(t, ecdsa.Verify(&key.PublicKey, hash[:], r, s), "converted signature failed verification")
 			}
 		})
 	}

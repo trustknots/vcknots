@@ -335,6 +335,7 @@ func (p *Oid4vpPresenter) createJARMResponse(vpTokenJSON []byte, request *types.
 	return serialized, nil
 }
 
+
 type requestBuilder struct {
 	req                    *CredentialPresentationRequest
 	x509TrustChainRoots    *x509.CertPool

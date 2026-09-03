@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 12
 ---
 
 
@@ -570,9 +570,9 @@ createVerifierMetadata(
 - None
 
 **Error cases**:
-- `DUPLICATE_VERIFIER`: Metadata with the same `verifierId` is already registered
-- `INTERNAL_SERVER_ERROR`: `options.alg` is not specified (required when specifying a public key/certificate)
-- `INVALID_CERTIFICATE`: The provided certificate is invalid
+- `duplicate_verifier`: Metadata with the same `verifierId` is already registered
+- `internal_server_error`: `options.alg` is not specified (required when specifying a public key/certificate)
+- `invalid_certificate`: The provided certificate is invalid
 
 #### CreateVerifierMetadataOptions {#CreateVerifierMetadataOptions}
 
@@ -636,10 +636,10 @@ createAuthzRequest(
   - `transactionId` (string): Required when calling `verifyPresentations`. Store it alongside session/state so it can be looked up when the Wallet posts back.
 
 **Error cases**:
-- `UNSUPPORTED_CLIENT_ID_PREFIX`: An unsupported client_id_prefix was specified
-- `CERTIFICATE_NOT_FOUND`: Certificate is not registered when using x509_san_dns
-- `INVALID_REQUEST`: options.base_url is not specified even though isRequestUri = true
-- `VERIFIER_VP_FORMATS_NOT_SUPPORTED`: A VP format specified in the query is not listed in the Verifier's metadata
+- `unsupported_client_id_prefix`: An unsupported client_id_prefix was specified
+- `certificate_not_found`: Certificate is not registered when using x509_san_dns
+- `invalid_request`: options.base_url is not specified even though isRequestUri = true
+- `verifier_vp_formats_not_supported`: A VP format specified in the query is not listed in the Verifier's metadata
 
 
 
@@ -683,11 +683,11 @@ findRequestObject(
 {base64url(header)}.{base64url(payload)}.{signature}
 ```
 **Error cases**:
-- `VERIFIER_NOT_FOUND`: The specified Verifier does not exist
-- `REQUEST_OBJECT_NOT_FOUND`: The specified Request Object does not exist
-- `PROVIDER_NOT_FOUND`: Provider for the Authorization Request JAR cannot be found
-- `AUTHZ_VERIFIER_KEY_NOT_FOUND`: Signing key provider for the specified algorithm cannot be found
-- `INTERNAL_SERVER_ERROR`: Failed to generate the signature for the Request Object
+- `verifier_not_found`: The specified Verifier does not exist
+- `request_object_not_found`: The specified Request Object does not exist
+- `provider_not_found`: Provider for the Authorization Request JAR cannot be found
+- `authz_verifier_key_not_found`: Signing key provider for the specified algorithm cannot be found
+- `internal_server_error`: Failed to generate the signature for the Request Object
 
 **Notes**:
 - A Request Object can be retrieved only once.
@@ -766,15 +766,15 @@ Options passed from your verifier application into VP / credential-format–spec
 - **Implementer responsibility**: This library **does not** automatically persist or manage verified payloads. Binding to sessions or databases, retention, and whether to write audit logs must be **designed and implemented by your (integrator) application** in line with business requirements.
 
 **Error cases**:
-- `VERIFIER_NOT_FOUND`: The Verifier does not exist
-- `TRANSACTION_ID_NOT_FOUND`: No transaction found for the given `transactionId` (already consumed or invalid)
-- `ILLEGAL_ARGUMENT`: Missing/invalid arguments (for example, unknown credential query ID, or VP provider rejects options)
-- `UNSUPPORTED_VP_TOKEN`: Unsupported `vp_token` shape or format (for example, non-string VP)
+- `verifier_not_found`: The Verifier does not exist
+- `transaction_id_not_found`: No transaction found for the given `transactionId` (already consumed or invalid)
+- `illegal_argument`: Missing/invalid arguments (for example, unknown credential query ID, or VP provider rejects options)
+- `unsupported_vp_token`: Unsupported `vp_token` shape or format (for example, non-string VP)
 - `INVALID_REQUEST`: The `state` in the response does not match the `state` stored in the transaction
-- `INVALID_VP_TOKEN`: Required DCQL credentials missing, or VP structure invalid
-- `INVALID_NONCE`: The authorization request `nonce` is missing from the VP or does not match
-- `INVALID_CREDENTIAL`: Invalid embedded VC (for example, `jwt_vp_json` path) or issuer/JWKS resolution failure
-- `INVALID_SD_JWT` / `HOLDER_BINDING_FAILED`: SD-JWT or Key Binding verification failures
+- `invalid_vp_token`: Required DCQL credentials missing, or VP structure invalid
+- `invalid_nonce`: The authorization request `nonce` is missing from the VP or does not match
+- `invalid_credential`: Invalid embedded VC (for example, `jwt_vp_json` path) or issuer/JWKS resolution failure
+- `invalid_sd_jwt` / `holder_binding_failed`: SD-JWT or Key Binding verification failures
 
 **Notes**:
 - `client_id` (`expectedAud`) is automatically retrieved from the transaction. The `aud` claim the Wallet sets on the VP or KB-JWT must match the `client_id` passed to `createAuthzRequest`.
@@ -824,7 +824,7 @@ Note:
 ## 9. Troubleshooting
 
 
-- **Q: Certificate-related error**: `INVALID_CERTIFICATE`
+- **Q: Certificate-related error**: `invalid_certificate`
   - **A:** Check that the path to the certificate file is correct and that the file exists. Also verify that the certificate is valid.
 
 - **Q: Metadata validation error**:
@@ -833,10 +833,10 @@ Note:
 - **Q: Error when creating authorization request**: `invalid_request`
   - **A:** Verify that all required parameters have been provided.
 
-- **Q: Error retrieving request object**: `REQUEST_OBJECT_NOT_FOUND`
+- **Q: Error retrieving request object**: `request_object_not_found`
   - **A:** A request object can be retrieved only once. Calling with the same Request Object ID multiple times results in an error.
 
-- **Q: Nonce verification error for vp_token**: fails with `INVALID_NONCE` – nonce is not valid.
+- **Q: Nonce verification error for vp_token**: fails with `invalid_nonce` – nonce is not valid.
   - **A:** Check the following possible causes and solutions.
   - **Causes**:
     - The nonce in `vp_token` does not match the one generated at the time of the authorization request

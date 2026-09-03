@@ -128,9 +128,10 @@ describe('AuthzRequestJARProvider', () => {
       response_mode: 'query',
     }
 
-    await assert.rejects(provider.generate('unknown-verifier' as ClientId, requestObject, alg), {
-      name: 'AUTHZ_VERIFIER_KEY_NOT_FOUND',
-      message: 'Verifier key not found.',
-    })
+    await assert.rejects(provider.generate('unknown-verifier' as ClientId, requestObject, alg),       {
+        name: 'authz_verifier_key_not_found',
+        message: 'Verifier key not found.',
+      })
   })
 })
+

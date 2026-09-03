@@ -1,5 +1,5 @@
 import { serve } from '@hono/node-server'
-import { initializeContext } from '@trustknots/vcknots'
+import { AuthzOAuthClients, initializeContext } from '@trustknots/vcknots'
 import {
   CredentialIssuer,
   CredentialIssuerMetadata,
@@ -14,6 +14,7 @@ import {
   AuthorizationServerIssuer,
   initializeAuthzFlow,
   AuthorizationServerMetadata,
+  AuthzOAuthPolicy,
 } from '@trustknots/vcknots/authz'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -23,12 +24,16 @@ import issuerMetadataConfigRaw from '../../samples/issuer_metadata.json' with { 
 import authorizationMetadataConfigRaw from '../../samples/authorization_metadata.json' with {
   type: 'json',
 }
+import authzOAuthPolicyConfigRaw from '../../samples/oauth-server.json' with { type: 'json' }
+import oauthClientsConfigRaw from '../../samples/oauth-clients.json' with { type: 'json' }
 import verifierMetadataConfigRaw from '../../samples/verifier_metadata.json' with { type: 'json' }
 import { createApp } from './app.js'
 
 // Metadata validation
 const issuerMetadataConfig = CredentialIssuerMetadata(issuerMetadataConfigRaw)
 const authorizationMetadataConfig = AuthorizationServerMetadata(authorizationMetadataConfigRaw)
+const authzOAuthPolicyConfig = AuthzOAuthPolicy(authzOAuthPolicyConfigRaw.authorization_server)
+const oauthClientsConfig = AuthzOAuthClients(oauthClientsConfigRaw)
 const verifierMetadataConfig = VerifierMetadata(verifierMetadataConfigRaw)
 
 // Create VcknotsContext
@@ -66,14 +71,16 @@ serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, a
   issuerMetadataConfig.credential_issuer = CredentialIssuer(baseUrl)
   issuerMetadataConfig.authorization_servers = [authzURL]
   issuerMetadataConfig.credential_endpoint = `${issuerURL}/credentials`
-  issuerMetadataConfig.batch_credential_endpoint = `${issuerURL}/batch_credential`
   issuerMetadataConfig.deferred_credential_endpoint = `${issuerURL}/deferred_credential`
+  issuerMetadataConfig.nonce_endpoint = `${issuerURL}/nonce`
   await initializeIssuerMetadata(issuerMetadataConfig)
 
   authorizationMetadataConfig.issuer = AuthorizationServerIssuer(baseUrl)
   authorizationMetadataConfig.authorization_endpoint = `${authzURL}/authorize`
   authorizationMetadataConfig.token_endpoint = `${authzURL}/token`
   await initializeAuthzMetadata(authorizationMetadataConfig)
+  await initializeAuthzOAuthPolicy(AuthorizationServerIssuer(baseUrl), authzOAuthPolicyConfig)
+  await initializeAuthzOAuthClients(AuthorizationServerIssuer(baseUrl), oauthClientsConfig.clients)
 })
 
 async function initializeIssuerMetadata(issuerMetadata: CredentialIssuerMetadata) {
@@ -94,6 +101,41 @@ async function initializeAuthzMetadata(authzMetadata: AuthorizationServerMetadat
     return true
   } catch (error) {
     console.error('Error initializing authz metadata:', error)
+    return false
+  }
+}
+
+async function initializeAuthzOAuthPolicy(
+  authz: AuthorizationServerIssuer,
+  policy: AuthzOAuthPolicy
+) {
+  try {
+    await authzFlow.createAuthzOAuthPolicy(authz, policy)
+    console.log('Authz OAuth policy initialized')
+    return true
+  } catch (error) {
+    console.error('Error initializing authz OAuth policy:', error)
+    return false
+  }
+}
+
+async function initializeAuthzOAuthClients(
+  authz: AuthorizationServerIssuer,
+  clients: AuthzOAuthClients['clients']
+) {
+  try {
+    for (const client of clients) {
+      const current = await authzFlow.findAuthzOAuthClient(authz, client.client_id)
+      if (current) {
+        console.log(`Authz OAuth client already exists, skipping initialization: ${client.client_id}`)
+        continue
+      }
+      await authzFlow.createAuthzOAuthClient(authz, client)
+      console.log(`Authz OAuth client initialized: ${client.client_id}`)
+    }
+    return true
+  } catch (error) {
+    console.error('Error initializing authz OAuth clients:', error)
     return false
   }
 }

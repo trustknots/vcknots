@@ -27,20 +27,30 @@ func (m *mockReceiver) FetchAuthorizationServerMetadata(endpoint common.URIField
 	return &types.AuthorizationServerMetadata{}, nil
 }
 
-func (m *mockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string) (*types.CredentialIssuanceAccessToken, error) {
+func (m *mockReceiver) FetchAccessToken(receivingType types.SupportedReceivingTypes, endpoint common.URIField, authzCode string, txCode string, opts ...types.TokenRequestOption) (*types.CredentialIssuanceAccessToken, error) {
 	if m.shouldError {
 		return nil, fmt.Errorf("mock error")
 	}
 	return &types.CredentialIssuanceAccessToken{}, nil
 }
 
+func (m *mockReceiver) FetchNonce(receivingType types.SupportedReceivingTypes, endpoint common.URIField) (*string, error) {
+	if m.shouldError {
+		return nil, fmt.Errorf("mock error")
+	}
+	nonce := "mock-nonce"
+	return &nonce, nil
+}
+
 func (m *mockReceiver) ReceiveCredential(
 	receivingType types.SupportedReceivingTypes,
 	endpoint common.URIField,
-	format string,
+	credentialConfigurationID string,
+	credentialIdentifier *string,
 	accessToken types.CredentialIssuanceAccessToken,
 	credentialDefinition *types.CredentialDefinition,
 	jwtProof *string,
+	options ...*types.CredentialRequestOptions,
 ) (*string, error) {
 	if m.shouldError {
 		return nil, fmt.Errorf("mock error")
@@ -136,14 +146,14 @@ func TestReceivingDispatcher_FetchAccessToken(t *testing.T) {
 	dispatcher, _ := NewReceivingDispatcher(WithPlugin(types.Oid4vci, mock))
 
 	t.Run("Happy path", func(t *testing.T) {
-		_, err := dispatcher.FetchAccessToken(types.Oid4vci, common.URIField{}, "test-code")
+		_, err := dispatcher.FetchAccessToken(types.Oid4vci, common.URIField{}, "test-code", "")
 		if err != nil {
 			t.Errorf("FetchAccessToken() on happy path should not return error: %v", err)
 		}
 	})
 
 	t.Run("Empty authzCode", func(t *testing.T) {
-		_, err := dispatcher.FetchAccessToken(types.Oid4vci, common.URIField{}, "")
+		_, err := dispatcher.FetchAccessToken(types.Oid4vci, common.URIField{}, "", "")
 		if err == nil {
 			t.Fatal("Expected error for empty authzCode")
 		}
@@ -151,7 +161,7 @@ func TestReceivingDispatcher_FetchAccessToken(t *testing.T) {
 
 	t.Run("Unsupported receiving type", func(t *testing.T) {
 		invalidType := types.SupportedReceivingTypes(999)
-		_, err := dispatcher.FetchAccessToken(invalidType, common.URIField{}, "test-code")
+		_, err := dispatcher.FetchAccessToken(invalidType, common.URIField{}, "test-code", "")
 		if err == nil {
 			t.Fatal("Expected error for unsupported receiving type")
 		}
@@ -164,22 +174,30 @@ func TestReceivingDispatcher_ReceiveCredential(t *testing.T) {
 	accessToken := types.CredentialIssuanceAccessToken{Token: "test_token"}
 
 	t.Run("Happy path", func(t *testing.T) {
-		_, err := dispatcher.ReceiveCredential(types.Oid4vci, common.URIField{}, "jwt_vc_json", accessToken, nil, nil)
+		_, err := dispatcher.ReceiveCredential(types.Oid4vci, common.URIField{}, "jwt_vc_json", nil, accessToken, nil, nil)
 		if err != nil {
 			t.Errorf("ReceiveCredential() on happy path should not return error: %v", err)
 		}
 	})
 
-	t.Run("Empty format", func(t *testing.T) {
-		_, err := dispatcher.ReceiveCredential(types.Oid4vci, common.URIField{}, "", accessToken, nil, nil)
+	t.Run("Empty credential configuration ID", func(t *testing.T) {
+		_, err := dispatcher.ReceiveCredential(types.Oid4vci, common.URIField{}, "", nil, accessToken, nil, nil)
 		if err == nil {
-			t.Fatal("Expected error for empty format")
+			t.Fatal("Expected error for empty credential configuration ID")
+		}
+	})
+
+	t.Run("Credential identifier without configuration ID", func(t *testing.T) {
+		credentialIdentifier := "cred-id-1"
+		_, err := dispatcher.ReceiveCredential(types.Oid4vci, common.URIField{}, "", &credentialIdentifier, accessToken, nil, nil)
+		if err != nil {
+			t.Errorf("ReceiveCredential() with credential identifier should not return error: %v", err)
 		}
 	})
 
 	t.Run("Plugin returns error", func(t *testing.T) {
 		mock.shouldError = true
-		_, err := dispatcher.ReceiveCredential(types.Oid4vci, common.URIField{}, "jwt_vc_json", accessToken, nil, nil)
+		_, err := dispatcher.ReceiveCredential(types.Oid4vci, common.URIField{}, "jwt_vc_json", nil, accessToken, nil, nil)
 		if err == nil {
 			t.Fatal("Expected error when underlying plugin fails")
 		}

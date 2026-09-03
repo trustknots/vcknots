@@ -5,9 +5,10 @@ import { accessToken } from './access-token.provider'
 import { authzRequestJARKid } from './authorization-request-jar-kid.provider'
 import { authzRequestJARX5c } from './authorization-request-jar-x5c.provider'
 import { authzSignatureKey } from './authz-signature-key.provider'
-import { cnonce } from './cnonce.provider'
+import { nonce } from './nonce.provider'
 import { credentialOffer } from './credential-offer.provider'
 import { credentialProofJWT } from './credential-proof-jwt.provider'
+import { dpopProof } from './dpop-proof.provider'
 import { verifyCredentialJwt } from './verify-credential-jwt-vc-json.provider'
 import { dcql } from './dcql.provider'
 import { did } from './did-key.provider'
@@ -23,10 +24,13 @@ import { requestObjectId } from './request-object-id.provider'
 import { verifierSignatureKey } from './verifier-signature-key.provider'
 import { verifierEncryptionKey } from './verifier-encryption-key.provider'
 import { certificate } from './certificate.provider'
+import { transactionCode } from './transaction-code.provider'
 import { transactionData } from './transaction-data.provider'
 import { transactionId } from './transaction-id.provider'
 import { verifyVerifiablePresentation } from './verify-presentation-jwt-vp-json.provider'
 import { verifyVerifiablePresentationDcSdJwt } from './verify-presentation-dc-sd-jwt.provider'
+import { issueCredentialSDJWT } from './issue-credential-dc-sd-jwt.provider'
+import { inMemoryAllowedCredentialConfigurationStore } from './in-memory/in-memory-allowed-credential-configuration-store.provider'
 
 type ArrayUnless<P extends Provider> = P['single'] extends true ? P : P[]
 
@@ -58,15 +62,18 @@ const initializeDefaultProviders = (
 ): NonNullable<VcknotsOptions['providers']> => [
   inMemory(),
   credentialOffer(),
-  cnonce(),
+  nonce(),
   accessToken(),
   preAuthorizedCode(),
+  transactionCode(),
   issuerSignatureKey(),
   authzSignatureKey(),
   issueCredentialJwt(),
+  issueCredentialSDJWT(),
   did(),
   dcql(),
   credentialProofJWT(),
+  dpopProof(),
   verifyCredentialJwt(),
   jwtSignature(),
   holderBinding(),
@@ -81,6 +88,7 @@ const initializeDefaultProviders = (
   transactionId(),
   verifyVerifiablePresentation(),
   verifyVerifiablePresentationDcSdJwt(),
+  inMemoryAllowedCredentialConfigurationStore(),
 ]
 
 export const initializeProviderRegistry = (
@@ -116,7 +124,7 @@ export const initializeProviderRegistry = (
 
   return {
     get(kind) {
-      const provider = providers[kind] ?? raise('PROVIDER_NOT_FOUND', { message: kind })
+      const provider = providers[kind] ?? raise('provider_not_found', { message: kind })
 
       for (const it of Array.isArray(provider) ? provider : [provider]) {
         if ('providers' in it) {
@@ -138,7 +146,7 @@ export const initializeProviderRegistry = (
       const candidates = Array.isArray(multiples) ? multiples : [multiples]
       const provider =
         candidates.find((it) => it.canHandle(value)) ??
-        raise('PROVIDER_NOT_FOUND', { message: `No provider found which can handle: ${value}` })
+        raise('provider_not_found', { message: `No provider found which can handle: ${value}` })
       return provider
     },
   }
@@ -146,7 +154,7 @@ export const initializeProviderRegistry = (
 
 export const withProviderRegistry = {
   providers: {
-    get: () => raise('ILLEGAL_STATE'),
-    select: () => raise('ILLEGAL_STATE'),
+    get: () => raise('illegal_state'),
+    select: () => raise('illegal_state'),
   },
 }

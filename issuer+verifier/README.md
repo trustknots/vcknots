@@ -6,12 +6,14 @@ This package provides the core logic for both Issuers and Verifiers, allowing yo
 
 ## Features
 
-*   **OID4VCI (Issuer):**
+*   **OpenID4VCI (Issuer):**
     *   Manage Issuer Metadata.
     *   Create Credential Offers (Pre-Authorized Code Flow).
     *   Issue Verifiable Credentials (JWT-VC format).
+    *   Nonce endpoint support for c_nonce management.
+    *   DPoP Proof verification, DPoP nonce, and DPoP-bound access token support.
     *   Support for `did:key` and other DID methods via resolvers.
-*   **OID4VP (Verifier):**
+*   **OpenID4VP (Verifier):**
     *   Manage Verifier Metadata.
     *   Create Authorization Requests (JAR - Signed Request Objects).
     *   Verify Verifiable Presentations (VP Token).
@@ -38,7 +40,7 @@ The easiest way to get started is to use the default configuration, which uses i
 import { vcknots } from '@trustknots/vcknots'
 
 // Initialize with default (in-memory) providers
-const { issuer, verifier } = vcknots()
+const { issuer, verifier, authz } = vcknots()
 ```
 
 ## Tutorial
@@ -88,24 +90,123 @@ console.log('Credential Offer:', scheme)
 ```
 
 #### 3. Issue a Credential
-When the wallet sends a credential request (after processing the offer), issue the credential.
+When the wallet sends a credential request (after processing the offer), verify the access token at the credential endpoint first, then issue the credential.
 
 ```typescript
-// `req` represents the HTTP request sent by wallet 
-const request = CredentialRequest(req.json() /* extract body as json */)
-const credential = await issuer.issueCredential(
-  issuerId,
-  request, 
-  {
-    alg: 'ES256',
-    claims: {
-      name: 'Alice',
-      from: 'Wonderland'
-    }
-  }
-)
+// `req` represents the HTTP request sent by the wallet
+const authzIssuer = AuthorizationServerIssuer(base)
+const authorizationContext = await authz.authorizeCredentialEndpointAccess(authzIssuer, {
+  authorizationHeader: req.header('Authorization'),
+  dpopHeader: req.header('DPoP'),
+  htm: req.method,
+  htu: `${base}/credentials`,
+  nonceRequired: true,
+})
+
+const request = CredentialRequest(await req.json())
+const credential = await issuer.issueCredential(issuerId, request, {
+  authorizationContext,
+  alg: 'ES256',
+  claims: {
+    name: 'Alice',
+    from: 'Wonderland',
+  },
+  // JWT proof (`proofs.jwt`) verification. usePreAuth indicates whether the grant type is pre-authorized_code.
+  proofJwt: { usePreAuth: true },
+})
 
 console.log('Issued Credential:', credential)
+```
+
+**JWT credential proofs (`proofs.jwt`) and `options.proofJwt`**
+
+For OpenID4VCI JWT proofs, `aud` must match the Credential Issuer Identifier, and `iss` is validated according to the flow and how the access token was obtained.
+
+In the code above, `authorizationContext` is the result of verifying the access token (and DPoP Proof when required) at the credential endpoint. When the access token payload includes `client_id`, that value is passed internally to proof verification inside `issueCredential`. **Callers do not need to set `proofJwt.clientId` separately.**
+
+`options.proofJwt.usePreAuth` indicates only whether the grant type is `pre-authorized_code`. Whether the token was obtained through anonymous access is determined by **whether the access token has `client_id`** (see the Situation column in the table).
+
+| Situation | `proofJwt` | proof JWT `iss` |
+|-----------|------------|-----------------|
+| **Pre-authorized code** grant, access token obtained via **anonymous access** at the token endpoint (no `client_id`) | `{ usePreAuth: true }` | **Omit** (access token has no `client_id`) |
+| **Pre-authorized code** grant, access token obtained as a **registered OAuth client** (access token has `client_id`) | `{ usePreAuth: true }` | Optional; if present, must match the access token’s `client_id` |
+| **Authorization code** or other normal OAuth client context (not supported) | `{ usePreAuth: false }` | Must match the access token’s `client_id` or the Credential Issuer Identifier |
+
+If `proofJwt` does not match the real flow, `aud` / `iss` checks may fail with `invalid_proof`.
+
+#### 4. Nonce Management (Optional)
+
+When using the [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) (OpenID4VCI), Wallets can obtain a `c_nonce` before sending credential requests. This is useful when requesting multiple credentials—a single nonce can be reused within its validity period.
+
+If your HTTP server implementation needs to expose a DPoP nonce, manage the DPoP mode in the Authorization Server OAuth policy store. Server implementations can consult this policy to decide whether `POST /nonce` should return a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values. See [server/core/src/routes/issue.ts](../server/core/src/routes/issue.ts) for an implementation example.
+
+Set `nonce_endpoint` in your issuer metadata:
+
+```typescript
+const metadata: CredentialIssuerMetadata = {
+  credential_issuer: issuerId,
+  credential_endpoint: `${base}/credentials`,
+  nonce_endpoint: `${base}/nonce`,  // Optional: enables nonce endpoint
+  // ... other metadata
+}
+```
+
+**Create a nonce** (e.g., for `POST /nonce`):
+
+```typescript
+const NONCE_TTL_MS = 2 * 60 * 1000  // 2 minutes
+const cnonce = await issuer.createNonce(NONCE_TTL_MS)
+// Returns: string (e.g., "3ccc7973abef4102ad70a871e200304b")
+```
+
+**Validate a nonce** (e.g., for `GET /nonce/:nonce` or when verifying proof):
+
+```typescript
+const valid = await issuer.validateNonce(nonce)
+// Returns: boolean
+```
+
+**Revoke a nonce** (e.g., for `DELETE /nonce/:nonce`):
+
+```typescript
+const deleted = await issuer.revokeNonce(nonce)
+// Returns: boolean (true if revoked successfully, false if nonce not found)
+```
+
+**Consume a DPoP nonce** (e.g., when verifying DPoP Proof at the token endpoint):
+
+```typescript
+const consumed = await nonceStore.consume(nonce)
+// Returns: boolean (true when the nonce exists, is not expired, and was consumed)
+```
+
+The `nonce` in a DPoP Proof is consumed only once to prevent replay. The credential proof `c_nonce` can be reused when requesting multiple credentials, while the DPoP Proof nonce is treated as a value bound to the token request proof.
+
+#### 5. DPoP Proof and DPoP-bound access tokens
+
+Token endpoint implementations can pass the Proof JWT from the HTTP `DPoP` header to `createAccessToken` to verify DPoP Proof and issue a DPoP-bound access token.
+
+```typescript
+const accessToken = await authz.createAccessToken(issuer, tokenRequest, {
+  dpopProof: {
+    proofJwt,
+    htm: 'POST',
+    htu: `${base}/token`,
+    nonceRequired: true,
+  },
+})
+```
+
+DPoP Proof verification checks `typ: dpop+jwt`, an asymmetric signing algorithm, the public `jwk` in the JOSE header, the signature, `jti` / `iat` / `htm` / `htu`, and nonce. The `jti` is stored in `dpop-proof-jti-store-provider`; reusing the same public key thumbprint and `jti` combination is rejected.
+
+When verification succeeds, the response `token_type` is `DPoP`, and the access token payload contains `cnf.jkt`, the JWK Thumbprint of the public key from the DPoP Proof.
+
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "DPoP",
+  "expires_in": 86400
+}
 ```
 
 ### Verifier Flow

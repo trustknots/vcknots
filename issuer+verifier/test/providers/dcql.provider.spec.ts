@@ -30,7 +30,7 @@ describe('DcqlProvider', () => {
       assert.equal(result.dcql_query.credentials[0].format, 'jwt_vc_json')
     })
 
-    it('should throw INVALID_REQUEST for invalid meta key in dc+sd-jwt format', async () => {
+    it('should throw invalid_request for invalid meta key in dc+sd-jwt format', async () => {
       await assert.rejects(
         provider.generate({
           dcql_query: {
@@ -44,11 +44,11 @@ describe('DcqlProvider', () => {
             ],
           },
         }),
-        { name: 'INVALID_REQUEST' }
+        { name: 'invalid_request' }
       )
     })
 
-    it('should throw INVALID_REQUEST for invalid meta key in mso_mdoc format', async () => {
+    it('should throw invalid_request for invalid meta key in mso_mdoc format', async () => {
       await assert.rejects(
         provider.generate({
           dcql_query: {
@@ -62,7 +62,7 @@ describe('DcqlProvider', () => {
             ],
           },
         }),
-        { name: 'INVALID_REQUEST' }
+        { name: 'invalid_request' }
       )
     })
 
@@ -118,3 +118,4 @@ describe('DcqlProvider', () => {
     })
   })
 })
+

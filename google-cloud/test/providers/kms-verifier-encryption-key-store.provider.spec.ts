@@ -120,7 +120,7 @@ class FakeKmsClient {
   async getPublicKey({ name }: { name: string }) {
     const publicKey = this.publicKeys.get(name)
     if (!publicKey) {
-      throw raise('INTERNAL_SERVER_ERROR', { message: 'not found' })
+      throw raise('internal_server_error', { message: 'not found' })
     }
     return [publicKey]
   }
@@ -224,7 +224,7 @@ describe('kmsVerifierEncryptionKeyStore', () => {
     })
 
     await assert.rejects(provider.save(verifier, 'unsupported'), (error: Error) => {
-      assert.equal(error.name, 'INTERNAL_SERVER_ERROR')
+      assert.equal(error.name, 'internal_server_error')
       assert.match(error.message, /Unsupported verifier encryption key algorithm/)
       return true
     })

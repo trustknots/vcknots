@@ -19,7 +19,7 @@ describe('AuthzRequestJARProvider', () => {
       if (id === verifierId) return x5c
       if (id === emptyVerifierId) return []
       return Promise.reject(
-        raise('CERTIFICATE_NOT_FOUND', { message: 'Verifier certificate not found.' })
+        raise('certificate_not_found', { message: 'Verifier certificate not found.' })
       )
     }),
     save: mock.fn(async () => {}),
@@ -125,9 +125,9 @@ describe('AuthzRequestJARProvider', () => {
     }
 
     await assert.rejects(provider.generate('unknown-verifier' as ClientId, requestObject, alg), {
-      name: 'CERTIFICATE_NOT_FOUND',
-      message: 'Verifier certificate not found.',
-    })
+        name: 'certificate_not_found',
+        message: 'Verifier certificate not found.',
+      })
   })
 
   it('should throw an error if certificate store returns empty array', async () => {
@@ -140,8 +140,9 @@ describe('AuthzRequestJARProvider', () => {
     }
 
     await assert.rejects(provider.generate(emptyVerifierId, requestObject, alg), {
-      name: 'CERTIFICATE_NOT_FOUND',
+      name: 'certificate_not_found',
       message: 'Verifier certificate not found.',
     })
   })
 })
+

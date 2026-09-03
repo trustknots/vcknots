@@ -1,0 +1,23 @@
+{
+  "name": "@trustknots/aws-resources",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "deploy": "sh scripts/deploy-resources.sh"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.161",
+    "@types/node": "^24.12.4",
+    "aws-cdk": "2.1128.0",
+    "esbuild": "^0.28.1",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.258.1",
+    "constructs": "^10.6.0"
+  }
+}

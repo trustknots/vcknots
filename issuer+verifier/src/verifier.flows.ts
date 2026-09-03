@@ -4,7 +4,6 @@ import { AuthorizationRequest } from './authorization-request.types'
 import { AuthorizationResponse } from './authorization-response.types'
 import { ClientIdentifier } from './client-id-prefix.types'
 import { ClientId } from './client-id.types'
-import { Cnonce } from './cnonce.types'
 import { Dcql } from './dcql.type'
 import { err, raise } from './errors/vcknots.error'
 import { Jwk } from './jwk.type'
@@ -22,10 +21,11 @@ import {
   CreateVerifierMetadataInput,
   VerifierMetadata,
 } from './verifier-metadata.types'
+import { Nonce } from './nonce.types'
 
 const assertAsymmetricPublicJwk = (publicKey: Jwk) => {
   if (publicKey.kty === 'oct') {
-    throw err('INVALID_OPTIONS', {
+    throw err('invalid_options', {
       message: 'publicKey must be an asymmetric public JWK.',
     })
   }
@@ -41,7 +41,7 @@ const assertAsymmetricPublicJwk = (publicKey: Jwk) => {
     'oth' in publicKey ||
     'priv' in publicKey
   ) {
-    throw err('INVALID_OPTIONS', {
+    throw err('invalid_options', {
       message: 'publicKey must not contain private or symmetric key material.',
     })
   }
@@ -125,8 +125,8 @@ export type VerifierFlow = {
 }
 
 export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow => {
-  const cnonce$ = context.providers.get('cnonce-provider')
-  const nonceStore$ = context.providers.get('cnonce-store-provider')
+  const nonce$ = context.providers.get('nonce-provider')
+  const nonceStore$ = context.providers.get('nonce-store-provider')
   const query$ = context.providers.get('credential-query-provider')
   const verifierMetadata$ = context.providers.get('verifier-metadata-store-provider')
   const keyStore$ = context.providers.get('verifier-signature-key-store-provider')
@@ -150,7 +150,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
     },
     async createVerifierMetadata(verifierId, metadata, options) {
       if ('jwks' in metadata) {
-        throw err('INVALID_OPTIONS', {
+        throw err('invalid_options', {
           message:
             'jwks cannot be specified directly. It is generated from the verifier encryption key.',
         })
@@ -158,7 +158,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       const metadataInput = createVerifierMetadataInputSchema.parse(metadata)
       const current = await verifierMetadata$.fetch(verifierId)
       if (current) {
-        throw err('DUPLICATE_VERIFIER', {
+        throw err('duplicate_verifier', {
           message: `verifier ${verifierId} is already registered.`,
         })
       }
@@ -191,7 +191,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       } else if ('publicKey' in options && options.publicKey !== undefined) {
         // use provided signing key pair (not support x509)
         if (!keyAlg) {
-          throw err('INTERNAL_SERVER_ERROR', {
+          throw err('internal_server_error', {
             message: 'alg is required in the provided publicKey.',
           })
         }
@@ -199,13 +199,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           assertAsymmetricPublicJwk(options.publicKey)
           await importJWK(options.publicKey, keyAlg)
         } else if (options.format === 'jwk') {
-          throw err('INVALID_OPTIONS', {
+          throw err('invalid_options', {
             message: 'publicKey must be a JWK when format is jwk.',
           })
         } else if (options.format === 'pem' && typeof options.publicKey === 'string') {
           await importSPKI(options.publicKey, keyAlg)
         } else {
-          throw err('INVALID_OPTIONS', {
+          throw err('invalid_options', {
             message: 'publicKey must be a PEM string when format is pem.',
           })
         }
@@ -220,7 +220,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         // use provided signing key pair and x509 certificate
         // password protected private key is not supported
         if (!keyAlg) {
-          throw err('INTERNAL_SERVER_ERROR', {
+          throw err('internal_server_error', {
             message: 'alg is required in the provided privateKey.',
           })
         }
@@ -229,7 +229,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         const certificates = Certificate(certificateChain)
         const certValid = await certificate$.validate(certificates)
         if (!certValid) {
-          throw err('INVALID_CERTIFICATE', {
+          throw err('invalid_certificate', {
             message: 'The provided certificate is not valid.',
           })
         }
@@ -250,7 +250,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       await encryptionKeyStore$.save(verifierId, encryptionKeyAlg)
       const encryptionPublicJwk = await encryptionKeyStore$.fetch(verifierId, encryptionKeyAlg)
       if (!encryptionPublicJwk) {
-        throw err('INTERNAL_SERVER_ERROR', {
+        throw err('internal_server_error', {
           message: 'Failed to generate encryption key pair.',
         })
       }
@@ -280,19 +280,19 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       if (client_id_prefix === 'x509_san_dns') {
         if (!isRequestUri) {
-          throw err('INVALID_REQUEST', {
+          throw err('invalid_request', {
             message: `${client_id_prefix} require request_uri to deliver the signed request object.`,
           })
         }
         const certificate = await certificateStore$.fetch(verifierId)
         if (certificate.length === 0) {
-          throw err('CERTIFICATE_NOT_FOUND', {
+          throw err('certificate_not_found', {
             message: 'verifier certificate is not found.',
           })
         }
       }
 
-      const metadata = (await verifierMetadata$.fetch(verifierId)) ?? raise('VERIFIER_NOT_FOUND')
+      const metadata = (await verifierMetadata$.fetch(verifierId)) ?? raise('verifier_not_found')
 
       const parsedQuery = await query$.generate(query)
 
@@ -304,7 +304,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       if (parsedQuery.dcql_query) {
         for (const credential of parsedQuery.dcql_query.credentials) {
           if (!vpFormats.includes(credential.format)) {
-            throw err('VERIFIER_VP_FORMATS_NOT_SUPPORTED', {
+            throw err('verifier_vp_formats_not_supported', {
               message: `The vp_format ${credential.format} is not supported by the verifier.`,
             })
           }
@@ -326,18 +326,18 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       if (isRequestUri ?? true) {
         const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_prefix)
         if (!authzRequestJAR) {
-          throw err('UNSUPPORTED_CLIENT_ID_PREFIX', {
+          throw err('unsupported_client_id_prefix', {
             message: 'client_id_prefix is not supported.',
           })
         }
         if (!options.base_url) {
-          throw err('INVALID_REQUEST', {
+          throw err('invalid_request', {
             message: 'base_url is required when is_request_uri is true',
           })
         }
 
         const transactionId = await transactionId$.generate()
-        const nonce = await cnonce$.generate()
+        const nonce = await nonce$.generate()
         await nonceStore$.save(nonce)
         await transactionDataStore$.save(
           transactionId,
@@ -346,7 +346,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
             clientId: client_id,
             verifierId,
             state: options.state,
-            nonce,
+            nonce: nonce.nonce,
           })
         )
 
@@ -364,7 +364,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           aud: 'https://self-issued.me/v2',
           client_metadata: metadata,
           response_mode: response_mode || 'direct_post',
-          nonce,
+          nonce: nonce.nonce,
           ...parsedQuery,
           ...(transaction_data.length > 0 ? { transaction_data } : {}),
         })
@@ -382,7 +382,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
 
       const transactionId = await transactionId$.generate()
-      const nonce = await cnonce$.generate()
+      const nonce = await nonce$.generate()
       await nonceStore$.save(nonce)
       await transactionDataStore$.save(
         transactionId,
@@ -391,7 +391,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           clientId: client_id,
           verifierId,
           state: options.state,
-          nonce,
+          nonce: nonce.nonce,
         })
       )
 
@@ -402,7 +402,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
           response_type: response_type,
           response_mode: response_mode || 'direct_post',
           client_metadata: metadata,
-          nonce,
+          nonce: nonce.nonce,
           state: options.state,
           ...parsedQuery,
           ...(transaction_data.length > 0 ? { transaction_data } : {}),
@@ -413,13 +413,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
     async findRequestObject(verifierId, objectId, options) {
       const metadata = await verifierMetadata$.fetch(verifierId)
       if (!metadata) {
-        throw raise('VERIFIER_NOT_FOUND')
+        throw raise('verifier_not_found')
       }
       const keyAlg = options?.alg ?? 'ES256'
 
       const requestObject = await requestObjectStore$.fetch(objectId)
       if (!requestObject) {
-        throw raise('REQUEST_OBJECT_NOT_FOUND', {
+        throw raise('request_object_not_found', {
           message: 'Request object is not found.',
         })
       }
@@ -428,7 +428,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       const client_id_prefix = clientId.split(':')[0]
       const authzRequestJAR = selectProvider(authzRequestJAR$, client_id_prefix)
       if (!authzRequestJAR) {
-        throw raise('PROVIDER_NOT_FOUND', {
+        throw raise('provider_not_found', {
           message: 'Authorization request JAR provider is not found.',
         })
       }
@@ -444,13 +444,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
 
       // const keyProvider = selectProvider(key$, keyAlg)
       // if (!keyProvider) {
-      //   throw raise('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+      //   throw raise('authz_verifier_key_not_found', {
       //     message: `Verifier signature key provider for ${keyAlg} is not found.`,
       //   })
       // }
       const signature = await keyStore$.sign(verifierId, keyAlg, payload, header)
       if (!signature) {
-        throw err('AUTHZ_VERIFIER_KEY_NOT_FOUND', {
+        throw err('authz_verifier_key_not_found', {
           message: `Verifier signing key for ${keyAlg} is not found.`,
         })
       }
@@ -464,7 +464,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
     async getTransaction(transactionId) {
       const transaction = await transactionDataStore$.fetch(TransactionId(transactionId))
       if (!transaction) {
-        throw err('TRANSACTION_ID_NOT_FOUND', {
+        throw err('transaction_id_not_found', {
           message: 'transaction_id is unknown or already removed',
         })
       }
@@ -480,26 +480,26 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
     },
     async verifyPresentations(response, transactionId, options) {
       if (!transactionId) {
-        throw err('ILLEGAL_ARGUMENT', {
+        throw err('illegal_argument', {
           message: 'transaction_id is required.',
         })
       }
       const transaction = await transactionDataStore$.fetch(TransactionId(transactionId))
       if (!transaction) {
-        throw err('TRANSACTION_ID_NOT_FOUND', {
+        throw err('transaction_id_not_found', {
           message: 'Transaction is not found.',
         })
       }
       const verifierMetadata = await verifierMetadata$.fetch(transaction.verifierId)
       if (!verifierMetadata) {
-        throw raise('VERIFIER_NOT_FOUND', {
+        throw raise('verifier_not_found', {
           message: 'verifier is not found.',
         })
       }
       const { vp_formats_supported: vpFormatsSupported } = verifierMetadata
       if (transaction.state !== undefined) {
         if (response.state !== transaction.state) {
-          throw err('INVALID_REQUEST', {
+          throw err('invalid_request', {
             message: 'unknown or expired state.',
           })
         }
@@ -518,13 +518,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       for (const [credentialQueryId, vpArray] of Object.entries(response.vp_token)) {
         const format = credentialQueryMap.get(credentialQueryId)
         if (!format) {
-          throw err('ILLEGAL_ARGUMENT', {
+          throw err('illegal_argument', {
             message: `Unknown credential query id: ${credentialQueryId}`,
           })
         }
 
         if (vpArray.length === 0) {
-          throw err('INVALID_VP_TOKEN', {
+          throw err('invalid_vp_token', {
             message: `Credential query '${credentialQueryId}' must have at least one presentation.`,
           })
         }
@@ -532,7 +532,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         const providerKey = format === 'jwt_vc_json' ? 'jwt_vp_json' : format
         const provider = selectProvider(verifiablePresentation$, providerKey)
         if (!provider) {
-          throw err('UNSUPPORTED_VP_TOKEN', {
+          throw err('unsupported_vp_token', {
             message: `VP format '${format}' is not supported.`,
           })
         }
@@ -582,7 +582,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         const payloads: VpTokenPayload[] = []
         for (const vp of vpArray) {
           if (typeof vp !== 'string') {
-            throw err('UNSUPPORTED_VP_TOKEN', {
+            throw err('unsupported_vp_token', {
               message: 'Non-string VP format is not supported.',
             })
           }
@@ -597,7 +597,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       if (!credentialSets) {
         for (const cred of dcql_query.credentials) {
           if (!presentedIds.has(cred.id)) {
-            throw err('INVALID_VP_TOKEN', {
+            throw err('invalid_vp_token', {
               message: `Required credential query '${cred.id}' was not included in the presentation.`,
             })
           }
@@ -609,7 +609,7 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
             option.every((id: string) => presentedIds.has(id))
           )
           if (!satisfied) {
-            throw err('INVALID_VP_TOKEN', {
+            throw err('invalid_vp_token', {
               message: `No option of a required credential_set was fully presented. Options: ${JSON.stringify(set.options)}`,
             })
           }
@@ -617,13 +617,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
 
       if (expectedNonce) {
-        const nonceValid = await nonceStore$.validate(Cnonce(expectedNonce))
+        const nonceValid = await nonceStore$.validate(Nonce({nonce: expectedNonce}))
         if (!nonceValid) {
-          throw err('INVALID_NONCE', {
+          throw err('invalid_nonce', {
             message: 'nonce is not valid.',
           })
         }
-        await nonceStore$.revoke(Cnonce(expectedNonce))
+        await nonceStore$.revoke(Nonce({nonce: expectedNonce}))
       }
 
       await transactionDataStore$.delete(TransactionId(transactionId))

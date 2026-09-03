@@ -1,8 +1,9 @@
 import assert from 'node:assert'
 import { afterEach, beforeEach, describe, test, mock } from 'node:test'
 import * as jose from 'jose'
+import type { Nonce } from '../../src/nonce.types'
 import {
-  CnonceStoreProvider,
+  NonceStoreProvider,
   DidProvider,
   HolderBindingProvider,
   JwtSignatureProvider,
@@ -11,12 +12,13 @@ import {
 import { verifyVerifiablePresentation } from '../../src/providers/verify-presentation-jwt-vp-json.provider'
 import { VerifiableCredential } from '../../src/credential.types'
 import { DidDocument, JsonWebKey as DidJsonWebKey } from '../../src/did.types'
+import { ClientIdentifier } from '../../src/client-id-prefix.types'
 
 describe('verifyVerifiablePresentation provider', () => {
-  const expectedAud = 'https://verifier.example/expected-aud'
+  const expectedAud = ClientIdentifier('redirect_uri:https://verifier.example/expected-aud')
 
   let provider: ReturnType<typeof verifyVerifiablePresentation>
-  let mockCnonceStore: CnonceStoreProvider
+  let mockCnonceStore: NonceStoreProvider
   let mockCredentialVerifier: VerifyCredentialProvider
   let mockDidProvider: DidProvider
   let mockJwtSignatureProvider: JwtSignatureProvider
@@ -52,11 +54,12 @@ describe('verifyVerifiablePresentation provider', () => {
       .sign(issuerKeyPair.privateKey)
 
     mockCnonceStore = {
-      kind: 'cnonce-store-provider',
+      kind: 'nonce-store-provider',
       name: 'mock-cnonce-store',
       single: true,
-      validate: mock.fn(async (nonce: string) => nonce === 'test-nonce'),
-      revoke: mock.fn(async () => {}),
+      validate: mock.fn(async (nonce: Nonce) => nonce.nonce === 'test-nonce'),
+      revoke: mock.fn(async () => true),
+      consume: mock.fn(async () => true),
       save: mock.fn(async () => {}),
     }
 
@@ -104,7 +107,7 @@ describe('verifyVerifiablePresentation provider', () => {
 
     provider = verifyVerifiablePresentation()
     mock.method(provider.providers, 'get', (name: string) => {
-      if (name === 'cnonce-store-provider') return mockCnonceStore
+      if (name === 'nonce-store-provider') return mockCnonceStore
       if (name === 'verify-verifiable-credential-provider') return mockCredentialVerifier
       if (name === 'did-provider') return [mockDidProvider]
       if (name === 'jwt-signature-provider') return mockJwtSignatureProvider
@@ -150,7 +153,7 @@ describe('verifyVerifiablePresentation provider', () => {
     assert.strictEqual(vp.verifiableCredential.length, 1)
   })
 
-  test('should throw INVALID_VP_TOKEN when VP JWT is missing aud', async () => {
+  test('should throw invalid_vp_token when VP JWT is missing aud', async () => {
     const vpJwt = await createVpJwt(
       {
         nonce: 'test-nonce',
@@ -163,12 +166,12 @@ describe('verifyVerifiablePresentation provider', () => {
       { includeDefaultAud: false }
     )
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'INVALID_VP_TOKEN',
+      name: 'invalid_vp_token',
       message: /missing aud claim/,
     })
   })
 
-  test('should throw INVALID_VP_TOKEN when VP JWT aud does not match expectedAud', async () => {
+  test('should throw invalid_vp_token when VP JWT aud does not match expectedAud', async () => {
     const wrongAud = 'https://verifier.example/wrong-aud'
     const vpJwt = await createVpJwt({
       aud: wrongAud,
@@ -179,7 +182,7 @@ describe('verifyVerifiablePresentation provider', () => {
       },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'INVALID_VP_TOKEN',
+      name: 'invalid_vp_token',
       message: /aud does not match expected client_id/,
     })
   })
@@ -197,7 +200,7 @@ describe('verifyVerifiablePresentation provider', () => {
     assert.strictEqual(result.nonce, 'test-nonce')
   })
 
-  test('should throw INVALID_VP_TOKEN when aud array does not include expectedAud', async () => {
+  test('should throw invalid_vp_token when aud array does not include expectedAud', async () => {
     const vpJwt = await createVpJwt({
       aud: ['https://verifier.example/other-1', 'https://verifier.example/other-2'],
       nonce: 'test-nonce',
@@ -207,7 +210,7 @@ describe('verifyVerifiablePresentation provider', () => {
       },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'INVALID_VP_TOKEN',
+      name: 'invalid_vp_token',
       message: /aud does not match expected client_id/,
     })
   })
@@ -217,13 +220,13 @@ describe('verifyVerifiablePresentation provider', () => {
       provider.verify('dummy-vp', { kind: 'ldp_vp' } as unknown as NonNullable<
         Parameters<typeof provider.verify>[1]
       >),
-      { name: 'ILLEGAL_ARGUMENT', message: 'ldp_vp is not supported.' }
+      { name: 'illegal_argument', message: 'ldp_vp is not supported.' }
     )
   })
 
   test('should throw an error for invalid vp_token', async () => {
     await assert.rejects(provider.verify('invalid-jwt', { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'INVALID_VP_TOKEN',
+      name: 'invalid_vp_token',
     })
   })
 
@@ -238,7 +241,7 @@ describe('verifyVerifiablePresentation provider', () => {
     await assert.rejects(
       provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud, expectedNonce: 'expected-nonce' }),
       {
-        name: 'INVALID_NONCE',
+        name: 'invalid_nonce',
         message: 'nonce does not match.',
       }
     )
@@ -253,7 +256,7 @@ describe('verifyVerifiablePresentation provider', () => {
       },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'INVALID_CREDENTIAL',
+      name: 'invalid_credential',
       message: 'No credentials is included',
     })
   })
@@ -275,7 +278,7 @@ describe('verifyVerifiablePresentation provider', () => {
       },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'ILLEGAL_ARGUMENT',
+      name: 'illegal_argument',
       message: 'VC represented as object is not supported.',
     })
   })
@@ -290,7 +293,7 @@ describe('verifyVerifiablePresentation provider', () => {
       },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'INVALID_CREDENTIAL',
+      name: 'invalid_credential',
       message: 'credential is not valid.',
     })
   })
@@ -308,7 +311,7 @@ describe('verifyVerifiablePresentation provider', () => {
     )
 
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'INVALID_VP_TOKEN',
+      name: 'invalid_vp_token',
       message: /Missing key id in the header/,
     })
   })
@@ -326,7 +329,7 @@ describe('verifyVerifiablePresentation provider', () => {
     )
 
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'PROVIDER_NOT_FOUND',
+      name: 'provider_not_found',
       message: 'No provider found which can handle: unsupported',
     })
   })
@@ -341,7 +344,7 @@ describe('verifyVerifiablePresentation provider', () => {
       },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'INVALID_VP_TOKEN',
+      name: 'invalid_vp_token',
       message: /Cannot resolve DID/,
     })
   })
@@ -368,7 +371,7 @@ describe('verifyVerifiablePresentation provider', () => {
       },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'INVALID_VP_TOKEN',
+      name: 'invalid_vp_token',
       message: /Cannot find verification method/,
     })
   })
@@ -393,7 +396,7 @@ describe('verifyVerifiablePresentation provider', () => {
       },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'INVALID_VP_TOKEN',
+      name: 'invalid_vp_token',
       message: /Cannot find verification method/,
     })
   })
@@ -408,7 +411,7 @@ describe('verifyVerifiablePresentation provider', () => {
       },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'INVALID_PROOF',
+      name: 'invalid_proof',
       message: 'jwt is not valid.',
     })
   })
@@ -423,7 +426,7 @@ describe('verifyVerifiablePresentation provider', () => {
       },
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'HOLDER_BINDING_FAILED',
+      name: 'holder_binding_failed',
       message: 'Holder binding verification failed.',
     })
   })
@@ -446,7 +449,7 @@ describe('verifyVerifiablePresentation provider', () => {
     })
     await assert.rejects(
       provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud, allowedAlgs: ['RS256'] }),
-      { name: 'VERIFIER_VP_FORMATS_NOT_SUPPORTED', message: /alg_values/ }
+      { name: 'verifier_vp_formats_not_supported', message: /alg_values/ }
     )
   })
 })
