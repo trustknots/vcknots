@@ -1,6 +1,6 @@
 # @trustknots/vcknots
 
-A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OpenID4VCI) 1.0 and OpenID for Verifiable Presentations (OpenID4VP) Draft 24.
+A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) Draft 13 and OpenID for Verifiable Presentations (OID4VP) 1.0.
 
 This package provides the core logic for both Issuers and Verifiers, allowing you to build compliant SSI (Self-Sovereign Identity) applications. It is designed with a provider-based architecture, making it easy to swap out implementations for storage, key management, and other infrastructure dependencies.
 
@@ -17,7 +17,7 @@ This package provides the core logic for both Issuers and Verifiers, allowing yo
     *   Manage Verifier Metadata.
     *   Create Authorization Requests (JAR - Signed Request Objects).
     *   Verify Verifiable Presentations (VP Token).
-    *   Support for Presentation Exchange and DCQL (comming soon).
+    *   Support for DCQL (Digital Credentials Query Language).
 *   **Extensible Architecture:**
     *   All external dependencies (Database, Key Management, DID Resolution) are abstracted as "Providers".
     *   Includes default in-memory implementations for rapid prototyping and testing.
@@ -220,10 +220,11 @@ const verifierId = VerifierClientId(base)
 const metadata: VerifierMetadata = {
 	client_name: 'MyVerifier',
 	client_uri: base,
-	vp_formats: {
-		jwt_vp: {
-			alg: ['ES256']
-		}
+	vp_formats_supported: {
+		'dc+sd-jwt': {
+			'sd-jwt_alg_values': ['ES256', 'ES384'],
+      'kb-jwt_alg_values': ['ES256', 'ES384']
+		},
 	},
 	client_id_scheme: 'redirect_uri'
 }
@@ -238,24 +239,26 @@ Create a request (typically converted to a QR code) for the wallet to prove some
 ```typescript
 const base = 'https://myverifier.example.com'
 const verifierId = VerifierClientId(base)
-const request = await verifier.createAuthzRequest(
+const { request, transactionId } = await verifier.createAuthzRequest(
   verifierId,
   'vp_token',
   `redirect_uri:${base}`, // client_id
   'direct_post',
   {
-    // Presentation Exchange Definition
-    presentation_definition: {
-      id: 'request',
-      input_descriptors: [{
+    // DCQL Query
+    dcql_query: {
+      credentials: [{
         id: 'id-card',
-        constraints: { fields: [{ path: ['$.vc.type'], filter: { type: 'string', pattern: 'MyCredential' } }] }
+        format: 'dc+sd-jwt',
+        meta: { vct_values: ['MyCredential'] },
+        claims: [{ path: ['name'] }]
       }]
     }
   },
-  false, // use request_uri (JAR)
+  true, // use request_uri (JAR)
   { base_url: base }
 )
+// Store transactionId alongside session/state — required when calling verifyPresentations.
 
 // Encode authorization request object
 const encoded = Object.entries(request)
@@ -276,7 +279,8 @@ Verify the response sent by the wallet.
 ```typescript
 // req represents the HTTP request submitted by wallet
 const response = VerifierAuthorizationResponse(req.json())
-await verifier.verifyPresentations(verifierId, response)
+// transactionId was returned by createAuthzRequest and stored alongside the session
+await verifier.verifyPresentations(response, transactionId)
 console.log('Verification Successful!')
 ```
 

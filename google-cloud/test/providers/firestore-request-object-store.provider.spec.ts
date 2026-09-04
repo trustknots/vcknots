@@ -13,9 +13,15 @@ const testRequestObject = {
   response_mode: 'direct_post',
   response_uri: 'https://verifier.example.com/response',
   nonce: 'test-nonce',
-  presentation_definition: {
-    id: 'test-pd',
-    input_descriptors: [],
+  dcql_query: {
+    credentials: [
+      {
+        id: 'test-cred',
+        format: 'jwt_vc_json',
+        meta: { type_values: [['VerifiableCredential']] },
+        claims: [{ path: ['vc', 'credentialSubject', 'name'] }],
+      },
+    ],
   },
 } as unknown as RequestObject
 

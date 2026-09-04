@@ -186,14 +186,17 @@ export const createKmsProviderHelpers = ({
     return createReplacementImportJobPromise
   }
 
+  type CryptoKeyPurpose = 'ASYMMETRIC_SIGN' | 'ASYMMETRIC_DECRYPT'
+
   const ensureCryptoKey = async (
     keyRingName: string,
     keyId: string,
     kmsAlgorithm: string,
-    options?: { importOnly?: boolean }
+    options?: { importOnly?: boolean; purpose?: CryptoKeyPurpose }
   ) => {
     const cryptoKeyName = kms.cryptoKeyPath(projectId, locationId, keyRingId, keyId)
     const importOnly = options?.importOnly ?? true
+    const purpose = options?.purpose ?? 'ASYMMETRIC_SIGN'
     try {
       await kms.getCryptoKey({ name: cryptoKeyName })
       return cryptoKeyName
@@ -206,7 +209,7 @@ export const createKmsProviderHelpers = ({
           parent: keyRingName,
           cryptoKeyId: keyId,
           cryptoKey: {
-            purpose: 'ASYMMETRIC_SIGN',
+            purpose,
             importOnly,
             versionTemplate: {
               algorithm: kmsAlgorithm as never,

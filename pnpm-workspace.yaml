@@ -5,7 +5,6 @@ packages:
   - server/aws/resources
   - google-cloud
   - docusaurus
-  - server/multi
   - server/single
   - server/core
   - server/google-cloud

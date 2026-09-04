@@ -74,7 +74,7 @@ export function createVerifierApp(options?: VcknotsOptions) {
       // This is a diagnostic, so a KMS or Secrets Manager failure here (missing permissions, a
       // transient error) must not take the startup down with it: fetch() rethrows everything
       // except a missing key or certificate.
-      const keyAlg = existing.authorization_signed_response_alg ?? signatureKeyStore.defaultAlg
+      const keyAlg = signatureKeyStore.defaultAlg
       try {
         const publicKey = await signatureKeyStore.fetch(verifierId, keyAlg)
         if (!publicKey) {

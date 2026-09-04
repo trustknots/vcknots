@@ -21,6 +21,7 @@ describe('firestore provider registry', () => {
         'oauth-client-assertion-jti-store-provider',
         'pre-authorized-code-store-provider',
         'request-object-store-provider',
+        'verifier-transaction-store-provider',
         'dpop-proof-jti-store-provider',
         'allowed-credential-configuration-store-provider',
       ]

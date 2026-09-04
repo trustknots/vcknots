@@ -7,7 +7,6 @@ import { VerifiableCredential, parseVerifiableCredentialBase } from '../credenti
 import { selectProvider } from './provider.utils'
 import { jwtVpJsonPayloadSchema, VpTokenPayload } from '../presentation.types'
 import { z } from 'zod'
-import { Nonce } from '../nonce.types'
 
 export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProvider &
   WithProviderRegistry => {
@@ -38,6 +37,14 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
           message: `Invalid vp_token: ${vp}`,
         })
       }
+      if (options.allowedAlgs) {
+        const vpAlg = decodedVp.header.alg
+        if (!vpAlg || !options.allowedAlgs.includes(vpAlg)) {
+          throw err('verifier_vp_formats_not_supported', {
+            message: `Algorithm '${vpAlg ?? 'missing'}' is not in jwt_vc_json alg_values. Allowed: ${options.allowedAlgs.join(', ')}`,
+          })
+        }
+      }
       let rawPayload: unknown
       if (typeof decodedVp.payload === 'string') {
         try {
@@ -60,8 +67,6 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
       }
       const vpPayload = parseResult.data
 
-      const nonce = Nonce({ nonce: vpPayload.nonce })
-      const nonceStore$ = this.providers.get('nonce-store-provider')
       const aud = vpPayload.aud
       const audMatches =
         typeof aud === 'string'
@@ -75,16 +80,10 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
               : 'VP token aud does not match expected client_id.',
         })
       }
-      const nonceValid = await nonceStore$.validate(nonce)
-      if (!nonceValid) {
+
+      if (options.expectedNonce !== undefined && vpPayload.nonce !== options.expectedNonce) {
         throw err('invalid_nonce', {
-          message: 'nonce is not valid.',
-        })
-      }
-      const revoked = await nonceStore$.revoke(nonce)
-      if (!revoked) {
-        throw err('invalid_nonce', {
-          message: 'Nonce could not be revoked.',
+          message: 'nonce does not match.',
         })
       }
 
@@ -124,7 +123,6 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
         })
       }
       const credential$ = this.providers.get('verify-verifiable-credential-provider')
-
       for (const [, vcJwt] of credentials) {
         const vcValid = await credential$.verify(vcJwt)
         if (!vcValid) {

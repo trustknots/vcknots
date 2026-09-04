@@ -18,7 +18,6 @@ export const authzRequestJARKid = (): AuthzRequestJARProvider & WithProviderRegi
       verifierId: ClientId,
       requestObject: RequestObject,
       alg: string,
-      nonce?: string,
       wallet_nonce?: string
     ): Promise<JwtContent> {
       const keyStore$ = this.providers.get('verifier-signature-key-store-provider')
@@ -40,10 +39,7 @@ export const authzRequestJARKid = (): AuthzRequestJARProvider & WithProviderRegi
         ...requestObject,
         iat: Math.floor(Date.now() / 1000),
       }
-      if (nonce) {
-        jwtPayload.nonce = nonce
-      }
-      // https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.11
+      // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.10
       if (wallet_nonce) {
         jwtPayload.wallet_nonce = wallet_nonce
       }
@@ -53,8 +49,8 @@ export const authzRequestJARKid = (): AuthzRequestJARProvider & WithProviderRegi
         payload: jwtPayload,
       }
     },
-    canHandle(clientIdScheme: string): boolean {
-      return clientIdScheme === 'redirect_uri'
+    canHandle(clientIdPrefix: string): boolean {
+      return clientIdPrefix === 'redirect_uri'
     },
   }
 }

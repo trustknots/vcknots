@@ -12,9 +12,10 @@ import {
 import { verifyVerifiablePresentation } from '../../src/providers/verify-presentation-jwt-vp-json.provider'
 import { VerifiableCredential } from '../../src/credential.types'
 import { DidDocument, JsonWebKey as DidJsonWebKey } from '../../src/did.types'
+import { ClientIdentifier } from '../../src/client-id-prefix.types'
 
 describe('verifyVerifiablePresentation provider', () => {
-  const expectedAud = 'https://verifier.example/expected-aud'
+  const expectedAud = ClientIdentifier('redirect_uri:https://verifier.example/expected-aud')
 
   let provider: ReturnType<typeof verifyVerifiablePresentation>
   let mockCnonceStore: NonceStoreProvider
@@ -237,25 +238,13 @@ describe('verifyVerifiablePresentation provider', () => {
         verifiableCredential: [vcJwt],
       },
     })
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'invalid_nonce',
-      message: 'nonce is not valid.',
-    })
-  })
-
-  test('should throw invalid_nonce when nonce revoke returns false', async () => {
-    mock.method(mockCnonceStore, 'revoke', async () => false)
-    const vpJwt = await createVpJwt({
-      nonce: 'test-nonce',
-      vp: {
-        type: ['VerifiablePresentation'],
-        verifiableCredential: [vcJwt],
-      },
-    })
-    await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
-      name: 'invalid_nonce',
-      message: 'Nonce could not be revoked.',
-    })
+    await assert.rejects(
+      provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud, expectedNonce: 'expected-nonce' }),
+      {
+        name: 'invalid_nonce',
+        message: 'nonce does not match.',
+      }
+    )
   })
 
   test('should throw an error if no verifiableCredential', async () => {
@@ -487,5 +476,27 @@ describe('verifyVerifiablePresentation provider', () => {
       name: 'holder_binding_failed',
       message: 'Holder binding verification failed.',
     })
+  })
+
+  test('should pass allowedAlgs to credential verifier', async () => {
+    const vpJwt = await createVpJwt({
+      nonce: 'test-nonce',
+      vp: { type: ['VerifiablePresentation'], verifiableCredential: [vcJwt] },
+    })
+    await provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud, allowedAlgs: ['ES256'] })
+    assert.deepEqual(mockCredentialVerifier.verify.mock.calls[0].arguments[1], {
+      allowedAlgs: ['ES256'],
+    })
+  })
+
+  test('should throw VERIFIER_VP_FORMATS_NOT_SUPPORTED when VP alg is not in allowedAlgs', async () => {
+    const vpJwt = await createVpJwt({
+      nonce: 'test-nonce',
+      vp: { type: ['VerifiablePresentation'], verifiableCredential: [vcJwt] },
+    })
+    await assert.rejects(
+      provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud, allowedAlgs: ['RS256'] }),
+      { name: 'verifier_vp_formats_not_supported', message: /alg_values/ }
+    )
   })
 })
