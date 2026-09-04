@@ -81,6 +81,7 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `PRE_CODES_TABLE_NAME` | Issuer & Authz **required** | DynamoDB table name, shared by both servers (stack output: `PreCodesTableName`) |
 | `AUTH_SERVERS_TABLE_NAME` | Authz **required** | DynamoDB table name (stack output: `AuthServersTableName`) |
 | `AUTHZ_OAUTH_CLIENTS_TABLE_NAME` | Authz **required** | DynamoDB table name (stack output: `AuthzOAuthClientsTableName`) |
+| `AUTHZ_OAUTH_POLICIES_TABLE_NAME` | Authz **required** | DynamoDB table name (stack output: `AuthzOAuthPoliciesTableName`) |
 | `VERIFIERS_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `VerifiersTableName`) |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `RequestObjectsTableName`) |
 | `NONCES_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `NoncesTableName`) |
@@ -93,7 +94,7 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `VERIFIER_CERTIFICATE_SECRET_PREFIX` | Verifier (optional) | Secrets Manager name prefix for verifier certificates (default: `vcknots/verifier-certificates`). Changing it requires updating the IAM grant in `server/aws/resources` to match |
 | `PRIVATE_KEY_PATH` / `CERTIFICATE_PATH` | Verifier (optional unless `VERIFIER_BASE_URL` is non-local) | Paths to the PEM private key and X.509 certificate registered on first startup (default when `VERIFIER_BASE_URL` is local: the sample chain in `server/samples/certificate-openid-test/`) |
 
-**`ISSUERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME` (Issuer & Authz), `NONCES_TABLE_NAME` (Issuer & Verifier), `AUTH_SERVERS_TABLE_NAME`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `VERIFIERS_TABLE_NAME`, and `REQUEST_OBJECTS_TABLE_NAME` are required** — each server exits at startup if a table name it needs is missing.
+**`ISSUERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME` (Issuer & Authz), `NONCES_TABLE_NAME` (Issuer & Verifier), `AUTH_SERVERS_TABLE_NAME`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `VERIFIERS_TABLE_NAME`, and `REQUEST_OBJECTS_TABLE_NAME` are required** — each server exits at startup if a table name it needs is missing.
 
 **`TX_CODE_PEPPER` is required by every server.** It is a secret pepper used to HMAC-hash `tx_code` values before storing them in DynamoDB. Because `@trustknots/aws` evaluates it at import time, the Issuer, Authorization Server, and Verifier all fail at startup with `TX_CODE_PEPPER environment variable is required` when it is missing. Use a sufficiently long random secret and keep it stable per environment — rotating it invalidates previously stored `tx_code` hashes.
 
@@ -131,6 +132,7 @@ Issuer is running on http://localhost:8081
 
 ```text
 Authz server metadata initialized
+Authz OAuth policy initialized
 Authz OAuth client initialized: https://wallet.example.com
 Authz OAuth client initialized: https://wallet-rotation.example.com
 Authz OAuth client initialized: https://public-wallet.example.com
@@ -152,6 +154,7 @@ Issuer is running on http://localhost:8081
 
 ```text
 Authz server metadata already exists, skipping initialization
+Authz OAuth policy already exists, skipping initialization
 Authz OAuth client already exists, skipping initialization: https://wallet.example.com
 Authz OAuth client already exists, skipping initialization: https://wallet-rotation.example.com
 Authz OAuth client already exists, skipping initialization: https://public-wallet.example.com
@@ -245,13 +248,14 @@ The Authorization Server stores the key that signs access tokens / responses in 
 - **Supported algorithms**: same as the Issuer and Verifier — `ES256`, `ES384`, `RS256`, `RS512`, `PS256`, `PS512` for in-KMS generation, EC only (`ES256`/`ES384`) for importing an externally generated key pair.
 - **Required IAM** (granted to the Authz Lambda role by the CDK stack): the same actions as the Issuer and Verifier, scoped to the `alias/vcknots/authz/*` namespace and to keys tagged `vcknots:authz-signature-key=true`.
 - **Store drift**: the authz server metadata lives in DynamoDB while the key lives in KMS, so the two can drift apart — most often when an environment that previously ran on the in-memory key store is pointed at KMS. `createAuthzServerMetadata` rejects an already-registered authorization server and cannot repair that, so the Authorization Server only logs a warning at startup (`Authz server metadata exists but no <alg> key is registered in KMS`) and keeps running. Recovery is manual, and it is the same procedure that seeds an authorization server in the first place — note that **registration only runs locally**: `handlers/authz.ts` skips `initialize()` when `AWS_LAMBDA_FUNCTION_NAME` is set, and there is no HTTP endpoint that registers an authorization server, so a deployed Lambda never registers one by itself.
+- **OAuth policy**: local `start:authz` also loads the `authorization_server` object from `server/samples/oauth-server.json` into the Authz OAuth policies table (`AUTHZ_OAUTH_POLICIES_TABLE_NAME`). It is inserted only when no policy is stored; an existing policy is not overwritten. This runs even when authz metadata already exists. A deployed Authz Lambda does not seed the policy — run `start:authz` once against the same table, or write the item yourself. The bundled sample sets `senderConstrainedAccessToken.dpop.mode` to `optional` for both `default_client` and `anonymous_client`, so the Token Endpoint starts accepting DPoP. Note that the Credential Endpoint resolves the same policy through the Issuer's own provider registry, and `create-issuer-app.ts` does not register a DynamoDB policy store yet, so it reads an empty in-memory store and treats DPoP as `off`.
 - **OAuth clients**: local `start:authz` also loads `server/samples/oauth-clients.json` into the Authz OAuth clients table (`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`). Each `client_id` is inserted only if it is missing; existing rows are not overwritten. This runs even when authz metadata already exists. A deployed Authz Lambda does not seed clients — run `start:authz` once against the same table, or write items yourself.
 
   `initialize()` always registers the bundled `server/samples/authorization_metadata.json`, so the steps below **replace whatever metadata the authorization server had** and are only appropriate for one that runs on that sample metadata:
 
   1. Delete the authorization server's item from the AuthServers table. Its partition key is not the issuer URL itself but the hex MD5 of it: `node -e "console.log(require('crypto').createHash('md5').update('<issuer-url>').digest('hex'))"`.
   2. Locally, point `.env` at the same tables and set `AUTHZ_BASE_URL` to the authorization server you are repairing (the deployed API URL, not `localhost`, when fixing a deployed environment).
-  3. Run `pnpm start:authz` once. It registers the sample metadata and creates the KMS key for that authorization server, and inserts any missing sample OAuth clients, then you can stop it.
+  3. Run `pnpm start:authz` once. It registers the sample metadata and creates the KMS key for that authorization server, inserts the sample OAuth policy when none is stored, and inserts any missing sample OAuth clients, then you can stop it.
 
 ## Notes
 

@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   dynamodbAuthzOAuthClientStore,
+  dynamodbAuthzOAuthPolicyStore,
   dynamodbAuthzServerMetadataStore,
   dynamodbPreAuthorizedCodeStore,
   kmsAuthzSignatureKeyStore,
@@ -12,6 +13,7 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
   AuthzOAuthClients,
+  AuthzOAuthPolicy,
   initializeAuthzFlow,
 } from '@trustknots/vcknots/authz'
 import type { VcknotsOptions } from '@trustknots/vcknots'
@@ -33,6 +35,11 @@ export function createAuthzApp(options?: VcknotsOptions) {
     throw new Error('AUTHZ_OAUTH_CLIENTS_TABLE_NAME is required')
   }
 
+  const authzOAuthPoliciesTableName = process.env.AUTHZ_OAUTH_POLICIES_TABLE_NAME
+  if (!authzOAuthPoliciesTableName) {
+    throw new Error('AUTHZ_OAUTH_POLICIES_TABLE_NAME is required')
+  }
+
   const rawPort = process.env.AUTHZ_PORT ?? '8082'
   const port = Number.parseInt(rawPort, 10)
   if (!Number.isFinite(port)) throw new Error(`Invalid AUTHZ_PORT: "${rawPort}"`)
@@ -40,6 +47,7 @@ export function createAuthzApp(options?: VcknotsOptions) {
   const store = dynamodbAuthzServerMetadataStore({ tableName: authServersTableName })
   const preAuthorizedCodeStore = dynamodbPreAuthorizedCodeStore({ tableName: preCodesTableName })
   const oauthClientStore = dynamodbAuthzOAuthClientStore({ tableName: authzOAuthClientsTableName })
+  const oauthPolicyStore = dynamodbAuthzOAuthPolicyStore({ tableName: authzOAuthPoliciesTableName })
   const signatureKeyStore = kmsAuthzSignatureKeyStore()
   const { app, context } = createBaseApp(
     createAuthzRouter,
@@ -50,6 +58,7 @@ export function createAuthzApp(options?: VcknotsOptions) {
         store,
         preAuthorizedCodeStore,
         oauthClientStore,
+        oauthPolicyStore,
         signatureKeyStore,
         ...(options?.providers ?? []),
       ],
@@ -95,6 +104,23 @@ export function createAuthzApp(options?: VcknotsOptions) {
       })
       await authzFlow.createAuthzServerMetadata(metadata)
       console.log('Authz server metadata initialized')
+    }
+
+    // Independent of metadata skip, matching server-core: an existing policy is left alone and the
+    // sample policy is inserted only when none is stored. handlers/authz.ts skips initialize() in
+    // Lambda.
+    const currentOAuthPolicy = await authzFlow.findAuthzOAuthPolicy(authzId)
+    if (currentOAuthPolicy) {
+      console.log('Authz OAuth policy already exists, skipping initialization')
+    } else {
+      const sampleOAuthPolicy = JSON.parse(
+        readFileSync(join(samplesDir, 'oauth-server.json'), 'utf-8')
+      )
+      await authzFlow.createAuthzOAuthPolicy(
+        authzId,
+        AuthzOAuthPolicy(sampleOAuthPolicy.authorization_server)
+      )
+      console.log('Authz OAuth policy initialized')
     }
 
     // Independent of metadata skip, matching server-core: existing clients are left alone and
