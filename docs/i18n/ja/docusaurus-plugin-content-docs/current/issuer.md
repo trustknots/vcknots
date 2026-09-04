@@ -13,7 +13,7 @@ sidebar_position: 11
   - 現在対応しているフローは 事前認可コードフロー（Pre-Authorized Code Flow）のみです
   - Credential Requestの`credential_response_encryption`は未対応（今後対応予定）
   - Credential Requestのproof typeは`jwt`のみ対応 （`di_vp`,`attestation`今後対応予定）
-- Node.js v14以降がインストールされていること
+- Node.js v22以降がインストールされていること
 - TypeScriptが設定されていること
 - 本ドキュメントはserverのサンプル実装に基づいて説明します
 - HonoのWebフレームワークを使用していますが、他のフレームワークでも利用可能です

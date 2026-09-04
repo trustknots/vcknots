@@ -115,7 +115,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
               id: randomUUID(),
               format: 'jwt_vc_json',
               meta: {
-                type_values: [['VerifiableCredential']],
+                type_values: [[credentialId]],
               },
             },
           ],

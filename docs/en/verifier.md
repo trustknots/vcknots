@@ -13,7 +13,7 @@ This guide explains how to set up and use the Verifier feature of VCKnots.
 The following items are not implemented yet and are planned for future support:
   - `response_mode` supports `direct_post`, but `direct_post.jwt` is not supported yet (planned for future support).
 - Assumes the cross-device flow
-- Node.js v14 or later is installed
+- Node.js v22 or later is installed
 - TypeScript is configured
 - This document explains the implementation based on the server sample
 - Uses the Hono web framework, but can also be used with other frameworks
@@ -114,7 +114,7 @@ verifyApp.post('/request', async (c) => {
             id: randomUUID(),
             format: 'jwt_vc_json',
             meta: {
-              type_values: [['VerifiableCredential']],
+              type_values: [[credentialId]],
             },
           },
         ],
@@ -167,7 +167,7 @@ curl --location 'http://localhost:8080/request' \
 **Response**
 
 ```
-openid4vp://authorize?response_type=vp_token&client_id=redirect_uri%3Alocalhost&state=example-state&client_metadata=...&nonce=cf0736e6f68d4bf094b38850169e8c04&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%220d67e47b-a5f0-48ae-b880-60b94c61fbfd%22%2C%22require_cryptographic_holder_binding%22%3Atrue%2C%22multiple%22%3Afalse%2C%22format%22%3A%22jwt_vc_json%22%2C%22meta%22%3A%7B%22type_values%22%3A%5B%5B%22VerifiableCredential%22%5D%5D%7D%7D%5D%7D
+openid4vp://authorize?response_type=vp_token&client_id=redirect_uri%3Alocalhost&state=example-state&client_metadata=...&nonce=cf0736e6f68d4bf094b38850169e8c04&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%220d67e47b-a5f0-48ae-b880-60b94c61fbfd%22%2C%22require_cryptographic_holder_binding%22%3Atrue%2C%22multiple%22%3Afalse%2C%22format%22%3A%22jwt_vc_json%22%2C%22meta%22%3A%7B%22type_values%22%3A%5B%5B%22UniversityDegreeCredential%22%5D%5D%7D%7D%5D%7D
 ```
 
 

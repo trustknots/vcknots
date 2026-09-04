@@ -12,7 +12,7 @@ const transactionSchema = z.object({
   clientId: ClientIdentifier.schema,
   verifierId: ClientId.schema,
   state: z.string().optional(),
-  nonce: z.string().optional(),
+  nonce: z.string(),
 })
 
 const transactionRecordSchema = z.object({
@@ -20,7 +20,7 @@ const transactionRecordSchema = z.object({
   clientId: ClientIdentifier.schema,
   verifierId: ClientId.schema,
   state: z.string().optional(),
-  nonce: z.string().optional(),
+  nonce: z.string(),
 })
 
 export type TransactionId = z.infer<typeof transactionIdSchema>

@@ -21,6 +21,7 @@ describe('inMemoryVerifierTransactionDataStore', () => {
     },
     clientId: 'redirect_uri:https://example.com',
     verifierId: 'https://example.com',
+    nonce: 'test-nonce',
   })
 
   describe('When initialized with no options (default behavior)', () => {

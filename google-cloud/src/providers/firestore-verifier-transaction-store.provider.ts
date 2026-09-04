@@ -56,7 +56,7 @@ export const firestoreVerifierTransactionDataStore = (
         clientId: Transaction['clientId']
         verifierId: Transaction['verifierId']
         state?: string
-        nonce?: string
+        nonce: string
       }
 
       if (new Date().getTime() > data.transaction_data_expires_at.toMillis()) {

@@ -13,7 +13,7 @@ The following items are not implemented yet and are planned for future support:
   - Only the Pre-Authorized Code Flow is supported at this time.
   - `credential_response_encryption` in the Credential Request is not supported yet.
   - The Credential Request supports the `jwt` proof type (`di_vp` and `attestation` is not supported yet.).
-- Node.js v14 or later is installed
+- Node.js v22 or later is installed
 - TypeScript is configured
 - This document is based on the sample implementation of the server
 - The Hono web framework is used, but other frameworks can also be used
