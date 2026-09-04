@@ -23,14 +23,15 @@ import (
 	"github.com/trustknots/vcknots/wallet/presenter/types"
 )
 
+// testDcqlQueryParam is the URL-encoded form of
+// {"credentials":[{"id":"cred1","format":"jwt_vc_json","meta":{}}]}
+// for use in query-parameter style presentation request URIs.
+const testDcqlQueryParam = "%7B%22credentials%22%3A%5B%7B%22id%22%3A%22cred1%22%2C%22format%22%3A%22jwt_vc_json%22%2C%22meta%22%3A%7B%7D%7D%5D%7D"
+
 func TestOid4vpPresenter_Present(t *testing.T) {
 	testPresentation := []byte("a.valid.jwt")
-	testSubmission := types.PresentationSubmission{
-		ID:           "12345",
-		DefinitionID: "example_jwt_vc",
-		DescriptorMap: []types.DescriptorMapItem{
-			{ID: "vp_token_jwt", Format: "jwt_vp_json", Path: "$"},
-		},
+	testRequest := &types.PresentationRequest{
+		CredentialQueryID: "cred1",
 	}
 
 	tests := []struct {
@@ -92,7 +93,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 				endpoint = *presenterURL
 			}
 			p := &Oid4vpPresenter{}
-			_, err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testSubmission, nil)
+			_, err := p.Present(tt.protocol, endpoint, tt.serializedPresentation, testRequest)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Oid4vpPresenter.Present() error = %v, wantErr %v", err, tt.wantErr)
@@ -114,7 +115,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		require.NoError(t, err)
 
 		p := &Oid4vpPresenter{}
-		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
+		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testRequest)
 		require.NoError(t, err)
 		assert.Equal(t, "https://example.com/callback", redirectURI)
 	})
@@ -134,9 +135,52 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		require.NoError(t, err)
 
 		p := &Oid4vpPresenter{}
-		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testSubmission, nil)
+		redirectURI, err := p.Present(types.Oid4vp, *endpoint, testPresentation, testRequest)
 		require.NoError(t, err)
 		assert.Empty(t, redirectURI)
+	})
+
+	// AC (Issue #606): vp_token must be a JSON object keyed by the DCQL
+	// Credential Query id, and presentation_submission must not be sent.
+	t.Run("Sends vp_token as DCQL JSON object", func(t *testing.T) {
+		var gotVPToken, gotSubmission, gotState string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("failed to parse form: %v", err)
+			}
+			gotVPToken = r.PostFormValue("vp_token")
+			gotSubmission = r.PostFormValue("presentation_submission")
+			gotState = r.PostFormValue("state")
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		endpoint, err := url.Parse(server.URL)
+		require.NoError(t, err)
+
+		p := &Oid4vpPresenter{}
+		req := &types.PresentationRequest{CredentialQueryID: "cred1", State: "test-state"}
+		_, err = p.Present(types.Oid4vp, *endpoint, testPresentation, req)
+		require.NoError(t, err)
+
+		assert.JSONEq(t, `{"cred1":["a.valid.jwt"]}`, gotVPToken)
+		assert.Empty(t, gotSubmission, "presentation_submission must not be sent")
+		assert.Equal(t, "test-state", gotState)
+	})
+
+	t.Run("Missing credential query id is rejected", func(t *testing.T) {
+		p := &Oid4vpPresenter{}
+		endpoint := *mustParseURL(t, "http://localhost:12345")
+
+		_, err := p.Present(types.Oid4vp, endpoint, testPresentation, &types.PresentationRequest{})
+		if err == nil || !strings.Contains(err.Error(), "credential query id is required") {
+			t.Fatalf("expected credential query id error, got: %v", err)
+		}
+
+		_, err = p.Present(types.Oid4vp, endpoint, testPresentation, nil)
+		if err == nil || !strings.Contains(err.Error(), "credential query id is required") {
+			t.Fatalf("expected credential query id error for nil request, got: %v", err)
+		}
 	})
 
 	// Test network error case with connection hijacking
@@ -156,7 +200,7 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		hijackURL, _ := url.Parse(hijackServer.URL() + "/present")
 
 		p := &Oid4vpPresenter{}
-		_, err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testSubmission, nil)
+		_, err := p.Present(types.Oid4vp, *hijackURL, testPresentation, testRequest)
 
 		if err == nil {
 			t.Error("Expected error for hijacked connection, got nil")
@@ -195,10 +239,11 @@ func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
 		"client_id":     "redirect_uri:http://example.com/callback",
 		"response_type": "vp_token",
 		"response_mode": "direct_post",
-		"scope":         "openid",
 		"state":         "test-state",
-		"presentation_definition": map[string]any{
-			"id": "test-def",
+		"dcql_query": map[string]any{
+			"credentials": []any{
+				map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
+			},
 		},
 		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
@@ -227,7 +272,7 @@ func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
 	}{
 		{
 			name:    "Query parameters",
-			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/callback&response_type=vp_token&nonce=test-nonce&presentation_definition=%7B%22id%22%3A%22test-def%22%7D&response_mode=direct_post&response_uri=https://example.com/response",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/callback&response_type=vp_token&nonce=test-nonce&dcql_query=" + testDcqlQueryParam + "&response_mode=direct_post&response_uri=https://example.com/response",
 			setup:   nil,
 			wantErr: false,
 		},
@@ -326,10 +371,11 @@ func TestOid4vpPresenter_WithRequestObject_TypHeader(t *testing.T) {
 		"client_id":     "redirect_uri:http://example.com/callback",
 		"response_type": "vp_token",
 		"response_mode": "direct_post",
-		"scope":         "openid",
 		"state":         "test-state",
-		"presentation_definition": map[string]any{
-			"id": "test-def",
+		"dcql_query": map[string]any{
+			"credentials": []any{
+				map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
+			},
 		},
 		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
@@ -431,10 +477,11 @@ func TestOid4vpPresenter_WithRequestObject_IssClaimIgnored(t *testing.T) {
 		"client_id":     "redirect_uri:http://example.com/callback",
 		"response_type": "vp_token",
 		"response_mode": "direct_post",
-		"scope":         "openid",
 		"state":         "test-state",
-		"presentation_definition": map[string]any{
-			"id": "test-def",
+		"dcql_query": map[string]any{
+			"credentials": []any{
+				map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
+			},
 		},
 		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
@@ -491,10 +538,11 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 			"client_id":     "redirect_uri:http://example.com/callback",
 			"response_type": "vp_token",
 			"response_mode": "direct_post",
-			"scope":         "openid",
 			"state":         "test-state",
-			"presentation_definition": map[string]any{
-				"id": "test-def",
+			"dcql_query": map[string]any{
+				"credentials": []any{
+					map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
+				},
 			},
 			"response_uri":    "https://example.com/response",
 			"client_metadata": clientMetadata,
@@ -585,10 +633,11 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 			"client_id":     "redirect_uri:http://example.com/callback",
 			"response_type": "vp_token",
 			"response_mode": "direct_post",
-			"scope":         "openid",
 			"state":         "test-state",
-			"presentation_definition": map[string]any{
-				"id": "test-def",
+			"dcql_query": map[string]any{
+				"credentials": []any{
+					map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
+				},
 			},
 			"response_uri":    "https://example.com/response",
 			"client_metadata": clientMetadata,
@@ -627,34 +676,64 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 	}{
 		{
 			name:    "Missing required params",
-			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb", // missing response_type, nonce, presentation_definition, response_mode
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb", // missing response_type, nonce, dcql_query, response_mode
 			wantErr: true,
 			errSub:  "missing required parameters",
 		},
 		{
 			name:    "Multiple values for a single key should error",
-			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=fragment",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=fragment",
 			wantErr: true,
 			errSub:  "multiple values provided for parameter: response_type",
 		},
 		{
 			name:    "response_mode=direct_post requires response_uri",
-			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=direct_post",
 			wantErr: true,
 			errSub:  "missing required parameters: response_uri",
 		},
 		{
 			name:    "response_mode=direct_post rejects non-https response_uri",
-			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&response_uri=http://example.com/response",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=direct_post&response_uri=http://example.com/response",
 			wantErr: true,
 			errSub:  "response_uri must use https scheme",
+		},
+		{
+			name:    "presentation_definition is rejected",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&dcql_query=" + testDcqlQueryParam + "&response_mode=fragment",
+			wantErr: true,
+			errSub:  "presentation_definition is not supported",
+		},
+		{
+			name:    "presentation_definition_uri is rejected",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition_uri=https://example.com/pd&dcql_query=" + testDcqlQueryParam + "&response_mode=fragment",
+			wantErr: true,
+			errSub:  "presentation_definition_uri is not supported",
+		},
+		{
+			name:    "presentation_submission is rejected",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_submission=%7B%7D&dcql_query=" + testDcqlQueryParam + "&response_mode=fragment",
+			wantErr: true,
+			errSub:  "presentation_submission is not supported",
+		},
+		{
+			name:    "non-empty scope is rejected with invalid_scope",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&scope=openid&dcql_query=" + testDcqlQueryParam + "&response_mode=fragment",
+			wantErr: true,
+			errSub:  "invalid_scope",
+		},
+		{
+			name:    "invalid dcql_query is rejected with invalid_request",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&dcql_query=%7B%22credentials%22%3A%5B%5D%7D&response_mode=fragment",
+			wantErr: true,
+			errSub:  "dcql_query.credentials must be a non-empty array",
 		},
 		// redirect_uri matches the client_id-derived value on purpose so the
 		// mismatch check (redirectURIFromParam vs redirectURIFromClientID) does
 		// not fire first and the new exclusivity check is exercised.
 		{
 			name:    "redirect_uri and response_uri must not coexist",
-			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&redirect_uri=http://example.com/cb&response_uri=https://example.com/response",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=direct_post&redirect_uri=http://example.com/cb&response_uri=https://example.com/response",
 			wantErr: true,
 			errSub:  "redirect_uri and response_uri must not both be present",
 		},
@@ -673,13 +752,161 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 	}
 }
 
+// AC (Issue #606): when an Authorization Request is rejected with an OAuth
+// error code and response_mode=direct_post, the wallet posts the error
+// authorization response (error, error_description, state) to response_uri.
+func TestOid4vpPresenter_SendsErrorAuthorizationResponse(t *testing.T) {
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+	p := &Oid4vpPresenter{}
+
+	newErrorCapturingServer := func(t *testing.T) (*httptest.Server, *url.Values) {
+		t.Helper()
+		captured := &url.Values{}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("failed to parse form: %v", err)
+			}
+			*captured = r.PostForm
+			w.WriteHeader(http.StatusOK)
+		}))
+		return server, captured
+	}
+
+	baseURI := func(responseURI, extraParams string) string {
+		return "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&state=err-state&response_mode=direct_post&response_uri=" +
+			url.QueryEscape(responseURI) + extraParams
+	}
+
+	tests := []struct {
+		name        string
+		extraParams string
+		wantError   string
+	}{
+		{
+			name:        "invalid dcql_query posts invalid_request",
+			extraParams: "&dcql_query=%7B%22credentials%22%3A%5B%5D%7D",
+			wantError:   "invalid_request",
+		},
+		{
+			name:        "non-empty scope posts invalid_scope",
+			extraParams: "&scope=openid&dcql_query=" + testDcqlQueryParam,
+			wantError:   "invalid_scope",
+		},
+		{
+			name:        "unsupported format posts vp_formats_not_supported",
+			extraParams: "&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%22c1%22%2C%22format%22%3A%22mso_mdoc%22%2C%22meta%22%3A%7B%7D%7D%5D%7D",
+			wantError:   "vp_formats_not_supported",
+		},
+		{
+			name:        "presentation_definition posts invalid_request",
+			extraParams: "&presentation_definition=%7B%22id%22%3A%22def%22%7D&dcql_query=" + testDcqlQueryParam,
+			wantError:   "invalid_request",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, captured := newErrorCapturingServer(t)
+			defer server.Close()
+
+			_, err := p.ParsePresentationRequest(baseURI(server.URL, tt.extraParams))
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			if got := captured.Get("error"); got != tt.wantError {
+				t.Fatalf("expected error %q to be posted, got %q", tt.wantError, got)
+			}
+			if captured.Get("error_description") == "" {
+				t.Fatal("expected error_description to be posted")
+			}
+			if got := captured.Get("state"); got != "err-state" {
+				t.Fatalf("expected state %q to be posted, got %q", "err-state", got)
+			}
+			if got := captured.Get("vp_token"); got != "" {
+				t.Fatalf("expected no vp_token in error response, got %q", got)
+			}
+		})
+	}
+
+	t.Run("no error response without direct_post", func(t *testing.T) {
+		server, captured := newErrorCapturingServer(t)
+		defer server.Close()
+
+		uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&response_mode=fragment&dcql_query=%7B%22credentials%22%3A%5B%5D%7D"
+		_, err := p.ParsePresentationRequest(uri)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if len(*captured) != 0 {
+			t.Fatalf("expected no error response to be sent, got %v", *captured)
+		}
+	})
+
+	// A Request Object's validation fails before its signature is verified,
+	// so its response_uri is unauthenticated and must not receive the error
+	// authorization response.
+	t.Run("no error response for request object path", func(t *testing.T) {
+		server, captured := newErrorCapturingServer(t)
+		defer server.Close()
+
+		verifierServer := mockserver.NewOID4VPVerifierServer(nil)
+		defer verifierServer.Close()
+		keyPair := verifierServer.GetKeyPair()
+
+		claims := map[string]any{
+			"aud":           "test-client",
+			"nonce":         "n",
+			"client_id":     "redirect_uri:http://example.com/cb",
+			"response_type": "vp_token",
+			"response_mode": "direct_post",
+			"state":         "err-state",
+			"dcql_query":    map[string]any{"credentials": []any{}},
+			"response_uri":  server.URL,
+			"client_metadata": map[string]any{
+				"client_name": "Test Client",
+				"jwks":        keyPair.CreateJWKS(),
+			},
+		}
+		jwtStr, err := verifierServer.CreateSignedJWT(claims)
+		if err != nil {
+			t.Fatalf("failed to create signed JWT: %v", err)
+		}
+
+		_, err = p.ParsePresentationRequest("openid4vp://present?request=" + url.QueryEscape(jwtStr))
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if len(*captured) != 0 {
+			t.Fatalf("expected no error response for request object path, got %v", *captured)
+		}
+	})
+
+	t.Run("send failure is reported alongside the original error", func(t *testing.T) {
+		server, _ := newErrorCapturingServer(t)
+		server.Close() // unreachable response_uri
+
+		_, err := p.ParsePresentationRequest(baseURI(server.URL, "&dcql_query=%7B%22credentials%22%3A%5B%5D%7D"))
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "invalid_request") {
+			t.Fatalf("expected original error to be preserved, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "failed to send error authorization response") {
+			t.Fatalf("expected send failure to be reported, got: %v", err)
+		}
+	})
+}
+
 func TestOid4vpPresenter_ParsePresentationRequest_AllowsNonHTTPSResponseURI_WhenValidationDisabled(t *testing.T) {
 	p := &Oid4vpPresenter{}
 	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
 	env.SetHTTPAllowed(true)
 
-	uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&response_uri=http://example.com/response"
+	uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=direct_post&response_uri=http://example.com/response"
 	req, err := p.ParsePresentationRequest(uri)
 	if err != nil {
 		t.Fatalf("expected no error when HTTPS validation is disabled, got: %v", err)
@@ -696,7 +923,7 @@ func TestOid4vpPresenter_ClientIDParsingAndRedirectMismatch(t *testing.T) {
 	p := &Oid4vpPresenter{}
 
 	t.Run("Unsupported client_id prefix", func(t *testing.T) {
-		uri := "openid4vp://present?client_id=openid_federationx:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=fragment"
+		uri := "openid4vp://present?client_id=openid_federationx:http://example.com/cb&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=fragment"
 		_, err := p.ParsePresentationRequest(uri)
 		if err == nil {
 			t.Fatal("expected error for unsupported client_id prefix")
@@ -707,7 +934,7 @@ func TestOid4vpPresenter_ClientIDParsingAndRedirectMismatch(t *testing.T) {
 	})
 
 	t.Run("client_id prefix 'origin' is not allowed", func(t *testing.T) {
-		uri := "openid4vp://present?client_id=origin:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=fragment"
+		uri := "openid4vp://present?client_id=origin:http://example.com/cb&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=fragment"
 		_, err := p.ParsePresentationRequest(uri)
 		if err == nil {
 			t.Fatal("expected error for forbidden 'origin' prefix")
@@ -719,7 +946,7 @@ func TestOid4vpPresenter_ClientIDParsingAndRedirectMismatch(t *testing.T) {
 
 	t.Run("redirect_uri mismatch with client_id-derived redirect", func(t *testing.T) {
 		// client_id derives redirect_uri=http://a.example, but explicit redirect_uri differs
-		uri := "openid4vp://present?client_id=redirect_uri:http://a.example/cb&redirect_uri=http://b.example/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=fragment"
+		uri := "openid4vp://present?client_id=redirect_uri:http://a.example/cb&redirect_uri=http://b.example/cb&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=fragment"
 		_, err := p.ParsePresentationRequest(uri)
 		if err == nil {
 			t.Fatal("expected mismatch error")
@@ -731,7 +958,7 @@ func TestOid4vpPresenter_ClientIDParsingAndRedirectMismatch(t *testing.T) {
 
 	t.Run("client_id with duplicate prefix", func(t *testing.T) {
 		// Duplicate prefix: x509_san_dns:x509_san_dns:demo.example.com
-		uri := "openid4vp://present?client_id=x509_san_dns:x509_san_dns:demo.example.com&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=fragment"
+		uri := "openid4vp://present?client_id=x509_san_dns:x509_san_dns:demo.example.com&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=fragment"
 		_, err := p.ParsePresentationRequest(uri)
 		if err == nil {
 			t.Fatal("expected error for duplicate prefix in client_id")
@@ -743,7 +970,7 @@ func TestOid4vpPresenter_ClientIDParsingAndRedirectMismatch(t *testing.T) {
 
 	t.Run("client_id with trailing whitespace", func(t *testing.T) {
 		// Trailing whitespace should be trimmed
-		uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb%20&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=direct_post&response_uri=https://example.com/cb"
+		uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb%20&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=direct_post&response_uri=https://example.com/cb"
 		req, err := p.ParsePresentationRequest(uri)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -772,7 +999,7 @@ func TestOid4vpPresenter_ClientMetadataParsing_And_ResponseModeConstraint(t *tes
 	p := &Oid4vpPresenter{}
 
 	t.Run("client_metadata invalid JSON string", func(t *testing.T) {
-		uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=fragment&client_metadata={invalid}"
+		uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=fragment&client_metadata={invalid}"
 		_, err := p.ParsePresentationRequest(uri)
 		if err == nil {
 			t.Fatal("expected error for invalid client_metadata JSON")
@@ -784,7 +1011,7 @@ func TestOid4vpPresenter_ClientMetadataParsing_And_ResponseModeConstraint(t *tes
 
 	t.Run("client_metadata wrong type (number)", func(t *testing.T) {
 		// numbers will be treated as string via fmt, but setParams path expects string or map; simulate map path by percent-encoding a JSON number
-		uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&presentation_definition=%7B%22id%22%3A%22def%22%7D&response_mode=fragment&client_metadata=1"
+		uri := "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=fragment&client_metadata=1"
 		_, err := p.ParsePresentationRequest(uri)
 		if err == nil {
 			t.Fatal("expected error for invalid client_metadata type")
@@ -814,10 +1041,11 @@ func TestOid4vpPresenter_RequestParameterJWT_Success(t *testing.T) {
 		"client_id":     "redirect_uri:http://example.com/callback",
 		"response_type": "vp_token",
 		"response_mode": "direct_post",
-		"scope":         "openid",
 		"state":         "test-state",
-		"presentation_definition": map[string]any{
-			"id": "test-def",
+		"dcql_query": map[string]any{
+			"credentials": []any{
+				map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
+			},
 		},
 		"response_uri":    "https://example.com/response",
 		"client_metadata": clientMetadata,
@@ -835,7 +1063,7 @@ func TestOid4vpPresenter_RequestParameterJWT_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req == nil || req.ClientID == "" || req.PresentationDefinition == nil {
+	if req == nil || req.ClientID == "" || req.DcqlQuery == nil {
 		t.Fatalf("expected populated request from 'request' param")
 	}
 }
@@ -871,15 +1099,18 @@ func TestOid4vpPresenter_RequestObject_WithX5C_X509SanDNS_SuccessAndFailures(t *
 
 	// Build JWT with x5c header and claims for x509_san_dns
 	claims := map[string]any{
-		"aud":                     "test-client",
-		"nonce":                   "n",
-		"client_id":               "x509_san_dns:verifier.example.org",
-		"response_type":           "vp_token",
-		"response_mode":           "direct_post",
-		"scope":                   "openid",
-		"state":                   "s",
-		"presentation_definition": map[string]any{"id": "def"},
-		"response_uri":            "https://verifier.example.org/response",
+		"aud":           "test-client",
+		"nonce":         "n",
+		"client_id":     "x509_san_dns:verifier.example.org",
+		"response_type": "vp_token",
+		"response_mode": "direct_post",
+		"state":         "s",
+		"dcql_query": map[string]any{
+			"credentials": []any{
+				map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
+			},
+		},
+		"response_uri": "https://verifier.example.org/response",
 	}
 
 	signerOpts := &jose.SignerOptions{}

@@ -6,18 +6,12 @@ import (
 	"github.com/go-jose/go-jose/v4"
 )
 
-// PresentationDefinition represents a presentation definition
-type PresentationDefinition struct {
-	ID string `json:"id"`
-}
-
 // OAuthAuthzRequest represents a OAuth 2.0 Authorization Request
 // These fields are defined in RFC6749 and OIDC.
 type OAuthAuthzRequest struct {
 	ResponseType string                    `json:"response_type"`          // required
 	ClientID     string                    `json:"client_id"`              // required
 	RedirectURI  string                    `json:"redirect_uri,omitempty"` // optional
-	Scope        string                    `json:"scope,omitempty"`        // optional
 	State        string                    `json:"state,omitempty"`        // conditional required in OID4VP
 	Nonce        string                    `json:"nonce"`                  // required in OIDC
 	ResponseMode OAuthAuthzReqResponseMode `json:"response_mode"`          // required in OID4VP, but optional in OIDC
@@ -68,19 +62,21 @@ const (
 	ServerError OAuthAuthzError = "server_error"
 	// TemporarilyUnavailableError indicates that the authorization server is currently unable to handle the request due to a temporary overloading or maintenance of the server. (This error code is needed because a 503 Service Unavailable HTTP status code cannot be returned to the client via a HTTP redirect.)
 	TemporarilyUnavailableError OAuthAuthzError = "temporarily_unavailable"
+	// VPFormatsNotSupportedError indicates that the Wallet does not support any of the Credential formats requested by the Verifier. (defined in OID4VP)
+	VPFormatsNotSupportedError OAuthAuthzError = "vp_formats_not_supported"
 )
 
 // CredentialPresentationRequest represents a OAuth 2.0 Authorization Request
-// with a presentation definition for OID4VP.
+// with a DCQL query for OID4VP.
 // These fields are defined in the OID4VP specification and RFC6749.
 type CredentialPresentationRequest struct {
 	*OAuthAuthzRequest
-	PresentationDefinition   *PresentationDefinition `json:"presentation_definition"`               // required
-	ClientMetadata           *VerifierMetadata       `json:"client_metadata,omitempty"`             // optional
-	TransactionData          []string                `json:"transaction_data,omitempty"`            // optional, to be implemented
-	TransactionDataHashesAlg string                  `json:"transaction_data_hashes_alg,omitempty"` // optional, hash algorithm for transaction_data_hashes
-	VerifierInfo             []any                   `json:"verifier_info,omitempty"`               // optional, to be implemented
-	ResponseURI              string                  `json:"response_uri,omitempty"`                // optional
+	DcqlQuery                *DcqlQuery        `json:"dcql_query"`                            // required
+	ClientMetadata           *VerifierMetadata `json:"client_metadata,omitempty"`             // optional
+	TransactionData          []string          `json:"transaction_data,omitempty"`            // optional, to be implemented
+	TransactionDataHashesAlg string            `json:"transaction_data_hashes_alg,omitempty"` // optional, hash algorithm for transaction_data_hashes
+	VerifierInfo             []any             `json:"verifier_info,omitempty"`               // optional, to be implemented
+	ResponseURI              string            `json:"response_uri,omitempty"`                // optional
 }
 
 type RequestURIMethod string

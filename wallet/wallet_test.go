@@ -742,10 +742,10 @@ func TestController_parseAuthorizationRequest_RejectsNonHTTPSResponseURI(t *test
 	defer env.SetHTTPAllowed(httpAllowed)
 	env.SetHTTPAllowed(false)
 
-	presentationDefinition := url.QueryEscape(`{"id":"test-def"}`)
+	dcqlQuery := url.QueryEscape(`{"credentials":[{"id":"cred1","format":"jwt_vc_json","meta":{}}]}`)
 	uri := fmt.Sprintf(
-		"openid4vp://present?client_id=redirect_uri:https://example.com/cb&response_type=vp_token&nonce=test-nonce&presentation_definition=%s&response_mode=direct_post&response_uri=http://example.com/response",
-		presentationDefinition,
+		"openid4vp://present?client_id=redirect_uri:https://example.com/cb&response_type=vp_token&nonce=test-nonce&dcql_query=%s&response_mode=direct_post&response_uri=http://example.com/response",
+		dcqlQuery,
 	)
 
 	_, _, err := controller.parseAuthorizationRequest(uri)
@@ -759,10 +759,10 @@ func TestController_parseAuthorizationRequest_AllowsNonHTTPSResponseURI_WhenVali
 	defer env.SetHTTPAllowed(httpAllowed)
 	env.SetHTTPAllowed(true)
 
-	presentationDefinition := url.QueryEscape(`{"id":"test-def"}`)
+	dcqlQuery := url.QueryEscape(`{"credentials":[{"id":"cred1","format":"jwt_vc_json","meta":{}}]}`)
 	uri := fmt.Sprintf(
-		"openid4vp://present?client_id=redirect_uri:https://example.com/cb&response_type=vp_token&nonce=test-nonce&presentation_definition=%s&response_mode=direct_post&response_uri=http://example.com/response",
-		presentationDefinition,
+		"openid4vp://present?client_id=redirect_uri:https://example.com/cb&response_type=vp_token&nonce=test-nonce&dcql_query=%s&response_mode=direct_post&response_uri=http://example.com/response",
+		dcqlQuery,
 	)
 
 	_, endpoint, err := controller.parseAuthorizationRequest(uri)
@@ -800,7 +800,7 @@ func TestController_PresentCredential_MissingRequiredFields_Integration(t *testi
 			setupMockURI: func() string {
 				return "openid4vp://present?credential_id=test-cred&client_id=test-client"
 			},
-			expectedErrors: []string{"presentation definition is not specified", "failed to parse request URI"},
+			expectedErrors: []string{"dcql_query is not specified", "failed to parse request URI"},
 		},
 	}
 
@@ -3478,9 +3478,9 @@ func TestController_PresentCredential_WithMockServer_Integration(t *testing.T) {
 
 	// Step 2: Now present the credential via OID4VP
 	// Create OID4VP URI with all required parameters per OID4VP specification
-	presentationDefinition := `{"id":"test-presentation-definition","input_descriptors":[{"id":"test-descriptor","format":{"jwt_vp":{"alg":["ES256"]}}}]}`
-	presentationURI := fmt.Sprintf("openid4vp://present?presentation_definition=%s&client_id=test-verifier&redirect_uri=%s&response_type=vp_token&response_mode=direct_post&nonce=test-nonce-123&scope=openid&state=test-state-456",
-		url.QueryEscape(presentationDefinition), vpEndpointURL.String())
+	dcqlQuery := `{"credentials":[{"id":"cred1","format":"jwt_vc_json","meta":{}}]}`
+	presentationURI := fmt.Sprintf("openid4vp://present?dcql_query=%s&client_id=test-verifier&redirect_uri=%s&response_type=vp_token&response_mode=direct_post&nonce=test-nonce-123&state=test-state-456",
+		url.QueryEscape(dcqlQuery), vpEndpointURL.String())
 
 	mockKey := newMockKeyEntry()
 	_, err = controller.PresentCredential(presentationURI, mockKey, nil)
@@ -3532,11 +3532,11 @@ func TestController_PresentCredential_CallsRedirectHandler(t *testing.T) {
 	}
 
 	// Step 2: Present the credential and verify redirect handler execution
-	presentationDefinition := `{"id":"test-presentation-definition","input_descriptors":[{"id":"test-descriptor","format":{"jwt_vp":{"alg":["ES256"]}}}]}`
+	dcqlQuery := `{"credentials":[{"id":"cred1","format":"jwt_vc_json","meta":{}}]}`
 	clientID := "redirect_uri:https://example.com/cb"
 	presentationURI := fmt.Sprintf(
-		"openid4vp://present?presentation_definition=%s&client_id=%s&response_type=vp_token&response_mode=direct_post&response_uri=%s&nonce=test-nonce-123&scope=openid&state=test-state-456",
-		url.QueryEscape(presentationDefinition),
+		"openid4vp://present?dcql_query=%s&client_id=%s&response_type=vp_token&response_mode=direct_post&response_uri=%s&nonce=test-nonce-123&state=test-state-456",
+		url.QueryEscape(dcqlQuery),
 		url.QueryEscape(clientID),
 		url.QueryEscape(responseServer.URL),
 	)
@@ -3987,48 +3987,6 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 			t.Fatalf("expected nonce %q, got %q", req.Nonce, opts.Nonce)
 		}
 	})
-}
-
-func TestBuildDescriptorMap_UsesVPTokenRootPathForJwtVP(t *testing.T) {
-	controller := createTestControllerWithDefaults(t)
-	flavor := credential.JwtVc
-
-	descriptorMap, err := controller.buildDescriptorMap([]*SavedCredential{{}}, &flavor)
-	require.NoError(t, err)
-	require.Len(t, descriptorMap, 1)
-	require.Equal(t, "$", descriptorMap[0].Path)
-	require.NotNil(t, descriptorMap[0].PathNested)
-	require.Equal(t, "$.verifiableCredential[0]", descriptorMap[0].PathNested.Path)
-}
-
-func TestBuildDescriptorMap_UsesVPTokenRootPathForAllJwtDescriptors(t *testing.T) {
-	controller := createTestControllerWithDefaults(t)
-	flavor := credential.JwtVc
-
-	descriptorMap, err := controller.buildDescriptorMap([]*SavedCredential{{}, {}}, &flavor)
-	require.NoError(t, err)
-	require.Len(t, descriptorMap, 2)
-
-	for i, item := range descriptorMap {
-		require.Equalf(t, fmt.Sprintf("$[%d]", i), item.Path, "descriptorMap[%d].Path", i)
-		require.NotNilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
-		require.Equalf(t, fmt.Sprintf("$.verifiableCredential[%d]", i), item.PathNested.Path, "descriptorMap[%d].PathNested.Path", i)
-	}
-}
-
-func TestBuildDescriptorMap_UsesVPTokenRootPathForALLSdJwtDescriptors(t *testing.T) {
-	controller := createTestControllerWithDefaults(t)
-	flavor := credential.SDJwtVC
-
-	descriptorMap, err := controller.buildDescriptorMap([]*SavedCredential{{}, {}}, &flavor)
-	require.NoError(t, err)
-	require.Len(t, descriptorMap, 2)
-
-	for i, item := range descriptorMap {
-		require.Equalf(t, fmt.Sprintf("$[%d]", i), item.Path, "descriptorMap[%d].Path", i)
-		require.Equalf(t, "dc+sd-jwt", item.Format, "descriptorMap[%d].Format", i)
-		require.Nilf(t, item.PathNested, "descriptorMap[%d].PathNested", i)
-	}
 }
 
 func TestNewestCredentials_SelectsMostRecentEntries(t *testing.T) {

@@ -2,7 +2,7 @@ name: CI wallet
 
 on:
   pull_request:
-    branches: ["main", "feat/oid4vci-1.0"]
+    branches: ["main", "feat/oid4vci-1.0", "feat/oid4vp-1.0"]
     paths:
       - wallet/**
 

@@ -7,7 +7,6 @@ import * as jose from 'jose'
 import { X509Certificate } from 'node:crypto'
 import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
 import { KbJwtJsonPayload } from '../keyBindingJwt.types'
-import { Nonce } from '../nonce.types'
 import { sdJwtPayloadSchema, VpTokenPayload } from '../presentation.types'
 
 export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentationProvider &
@@ -43,6 +42,33 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       const decodedSdJwt = await decodeSdJwt(vp, digest)
       const sdJwtHeader = decodedSdJwt.jwt.header
 
+      const sdJwtAlg = typeof sdJwtHeader.alg === 'string' ? sdJwtHeader.alg : undefined
+      if (options.allowedSdJwtAlgs) {
+        if (!sdJwtAlg || !options.allowedSdJwtAlgs.includes(sdJwtAlg)) {
+          throw err('verifier_vp_formats_not_supported', {
+            message: `Algorithm '${sdJwtAlg ?? 'missing'}' is not in dc+sd-jwt sd-jwt_alg_values. Allowed: ${options.allowedSdJwtAlgs.join(', ')}`,
+          })
+        }
+      }
+      if (options.allowedKbJwtAlgs && !vp.endsWith('~')) {
+        const vpParts = vp.split('~')
+        const kbJwtStr = vpParts[vpParts.length - 1]
+        if (kbJwtStr) {
+          let kbHeader: Record<string, unknown>
+          try {
+            kbHeader = JSON.parse(Buffer.from(kbJwtStr.split('.')[0], 'base64url').toString())
+          } catch {
+            throw err('invalid_sd_jwt', { message: 'KB-JWT header is malformed' })
+          }
+          const kbAlg = typeof kbHeader.alg === 'string' ? kbHeader.alg : undefined
+          if (!kbAlg || !options.allowedKbJwtAlgs.includes(kbAlg)) {
+            throw err('verifier_vp_formats_not_supported', {
+              message: `KB-JWT algorithm '${kbAlg ?? 'missing'}' is not in dc+sd-jwt kb-jwt_alg_values. Allowed: ${options.allowedKbJwtAlgs.join(', ')}`,
+            })
+          }
+        }
+      }
+
       let publicJwk: jose.JWK | undefined
       if (
         !sdJwtHeader.x5c &&
@@ -76,7 +102,11 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
             message: `Failed to fetch issuer metadata: ${metadataResponse.statusText}`,
           })
         }
-        const metadata = await metadataResponse.json()
+        const metadata = await metadataResponse.json().catch(() => {
+          throw err('invalid_sd_jwt', {
+            message: `Issuer metadata at ${metadataUrl} is not valid JSON`,
+          })
+        })
         if (metadata.issuer !== decodedSdJwt.jwt.payload.iss) {
           throw err('invalid_sd_jwt', {
             message: 'Issuer in metadata does not match SD-JWT issuer',
@@ -91,7 +121,11 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
               message: `Failed to fetch JWKS: ${jwksResponse.statusText}`,
             })
           }
-          jwks = await jwksResponse.json()
+          jwks = await jwksResponse.json().catch(() => {
+            throw err('invalid_sd_jwt', {
+              message: `JWKS at ${metadata.jwks_uri} is not valid JSON`,
+            })
+          })
         } else if (metadata.jwks && typeof metadata.jwks === 'object') {
           jwks = metadata.jwks as jose.JSONWebKeySet
         } else {
@@ -170,20 +204,10 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
           })
         }
       }
-      if (nonce) {
-        const nonceStore$ = this.providers.get('nonce-store-provider')
-        const nonceValid = await nonceStore$.validate(Nonce({ nonce }))
-        if (!nonceValid) {
-          throw err('invalid_nonce', {
-            message: 'nonce is not valid.',
-          })
-        }
-        const revoked = await nonceStore$.revoke(Nonce({ nonce }))
-        if (!revoked) {
-          throw err('invalid_nonce', {
-            message: 'Nonce could not be revoked.',
-          })
-        }
+      if (isKbJwt && options.expectedNonce !== undefined && nonce !== options.expectedNonce) {
+        throw err('invalid_nonce', {
+          message: 'nonce does not match.',
+        })
       }
       const { payload: claims } = await sdJwtInst.verify(vp, {
         requiredClaimKeys: specifiedDisclosures,

@@ -22,6 +22,10 @@ export const kmsAlgorithmToJoseAlgorithm = (kmsAlgorithm?: unknown): string | nu
       return 'PS256'
     case 'RSA_SIGN_PSS_4096_SHA512':
       return 'PS512'
+    case 'RSA_DECRYPT_OAEP_2048_SHA256':
+    case 'RSA_DECRYPT_OAEP_3072_SHA256':
+    case 'RSA_DECRYPT_OAEP_4096_SHA256':
+      return 'RSA-OAEP-256'
     default:
       return null
   }
@@ -41,6 +45,8 @@ export const joseAlgorithmToKmsAlgorithm = (alg?: string): string | null => {
       return 'RSA_SIGN_PSS_2048_SHA256'
     case 'PS512':
       return 'RSA_SIGN_PSS_4096_SHA512'
+    case 'RSA-OAEP-256':
+      return 'RSA_DECRYPT_OAEP_3072_SHA256'
     default:
       return null
   }

@@ -2,9 +2,9 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
 } from '../authorization-server.types'
+import type { ClientIdentifier } from '../client-id-prefix.types'
 import { AuthzOAuthClient } from '../authz-oauth-client.types'
 import { AuthzOAuthPolicy } from '../authz-oauth-policy.types'
-import type { ClientIdentifier } from '../client-id-scheme.types'
 import { ClientId } from '../client-id.types'
 import { Nonce } from '../nonce.types'
 import {
@@ -14,18 +14,20 @@ import {
   CredentialIssuerMetadata,
 } from '../credential-issuer.types'
 import { CredentialOffer } from '../credential-offer.types'
-import { CredentialQuery, CredentialQueryType } from '../credential-query.type'
+import { CredentialQuery } from '../credential-query.type'
+
 import { CredentialFormats } from '../credential-request.types'
 import { JwtVcJson, ProofJwt, ProofJwtHeader, VerifiableCredential } from '../credential.types'
 import { Dcql } from '../dcql.type'
 import { DidDocument } from '../did.types'
+import { EncryptionKeyPair, EncryptionPublicJwk } from '../encryption-key.types'
 import { JwtContent, JwtPayload } from '../jwt.types'
 import { PreAuthorizedCode } from '../pre-authorized-code.types'
-import { PresentationExchange } from '../presentation-exchange.types'
 import { VpTokenPayload } from '../presentation.types'
 import { RequestObjectId } from '../request-object-id.types'
 import { RequestObject } from '../request-object.types'
 import { Certificate, SignatureKeyPair, SignatureKeyEntry } from '../signature-key.types'
+import { Transaction, TransactionId, TransactionRecord } from '../transaction-id.types'
 import { DeepPartialUnknown } from '../type.utils'
 import { VerifierMetadata } from '../verifier-metadata.types'
 import type { CredentialProofJwtVerifyContext } from '../credential-proof-jwt.types'
@@ -133,6 +135,15 @@ export type IssuerSignatureKeyStoreProvider = {
   ): Promise<string | null>
 }
 
+export type VerifierEncryptionKeyStoreProvider = {
+  kind: 'verifier-encryption-key-store-provider'
+  name: string
+  single: true
+
+  save(verifier: ClientId, keyAlg: string): Promise<void>
+  fetch(verifier: ClientId, keyAlg: string): Promise<EncryptionPublicJwk | null>
+}
+
 export type VerifierSignatureKeyStoreProvider = {
   kind: 'verifier-signature-key-store-provider'
   name: string
@@ -180,7 +191,7 @@ export type VerifyCredentialProvider = {
   name: string
   single: true
 
-  verify(vc: string): Promise<boolean>
+  verify(vc: string, options?: { allowedAlgs?: string[] }): Promise<boolean>
   canHandle(format: string): boolean
 }
 
@@ -189,6 +200,8 @@ export type VerifyVerifiablePresentationVerifyOptions =
       kind: 'jwt_vp_json'
       /** VP JWT `aud` must equal this or be included if `aud` is an array. */
       expectedAud: ClientIdentifier
+      expectedNonce?: string
+      allowedAlgs?: string[]
     }
   | {
       kind: 'dc+sd-jwt'
@@ -197,6 +210,8 @@ export type VerifyVerifiablePresentationVerifyOptions =
       expectedAud?: ClientIdentifier
       expectedNonce?: string
       expectedTransactionDataHashes?: string[]
+      allowedSdJwtAlgs?: string[]
+      allowedKbJwtAlgs?: string[]
     }
   | {
       kind: 'dc+sd-jwt'
@@ -205,6 +220,8 @@ export type VerifyVerifiablePresentationVerifyOptions =
       expectedAud: ClientIdentifier
       expectedNonce?: string
       expectedTransactionDataHashes?: string[]
+      allowedSdJwtAlgs?: string[]
+      allowedKbJwtAlgs?: string[]
     }
 // | {
 //     kind: 'dc+sd-jwt'
@@ -384,6 +401,15 @@ export type IssuerSignatureKeyProvider = {
   canHandle(keyAlg: string): boolean
 }
 
+export type VerifierEncryptionKeyProvider = {
+  kind: 'verifier-encryption-key-provider'
+  name: string
+  single: false
+
+  generate(): Promise<EncryptionKeyPair>
+  canHandle(keyAlg: string): boolean
+}
+
 export type VerifierSignatureKeyProvider = {
   kind: 'verifier-signature-key-provider'
   name: string
@@ -468,23 +494,12 @@ export type IssueCredentialProvider = {
   canHandle(format: CredentialFormats): boolean
 }
 
-export type CredentialQueryGenerationOptions =
-  | {
-      kind: 'presentation-exchange'
-      query: DeepPartialUnknown<PresentationExchange>
-    }
-  | {
-      kind: 'dcql'
-      query: DeepPartialUnknown<Dcql>
-    }
-
 export type CredentialQueryProvider = {
   kind: 'credential-query-provider'
   name: string
-  single: false
+  single: true
 
-  generate(options: CredentialQueryGenerationOptions): Promise<CredentialQuery>
-  canHandle(query: CredentialQueryType): boolean
+  generate(query: DeepPartialUnknown<Dcql>): Promise<CredentialQuery>
 }
 
 export type AuthzRequestJARProvider = {
@@ -496,10 +511,9 @@ export type AuthzRequestJARProvider = {
     verifierId: ClientId,
     requestObject: RequestObject,
     alg: string,
-    nonce?: string,
     wallet_nonce?: string
   ): Promise<JwtContent>
-  canHandle(clientIdScheme: string): boolean
+  canHandle(clientIdPrefix: string): boolean
 }
 
 export type CertificateProvider = {
@@ -517,6 +531,24 @@ export type TransactionDataProvider = {
   single: true
 
   generate(type: string, credential_ids: string[], transaction_data_hashes_alg?: string[]): string
+}
+
+export type TransactionIdProvider = {
+  kind: 'transaction-id-provider'
+  name: string
+  single: true
+
+  generate(): Promise<TransactionId>
+}
+
+export type VerifierTransactionDataStoreProvider = {
+  kind: 'verifier-transaction-store-provider'
+  name: string
+  single: true
+
+  fetch(transactionId: TransactionId): Promise<Transaction | null>
+  save(transactionId: TransactionId, record: TransactionRecord): Promise<void>
+  delete(transactionId: TransactionId): Promise<void>
 }
 
 export type Provider =
@@ -548,6 +580,8 @@ export type Provider =
   | IssueCredentialProvider
   | DidProvider
   | VerifierMetadataStoreProvider
+  | VerifierEncryptionKeyStoreProvider
+  | VerifierEncryptionKeyProvider
   | VerifierSignatureKeyProvider
   | VerifierSignatureKeyStoreProvider
   | CredentialQueryProvider
@@ -561,4 +595,6 @@ export type Provider =
   | VerifierCertificateStoreProvider
   | CertificateProvider
   | TransactionDataProvider
+  | VerifierTransactionDataStoreProvider
+  | TransactionIdProvider
   | TransactionCodeProvider

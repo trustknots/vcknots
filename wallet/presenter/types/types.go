@@ -11,13 +11,11 @@ var (
 	ErrUnsupportedProtocol  = errors.New("unsupported presentation protocol")
 	ErrInvalidEndpoint      = errors.New("invalid presentation endpoint")
 	ErrInvalidPresentation  = errors.New("invalid presentation data")
-	ErrInvalidSubmission    = errors.New("invalid presentation submission")
 	ErrPresentationFailed   = errors.New("presentation submission failed")
 	ErrNetworkFailed        = errors.New("network request failed")
 	ErrInvalidResponse      = errors.New("invalid response from verifier")
 	ErrTimeoutExpired       = errors.New("presentation request timeout expired")
 	ErrAuthenticationFailed = errors.New("authentication failed")
-	ErrInvalidDescriptorMap = errors.New("invalid descriptor map")
 	ErrPluginNotFound       = errors.New("presenter plugin not found")
 	ErrNilPlugin            = errors.New("presenter plugin cannot be nil")
 )
@@ -53,14 +51,17 @@ func NewPresenterError(protocol SupportedPresentationProtocol, endpoint, op stri
 
 // PresentationRequest contains the information needed to present a credential
 type PresentationRequest struct {
-	State                         string
+	State string
+	// CredentialQueryID is the id of the DCQL Credential Query the presentation
+	// responds to. It becomes the key of the vp_token JSON object.
+	CredentialQueryID             string
 	ClientMetadata                interface{}
 	AuthorizationEncryptedRespAlg string
 	AuthorizationEncryptedRespEnc string
 }
 
 type Presenter interface {
-	Present(protocol SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, presentationSubmission PresentationSubmission, request *PresentationRequest) (string, error)
+	Present(protocol SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, request *PresentationRequest) (string, error)
 }
 
 type SupportedPresentationProtocol int
@@ -68,16 +69,3 @@ type SupportedPresentationProtocol int
 const (
 	Oid4vp SupportedPresentationProtocol = iota
 )
-
-type PresentationSubmission struct {
-	ID            string              `json:"id"`
-	DefinitionID  string              `json:"definition_id"`
-	DescriptorMap []DescriptorMapItem `json:"descriptor_map"`
-}
-
-type DescriptorMapItem struct {
-	ID         string             `json:"id"`
-	Format     string             `json:"format"`
-	Path       string             `json:"path"`
-	PathNested *DescriptorMapItem `json:"path_nested,omitempty"`
-}

@@ -5,7 +5,6 @@ export * from './credential-proof-jwt.provider'
 export * from './dpop-proof.provider'
 export * from './credential-offer.provider'
 
-export * from './presentation-exchange.provider'
 export * from './dcql.provider'
 export * from './issue-credential-jwt-vc-json.provider'
 export * from './verify-credential-jwt-vc-json.provider'
