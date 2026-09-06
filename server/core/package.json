@@ -50,9 +50,9 @@
 		"lint": "biome lint ./src"
 	},
 	"dependencies": {
-		"@hono/node-server": "2.0.12",
+		"@hono/node-server": "2.1.1",
 		"@trustknots/vcknots": "workspace:*",
-		"hono": "4.12.34",
-		"zod": "4.3.6"
+		"hono": "4.13.5",
+		"zod": "4.5.4"
 	}
 }

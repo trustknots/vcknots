@@ -16,12 +16,12 @@
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@11.10.0",
+	"packageManager": "pnpm@12.2.1",
 	"dependencies": {
 		"@trustknots/google-cloud": "workspace:*",
 		"@trustknots/server-core": "workspace:*",
 		"@trustknots/vcknots": "workspace:*",
 		"dotenv": "17.4.2",
-		"firebase-admin": "14.1.0"
+		"firebase-admin": "14.3.0"
 	}
 }

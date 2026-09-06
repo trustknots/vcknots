@@ -21,20 +21,20 @@
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@11.10.0",
+	"packageManager": "pnpm@12.2.1",
 	"dependencies": {
-		"@aws-sdk/client-dynamodb": "^3.1064.0",
-		"@aws-sdk/client-kms": "^3.1089.0",
-		"@aws-sdk/client-secrets-manager": "^3.1104.0",
-		"@aws-sdk/lib-dynamodb": "^3.1064.0",
+		"@aws-sdk/client-dynamodb": "3.1121.0",
+		"@aws-sdk/client-kms": "3.1121.0",
+		"@aws-sdk/client-secrets-manager": "3.1121.0",
+		"@aws-sdk/lib-dynamodb": "3.1121.0",
 		"@trustknots/vcknots": "workspace:*",
 		"ecdsa-sig-formatter": "1.0.11",
 		"jose": "6.2.10"
 	},
 	"devDependencies": {
-		"@aws-sdk/client-sts": "^3.1064.0",
-		"@types/node": "^24.12.4",
-		"aws-sdk-client-mock": "^4.1.0",
-		"typescript": "~5.9.3"
+		"@aws-sdk/client-sts": "3.1121.0",
+		"@types/node": "24.13.3",
+		"aws-sdk-client-mock": "4.1.0",
+		"typescript": "5.9.3"
 	}
 }
