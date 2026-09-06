@@ -339,6 +339,16 @@ func WithClientAssertion(clientID, assertion string) TokenRequestOption {
 	}
 }
 
+// WithClientID sets the client_id sent with the token request without any
+// client authentication. client_id is OPTIONAL for the pre-authorized code
+// grant, so this identifies the client to an authorization server that expects
+// to know who is asking without requiring the client to authenticate.
+func WithClientID(clientID string) TokenRequestOption {
+	return func(cfg *TokenRequestConfig) {
+		cfg.ClientID = clientID
+	}
+}
+
 // ResolveTokenEndpointURL returns the canonical token endpoint URL string.
 // Metadata token_endpoint values are complete endpoint URLs, so this only
 // normalizes trailing slashes and does not append "/token".

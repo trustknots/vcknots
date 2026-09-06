@@ -752,6 +752,13 @@ func (w *Wallet) generateClientAssertion(key IKeyEntry, clientID, audience strin
 // clientAssertionLifetime is the validity window of a generated client_assertion.
 const clientAssertionLifetime = 5 * time.Minute
 
+// errNoUsableClientAuthMethod reports that neither anonymous access nor the
+// configured client authentication method can be used at the token endpoint.
+var errNoUsableClientAuthMethod = errors.New(
+	"no usable client authentication method for the authorization server token endpoint; " +
+		"the authorization server declares pre-authorized_grant_anonymous_access_supported as false, " +
+		"or it does not support the configured client authentication method")
+
 // resolveClientAuthMethod checks whether the configured client authentication
 // method can be used at the authorization server token endpoint.
 //
@@ -769,9 +776,18 @@ func resolveClientAuthMethod(clientAuth ClientAuthConfig, authMetadata *receiver
 func clientAuthMethodAvailable(method receiverTypes.TokenEndpointAuthMethod, clientAuth ClientAuthConfig, authMetadata *receiverTypes.AuthorizationServerMetadata) bool {
 	switch method {
 	case receiverTypes.None:
-		return authMetadata != nil &&
-			authMetadata.PreAuthorizedGrantAnonymousAccessSupported != nil &&
-			*authMetadata.PreAuthorizedGrantAnonymousAccessSupported
+		// pre-authorized_grant_anonymous_access_supported is an OPTIONAL
+		// authorization server metadata parameter, so an absent value means
+		// "unknown", not "unsupported". Issuers commonly omit it entirely — the
+		// OpenID conformance suite among them — and treating that as a refusal
+		// stops the pre-authorized code flow before a single token request goes
+		// out. Only an explicit false states that the authorization server
+		// rejects the grant without client authentication.
+		if authMetadata == nil {
+			return false
+		}
+		anonymousAccess := authMetadata.PreAuthorizedGrantAnonymousAccessSupported
+		return anonymousAccess == nil || *anonymousAccess
 
 	case receiverTypes.PrivateKeyJwt:
 		if strings.TrimSpace(clientAuth.ClientID) == "" || clientAuth.Key == nil {
@@ -1160,10 +1176,7 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 	}
 
 	if _, ok := resolveClientAuthMethod(w.clientAuth, authMetadata); !ok {
-		return nil, nil, fmt.Errorf(
-			"no usable client authentication method for the authorization server token endpoint; " +
-				"either advertise pre-authorized_grant_anonymous_access_supported or configure a client authentication method",
-		)
+		return nil, nil, errNoUsableClientAuthMethod
 	}
 
 	return issuerMetadata, authMetadata, nil
@@ -1181,15 +1194,13 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 
 	authMethod, ok := resolveClientAuthMethod(w.clientAuth, authMetadata)
 	if !ok {
-		return nil, fmt.Errorf(
-			"no usable client authentication method for the authorization server token endpoint; " +
-				"either advertise pre-authorized_grant_anonymous_access_supported or configure a client authentication method",
-		)
+		return nil, errNoUsableClientAuthMethod
 	}
 
 	fetchAccessToken := func(dpopNonce *string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
 		var tokenReqOptions []receiverTypes.TokenRequestOption
-		if authMethod == receiverTypes.PrivateKeyJwt {
+		switch authMethod {
+		case receiverTypes.PrivateKeyJwt:
 			assertion, err := w.generateClientAssertion(
 				w.clientAuth.Key,
 				w.clientAuth.ClientID,
@@ -1200,6 +1211,16 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 				return nil, fmt.Errorf("failed to generate client assertion: %w", err)
 			}
 			tokenReqOptions = append(tokenReqOptions, receiverTypes.WithClientAssertion(w.clientAuth.ClientID, assertion))
+
+		case receiverTypes.None:
+			// client_id is OPTIONAL for the pre-authorized code grant, but an
+			// authorization server that never advertised
+			// pre-authorized_grant_anonymous_access_supported has told us nothing
+			// about whether it serves anonymous clients. Naming the client when
+			// one is configured is what lets such a server accept the request.
+			if strings.TrimSpace(w.clientAuth.ClientID) != "" {
+				tokenReqOptions = append(tokenReqOptions, receiverTypes.WithClientID(w.clientAuth.ClientID))
+			}
 		}
 		if w.dpop.Enabled {
 			proof, err := w.generateDPoPProof(

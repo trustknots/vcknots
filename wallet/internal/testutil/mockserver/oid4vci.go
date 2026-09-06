@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"net/url"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
@@ -12,11 +15,15 @@ import (
 
 // OID4VCIIssuerConfig holds configuration for an OID4VCI issuer mock server
 type OID4VCIIssuerConfig struct {
-	KeyPair                     *KeyPair
-	IssuerID                    string
-	CredentialConfigurations    map[string]interface{}
-	TokenResponse               map[string]interface{}
-	PreAuthorizedGrantAnonymous bool
+	KeyPair                  *KeyPair
+	IssuerID                 string
+	CredentialConfigurations map[string]interface{}
+	TokenResponse            map[string]interface{}
+	// PreAuthorizedGrantAnonymous controls the OPTIONAL authorization server
+	// metadata parameter pre-authorized_grant_anonymous_access_supported. A nil
+	// value omits the parameter from the metadata entirely, which is what real
+	// issuers commonly do and what a plain bool cannot express.
+	PreAuthorizedGrantAnonymous *bool
 	CustomCredentials           map[string]string
 	OmitAuthorizationServers    bool
 	EmptyAuthorizationServers   bool
@@ -56,16 +63,25 @@ func DefaultOID4VCIIssuerConfig() *OID4VCIIssuerConfig {
 			"expires_in":   3600,
 			"c_nonce":      "mock-nonce",
 		},
-		PreAuthorizedGrantAnonymous: true,
+		PreAuthorizedGrantAnonymous: BoolPtr(true),
 		CustomCredentials:           make(map[string]string),
 	}
 }
+
+// BoolPtr returns a pointer to v, for the optional metadata parameters whose
+// absence and explicit false mean different things.
+func BoolPtr(v bool) *bool { return &v }
 
 // OID4VCIIssuerServer is a mock OID4VCI issuer server
 type OID4VCIIssuerServer struct {
 	server     *MockServer
 	config     *OID4VCIIssuerConfig
 	jwtBuilder *JWTBuilder
+
+	// mu guards tokenRequests, which the handler writes from the server's
+	// goroutine while the test reads it from its own.
+	mu            sync.Mutex
+	tokenRequests []url.Values
 }
 
 // NewOID4VCIIssuerServer creates a new OID4VCI issuer mock server
@@ -130,10 +146,13 @@ func (is *OID4VCIIssuerServer) handleAuthServerMetadata(w http.ResponseWriter, r
 	baseURL := "http://" + r.Host
 
 	metadata := map[string]interface{}{
-		"issuer":         baseURL,
-		"token_endpoint": baseURL + "/token",
-		"pre-authorized_grant_anonymous_access_supported": is.config.PreAuthorizedGrantAnonymous,
-		"response_types_supported":                        []string{"code"},
+		"issuer":                   baseURL,
+		"token_endpoint":           baseURL + "/token",
+		"response_types_supported": []string{"code"},
+	}
+
+	if is.config.PreAuthorizedGrantAnonymous != nil {
+		metadata["pre-authorized_grant_anonymous_access_supported"] = *is.config.PreAuthorizedGrantAnonymous
 	}
 
 	if len(is.config.TokenEndpointAuthMethodsSupported) > 0 {
@@ -146,12 +165,29 @@ func (is *OID4VCIIssuerServer) handleAuthServerMetadata(w http.ResponseWriter, r
 	JSONResponse(w, http.StatusOK, metadata)
 }
 
+// TokenRequests returns the form of every token request the server has received,
+// so a test can assert on what the wallet actually sent rather than only on
+// whether the call succeeded.
+func (is *OID4VCIIssuerServer) TokenRequests() []url.Values {
+	is.mu.Lock()
+	defer is.mu.Unlock()
+	return slices.Clone(is.tokenRequests)
+}
+
 // handleToken handles the token endpoint
 func (is *OID4VCIIssuerServer) handleToken(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		ErrorResponse(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
 		return
 	}
+
+	if err := r.ParseForm(); err != nil {
+		ErrorResponse(w, http.StatusBadRequest, "failed to parse token request form")
+		return
+	}
+	is.mu.Lock()
+	is.tokenRequests = append(is.tokenRequests, r.PostForm)
+	is.mu.Unlock()
 
 	if is.config.RequireClientAssertion {
 		if err := is.validateClientAssertion(r); err != nil {

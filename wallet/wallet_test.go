@@ -1865,7 +1865,7 @@ func TestWallet_obtainAccessToken_PrivateKeyJwtEndToEndWithMockServer(t *testing
 	issuerConfig := &mockserver.OID4VCIIssuerConfig{
 		KeyPair:                           mockserver.MustGenerateKeyPair("issuer-key-id"),
 		IssuerID:                          "test-issuer",
-		PreAuthorizedGrantAnonymous:       false,
+		PreAuthorizedGrantAnonymous:       mockserver.BoolPtr(false),
 		TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
 		TokenEndpointAuthSigningAlgs:      []string{"ES256"},
 		RequireClientAssertion:            true,
@@ -1933,7 +1933,7 @@ func TestWallet_fetchCredentialMetadata_UsesCredentialIssuerAsAuthorizationServe
 	issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
 		KeyPair:                           mockserver.MustGenerateKeyPair("issuer-key-id"),
 		IssuerID:                          "test-issuer",
-		PreAuthorizedGrantAnonymous:       false,
+		PreAuthorizedGrantAnonymous:       mockserver.BoolPtr(false),
 		OmitAuthorizationServers:          true,
 		TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
 		TokenEndpointAuthSigningAlgs:      []string{"ES256"},
@@ -1985,7 +1985,7 @@ func TestWallet_fetchCredentialMetadata_RejectsEmptyAuthorizationServers(t *test
 
 	issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
 		KeyPair:                     mockserver.MustGenerateKeyPair("issuer-key-id"),
-		PreAuthorizedGrantAnonymous: true,
+		PreAuthorizedGrantAnonymous: mockserver.BoolPtr(true),
 		EmptyAuthorizationServers:   true,
 		CredentialConfigurations: map[string]interface{}{
 			"test-config": map[string]interface{}{
@@ -2025,7 +2025,7 @@ func TestWallet_fetchCredentialMetadata_RejectsWhenNoUsableMethod(t *testing.T) 
 	issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
 		KeyPair:                     mockserver.MustGenerateKeyPair("issuer-key-id"),
 		IssuerID:                    "test-issuer",
-		PreAuthorizedGrantAnonymous: false,
+		PreAuthorizedGrantAnonymous: mockserver.BoolPtr(false),
 		CredentialConfigurations: map[string]interface{}{
 			"test-config": map[string]interface{}{
 				"format": "jwt_vc_json",
@@ -2058,6 +2058,132 @@ func TestWallet_fetchCredentialMetadata_RejectsWhenNoUsableMethod(t *testing.T) 
 	_, _, err = w.fetchCredentialMetadata(req)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no usable client authentication method")
+}
+
+// TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess pins the three
+// states of the OPTIONAL pre-authorized_grant_anonymous_access_supported metadata
+// parameter. Omitting it means "unknown", not "unsupported" — issuers commonly leave it
+// out, the OpenID conformance suite among them — so only an explicit false may stop the
+// pre-authorized code flow.
+func TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess(t *testing.T) {
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	tests := []struct {
+		name            string
+		anonymousAccess *bool
+		wantErr         bool
+	}{
+		{name: "omitted", anonymousAccess: nil, wantErr: false},
+		{name: "explicit true", anonymousAccess: mockserver.BoolPtr(true), wantErr: false},
+		{name: "explicit false", anonymousAccess: mockserver.BoolPtr(false), wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
+				KeyPair:                     mockserver.MustGenerateKeyPair("issuer-key-id"),
+				IssuerID:                    "test-issuer",
+				PreAuthorizedGrantAnonymous: tt.anonymousAccess,
+				CredentialConfigurations: map[string]interface{}{
+					"test-config": map[string]interface{}{
+						"format": "jwt_vc_json",
+						"credential_definition": map[string]interface{}{
+							"type": []string{"VerifiableCredential"},
+						},
+					},
+				},
+				CustomCredentials: make(map[string]string),
+			})
+			defer issuer.Close()
+
+			issuerURL, err := url.Parse(issuer.URL())
+			require.NoError(t, err)
+
+			d, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+			require.NoError(t, err)
+			w := &Wallet{receiver: d}
+
+			_, authMetadata, err := w.fetchCredentialMetadata(ReceiveCredentialRequest{
+				CredentialOffer: &CredentialOffer{
+					CredentialIssuer:           issuerURL,
+					CredentialConfigurationIDs: []string{"test-config"},
+					Grants:                     map[string]*CredentialOfferGrant{"urn:ietf:params:oauth:grant-type:pre-authorized_code": {}},
+				},
+				Type: receiverTypes.Oid4vci,
+			})
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "no usable client authentication method")
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, authMetadata)
+		})
+	}
+}
+
+// TestWallet_obtainAccessToken_OmittedAnonymousAccessSendsClientID checks that an issuer
+// which never advertises pre-authorized_grant_anonymous_access_supported still receives a
+// token request, and that the request names the configured client. The assertion is on
+// what reached the server rather than on the returned token, because the failure this
+// guards against stopped the wallet before any request went out.
+func TestWallet_obtainAccessToken_OmittedAnonymousAccessSendsClientID(t *testing.T) {
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
+		KeyPair:                     mockserver.MustGenerateKeyPair("issuer-key-id"),
+		IssuerID:                    "test-issuer",
+		PreAuthorizedGrantAnonymous: nil,
+		CredentialConfigurations: map[string]interface{}{
+			"test-config": map[string]interface{}{
+				"format": "jwt_vc_json",
+				"credential_definition": map[string]interface{}{
+					"type": []string{"VerifiableCredential"},
+				},
+			},
+		},
+		TokenResponse: map[string]interface{}{
+			"access_token": "mock-access-token",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		},
+		CustomCredentials: make(map[string]string),
+	})
+	defer issuer.Close()
+
+	issuerURL, err := url.Parse(issuer.URL())
+	require.NoError(t, err)
+
+	d, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+	require.NoError(t, err)
+	w := &Wallet{
+		receiver: d,
+		clientAuth: ClientAuthConfig{
+			Method:   receiverTypes.None,
+			ClientID: "wallet-id",
+		},
+	}
+
+	authMetadata, err := d.FetchAuthorizationServerMetadata(common.URIField(*issuerURL), receiverTypes.Oid4vci)
+	require.NoError(t, err)
+	require.Nil(t, authMetadata.PreAuthorizedGrantAnonymousAccessSupported,
+		"the mock must omit the parameter for this test to mean anything")
+
+	token, err := w.obtainAccessToken(receiverTypes.Oid4vci, authMetadata, "pre-auth-code", "")
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	assert.Equal(t, "mock-access-token", token.Token)
+
+	tokenRequests := issuer.TokenRequests()
+	require.Len(t, tokenRequests, 1, "the wallet must reach the token endpoint")
+	assert.Equal(t, "urn:ietf:params:oauth:grant-type:pre-authorized_code", tokenRequests[0].Get("grant_type"))
+	assert.Equal(t, "wallet-id", tokenRequests[0].Get("client_id"))
+	assert.Empty(t, tokenRequests[0].Get("client_assertion"), "no client authentication is configured")
 }
 
 func TestController_generateJWTProof_NonAnonymousFlow_EmptyClientIDReturnsError(t *testing.T) {
