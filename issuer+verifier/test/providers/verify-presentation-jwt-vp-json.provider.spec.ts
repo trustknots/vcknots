@@ -294,8 +294,55 @@ describe('verifyVerifiablePresentation provider', () => {
     })
     await assert.rejects(provider.verify(vpJwt, { kind: 'jwt_vp_json', expectedAud }), {
       name: 'invalid_credential',
-      message: 'credential is not valid.',
+      message: 'One or more credentials are not valid.',
     })
+  })
+
+  test('should reject when the second credential verification fails', async () => {
+    // 構文上は正常だが、検証Providerが拒否する合成Credentialを作成
+    const rejectedCredential = {
+      ...vc,
+      id: 'https://issuer.example.com/credentials/rejected-test',
+    }
+
+    const syntheticKeyPair = await jose.generateKeyPair('ES256')
+    const rejectedVcJwt = await new jose.SignJWT({
+      vc: rejectedCredential,
+    } as jose.JWTPayload)
+      .setProtectedHeader({ alg: 'ES256' })
+      .setIssuer('https://issuer.example.com')
+      .sign(syntheticKeyPair.privateKey)
+
+    // どのCredentialが検証されたか記録する
+    const verifiedCredentials: string[] = []
+
+    // 1件目のvcJwtだけを有効とし、2件目は拒否する
+    mockCredentialVerifier.verify = mock.fn(async (credentialJwt: string) => {
+      verifiedCredentials.push(credentialJwt)
+      return credentialJwt === vcJwt
+    })
+
+    const vpJwt = await createVpJwt({
+      nonce: 'test-nonce',
+      vp: {
+        type: ['VerifiablePresentation'],
+        verifiableCredential: [vcJwt, rejectedVcJwt],
+      },
+    })
+
+    await assert.rejects(
+      provider.verify(vpJwt, {
+        kind: 'jwt_vp_json',
+        expectedAud,
+      }),
+      {
+        name: 'invalid_credential',
+        message: 'One or more credentials are not valid.',
+      }
+    )
+
+    // 1件目と2件目の両方が検証Providerへ渡されたことを確認
+    assert.deepStrictEqual(verifiedCredentials, [vcJwt, rejectedVcJwt])
   })
 
   test('should throw if kid is missing', async () => {
