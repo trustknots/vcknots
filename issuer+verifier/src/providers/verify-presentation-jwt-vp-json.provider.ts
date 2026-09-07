@@ -122,9 +122,13 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
           message: 'No credentials is included',
         })
       }
+
       const credential$ = this.providers.get('verify-verifiable-credential-provider')
+
       for (const [, vcJwt] of credentials) {
-        const vcValid = await credential$.verify(vcJwt)
+        const vcValid = await credential$.verify(vcJwt, {
+          allowedAlgs: options.allowedAlgs,
+        })
         if (!vcValid) {
           throw err('invalid_credential', {
             message: 'One or more credentials are not valid.',
