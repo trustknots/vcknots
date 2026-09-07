@@ -1411,6 +1411,63 @@ func TestWallet_generateClientAssertion_ErrorsOnMissingInputs(t *testing.T) {
 
 func boolPtr(v bool) *bool { return &v }
 
+// TestValidateAuthorizationServerIssuer pins RFC 8414 section 3.3: the issuer in
+// the returned metadata must be the identifier the metadata was fetched from.
+// The value also becomes the client_assertion aud, so a mismatch has to stop the
+// flow rather than redirect the assertion at whatever the responder named.
+func TestValidateAuthorizationServerIssuer(t *testing.T) {
+	requested, err := common.ParseURIField("https://as.example.com/tenant")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		issuer  string
+		wantErr string
+	}{
+		{name: "identical", issuer: "https://as.example.com/tenant"},
+		{name: "trailing slash only", issuer: "https://as.example.com/tenant/"},
+		{name: "different host", issuer: "https://attacker.example.com/tenant", wantErr: "does not match"},
+		{name: "different path", issuer: "https://as.example.com/other", wantErr: "does not match"},
+		{name: "different scheme", issuer: "http://as.example.com/tenant", wantErr: "does not match"},
+		{name: "missing", issuer: "", wantErr: "issuer is missing"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authMetadata := &receiverTypes.AuthorizationServerMetadata{}
+			if tt.issuer != "" {
+				issuer, parseErr := common.ParseURIField(tt.issuer)
+				require.NoError(t, parseErr)
+				authMetadata.Issuer = *issuer
+			}
+
+			err := validateAuthorizationServerIssuer(*requested, authMetadata)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+
+	// The OpenID conformance suite gives every test instance a path-bearing
+	// identifier and keeps the trailing slash on both the authorization_servers
+	// entry and the issuer it returns. Pinning the real shape keeps this check
+	// from becoming the reason the suite never reaches the token endpoint.
+	t.Run("conformance suite identifier with trailing slash on both sides", func(t *testing.T) {
+		const identifier = "https://www.certification.openid.net/test/a/vcknots-wallet-oid4vci-sdjwt-vc-conformance-test/"
+
+		advertised, parseErr := common.ParseURIField(identifier)
+		require.NoError(t, parseErr)
+		issuer, parseErr := common.ParseURIField(identifier)
+		require.NoError(t, parseErr)
+
+		err := validateAuthorizationServerIssuer(*advertised, &receiverTypes.AuthorizationServerMetadata{Issuer: *issuer})
+		require.NoError(t, err)
+	})
+}
+
 func authMethodsPtr(methods ...receiverTypes.TokenEndpointAuthMethod) *[]receiverTypes.TokenEndpointAuthMethod {
 	m := methods
 	return &m
@@ -1485,6 +1542,53 @@ func TestResolveClientAuthMethod(t *testing.T) {
 	t.Run("returns false when no method is usable", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(false),
+		}
+		_, ok := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
+		assert.False(t, ok)
+	})
+
+	// When pre-authorized_grant_anonymous_access_supported is omitted the wallet
+	// has no statement about this grant, so token_endpoint_auth_methods_supported
+	// decides. An explicit value for the OID4VCI parameter overrides it, which
+	// the "defaults to none even when private_key_jwt credentials are
+	// configured" case above pins.
+	t.Run("none rejected when anonymous access is unknown and none is not advertised", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.PrivateKeyJwt),
+		}
+		_, ok := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
+		assert.False(t, ok, "the authorization server accepts private_key_jwt only")
+	})
+
+	t.Run("none accepted when anonymous access is unknown and none is advertised", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt),
+		}
+		method, ok := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
+		require.True(t, ok)
+		assert.Equal(t, receiverTypes.None, method)
+	})
+
+	t.Run("none accepted when neither parameter is advertised", func(t *testing.T) {
+		method, ok := resolveClientAuthMethod(ClientAuthConfig{}, &receiverTypes.AuthorizationServerMetadata{})
+		require.True(t, ok)
+		assert.Equal(t, receiverTypes.None, method)
+	})
+
+	t.Run("explicit anonymous support outweighs a method list without none", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
+		}
+		method, ok := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
+		require.True(t, ok)
+		assert.Equal(t, receiverTypes.None, method)
+	})
+
+	t.Run("explicit refusal outweighs a method list containing none", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(false),
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.None),
 		}
 		_, ok := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
 		assert.False(t, ok)

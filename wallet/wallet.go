@@ -776,18 +776,31 @@ func resolveClientAuthMethod(clientAuth ClientAuthConfig, authMetadata *receiver
 func clientAuthMethodAvailable(method receiverTypes.TokenEndpointAuthMethod, clientAuth ClientAuthConfig, authMetadata *receiverTypes.AuthorizationServerMetadata) bool {
 	switch method {
 	case receiverTypes.None:
-		// pre-authorized_grant_anonymous_access_supported is an OPTIONAL
-		// authorization server metadata parameter, so an absent value means
-		// "unknown", not "unsupported". Issuers commonly omit it entirely — the
-		// OpenID conformance suite among them — and treating that as a refusal
-		// stops the pre-authorized code flow before a single token request goes
-		// out. Only an explicit false states that the authorization server
-		// rejects the grant without client authentication.
 		if authMetadata == nil {
 			return false
 		}
-		anonymousAccess := authMetadata.PreAuthorizedGrantAnonymousAccessSupported
-		return anonymousAccess == nil || *anonymousAccess
+		// pre-authorized_grant_anonymous_access_supported speaks about this
+		// grant specifically, so an explicit value settles the question by
+		// itself. true permits the unauthenticated token request even when
+		// token_endpoint_auth_methods_supported lists only methods meant for
+		// the other grants, and false refuses it outright.
+		if anonymousAccess := authMetadata.PreAuthorizedGrantAnonymousAccessSupported; anonymousAccess != nil {
+			return *anonymousAccess
+		}
+		// The parameter is OPTIONAL and issuers commonly omit it — the OpenID
+		// conformance suite among them — so its absence means "unknown", not
+		// "unsupported", and must not stop the flow on its own.
+		//
+		// With nothing specific to go on, the general statement decides: a
+		// token_endpoint_auth_methods_supported that is advertised and omits
+		// "none" (registered by RFC 7591 for clients that do not authenticate)
+		// says the endpoint will not serve an unauthenticated request. Deciding
+		// that here beats reading it back as invalid_client from the server,
+		// where the cause is far harder to see.
+		if authMetadata.TokenEndpointAuthMethodsSupported != nil {
+			return asMetadataSupportsAuthMethod(authMetadata, receiverTypes.None)
+		}
+		return true
 
 	case receiverTypes.PrivateKeyJwt:
 		if strings.TrimSpace(clientAuth.ClientID) == "" || clientAuth.Key == nil {
@@ -799,6 +812,36 @@ func clientAuthMethodAvailable(method receiverTypes.TokenEndpointAuthMethod, cli
 		return asMetadataSupportsSigningAlg(authMetadata, clientAuth.signatureAlgorithm())
 	}
 	return false
+}
+
+// validateAuthorizationServerIssuer checks the issuer returned in the metadata
+// against the identifier the metadata was fetched from.
+//
+// RFC 8414 section 3.3 requires the two to be identical, and this is the only
+// thing tying the document to the authorization server that was asked for.
+// Skipping it matters beyond discovery hygiene: the issuer becomes the aud of
+// the client_assertion (see resolveClientAssertionAudience), so an unchecked
+// value redirects a bearer-grade credential at an audience of the responder's
+// choosing.
+//
+// Only a trailing slash is normalized away. RFC 8414 section 2 gives the issuer
+// identifier no query or fragment and leaves everything else significant, so
+// comparing anything more loosely would defeat the check.
+func validateAuthorizationServerIssuer(requested common.URIField, authMetadata *receiverTypes.AuthorizationServerMetadata) error {
+	requestedURL := url.URL(requested)
+	issuerURL := url.URL(authMetadata.Issuer)
+
+	issuer := strings.TrimSpace(issuerURL.String())
+	if issuer == "" {
+		return fmt.Errorf("issuer is missing on authorization server metadata")
+	}
+
+	if strings.TrimSuffix(issuer, "/") != strings.TrimSuffix(strings.TrimSpace(requestedURL.String()), "/") {
+		return fmt.Errorf(
+			"authorization server metadata issuer %q does not match the authorization server identifier %q it was fetched from",
+			issuer, requestedURL.String())
+	}
+	return nil
 }
 
 func asMetadataSupportsAuthMethod(authMetadata *receiverTypes.AuthorizationServerMetadata, method receiverTypes.TokenEndpointAuthMethod) bool {
@@ -1169,6 +1212,10 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 
 	if authMetadata == nil {
 		return nil, nil, fmt.Errorf("authorization server metadata is nil")
+	}
+
+	if err := validateAuthorizationServerIssuer(authorizationServers[0], authMetadata); err != nil {
+		return nil, nil, err
 	}
 
 	if authMetadata.TokenEndpoint == nil {
