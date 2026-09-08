@@ -64,7 +64,11 @@ func DefaultOID4VCIIssuerConfig() *OID4VCIIssuerConfig {
 			"c_nonce":      "mock-nonce",
 		},
 		PreAuthorizedGrantAnonymous: BoolPtr(true),
-		CustomCredentials:           make(map[string]string),
+		// A server that accepts anonymous pre-authorized token requests has to
+		// advertise "none" as well; declaring only the OID4VCI parameter made
+		// this mock describe a combination no conforming server publishes.
+		TokenEndpointAuthMethodsSupported: []string{"none"},
+		CustomCredentials:                 make(map[string]string),
 	}
 }
 

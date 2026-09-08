@@ -110,7 +110,18 @@ type DPoPConfig struct {
 // authorization server's token endpoint.
 //
 // Method selects the authentication method. An empty value defaults to None,
-// so private_key_jwt is only used when explicitly configured.
+// so private_key_jwt is only used when explicitly configured; the wallet never
+// promotes a configuration to private_key_jwt on its own.
+//
+// Whichever method is configured has to appear in the authorization server's
+// token_endpoint_auth_methods_supported. None is therefore usable only against
+// a server that advertises "none", and a server that omits the list entirely
+// cannot be used at all: RFC 8414 section 2 makes the omission mean
+// client_secret_basic, which this wallet does not implement.
+//
+// ClientID is optional for None. It is sent as client_id unless the server sets
+// pre-authorized_grant_anonymous_access_supported to true, which OID4VCI 1.0
+// section 12.3 makes the only way a token request may omit it.
 //
 // ClientID and Key are required to use PrivateKeyJwt. Key must be the private
 // key whose corresponding public key is registered with the authorization
@@ -752,66 +763,189 @@ func (w *Wallet) generateClientAssertion(key IKeyEntry, clientID, audience strin
 // clientAssertionLifetime is the validity window of a generated client_assertion.
 const clientAssertionLifetime = 5 * time.Minute
 
-// errNoUsableClientAuthMethod reports that neither anonymous access nor the
-// configured client authentication method can be used at the token endpoint.
+// errNoUsableClientAuthMethod reports that the wallet and the authorization
+// server could not agree on a client authentication method for the token
+// endpoint. Every negotiation failure wraps it, so callers can match on it with
+// errors.Is while the message still names the specific cause.
 var errNoUsableClientAuthMethod = errors.New(
-	"no usable client authentication method for the authorization server token endpoint; " +
-		"the authorization server declares pre-authorized_grant_anonymous_access_supported as false, " +
-		"or it does not support the configured client authentication method")
+	"no usable client authentication method for the authorization server token endpoint")
 
-// resolveClientAuthMethod checks whether the configured client authentication
-// method can be used at the authorization server token endpoint.
+// tokenEndpointAuth is the outcome of the negotiation: how the token request
+// authenticates, and whether it names the client.
 //
-// An empty method defaults to anonymous authentication (None).
-func resolveClientAuthMethod(clientAuth ClientAuthConfig, authMetadata *receiverTypes.AuthorizationServerMetadata) (receiverTypes.TokenEndpointAuthMethod, bool) {
-	method := clientAuth.Method
-	if method == "" {
-		method = receiverTypes.None
-	}
-	return method, clientAuthMethodAvailable(method, clientAuth, authMetadata)
+// The two are separate questions. A request that authenticates with "none" may
+// still carry client_id, and OID4VCI 1.0 section 12.3 is what decides which of
+// the two it is. Deciding both here, once, is what keeps the token request from
+// contradicting the check that admitted it.
+type tokenEndpointAuth struct {
+	Method       receiverTypes.TokenEndpointAuthMethod
+	SendClientID bool
 }
 
-// clientAuthMethodAvailable reports whether the given method can be used against
-// the authorization server described by authMetadata with the given config.
-func clientAuthMethodAvailable(method receiverTypes.TokenEndpointAuthMethod, clientAuth ClientAuthConfig, authMetadata *receiverTypes.AuthorizationServerMetadata) bool {
+// anonymousTokenRequestPermitted reports whether the authorization server has
+// said that the pre-authorized code grant accepts a token request carrying no
+// client_id at all.
+//
+// OID4VCI 1.0 section 12.3 defines the default of
+// pre-authorized_grant_anonymous_access_supported as false, so an omitted value
+// is a refusal rather than an unknown, and only an explicit true permits it.
+func anonymousTokenRequestPermitted(authMetadata *receiverTypes.AuthorizationServerMetadata) bool {
+	return authMetadata != nil &&
+		authMetadata.PreAuthorizedGrantAnonymousAccessSupported != nil &&
+		*authMetadata.PreAuthorizedGrantAnonymousAccessSupported
+}
+
+// resolveClientAuthMethod negotiates how the token request authenticates
+// against what the authorization server advertises.
+//
+// token_endpoint_auth_methods_supported selects the method and nothing else: it
+// is a feasibility filter over the method the wallet was configured for, and
+// never picks a method or downgrades one. pre-authorized_grant_anonymous_access_supported
+// then decides only whether client_id may be left out. Keeping those two roles
+// apart is the point of this function — mixing them is what let the wallet
+// admit a flow here and then send something the server had not agreed to.
+//
+// The order of the steps below is load-bearing and must not be rearranged: an
+// unimplemented configured method is reported before anything is read from the
+// metadata, and the shape of the advertised list is settled before any method
+// is measured against it.
+func resolveClientAuthMethod(clientAuth ClientAuthConfig, authMetadata *receiverTypes.AuthorizationServerMetadata) (tokenEndpointAuth, error) {
+	if authMetadata == nil {
+		return tokenEndpointAuth{}, fmt.Errorf(
+			"authorization server metadata is required to select a client authentication method")
+	}
+
+	configured := clientAuth.Method
+	if configured == "" {
+		configured = receiverTypes.None
+	}
+	if configured != receiverTypes.None && configured != receiverTypes.PrivateKeyJwt {
+		return tokenEndpointAuth{}, unimplementedAuthMethodError(configured)
+	}
+
+	// RFC 8414 section 2 makes an absent list mean client_secret_basic, which
+	// is a real answer rather than a missing one, and an empty list advertises
+	// nothing at all. Neither leaves a method this wallet can use, so both are
+	// refused before the configured method is measured against the list.
+	switch methods := authMetadata.TokenEndpointAuthMethodsSupported; {
+	case methods == nil:
+		return tokenEndpointAuth{}, fmt.Errorf(
+			"%w: token_endpoint_auth_methods_supported is absent, so RFC 8414 section 2 makes the token "+
+				"endpoint default to client_secret_basic, which this wallet does not implement (supported: %q, %q)",
+			errNoUsableClientAuthMethod, receiverTypes.None, receiverTypes.PrivateKeyJwt)
+	case len(*methods) == 0:
+		return tokenEndpointAuth{}, fmt.Errorf(
+			"%w: token_endpoint_auth_methods_supported is an empty array, so the token endpoint "+
+				"advertises no client authentication method",
+			errNoUsableClientAuthMethod)
+	}
+
+	if err := clientAuthMethodUsable(configured, clientAuth, authMetadata); err != nil {
+		// Not being advertised is the only way None can fail the check above,
+		// and an operator reading a metadata document that says anonymous
+		// access is supported will want to know why that was not enough.
+		if configured == receiverTypes.None && anonymousTokenRequestPermitted(authMetadata) {
+			return tokenEndpointAuth{}, fmt.Errorf(
+				"%w (pre-authorized_grant_anonymous_access_supported is true, but OID4VCI 1.0 section 12.3 "+
+					"lets it decide only whether client_id may be omitted, not whether the token endpoint "+
+					"serves an unauthenticated client)", err)
+		}
+		return tokenEndpointAuth{}, err
+	}
+
+	if configured == receiverTypes.PrivateKeyJwt {
+		return tokenEndpointAuth{Method: receiverTypes.PrivateKeyJwt, SendClientID: true}, nil
+	}
+
+	if anonymousTokenRequestPermitted(authMetadata) {
+		return tokenEndpointAuth{Method: receiverTypes.None}, nil
+	}
+
+	// The endpoint serves unauthenticated clients, but has not agreed to serve
+	// unidentified ones, so the request has to name the wallet.
+	if strings.TrimSpace(clientAuth.ClientID) == "" {
+		anonState := "absent"
+		if authMetadata.PreAuthorizedGrantAnonymousAccessSupported != nil {
+			anonState = "false"
+		}
+		return tokenEndpointAuth{}, fmt.Errorf(
+			"%w: the token endpoint accepts %q, but pre-authorized_grant_anonymous_access_supported is %s "+
+				"and OID4VCI 1.0 section 12.3 defines its default as false, so the token request must carry "+
+				"a client_id and none is configured",
+			errNoUsableClientAuthMethod, receiverTypes.None, anonState)
+	}
+	return tokenEndpointAuth{Method: receiverTypes.None, SendClientID: true}, nil
+}
+
+// clientAuthMethodUsable reports whether method can be used against the
+// authorization server described by authMetadata with the given config, and
+// explains the refusal when it cannot.
+//
+// It deliberately never reads pre-authorized_grant_anonymous_access_supported.
+// That parameter says whether client_id may be omitted, not whether the token
+// endpoint will serve a client that does not authenticate, and letting it
+// answer the second question is what made the previous behaviour disagree with
+// itself. Callers are expected to have rejected an absent or empty
+// token_endpoint_auth_methods_supported first.
+func clientAuthMethodUsable(method receiverTypes.TokenEndpointAuthMethod, clientAuth ClientAuthConfig, authMetadata *receiverTypes.AuthorizationServerMetadata) error {
 	switch method {
 	case receiverTypes.None:
-		if authMetadata == nil {
-			return false
+		if !asMetadataSupportsAuthMethod(authMetadata, receiverTypes.None) {
+			return methodNotAdvertisedError(method, authMetadata)
 		}
-		// pre-authorized_grant_anonymous_access_supported speaks about this
-		// grant specifically, so an explicit value settles the question by
-		// itself. true permits the unauthenticated token request even when
-		// token_endpoint_auth_methods_supported lists only methods meant for
-		// the other grants, and false refuses it outright.
-		if anonymousAccess := authMetadata.PreAuthorizedGrantAnonymousAccessSupported; anonymousAccess != nil {
-			return *anonymousAccess
-		}
-		// The parameter is OPTIONAL and issuers commonly omit it — the OpenID
-		// conformance suite among them — so its absence means "unknown", not
-		// "unsupported", and must not stop the flow on its own.
-		//
-		// With nothing specific to go on, the general statement decides: a
-		// token_endpoint_auth_methods_supported that is advertised and omits
-		// "none" (registered by RFC 7591 for clients that do not authenticate)
-		// says the endpoint will not serve an unauthenticated request. Deciding
-		// that here beats reading it back as invalid_client from the server,
-		// where the cause is far harder to see.
-		if authMetadata.TokenEndpointAuthMethodsSupported != nil {
-			return asMetadataSupportsAuthMethod(authMetadata, receiverTypes.None)
-		}
-		return true
+		return nil
 
 	case receiverTypes.PrivateKeyJwt:
 		if strings.TrimSpace(clientAuth.ClientID) == "" || clientAuth.Key == nil {
-			return false
+			return fmt.Errorf(
+				"%w: private_key_jwt requires both a client_id and a client authentication key",
+				errNoUsableClientAuthMethod)
 		}
 		if !asMetadataSupportsAuthMethod(authMetadata, receiverTypes.PrivateKeyJwt) {
-			return false
+			return methodNotAdvertisedError(method, authMetadata)
 		}
-		return asMetadataSupportsSigningAlg(authMetadata, clientAuth.signatureAlgorithm())
+		if authMetadata.TokenEndpointAuthSigningAlgValuesSupported == nil ||
+			len(*authMetadata.TokenEndpointAuthSigningAlgValuesSupported) == 0 {
+			return fmt.Errorf(
+				"%w: the authorization server advertises private_key_jwt but omits "+
+					"token_endpoint_auth_signing_alg_values_supported, which RFC 8414 section 2 requires when "+
+					"JWT client authentication is supported and for which it defines no default",
+				errNoUsableClientAuthMethod)
+		}
+		if !asMetadataSupportsSigningAlg(authMetadata, clientAuth.signatureAlgorithm()) {
+			return fmt.Errorf(
+				"%w: the authorization server does not advertise %s in "+
+					"token_endpoint_auth_signing_alg_values_supported %v",
+				errNoUsableClientAuthMethod, clientAuth.signatureAlgorithm(),
+				*authMetadata.TokenEndpointAuthSigningAlgValuesSupported)
+		}
+		return nil
 	}
-	return false
+	return unimplementedAuthMethodError(method)
+}
+
+// unimplementedAuthMethodError reports a configured method this wallet does not
+// implement. The registry in RFC 7591 section 2 is open, so naming what is
+// implemented is more useful than repeating what was asked for.
+func unimplementedAuthMethodError(method receiverTypes.TokenEndpointAuthMethod) error {
+	return fmt.Errorf(
+		"%w: token_endpoint_auth_method %q is configured, but this wallet implements only %q and %q",
+		errNoUsableClientAuthMethod, method, receiverTypes.None, receiverTypes.PrivateKeyJwt)
+}
+
+// methodNotAdvertisedError reports that the authorization server does not list
+// the method the wallet is configured for. The advertised list is quoted back
+// because the operator's next move is either to change the wallet's
+// registration or to talk to whoever runs the authorization server, and the
+// list is what tells them which.
+func methodNotAdvertisedError(method receiverTypes.TokenEndpointAuthMethod, authMetadata *receiverTypes.AuthorizationServerMetadata) error {
+	var advertised []receiverTypes.TokenEndpointAuthMethod
+	if authMetadata != nil && authMetadata.TokenEndpointAuthMethodsSupported != nil {
+		advertised = *authMetadata.TokenEndpointAuthMethodsSupported
+	}
+	return fmt.Errorf(
+		"%w: the wallet is configured for %q, but token_endpoint_auth_methods_supported is %v",
+		errNoUsableClientAuthMethod, method, advertised)
 }
 
 // validateAuthorizationServerIssuer checks the issuer returned in the metadata
@@ -1222,8 +1356,8 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 		return nil, nil, fmt.Errorf("token endpoint is missing on authorization server")
 	}
 
-	if _, ok := resolveClientAuthMethod(w.clientAuth, authMetadata); !ok {
-		return nil, nil, errNoUsableClientAuthMethod
+	if _, err := resolveClientAuthMethod(w.clientAuth, authMetadata); err != nil {
+		return nil, nil, err
 	}
 
 	return issuerMetadata, authMetadata, nil
@@ -1239,14 +1373,14 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 	tokenEndpointURL := receiverTypes.ResolveTokenEndpointURL(tokenEndpoint)
 	clientAssertionAudience := resolveClientAssertionAudience(w.clientAuth, authMetadata, tokenEndpointURL)
 
-	authMethod, ok := resolveClientAuthMethod(w.clientAuth, authMetadata)
-	if !ok {
-		return nil, errNoUsableClientAuthMethod
+	auth, err := resolveClientAuthMethod(w.clientAuth, authMetadata)
+	if err != nil {
+		return nil, err
 	}
 
 	fetchAccessToken := func(dpopNonce *string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
 		var tokenReqOptions []receiverTypes.TokenRequestOption
-		switch authMethod {
+		switch auth.Method {
 		case receiverTypes.PrivateKeyJwt:
 			assertion, err := w.generateClientAssertion(
 				w.clientAuth.Key,
@@ -1260,14 +1394,16 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 			tokenReqOptions = append(tokenReqOptions, receiverTypes.WithClientAssertion(w.clientAuth.ClientID, assertion))
 
 		case receiverTypes.None:
-			// client_id is OPTIONAL for the pre-authorized code grant, but an
-			// authorization server that never advertised
-			// pre-authorized_grant_anonymous_access_supported has told us nothing
-			// about whether it serves anonymous clients. Naming the client when
-			// one is configured is what lets such a server accept the request.
-			if strings.TrimSpace(w.clientAuth.ClientID) != "" {
+			// Whether to name the client was already settled against the
+			// metadata in resolveClientAuthMethod. Deciding it a second time
+			// from a different input is what previously let the request and
+			// the check that admitted it disagree.
+			if auth.SendClientID {
 				tokenReqOptions = append(tokenReqOptions, receiverTypes.WithClientID(w.clientAuth.ClientID))
 			}
+
+		default:
+			return nil, fmt.Errorf("unsupported resolved client authentication method %q", auth.Method)
 		}
 		if w.dpop.Enabled {
 			proof, err := w.generateDPoPProof(

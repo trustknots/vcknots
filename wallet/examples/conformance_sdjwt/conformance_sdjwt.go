@@ -8,13 +8,19 @@ package main
 //     - Credential Format: sd_jwt_vc
 //     - Authorization Code Flow Variant: issuer_initiated
 //     - Credential Offer Variant: by_value or by_reference
-//     - Client Authentication Type: none or private_key_jwt
+//     - Client Authentication Type: private_key_jwt
 //     - Sender Constrain: none or dpop
+//
+//     The suite offers mtls and client_attestation as well, which this wallet
+//     does not implement and refuses locally. It offers no unauthenticated
+//     choice at all: the module declares client_auth_type=none not applicable,
+//     so a client registration is mandatory here.
 //
 //  2. Match the wallet to the variants picked above. The suite rejects the token
 //     request before issuing anything when the two disagree, so nothing here is
-//     configured implicitly: with no environment set this runs the anonymous,
-//     non-DPoP variant.
+//     configured implicitly. With no environment set the wallet authenticates
+//     with nothing and sends no DPoP proof, which no test plan for this module
+//     accepts.
 //
 //     client_auth_type=private_key_jwt:
 //
@@ -36,6 +42,16 @@ package main
 //
 //     The empty value clears that override so the aud claim follows the issuer
 //     the suite advertises, which is what it checks the assertion against.
+//
+//     Authorization servers that advertise none (not the conformance suite):
+//
+//     export OID4VCI_CLIENT_ID=<client_id the authorization server knows>
+//
+//     For a server that lists none in token_endpoint_auth_methods_supported
+//     while omitting pre-authorized_grant_anonymous_access_supported. OID4VCI
+//     1.0 section 12.3 defaults that parameter to false, so the token request
+//     still has to name the wallet even though it does not authenticate. The
+//     conformance suite never advertises this combination.
 //
 //     sender_constrain=dpop:
 //
@@ -62,6 +78,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/examples/common"
 	"github.com/trustknots/vcknots/wallet/receiver"
+	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 )
 
 const preAuthorizedGrantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
@@ -239,9 +256,28 @@ func buildWalletConfig(logger *slog.Logger) (wallet.Config, error) {
 			"client_id", clientAuth.ClientID,
 			"signing_alg", clientAuth.SigningAlg,
 		)
+	} else if clientID := strings.TrimSpace(os.Getenv(envClientID)); clientID != "" {
+		// A server that accepts none has still not agreed to serve a request
+		// that does not name its client, unless it sets
+		// pre-authorized_grant_anonymous_access_supported to true: OID4VCI 1.0
+		// section 12.3 makes that the only way a token request may go out
+		// unnamed. Naming the wallet without registering a signing key covers
+		// such a server. The conformance suite is not one of them, so this
+		// branch is never taken against it.
+		config.ClientAuth = wallet.ClientAuthConfig{
+			Method:   receiverTypes.None,
+			ClientID: clientID,
+		}
+		logger.Info("Client authentication configured",
+			"method", receiverTypes.None,
+			"client_id", clientID,
+			"hint", "the token request will carry client_id without a client_assertion")
 	} else {
-		logger.Info("No client authentication configured; running the client_auth_type=none variant",
-			"hint", envClientConfig+" selects a client registration for client_auth_type=private_key_jwt")
+		logger.Info("No client authentication configured",
+			"hint", envClientConfig+" selects a client registration for client_auth_type=private_key_jwt, "+
+				"which every conformance test plan for this module requires; "+
+				envClientID+" alone names the wallet against an authorization server that "+
+				"advertises none in token_endpoint_auth_methods_supported")
 	}
 
 	if envFlag(logger, envDPoP) {
