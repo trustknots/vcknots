@@ -2465,8 +2465,8 @@ func TestWallet_fetchCredentialMetadata_RejectsWhenNoUsableMethod(t *testing.T) 
 // 12.3 defines the parameter's default as false, so omitting it is a refusal rather
 // than an unknown: only an explicit true lets a token request go out with no client_id
 // at all, and the other two states need the wallet to name itself. The neighbouring
-// TestWallet_fetchCredentialMetadata_AnonymousAccessWithConfiguredClientID covers the
-// wallet that can.
+// TestWallet_obtainAccessToken_AnonymousAccessDecidesWhetherClientIDIsSent covers the
+// wallet that can, asserting on what actually reached the token endpoint.
 func TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess(t *testing.T) {
 	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
