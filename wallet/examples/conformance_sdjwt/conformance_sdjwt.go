@@ -11,16 +11,11 @@ package main
 //     - Client Authentication Type: private_key_jwt
 //     - Sender Constrain: none or dpop
 //
-//     The suite offers mtls and client_attestation as well, which this wallet
-//     does not implement and refuses locally. It offers no unauthenticated
-//     choice at all: the module declares client_auth_type=none not applicable,
-//     so a client registration is mandatory here.
+//     none is not selectable here; mtls and client_attestation are unimplemented.
 //
 //  2. Match the wallet to the variants picked above. The suite rejects the token
 //     request before issuing anything when the two disagree, so nothing here is
-//     configured implicitly. With no environment set the wallet authenticates
-//     with nothing and sends no DPoP proof, which no test plan for this module
-//     accepts.
+//     configured implicitly; with no environment set no test plan accepts it.
 //
 //     client_auth_type=private_key_jwt:
 //
@@ -47,11 +42,8 @@ package main
 //
 //     export OID4VCI_CLIENT_ID=<client_id the authorization server knows>
 //
-//     For a server that lists none in token_endpoint_auth_methods_supported
-//     while omitting pre-authorized_grant_anonymous_access_supported. OID4VCI
-//     1.0 section 12.3 defaults that parameter to false, so the token request
-//     still has to name the wallet even though it does not authenticate. The
-//     conformance suite never advertises this combination.
+//     For a server advertising none but omitting
+//     pre-authorized_grant_anonymous_access_supported, which 12.3 defaults false.
 //
 //     sender_constrain=dpop:
 //
@@ -257,13 +249,8 @@ func buildWalletConfig(logger *slog.Logger) (wallet.Config, error) {
 			"signing_alg", clientAuth.SigningAlg,
 		)
 	} else if clientID := strings.TrimSpace(os.Getenv(envClientID)); clientID != "" {
-		// A server that accepts none has still not agreed to serve a request
-		// that does not name its client, unless it sets
-		// pre-authorized_grant_anonymous_access_supported to true: OID4VCI 1.0
-		// section 12.3 makes that the only way a token request may go out
-		// unnamed. Naming the wallet without registering a signing key covers
-		// such a server. The conformance suite is not one of them, so this
-		// branch is never taken against it.
+		// Accepting none is not accepting an unnamed request; only
+		// pre-authorized_grant_anonymous_access_supported permits that (12.3).
 		config.ClientAuth = wallet.ClientAuthConfig{
 			Method:   receiverTypes.None,
 			ClientID: clientID,

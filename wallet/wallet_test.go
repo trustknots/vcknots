@@ -1505,9 +1505,7 @@ func TestResolveClientAuthMethod(t *testing.T) {
 		assert.True(t, auth.SendClientID)
 	})
 
-	// An unset Method means none, and none is what gets measured against the
-	// advertised list. Configured private_key_jwt credentials never promote it,
-	// which is the public contract the ClientAuthConfig doc comment states.
+	// Configured private_key_jwt credentials never promote an unset Method.
 	t.Run("an unset method is never promoted to private_key_jwt", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
@@ -1565,9 +1563,6 @@ func TestResolveClientAuthMethod(t *testing.T) {
 			"none is usable here, and the wallet still must not silently take it")
 	})
 
-	// pre-authorized_grant_anonymous_access_supported governs client_id and
-	// nothing else, so its three states below split into "may the request be
-	// unnamed" rather than "may the request happen at all".
 	t.Run("refuses an unnamed request when the server never advertised anonymous access", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.None),
@@ -1789,23 +1784,12 @@ func TestClientAuthConfig_SignatureAlgorithmDefaultsToES256(t *testing.T) {
 	assert.Equal(t, jose.ES384, ClientAuthConfig{SigningAlg: jose.ES384}.signatureAlgorithm())
 }
 
-// TestResolveClientAuthMethod_Matrix walks every combination of the two metadata
-// parameters that the negotiation reads, against the three wallet configurations
-// that can reach it, and states for each what is sent.
-//
-// The point of the matrix is that the two parameters answer different questions.
-// token_endpoint_auth_methods_supported decides the method and is never overruled;
-// pre-authorized_grant_anonymous_access_supported decides only whether client_id
-// may be left out, with OID4VCI 1.0 section 12.3 making its default false. The
-// cells where the two disagree are the ones that used to be resolved the other
-// way round, so each is spelled out rather than derived.
+// TestResolveClientAuthMethod_Matrix covers metadata list x anonymous flag x
+// wallet config. The disagreeing cells used to resolve the other way round.
 func TestResolveClientAuthMethod_Matrix(t *testing.T) {
 	key, _ := newClientAuthKeyEntry(t, "client-key-1")
 
-	// C1 has no client_id to fall back on, C2 has one, C3 authenticates. C2 is
-	// not optional: without it, "sent no client_id" and "had no client_id to
-	// send" are the same bytes on the wire and the distinction being tested
-	// cannot be observed.
+	// Without C2's client_id, "sent none" and "had none to send" look identical.
 	var (
 		configNoClientID = ClientAuthConfig{}
 		configClientID   = ClientAuthConfig{Method: receiverTypes.None, ClientID: "wallet-id"}
@@ -1828,8 +1812,7 @@ func TestResolveClientAuthMethod_Matrix(t *testing.T) {
 		wantSendClientID bool
 		wantErrContains  string
 	}{
-		// An absent list means client_secret_basic by RFC 8414 section 2, which
-		// this wallet does not implement. Nothing else is consulted.
+		// Absent list: RFC 8414 section 2 default, nothing else is consulted.
 		{name: "methods=absent/anon=absent/config=C1", methods: nil, anon: nil, clientAuth: configNoClientID, wantErrContains: errListAbsent},
 		{name: "methods=absent/anon=absent/config=C2", methods: nil, anon: nil, clientAuth: configClientID, wantErrContains: errListAbsent},
 		{name: "methods=absent/anon=absent/config=C3", methods: nil, anon: nil, clientAuth: configPrivateKey, wantErrContains: errListAbsent},
@@ -1846,17 +1829,14 @@ func TestResolveClientAuthMethod_Matrix(t *testing.T) {
 		{name: "methods=contains_none/anon=absent/config=C3", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: nil, clientAuth: configPrivateKey, wantMethod: receiverTypes.PrivateKeyJwt, wantSendClientID: true},
 		{name: "methods=contains_none/anon=true/config=C1", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: boolPtr(true), clientAuth: configNoClientID, wantMethod: receiverTypes.None},
 		{name: "methods=contains_none/anon=true/config=C2", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: boolPtr(true), clientAuth: configClientID, wantMethod: receiverTypes.None},
-		// The one cell that tells the two readings of the list apart: a list
-		// containing none must not downgrade a wallet configured to authenticate.
+		// The cell that tells the two readings apart: none must not downgrade.
 		{name: "methods=contains_none/anon=true/config=C3", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: boolPtr(true), clientAuth: configPrivateKey, wantMethod: receiverTypes.PrivateKeyJwt, wantSendClientID: true},
 		{name: "methods=contains_none/anon=false/config=C1", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: boolPtr(false), clientAuth: configNoClientID, wantErrContains: errClientIDRefused},
-		// Refusing anonymous access does not close the endpoint to a named
-		// client, which the previous behaviour got wrong.
+		// Refusing anonymous access does not close the endpoint to a named client.
 		{name: "methods=contains_none/anon=false/config=C2", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: boolPtr(false), clientAuth: configClientID, wantMethod: receiverTypes.None, wantSendClientID: true},
 		{name: "methods=contains_none/anon=false/config=C3", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: boolPtr(false), clientAuth: configPrivateKey, wantMethod: receiverTypes.PrivateKeyJwt, wantSendClientID: true},
 
-		// none is not advertised, so no statement about anonymous access can
-		// make an unauthenticated request acceptable.
+		// none not advertised: no anonymous-access claim can override that.
 		{name: "methods=lacks_none/anon=absent/config=C1", methods: authMethodsPtr(receiverTypes.PrivateKeyJwt), anon: nil, clientAuth: configNoClientID, wantErrContains: errNotAdvertised},
 		{name: "methods=lacks_none/anon=absent/config=C2", methods: authMethodsPtr(receiverTypes.PrivateKeyJwt), anon: nil, clientAuth: configClientID, wantErrContains: errNotAdvertised},
 		{name: "methods=lacks_none/anon=absent/config=C3", methods: authMethodsPtr(receiverTypes.PrivateKeyJwt), anon: nil, clientAuth: configPrivateKey, wantMethod: receiverTypes.PrivateKeyJwt, wantSendClientID: true},
@@ -1889,9 +1869,8 @@ func TestResolveClientAuthMethod_Matrix(t *testing.T) {
 	}
 }
 
-// TestResolveClientAuthMethod_UnusableCombinations covers the refusals that sit
-// outside the matrix above, where the negotiation stops before the two metadata
-// parameters can be weighed against each other.
+// TestResolveClientAuthMethod_UnusableCombinations covers refusals that stop the
+// negotiation early.
 func TestResolveClientAuthMethod_UnusableCombinations(t *testing.T) {
 	key, _ := newClientAuthKeyEntry(t, "client-key-1")
 
@@ -1944,8 +1923,7 @@ func TestResolveClientAuthMethod_UnusableCombinations(t *testing.T) {
 		}
 	})
 
-	// An unimplemented method is reported before anything is read from the
-	// metadata, so an absent list must not mask it.
+	// Reported before the metadata is read, so an absent list must not mask it.
 	t.Run("method this wallet does not implement", func(t *testing.T) {
 		for _, methods := range []*[]receiverTypes.TokenEndpointAuthMethod{
 			nil,
@@ -1963,8 +1941,7 @@ func TestResolveClientAuthMethod_UnusableCombinations(t *testing.T) {
 		}
 	})
 
-	// Missing metadata is a programming error rather than a failed negotiation,
-	// so it must not be reported as one.
+	// A programming error, not a failed negotiation.
 	t.Run("missing authorization server metadata", func(t *testing.T) {
 		_, err := resolveClientAuthMethod(ClientAuthConfig{}, nil)
 		require.Error(t, err)
@@ -2178,8 +2155,7 @@ func TestWallet_obtainAccessToken_AnonymousByDefaultDoesNotAttachAssertion(t *te
 	require.NoError(t, err)
 	w := &Wallet{
 		receiver: d,
-		// A client_id is configured on purpose: the assertion below only means
-		// something if there was something to leave out.
+		// A client_id is configured so the assertion below has something to omit.
 		clientAuth: ClientAuthConfig{
 			Method:   receiverTypes.None,
 			ClientID: "wallet-id",
@@ -2194,11 +2170,6 @@ func TestWallet_obtainAccessToken_AnonymousByDefaultDoesNotAttachAssertion(t *te
 		"the server advertised anonymous access, so the request must not name the wallet")
 }
 
-// TestWallet_obtainAccessToken_NoUsableMethodReturnsError covers the two ways the
-// negotiation can leave nothing to send, which fail for unrelated reasons and so
-// have to be told apart: the authorization server advertises no method this
-// wallet implements, or it advertises none but has not agreed to serve a request
-// that does not name its client.
 func TestWallet_obtainAccessToken_NoUsableMethodReturnsError(t *testing.T) {
 	tokenEndpoint, err := common.ParseURIField("https://as.example.com/token")
 	require.NoError(t, err)
@@ -2459,14 +2430,10 @@ func TestWallet_fetchCredentialMetadata_RejectsWhenNoUsableMethod(t *testing.T) 
 	assert.Contains(t, err.Error(), "must carry a client_id")
 }
 
-// TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess pins the three
-// states of the OPTIONAL pre-authorized_grant_anonymous_access_supported metadata
-// parameter for a wallet that has no client_id to fall back on. OID4VCI 1.0 section
-// 12.3 defines the parameter's default as false, so omitting it is a refusal rather
-// than an unknown: only an explicit true lets a token request go out with no client_id
-// at all, and the other two states need the wallet to name itself. The neighbouring
-// TestWallet_obtainAccessToken_AnonymousAccessDecidesWhetherClientIDIsSent covers the
-// wallet that can, asserting on what actually reached the token endpoint.
+// TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess pins the
+// three states for a wallet with no client_id; OID4VCI 1.0 12.3 makes an omitted
+// value a refusal. TestWallet_obtainAccessToken_AnonymousAccessDecidesWhetherClientIDIsSent
+// covers the wallet that has one.
 func TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess(t *testing.T) {
 	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
@@ -2528,12 +2495,8 @@ func TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess(t *tes
 	}
 }
 
-// TestWallet_obtainAccessToken_AnonymousAccessDecidesWhetherClientIDIsSent pins what
-// pre-authorized_grant_anonymous_access_supported actually decides for a wallet that has
-// a client_id: not whether a token request happens, but whether it names the wallet.
-// The assertions are on what reached the server rather than on the returned token,
-// because the failures this guards against are a request that never went out and a
-// request that carried something the metadata had not agreed to.
+// TestWallet_obtainAccessToken_AnonymousAccessDecidesWhetherClientIDIsSent pins that
+// the parameter decides whether the request names the wallet, asserting on the wire.
 func TestWallet_obtainAccessToken_AnonymousAccessDecidesWhetherClientIDIsSent(t *testing.T) {
 	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
