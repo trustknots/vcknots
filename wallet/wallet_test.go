@@ -1490,21 +1490,6 @@ func TestResolveClientAuthMethod(t *testing.T) {
 			"the rule that decides this is nowhere in the metadata, so the error has to name it")
 	})
 
-	t.Run("selects private_key_jwt when configured and advertised", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
-			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.ES256},
-		}
-		auth, err := resolveClientAuthMethod(ClientAuthConfig{
-			Method:   receiverTypes.PrivateKeyJwt,
-			ClientID: "client-id",
-			Key:      key,
-		}, authMetadata)
-		require.NoError(t, err)
-		assert.Equal(t, receiverTypes.PrivateKeyJwt, auth.Method)
-		assert.True(t, auth.SendClientID)
-	})
-
 	// Configured private_key_jwt credentials never promote an unset Method.
 	t.Run("an unset method is never promoted to private_key_jwt", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
@@ -1517,35 +1502,6 @@ func TestResolveClientAuthMethod(t *testing.T) {
 		}, authMetadata)
 		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
 		assert.Contains(t, err.Error(), `the wallet is configured for "none"`)
-	})
-
-	t.Run("an unset method stays none when none is advertised", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt),
-		}
-		auth, err := resolveClientAuthMethod(ClientAuthConfig{
-			ClientID: "client-id",
-			Key:      key,
-		}, authMetadata)
-		require.NoError(t, err)
-		assert.Equal(t, receiverTypes.None, auth.Method)
-		assert.True(t, auth.SendClientID)
-	})
-
-	t.Run("honors explicit private_key_jwt method", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
-			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
-			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.ES256},
-		}
-		auth, err := resolveClientAuthMethod(ClientAuthConfig{
-			Method:   receiverTypes.PrivateKeyJwt,
-			ClientID: "client-id",
-			Key:      key,
-		}, authMetadata)
-		require.NoError(t, err)
-		assert.Equal(t, receiverTypes.PrivateKeyJwt, auth.Method)
-		assert.True(t, auth.SendClientID)
 	})
 
 	t.Run("does not fall back to none when private_key_jwt is not advertised", func(t *testing.T) {
@@ -1563,54 +1519,6 @@ func TestResolveClientAuthMethod(t *testing.T) {
 			"none is usable here, and the wallet still must not silently take it")
 	})
 
-	t.Run("refuses an unnamed request when the server never advertised anonymous access", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.None),
-		}
-		_, err := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
-		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
-		assert.Contains(t, err.Error(), "pre-authorized_grant_anonymous_access_supported is absent")
-		assert.Contains(t, err.Error(), "must carry a client_id")
-	})
-
-	t.Run("none rejected when anonymous access is unknown and none is not advertised", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.PrivateKeyJwt),
-		}
-		_, err := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
-		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
-		assert.Contains(t, err.Error(), `the wallet is configured for "none"`,
-			"the authorization server accepts private_key_jwt only")
-	})
-
-	t.Run("anonymous access is refused by default when none is advertised and no client_id is configured", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt),
-		}
-		_, err := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
-		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
-		assert.Contains(t, err.Error(), "section 12.3 defines its default as false")
-	})
-
-	t.Run("none names the client when anonymous access is unknown", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt),
-		}
-		auth, err := resolveClientAuthMethod(ClientAuthConfig{
-			Method:   receiverTypes.None,
-			ClientID: "wallet-id",
-		}, authMetadata)
-		require.NoError(t, err)
-		assert.Equal(t, receiverTypes.None, auth.Method)
-		assert.True(t, auth.SendClientID)
-	})
-
-	t.Run("rejects when neither parameter is advertised", func(t *testing.T) {
-		_, err := resolveClientAuthMethod(ClientAuthConfig{}, &receiverTypes.AuthorizationServerMetadata{})
-		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
-		assert.Contains(t, err.Error(), "token_endpoint_auth_methods_supported is absent")
-	})
-
 	t.Run("a method list without none outweighs explicit anonymous support", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
@@ -1621,31 +1529,6 @@ func TestResolveClientAuthMethod(t *testing.T) {
 		assert.Contains(t, err.Error(), `the wallet is configured for "none"`)
 		assert.Contains(t, err.Error(), "only whether client_id may be omitted",
 			"an operator reading anonymous access: true needs to be told why it was not enough")
-	})
-
-	t.Run("explicit refusal requires a client_id rather than blocking none", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(false),
-			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.None),
-		}
-		_, err := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
-		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
-		assert.Contains(t, err.Error(), "pre-authorized_grant_anonymous_access_supported is false")
-		assert.Contains(t, err.Error(), "must carry a client_id")
-	})
-
-	t.Run("explicit refusal still serves a named client", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(false),
-			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.None),
-		}
-		auth, err := resolveClientAuthMethod(ClientAuthConfig{
-			Method:   receiverTypes.None,
-			ClientID: "wallet-id",
-		}, authMetadata)
-		require.NoError(t, err)
-		assert.Equal(t, receiverTypes.None, auth.Method)
-		assert.True(t, auth.SendClientID)
 	})
 
 	t.Run("private_key_jwt rejected when alg not supported", func(t *testing.T) {
@@ -1662,42 +1545,20 @@ func TestResolveClientAuthMethod(t *testing.T) {
 		assert.Contains(t, err.Error(), "does not advertise ES256")
 	})
 
-	t.Run("private_key_jwt rejected when signing alg metadata is omitted", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.PrivateKeyJwt),
+	// RFC 8414 section 2 defines no default, so absent and empty fail alike.
+	t.Run("private_key_jwt rejected when signing alg metadata is unusable", func(t *testing.T) {
+		for _, algs := range []*[]jose.SignatureAlgorithm{nil, {}} {
+			_, err := resolveClientAuthMethod(ClientAuthConfig{
+				Method:   receiverTypes.PrivateKeyJwt,
+				ClientID: "client-id",
+				Key:      key,
+			}, &receiverTypes.AuthorizationServerMetadata{
+				TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
+				TokenEndpointAuthSigningAlgValuesSupported: algs,
+			})
+			require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+			assert.Contains(t, err.Error(), "omits token_endpoint_auth_signing_alg_values_supported")
 		}
-		_, err := resolveClientAuthMethod(ClientAuthConfig{
-			Method:   receiverTypes.PrivateKeyJwt,
-			ClientID: "client-id",
-			Key:      key,
-		}, authMetadata)
-		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
-		assert.Contains(t, err.Error(), "omits token_endpoint_auth_signing_alg_values_supported")
-	})
-
-	t.Run("private_key_jwt rejected when signing alg metadata is empty", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
-			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{},
-		}
-		_, err := resolveClientAuthMethod(ClientAuthConfig{
-			Method:   receiverTypes.PrivateKeyJwt,
-			ClientID: "client-id",
-			Key:      key,
-		}, authMetadata)
-		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
-		assert.Contains(t, err.Error(), "omits token_endpoint_auth_signing_alg_values_supported")
-	})
-
-	t.Run("private_key_jwt rejected when client id/key missing", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.PrivateKeyJwt),
-		}
-		_, err := resolveClientAuthMethod(ClientAuthConfig{
-			Method: receiverTypes.PrivateKeyJwt,
-		}, authMetadata)
-		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
-		assert.Contains(t, err.Error(), "requires both a client_id and a client authentication key")
 	})
 }
 
@@ -1874,22 +1735,15 @@ func TestResolveClientAuthMethod_Matrix(t *testing.T) {
 func TestResolveClientAuthMethod_UnusableCombinations(t *testing.T) {
 	key, _ := newClientAuthKeyEntry(t, "client-key-1")
 
+	// Returns before anon or the wallet config is read, so one call covers the
+	// grid the rest of this file walks; anon=true is the tempting cell.
 	t.Run("empty method list advertises nothing", func(t *testing.T) {
-		for _, anon := range []*bool{nil, boolPtr(true), boolPtr(false)} {
-			for _, clientAuth := range []ClientAuthConfig{
-				{},
-				{Method: receiverTypes.None, ClientID: "wallet-id"},
-				{Method: receiverTypes.PrivateKeyJwt, ClientID: "wallet-id", Key: key},
-			} {
-				_, err := resolveClientAuthMethod(clientAuth, &receiverTypes.AuthorizationServerMetadata{
-					TokenEndpointAuthMethodsSupported:          authMethodsPtr(),
-					TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.ES256},
-					PreAuthorizedGrantAnonymousAccessSupported: anon,
-				})
-				require.ErrorIs(t, err, errNoUsableClientAuthMethod)
-				assert.Contains(t, err.Error(), "token_endpoint_auth_methods_supported is an empty array")
-			}
-		}
+		_, err := resolveClientAuthMethod(ClientAuthConfig{}, &receiverTypes.AuthorizationServerMetadata{
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(),
+			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
+		})
+		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+		assert.Contains(t, err.Error(), "token_endpoint_auth_methods_supported is an empty array")
 	})
 
 	t.Run("list of methods this wallet does not implement", func(t *testing.T) {

@@ -81,13 +81,12 @@ const preAuthorizedGrantType = "urn:ietf:params:oauth:grant-type:pre-authorized_
 // plan and advertises them in the authorization server metadata. Configuring
 // the wallet differently is not a soft mismatch: the token endpoint rejects the
 // request with invalid_client before any credential is issued.
+// Named because the log hints below quote them back; the single-use ones are
+// spelled out at their one call site.
 const (
-	envClientConfig      = "OID4VCI_CLIENT_CONFIG"
-	envClientID          = "OID4VCI_CLIENT_ID"
-	envClientPrivateJWK  = "OID4VCI_CLIENT_PRIVATE_JWK"
-	envAssertionAudience = "OID4VCI_CLIENT_ASSERTION_AUDIENCE"
-	envAllowInsecureKey  = "OID4VCI_ALLOW_INSECURE_KEY_PERMS"
-	envDPoP              = "OID4VCI_DPOP"
+	envClientConfig = "OID4VCI_CLIENT_CONFIG"
+	envClientID     = "OID4VCI_CLIENT_ID"
+	envDPoP         = "OID4VCI_DPOP"
 )
 
 const (
@@ -222,7 +221,7 @@ func buildWalletConfig(logger *slog.Logger) (wallet.Config, error) {
 		if clientID := strings.TrimSpace(os.Getenv(envClientID)); clientID != "" {
 			opts = append(opts, clientconfig.WithClientID(clientID))
 		}
-		if keyPath := strings.TrimSpace(os.Getenv(envClientPrivateJWK)); keyPath != "" {
+		if keyPath := strings.TrimSpace(os.Getenv("OID4VCI_CLIENT_PRIVATE_JWK")); keyPath != "" {
 			opts = append(opts, clientconfig.WithPrivateJWKFile(keyPath))
 		}
 		// A client_assertion_audience in the file wins over the authorization
@@ -230,10 +229,10 @@ func buildWalletConfig(logger *slog.Logger) (wallet.Config, error) {
 		// wrong for the conformance suite: every test instance gets its own
 		// issuer URL. Setting this variable to the empty string clears the
 		// override and restores the issuer-derived default.
-		if audience, isSet := os.LookupEnv(envAssertionAudience); isSet {
+		if audience, isSet := os.LookupEnv("OID4VCI_CLIENT_ASSERTION_AUDIENCE"); isSet {
 			opts = append(opts, clientconfig.WithAssertionAudience(strings.TrimSpace(audience)))
 		}
-		if envFlag(logger, envAllowInsecureKey) {
+		if envFlag(logger, "OID4VCI_ALLOW_INSECURE_KEY_PERMS") {
 			opts = append(opts, clientconfig.AllowInsecureFilePermissions())
 		}
 

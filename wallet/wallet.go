@@ -808,13 +808,6 @@ func resolveClientAuthMethod(clientAuth ClientAuthConfig, authMetadata *receiver
 	}
 
 	if err := clientAuthMethodUsable(configured, clientAuth, authMetadata); err != nil {
-		// Not being advertised is None's only failure mode above.
-		if configured == receiverTypes.None && anonymousTokenRequestPermitted(authMetadata) {
-			return tokenEndpointAuth{}, fmt.Errorf(
-				"%w (pre-authorized_grant_anonymous_access_supported is true, but OID4VCI 1.0 section 12.3 "+
-					"lets it decide only whether client_id may be omitted, not whether the token endpoint "+
-					"serves an unauthenticated client)", err)
-		}
 		return tokenEndpointAuth{}, err
 	}
 
@@ -886,15 +879,20 @@ func unimplementedAuthMethodError(method receiverTypes.TokenEndpointAuthMethod) 
 		errNoUsableClientAuthMethod, method, receiverTypes.None, receiverTypes.PrivateKeyJwt)
 }
 
-// methodNotAdvertisedError quotes back the list the server does advertise.
+// methodNotAdvertisedError quotes back the list the server does advertise. Only
+// resolveClientAuthMethod reaches this, past its own nil and empty-list guards.
 func methodNotAdvertisedError(method receiverTypes.TokenEndpointAuthMethod, authMetadata *receiverTypes.AuthorizationServerMetadata) error {
-	var advertised []receiverTypes.TokenEndpointAuthMethod
-	if authMetadata != nil && authMetadata.TokenEndpointAuthMethodsSupported != nil {
-		advertised = *authMetadata.TokenEndpointAuthMethodsSupported
+	// Not being advertised is None's only failure mode, so an operator who set
+	// anonymous access needs telling here why it was not enough.
+	anonNote := ""
+	if method == receiverTypes.None && anonymousTokenRequestPermitted(authMetadata) {
+		anonNote = " (pre-authorized_grant_anonymous_access_supported is true, but OID4VCI 1.0 section 12.3" +
+			" lets it decide only whether client_id may be omitted, not whether the token endpoint" +
+			" serves an unauthenticated client)"
 	}
 	return fmt.Errorf(
-		"%w: the wallet is configured for %q, but token_endpoint_auth_methods_supported is %v",
-		errNoUsableClientAuthMethod, method, advertised)
+		"%w: the wallet is configured for %q, but token_endpoint_auth_methods_supported is %v%s",
+		errNoUsableClientAuthMethod, method, *authMetadata.TokenEndpointAuthMethodsSupported, anonNote)
 }
 
 // validateAuthorizationServerIssuer checks the issuer returned in the metadata
@@ -1347,9 +1345,6 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 			if auth.SendClientID {
 				tokenReqOptions = append(tokenReqOptions, receiverTypes.WithClientID(w.clientAuth.ClientID))
 			}
-
-		default:
-			return nil, fmt.Errorf("unsupported resolved client authentication method %q", auth.Method)
 		}
 		if w.dpop.Enabled {
 			proof, err := w.generateDPoPProof(
