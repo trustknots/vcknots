@@ -192,7 +192,7 @@ const consumed = await nonceStore.consume(nonce)
 
 DPoP Proof の `nonce` は replay を避けるため、検証時に一度だけ消費します。Credential proof 用の `c_nonce` は複数 credential 取得で再利用できる一方、DPoP Proof 用 nonce は token request の Proof に紐づく値として扱います。
 
-> **注意:** DPoP nonce の消費は `authz.createAccessToken` に `dpopProof` を渡した際に内部で自動的に行われます。
+> **注意:** DPoP nonce の消費は `authz.createAccessToken` に `dpopProof` を渡した際に内部で自動的に行われます。この場合、`nonceStore.consume(nonce)` を手動で呼び出さないでください — 内部検証より前に nonce が消費され、リクエストが失敗します。`nonceStore.consume()` の手動呼び出しは、`createAccessToken` を使わないカスタム検証フローでのみ使用してください。
 
 #### 5. DPoP Proof と DPoP-bound access token
 
@@ -264,10 +264,10 @@ const { request, transactionId } = await verifier.createAuthzRequest(
       }]
     }
   },
-  true, // use request_uri (JAR)
-  { base_url: base }
+  false, // use inline request (not JAR)
+  {}
 )
-// verifyPresentations 呼び出しに必要なため、transactionId をセッション/ステートと共に保存します。
+saveToSession(transactionId) // Wallet コールバックで verifyPresentations を呼び出す際に必要
 
 // 認可リクエストオブジェクトをエンコード
 const encoded = Object.entries(request)
@@ -287,11 +287,13 @@ Wallet から送信されたレスポンスを検証します。
 
 ```typescript
 // req は Wallet が送信した HTTP リクエストを表します
+const transactionId = loadFromSession() // ステップ 2 で保存した transactionId を復元
 const response = VerifierAuthorizationResponse(req.json())
-// transactionId は createAuthzRequest が返した値で、セッションと共に保存しておきます
 await verifier.verifyPresentations(response, transactionId)
 console.log('Verification Successful!')
 ```
+
+> `saveToSession` / `loadFromSession` はプレースホルダーです。実際の実装はアプリケーションのセッション管理に合わせて行ってください。
 
 ## 設定とプロバイダー
 

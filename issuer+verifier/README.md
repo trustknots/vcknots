@@ -192,7 +192,7 @@ const consumed = await nonceStore.consume(nonce)
 
 The `nonce` in a DPoP Proof is consumed only once to prevent replay. The credential proof `c_nonce` can be reused when requesting multiple credentials, while the DPoP Proof nonce is treated as a value bound to the token request proof.
 
-> **Note:** DPoP nonce consumption is handled internally by `authz.createAccessToken` when `dpopProof` is provided.
+> **Note:** DPoP nonce consumption is handled internally by `authz.createAccessToken` when `dpopProof` is provided. Do **not** call `nonceStore.consume(nonce)` manually in that case — doing so will consume the nonce before the internal verification runs and cause the request to fail. Manual consumption via `nonceStore.consume()` is only appropriate in custom verification flows where `createAccessToken` is not used.
 
 #### 5. DPoP Proof and DPoP-bound access tokens
 
@@ -264,10 +264,10 @@ const { request, transactionId } = await verifier.createAuthzRequest(
       }]
     }
   },
-  true, // use request_uri (JAR)
-  { base_url: base }
+  false, // use inline request (not JAR)
+  {}
 )
-// Store transactionId alongside session/state — required when calling verifyPresentations.
+saveToSession(transactionId) // required for verifyPresentations in the wallet callback
 
 // Encode authorization request object
 const encoded = Object.entries(request)
@@ -287,11 +287,13 @@ Verify the response sent by the wallet.
 
 ```typescript
 // req represents the HTTP request submitted by wallet
+const transactionId = loadFromSession() // restore the transactionId saved in step 2
 const response = VerifierAuthorizationResponse(req.json())
-// transactionId was returned by createAuthzRequest and stored alongside the session
 await verifier.verifyPresentations(response, transactionId)
 console.log('Verification Successful!')
 ```
+
+> `saveToSession` and `loadFromSession` are placeholder functions — replace them with your own session or store implementation.
 
 ## Configuration & Providers
 
