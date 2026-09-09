@@ -58,8 +58,9 @@ func (m *MockReceiver) FetchAuthorizationServerMetadata(endpoint common.URIField
 	metadata := &types.AuthorizationServerMetadata{
 		Issuer: *issuer,
 		PreAuthorizedGrantAnonymousAccessSupported: &[]bool{true}[0],
-		TokenEndpoint:         &common.URIField{Scheme: "mock", Host: "token"},
-		AuthorizationEndpoint: &common.URIField{Scheme: "mock", Host: "authorize"},
+		TokenEndpointAuthMethodsSupported:          &[]types.TokenEndpointAuthMethod{types.None},
+		TokenEndpoint:                              &common.URIField{Scheme: "mock", Host: "token"},
+		AuthorizationEndpoint:                      &common.URIField{Scheme: "mock", Host: "authorize"},
 	}
 
 	return metadata, nil
