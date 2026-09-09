@@ -1,6 +1,6 @@
 # @trustknots/vcknots
 
-A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) Draft 13 and OpenID for Verifiable Presentations (OID4VP) 1.0.
+A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) 1.0 and OpenID for Verifiable Presentations (OID4VP) 1.0.
 
 This package provides the core logic for both Issuers and Verifiers, allowing you to build compliant SSI (Self-Sovereign Identity) applications. It is designed with a provider-based architecture, making it easy to swap out implementations for storage, key management, and other infrastructure dependencies.
 
@@ -83,10 +83,20 @@ await issuer.createIssuerMetadata(metadata)
 Generate a credential offer to be sent to the wallet.
 
 ```typescript
-const offer = await issuer.offerCredential(issuerId, ['MyCredential'])
+const { offer } = await issuer.offerCredential(issuerId, ['MyCredential'])
 const encoded = encodeURIComponent(JSON.stringify(offer))
 const scheme = `openid-credential-offer://?credential_offer=${encoded}`
 console.log('Credential Offer:', scheme)
+```
+
+To require the user to enter a Transaction Code (PIN) in their wallet, pass `txCode` to `offerCredential`. The generated PIN is returned as `tx_code` and must be communicated to the user out-of-band (e.g., via SMS or email).
+
+```typescript
+const { offer, tx_code } = await issuer.offerCredential(issuerId, ['MyCredential'], {
+  usePreAuth: true,
+  txCode: { input_mode: 'numeric', length: 6 },
+})
+console.log('PIN for user:', tx_code)
 ```
 
 #### 3. Issue a Credential
@@ -182,6 +192,8 @@ const consumed = await nonceStore.consume(nonce)
 
 The `nonce` in a DPoP Proof is consumed only once to prevent replay. The credential proof `c_nonce` can be reused when requesting multiple credentials, while the DPoP Proof nonce is treated as a value bound to the token request proof.
 
+> **Note:** DPoP nonce consumption is handled internally by `authz.createAccessToken` when `dpopProof` is provided.
+
 #### 5. DPoP Proof and DPoP-bound access tokens
 
 Token endpoint implementations can pass the Proof JWT from the HTTP `DPoP` header to `createAccessToken` to verify DPoP Proof and issue a DPoP-bound access token.
@@ -218,15 +230,12 @@ Initialize the verifier identity.
 const base = 'https://myverifier.example.com'
 const verifierId = VerifierClientId(base)
 const metadata: VerifierMetadata = {
-	client_name: 'MyVerifier',
-	client_uri: base,
-	vp_formats_supported: {
-		'dc+sd-jwt': {
-			'sd-jwt_alg_values': ['ES256', 'ES384'],
-      'kb-jwt_alg_values': ['ES256', 'ES384']
-		},
-	},
-	client_id_scheme: 'redirect_uri'
+  vp_formats_supported: {
+    'dc+sd-jwt': {
+      'sd-jwt_alg_values': ['ES256', 'ES384'],
+      'kb-jwt_alg_values': ['ES256', 'ES384'],
+    },
+  },
 }
 
 // This will generate signing keys for the verifier (for JAR)
@@ -289,10 +298,12 @@ console.log('Verification Successful!')
 To use persistent storage (e.g., Redis, PostgreSQL) or external KMS, you can override the default providers.
 
 ```typescript
-import { vcknots, Provider } from '@trustknots/vcknots'
+import { vcknots } from '@trustknots/vcknots'
+import { IssuerMetadataStoreProvider } from '@trustknots/vcknots/providers'
 
 const customMetadataStore: IssuerMetadataStoreProvider = {
   kind: 'issuer-metadata-store-provider',
+  name: 'my-issuer-metadata-store',
   single: true,
   fetch(issuer) { ... },
   save(metadata) { ... },

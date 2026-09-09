@@ -4,7 +4,7 @@ sidebar_position: 21
 
 # VC Knots のサポート範囲
 
-下記の表は、[OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html) および [OpenID for Verifiable Presentations - draft 24](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html) を基準に、このリポジトリの現在の実装範囲を整理したものです。
+下記の表は、[OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html) および [OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html) を基準に、このリポジトリの現在の実装範囲を整理したものです。
 
 `✅` は該当ロールで実装済み、`❌` は未実装またはエンドツーエンドでは利用できないことを示します。設定に依存する機能は、備考欄に条件を記載しています。
 
@@ -36,26 +36,28 @@ sidebar_position: 21
 | [10](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-10) | Encryption | Credential Response の暗号化 | ❌ | ❌ |  |
 | [11](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#section-11) | Notification | Notification Endpoint | ❌ | ❌ |  |
 
-## OpenID for Verifiable Presentations - draft 24
+## OpenID for Verifiable Presentations 1.0
 
 | 仕様セクション | 機能領域 | 仕様上の役割・機能 | Verifier | Wallet | 備考 |
 | --- | --- | --- | --- | --- | --- |
-| [5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5) | Authorization Request | Authorization Request | `v0.6.0` 以降<br />✅ `request_uri`、URL エンコードされたパラメータ | ✅ `request`、`request_uri`、URL エンコードされたパラメータ |  |
-| [6](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-6) | Credential Query | DCQL | ❌ | ❌ |  |
-| [5.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.4) | Credential Query | Presentation Exchange | `v0.6.0` 以降<br />✅ | ✅ | 外部仕様: [DIF Presentation Exchange](https://identity.foundation/presentation-exchange/spec/v2.1.1) |
-| [5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5) | Authorization Request | 署名付き Authorization Request（JAR） | `v0.6.0` 以降<br />✅ | ✅ | Request Objectを使用。外部仕様: [RFC 9101](https://www.rfc-editor.org/info/rfc9101) |
-| [5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5) | Authorization Request | 暗号化された Authorization Request（JAR） | ❌ | ❌ | 外部仕様: [RFC 9101](https://www.rfc-editor.org/info/rfc9101) |
-| [5.6](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.6) | Credential Query | スコープを使用した Authorization Request | ❌ | ❌ |  |
-| [5.10.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.10.4) | Client Identification | Client Identifier Scheme | `v0.6.0` 以降<br />✅ `redirect_uri`、`x509_san_dns` | ✅ `redirect_uri`、`x509_san_dns` |  |
-| [5.11](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-5.11) | Request URI | Request URI Method | `v0.6.0` 以降<br />✅ GET | ✅ GET、POST |  |
-| [10](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-10) | Metadata | Wallet Metadata | ❌ | ❌ |  |
-| [8.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-8.1) | Authorization Response | Authorization Response | `v0.6.0` 以降<br />✅ | ✅ |  |
-| [8.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-8.5) | Authorization Response | Authorization Error Response | ❌ | ❌ |  |
-| [8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-8.3) | Authorization Response | 暗号化された Authorization Response | ❌ | ✅ |  |
-| [8.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-8.2) | Response Mode | Response Mode | `v0.6.0` 以降<br />✅ `direct_post` | ✅ `direct_post` |  |
-| [8.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-8.4) | Transaction Data | Transaction Data | `v0.6.0` 以降<br />✅ | ✅ |  |
-| [12](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#section-12) | Client Authentication | Verifier Attestation JWT | ❌ | ❌ |  |
-| [Appendix A](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#appendix-A) | Digital Credentials API | Digital Credential API／DC API | ❌ | ❌ |  |
-| [Appendix B.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#appendix-B.4) | Credential Format | SD-JWT-VC形式（`dc+sd-jwt`） | `v0.6.0` 以降<br />✅ | ✅ |  |
-| [Appendix B.4.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#appendix-B.4.5) | Holder Binding | SD-JWT VC Key Binding／KB-JWT | `v0.6.0` 以降<br />✅ | ✅ |  |
-| [Appendix B.1.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#appendix-B.1.1) | Credential Format | `jwt_vc_json`形式 | `v0.6.0` 以降<br />✅ | ✅ |  |
+| [5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5) | Authorization Request | Authorization Request | `v0.7.0` 以降<br />✅ `request_uri`、URL エンコードされたパラメータ | ✅ `request`、`request_uri`、URL エンコードされたパラメータ |  |
+| [5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5) | Authorization Request | 署名付き Authorization Request（JAR） | `v0.7.0` 以降<br />✅ | ✅ | Request Objectを使用。外部仕様: [RFC 9101](https://www.rfc-editor.org/info/rfc9101) |
+| [5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5) | Authorization Request | 暗号化された Authorization Request（JAR） | ❌ | ❌ | 外部仕様: [RFC 9101](https://www.rfc-editor.org/info/rfc9101) |
+| [5.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.5) | Credential Query | スコープを使用した Authorization Request | ❌ | ❌ |  |
+| [5.9.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.9.3) | Client Identification | Client Identifier Prefix | `v0.7.0` 以降<br />✅ `redirect_uri`、`x509_san_dns` | ✅ `redirect_uri`、`x509_san_dns` |  |
+| [5.10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.10) | Request URI | Request URI Method | `v0.7.0` 以降<br />✅ GET | ✅ GET、POST |  |
+| [6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l) | Credential Query | DCQL | `v0.7.0` 以降<br />✅ | ✅ | `dcql_query` パラメータを使用。 |
+| [8.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1) | Authorization Response | Authorization Response | `v0.7.0` 以降<br />✅ | ✅ |  |
+| [8.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2) | Response Mode | Response Mode | `v0.7.0` 以降<br />✅ `direct_post` | ✅ `direct_post` |  |
+| [8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3) | Authorization Response | 暗号化された Authorization Response | ❌ | ✅ |  |
+| [8.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.4) | Transaction Data | Transaction Data | `v0.7.0` 以降<br />✅ | ✅ |  |
+| [8.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5) | Authorization Response | Authorization Error Response | ❌ | ✅ | リクエスト検証失敗時に Wallet が `response_uri` へエラー Authorization Response（例: `access_denied`）を送信。`response_mode=direct_post` のみ。 |
+| [10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-10) | Metadata | Wallet Metadata | ❌ | ❌ |  |
+| [11](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-11) | Metadata | Verifier Metadata — インライン `client_metadata` | `v0.7.0` 以降<br />✅ | ✅ 解析 |  |
+| [11](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-11) | Metadata | Verifier Metadata — `client_metadata_uri`（参照方式） | ❌ | ❌ |  |
+| [12](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-12) | Client Authentication | Verifier Attestation JWT | ❌ | ❌ |  |
+| [Appendix A](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-A) | Digital Credentials API | Digital Credential API／DC API | ❌ | ❌ |  |
+| [Appendix B.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.1) | Credential Format | `jwt_vc_json`形式 | `v0.7.0` 以降<br />✅ | ✅ |  |
+| [Appendix B.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.2) | Credential Format | `mso_mdoc`（Mobile Documents／mdocs） | ❌ | ❌ |  |
+| [Appendix B.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3) | Credential Format | SD-JWT-VC形式（`dc+sd-jwt`） | `v0.7.0` 以降<br />✅ | ✅ |  |
+| [Appendix B.3.6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.6) | Holder Binding | SD-JWT VC Key Binding／KB-JWT | `v0.7.0` 以降<br />✅ | ✅ |  |

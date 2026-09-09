@@ -1,6 +1,6 @@
 # @trustknots/vcknots
 
-OpenID for Verifiable Credential Issuance (OpenID4VCI) 1.0 および OpenID for Verifiable Presentations (OpenID4VP) Draft 24 を実装するための柔軟で拡張可能なライブラリです。
+OpenID for Verifiable Credential Issuance (OpenID4VCI) 1.0 および OpenID for Verifiable Presentations (OpenID4VP) 1.0 を実装するための柔軟で拡張可能なライブラリです。
 
 このパッケージは Issuer と Verifier の両方のコアロジックを提供し、準拠した SSI（Self-Sovereign Identity）アプリケーションの構築を可能にします。プロバイダーベースのアーキテクチャで設計されており、ストレージ、鍵管理、その他のインフラ依存関係の実装を簡単に差し替えることができます。
 
@@ -17,7 +17,7 @@ OpenID for Verifiable Credential Issuance (OpenID4VCI) 1.0 および OpenID for 
     *   Verifier メタデータの管理
     *   認可リクエストの作成（JAR - Signed Request Objects）
     *   検証可能プレゼンテーションの検証（VP Token）
-    *   Presentation Exchange および DCQL のサポート（近日対応予定）
+    *   DCQL（Digital Credentials Query Language）のサポート
 *   **拡張可能なアーキテクチャ:**
     *   すべての外部依存関係（データベース、鍵管理、DID リゾルバー）は「プロバイダー」として抽象化されています
     *   迅速なプロトタイピングとテストのためのデフォルトのインメモリ実装を同梱しています
@@ -83,10 +83,20 @@ await issuer.createIssuerMetadata(metadata)
 Wallet に送信するクレデンシャルオファーを生成します。
 
 ```typescript
-const offer = await issuer.offerCredential(issuerId, ['MyCredential'])
+const { offer } = await issuer.offerCredential(issuerId, ['MyCredential'])
 const encoded = encodeURIComponent(JSON.stringify(offer))
 const scheme = `openid-credential-offer://?credential_offer=${encoded}`
 console.log('Credential Offer:', scheme)
+```
+
+Wallet でユーザーに PIN 入力を要求する場合は、`offerCredential` に `txCode` を渡します。生成された PIN は `tx_code` として返されるので、SMS やメールなどアウトオブバンドでユーザーに伝えてください。
+
+```typescript
+const { offer, tx_code } = await issuer.offerCredential(issuerId, ['MyCredential'], {
+  usePreAuth: true,
+  txCode: { input_mode: 'numeric', length: 6 },
+})
+console.log('ユーザーへの PIN:', tx_code)
 ```
 
 #### 3. クレデンシャルの発行
@@ -182,6 +192,8 @@ const consumed = await nonceStore.consume(nonce)
 
 DPoP Proof の `nonce` は replay を避けるため、検証時に一度だけ消費します。Credential proof 用の `c_nonce` は複数 credential 取得で再利用できる一方、DPoP Proof 用 nonce は token request の Proof に紐づく値として扱います。
 
+> **注意:** DPoP nonce の消費は `authz.createAccessToken` に `dpopProof` を渡した際に内部で自動的に行われます。
+
 #### 5. DPoP Proof と DPoP-bound access token
 
 token endpoint 実装では、HTTP リクエストの `DPoP` ヘッダーから取得した Proof JWT を `createAccessToken` に渡すことで、DPoP Proof の検証と DPoP-bound access token の発行を行えます。
@@ -218,15 +230,12 @@ Verifier の識別情報を初期化します。
 const base = 'https://myverifier.example.com'
 const verifierId = VerifierClientId(base)
 const metadata: VerifierMetadata = {
-	client_name: 'MyVerifier',
-	client_uri: base,
-	vp_formats_supported: {
-		'dc+sd-jwt': {
-			'sd-jwt_alg_values': ['ES256', 'ES384'],
-      'kb-jwt_alg_values': ['ES256', 'ES384']
-		},
-	},
-	client_id_scheme: 'redirect_uri'
+  vp_formats_supported: {
+    'dc+sd-jwt': {
+      'sd-jwt_alg_values': ['ES256', 'ES384'],
+      'kb-jwt_alg_values': ['ES256', 'ES384'],
+    },
+  },
 }
 
 // Verifier 用の署名鍵を生成します（JAR 用）
@@ -239,24 +248,26 @@ Wallet が何かを証明するためのリクエスト（通常は QR コード
 ```typescript
 const base = 'https://myverifier.example.com'
 const verifierId = VerifierClientId(base)
-const request = await verifier.createAuthzRequest(
+const { request, transactionId } = await verifier.createAuthzRequest(
   verifierId,
   'vp_token',
   `redirect_uri:${base}`, // client_id
   'direct_post',
   {
-    // Presentation Exchange Definition
-    presentation_definition: {
-      id: 'request',
-      input_descriptors: [{
+    // DCQL Query
+    dcql_query: {
+      credentials: [{
         id: 'id-card',
-        constraints: { fields: [{ path: ['$.vc.type'], filter: { type: 'string', pattern: 'MyCredential' } }] }
+        format: 'dc+sd-jwt',
+        meta: { vct_values: ['MyCredential'] },
+        claims: [{ path: ['name'] }]
       }]
     }
   },
-  false, // use request_uri (JAR)
+  true, // use request_uri (JAR)
   { base_url: base }
 )
+// verifyPresentations 呼び出しに必要なため、transactionId をセッション/ステートと共に保存します。
 
 // 認可リクエストオブジェクトをエンコード
 const encoded = Object.entries(request)
@@ -277,7 +288,8 @@ Wallet から送信されたレスポンスを検証します。
 ```typescript
 // req は Wallet が送信した HTTP リクエストを表します
 const response = VerifierAuthorizationResponse(req.json())
-await verifier.verifyPresentations(verifierId, response)
+// transactionId は createAuthzRequest が返した値で、セッションと共に保存しておきます
+await verifier.verifyPresentations(response, transactionId)
 console.log('Verification Successful!')
 ```
 
@@ -286,10 +298,12 @@ console.log('Verification Successful!')
 永続ストレージ（Redis、PostgreSQL など）や外部 KMS を使用するには、デフォルトのプロバイダーをオーバーライドできます。
 
 ```typescript
-import { vcknots, Provider } from '@trustknots/vcknots'
+import { vcknots } from '@trustknots/vcknots'
+import { IssuerMetadataStoreProvider } from '@trustknots/vcknots/providers'
 
 const customMetadataStore: IssuerMetadataStoreProvider = {
   kind: 'issuer-metadata-store-provider',
+  name: 'my-issuer-metadata-store',
   single: true,
   fetch(issuer) { ... },
   save(metadata) { ... },
