@@ -1,5 +1,16 @@
 # @trustknots/google-cloud
 
+## 0.5.0
+
+### Minor Changes
+
+- generated at 20260909043320
+
+### Patch Changes
+
+- Updated dependencies
+  - @trustknots/vcknots@0.7.0
+
 ## 0.4.0
 
 ### Minor Changes
