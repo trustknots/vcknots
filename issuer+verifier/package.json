@@ -39,7 +39,8 @@
 		"ssi",
 		"did",
 		"openid",
-		"presentation-exchange",
+		"dc+sd-jwt",
+		"dcql",
 		"digital-identity"
 	],
 	"author": "Trust Knots Project Team",
