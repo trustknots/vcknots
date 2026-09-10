@@ -206,7 +206,7 @@ importers:
     dependencies:
       '@hono/node-server':
         specifier: 2.0.12
-        version: 2.0.12(hono@4.12.34)
+        version: 2.0.12(hono@4.13.5)
       '@trustknots/aws':
         specifier: workspace:*
         version: link:../../../aws
@@ -220,8 +220,8 @@ importers:
         specifier: 17.3.1
         version: 17.3.1
       hono:
-        specifier: 4.12.34
-        version: 4.12.34
+        specifier: 4.13.5
+        version: 4.13.5
     devDependencies:
       '@types/aws-lambda':
         specifier: ^8.10.161
@@ -237,13 +237,13 @@ importers:
     dependencies:
       '@hono/node-server':
         specifier: 2.0.12
-        version: 2.0.12(hono@4.12.34)
+        version: 2.0.12(hono@4.13.5)
       '@trustknots/vcknots':
         specifier: workspace:*
         version: link:../../issuer+verifier
       hono:
-        specifier: 4.12.34
-        version: 4.12.34
+        specifier: 4.13.5
+        version: 4.13.5
       zod:
         specifier: 4.3.6
         version: 4.3.6
@@ -4552,8 +4552,8 @@ packages:
   hoist-non-react-statics@3.3.2:
     resolution: {integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==}
 
-  hono@4.12.34:
-    resolution: {integrity: sha512-GqXJqY/xJkJmuloTrnV1ZEXG3fqte+VjkUqoRNZXcrUidiUOP4fMSIHHY4tsqZBK++kVyWmt/AAfSUuy57/eSA==}
+  hono@4.13.5:
+    resolution: {integrity: sha512-O6+/eCYRkzzzy0rPWwKLiGBR1nFuUPZynnwjxN1MBA62NNqbT0wQEzQyK2gSO5yDIDB336sXQleAhOHrzlYyKw==}
     engines: {node: '>=16.9.0'}
 
   hpack.js@2.1.6:
@@ -10243,9 +10243,9 @@ snapshots:
     dependencies:
       '@hapi/hoek': 9.3.0
 
-  '@hono/node-server@2.0.12(hono@4.12.34)':
+  '@hono/node-server@2.0.12(hono@4.13.5)':
     dependencies:
-      hono: 4.12.34
+      hono: 4.13.5
 
   '@iconify/types@2.0.0': {}
 
@@ -13200,7 +13200,7 @@ snapshots:
     dependencies:
       react-is: 16.13.1
 
-  hono@4.12.34: {}
+  hono@4.13.5: {}
 
   hpack.js@2.1.6:
     dependencies:
