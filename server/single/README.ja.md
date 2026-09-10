@@ -486,7 +486,7 @@ Authorization Server メタデータの取得
 <a id="post-request"></a>
 #### `POST /request`
 
-認証リクエストの作成。Presentation Definition を含む認可リクエストを生成し、`openid4vp://` スキームのURIを返します。
+認証リクエストの作成。DCQL クエリを含む認可リクエストを生成し、`openid4vp://` スキームのURIを返します。
 
 **リクエストボディ (JSON):**
 ```json
@@ -512,7 +512,7 @@ Request Object を JAR 形式で作成します。
 **リクエストボディ (JSON、空でも可):**
 ```json
 {
-  "query"?: { "presentation_definition": object },
+  "query"?: { "dcql_query": object },
   "state"?: string,
   "base_url"?: string,
   "is_request_uri"?: boolean,
@@ -536,9 +536,9 @@ Request Object を JAR 形式で作成します。
 
 認証レスポンスのコールバック。Wallet から送信された Verifiable Presentation を受け取り、検証します。
 
-**リクエスト:** `application/json` または `application/x-www-form-urlencoded`
+**リクエスト:** `application/x-www-form-urlencoded`
 
-- `vp_token` (必須), `presentation_submission` (オプション), `state` (オプション)
+- `vp_token` (必須), `state` (オプション)
 
 **レスポンス:**
 - `200 OK` - `{ "redirect_uri": "{baseUrl}/verified" }`
@@ -549,7 +549,7 @@ Request Object を JAR 形式で作成します。
 
 Key Binding JWT を使用したコールバック。
 
-**リクエスト (application/x-www-form-urlencoded):** `vp_token`, `presentation_submission`, `state`
+**リクエスト (application/x-www-form-urlencoded):** `vp_token`, `state`
 
 **レスポンス:**
 - `200 OK` - `{ "redirect_uri": "{baseUrl}/verified" }`
