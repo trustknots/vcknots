@@ -51,7 +51,7 @@ sidebar_position: 21
 | [8.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2) | Response Mode | Response Mode | `v0.7.0` 以降<br />✅ `direct_post` | ⏳ `direct_post` |  |
 | [8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3) | Authorization Response | 暗号化された Authorization Response | ❌ | ⏳ |  |
 | [8.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.4) | Transaction Data | Transaction Data | `v0.7.0` 以降<br />✅ | ⏳ |  |
-| [8.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5) | Authorization Response | Authorization Error Response | ❌ | ❌ | `response_mode=direct_post` の場合のみ `response_uri` へフォームエンコードで送信。`direct_post.jwt` は未対応。 |
+| [8.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5) | Authorization Response | Authorization Error Response | ❌ | ❌ | 仕様上、`access_denied` は検証失敗、資格情報不足、およびユーザーによる共有拒否でも使用できます。現時点では `response_mode=direct_post` の場合のみ `response_uri` へフォームエンコードで送信。`direct_post.jwt` は未対応。 |
 | [10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-10) | Metadata | Wallet Metadata | ❌ | ❌ | |
 | [11](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-11) | Metadata | Verifier Metadata — `client_metadata` | `v0.7.0` 以降<br />✅ | ⏳ 解析 |  |
 | [12](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-12) | Client Authentication | Verifier Attestation JWT | ❌ | ❌ | |
