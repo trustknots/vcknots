@@ -539,7 +539,7 @@ Authorization response callback. Receives Verifiable Presentation sent from Wall
 
 **Request:** `application/x-www-form-urlencoded`
 
-- `vp_token` (required): JSON object mapping credential query IDs to VP arrays
+- `vp_token` (required): URL-encoded JSON string (produced by `JSON.stringify`) mapping credential query IDs to VP arrays; endpoints parse it with `JSON.parse`
 - `state` (required): State value issued in the authorization request, echoed back by the Wallet
 
 **Response:**
@@ -553,7 +553,7 @@ Callback using Key Binding JWT.
 
 **Request:** `application/x-www-form-urlencoded`
 
-- `vp_token` (required): JSON object mapping credential query IDs to VP arrays
+- `vp_token` (required): URL-encoded JSON string (produced by `JSON.stringify`) mapping credential query IDs to VP arrays; endpoints parse it with `JSON.parse`
 - `state` (required): State value issued in the authorization request, echoed back by the Wallet
 
 **Response:**
