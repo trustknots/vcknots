@@ -539,7 +539,8 @@ Authorization response callback. Receives Verifiable Presentation sent from Wall
 
 **Request:** `application/x-www-form-urlencoded`
 
-- `vp_token` (required), `state` (optional)
+- `vp_token` (required): JSON object mapping credential query IDs to VP arrays
+- `state` (required): State value issued in the authorization request, echoed back by the Wallet
 
 **Response:**
 - `200 OK` - `{ "redirect_uri": "{baseUrl}/verified" }`
@@ -550,7 +551,10 @@ Authorization response callback. Receives Verifiable Presentation sent from Wall
 
 Callback using Key Binding JWT.
 
-**Request (application/x-www-form-urlencoded):** `vp_token`, `state`
+**Request:** `application/x-www-form-urlencoded`
+
+- `vp_token` (required): JSON object mapping credential query IDs to VP arrays
+- `state` (required): State value issued in the authorization request, echoed back by the Wallet
 
 **Response:**
 - `200 OK` - `{ "redirect_uri": "{baseUrl}/verified" }`

@@ -288,7 +288,7 @@ Wallet から送信されたレスポンスを検証します。
 ```typescript
 // req は Wallet が送信した HTTP リクエストを表します
 const transactionId = loadFromSession() // ステップ 2 で保存した transactionId を復元
-const response = VerifierAuthorizationResponse(req.json())
+const response = VerifierAuthorizationResponse(await req.json())
 await verifier.verifyPresentations(response, transactionId)
 console.log('Verification Successful!')
 ```

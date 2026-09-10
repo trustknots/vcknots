@@ -538,7 +538,8 @@ Request Object を JAR 形式で作成します。
 
 **リクエスト:** `application/x-www-form-urlencoded`
 
-- `vp_token` (必須), `state` (オプション)
+- `vp_token` (必須): クレデンシャルクエリ ID を VP 配列にマップする JSON オブジェクト
+- `state` (必須): 認可リクエストで発行した state 値（Wallet からそのまま返される）
 
 **レスポンス:**
 - `200 OK` - `{ "redirect_uri": "{baseUrl}/verified" }`
@@ -549,7 +550,10 @@ Request Object を JAR 形式で作成します。
 
 Key Binding JWT を使用したコールバック。
 
-**リクエスト (application/x-www-form-urlencoded):** `vp_token`, `state`
+**リクエスト:** `application/x-www-form-urlencoded`
+
+- `vp_token` (必須): クレデンシャルクエリ ID を VP 配列にマップする JSON オブジェクト
+- `state` (必須): 認可リクエストで発行した state 値（Wallet からそのまま返される）
 
 **レスポンス:**
 - `200 OK` - `{ "redirect_uri": "{baseUrl}/verified" }`
