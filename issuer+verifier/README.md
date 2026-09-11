@@ -292,9 +292,12 @@ console.log('Authorization Request', scheme)
 Verify the response sent by the wallet.
 
 ```typescript
-// req represents the HTTP request submitted by wallet
+// req represents the HTTP request submitted by wallet (application/x-www-form-urlencoded)
 const transactionId = loadFromSession() // restore the transactionId saved in step 2
-const response = VerifierAuthorizationResponse(await req.json())
+const formData = await req.formData()
+const vp_token = JSON.parse(formData.get('vp_token') as string)
+const state = formData.get('state') as string
+const response = VerifierAuthorizationResponse({ vp_token, state })
 await verifier.verifyPresentations(response, transactionId)
 console.log('Verification Successful!')
 ```

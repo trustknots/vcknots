@@ -292,9 +292,12 @@ console.log('Authorization Request', scheme)
 Wallet から送信されたレスポンスを検証します。
 
 ```typescript
-// req は Wallet が送信した HTTP リクエストを表します
+// req は Wallet が送信した HTTP リクエストを表します (application/x-www-form-urlencoded)
 const transactionId = loadFromSession() // ステップ 2 で保存した transactionId を復元
-const response = VerifierAuthorizationResponse(await req.json())
+const formData = await req.formData()
+const vp_token = JSON.parse(formData.get('vp_token') as string)
+const state = formData.get('state') as string
+const response = VerifierAuthorizationResponse({ vp_token, state })
 await verifier.verifyPresentations(response, transactionId)
 console.log('Verification Successful!')
 ```
