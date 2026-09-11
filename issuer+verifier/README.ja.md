@@ -1,8 +1,14 @@
 # @trustknots/vcknots
 
+[![npm version](https://img.shields.io/npm/v/@trustknots/vcknots.svg)](https://www.npmjs.com/package/@trustknots/vcknots)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/trustknots/vcknots/blob/main/LICENSE)
+[![GitHub](https://img.shields.io/badge/GitHub-trustknots%2Fvcknots-181717?logo=github)](https://github.com/trustknots/vcknots)
+
 OpenID for Verifiable Credential Issuance (OpenID4VCI) 1.0 および OpenID for Verifiable Presentations (OpenID4VP) 1.0 を実装するための柔軟で拡張可能なライブラリです。
 
 このパッケージは Issuer と Verifier の両方のコアロジックを提供し、準拠した SSI（Self-Sovereign Identity）アプリケーションの構築を可能にします。プロバイダーベースのアーキテクチャで設計されており、ストレージ、鍵管理、その他のインフラ依存関係の実装を簡単に差し替えることができます。
+
+サポートされている仕様とクレデンシャルフォーマットの一覧は **[サポートマトリクス](https://trustknots.github.io/vcknots/docs/support-matrix)** を参照してください。
 
 ## 機能
 
@@ -49,7 +55,7 @@ const { issuer, verifier, authz } = vcknots()
 
 ## 使い方
 
-Issuer と Verifier の両方のフローに関する包括的な例と詳細な設定については、[`server/single`](https://github.com/trustknots/vcknots/tree/main/server/single) または [`server/multi`](https://github.com/trustknots/vcknots/tree/main/server/multi) ディレクトリにあるサンプル実装を参照してください。
+Issuer と Verifier の両方のフローに関する包括的な例と詳細な設定については、[`server/single`](https://github.com/trustknots/vcknots/tree/main/server/single) ディレクトリにあるサンプル実装を参照してください。
 
 ### Issuer フロー
 
@@ -148,7 +154,7 @@ OpenID4VCI の JWT proof では、`aud` は Credential Issuer Identifier と一�
 
 OpenID4VCI の [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) を使用する場合、Wallet はクレデンシャルリクエストを送信する前に `c_nonce` を取得できます。複数のクレデンシャルをリクエストする際に便利です。同一の nonce を有効期限内で再利用できます。
 
-HTTP サーバー実装で DPoP 用 nonce を返したい場合は、Authorization Server の OAuth policy store で DPoP mode を管理します。サーバー実装側でこの policy を参照すると、`POST /nonce` の JSON ボディ `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返すかどうかを制御できます。`c_nonce` と `DPoP-Nonce` は別の値です。実装例は [server/core/src/routes/issue.ts](../server/core/src/routes/issue.ts) を参照してください。
+HTTP サーバー実装で DPoP 用 nonce を返したい場合は、Authorization Server の OAuth policy store で DPoP mode を管理します。サーバー実装側でこの policy を参照すると、`POST /nonce` の JSON ボディ `c_nonce` に加えて、レスポンスヘッダー `DPoP-Nonce` を返すかどうかを制御できます。`c_nonce` と `DPoP-Nonce` は別の値です。実装例は [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts) を参照してください。
 
 Issuer メタデータに `nonce_endpoint` を設定してください:
 
@@ -319,24 +325,10 @@ const { issuer } = vcknots({
 })
 ```
 
-## 開発とテスト
-
-ユニットテストを実行するには:
-
-```bash
-pnpm test
-```
-
-統合テストを実行するには:
-
-```bash
-pnpm it
-```
-
 ## 関連プロジェクト
 
-* **Wallet 実装:** OID4VC Wallet のリファレンス実装については、このリポジトリのルートにある [`wallet`](https://github.com/trustknots/vcknots/tree/main/wallet) ディレクトリを参照してください。
-* **サーバーサンプル:** [`server/single`](https://github.com/trustknots/vcknots/tree/main/server/single) および [`server/multi`](https://github.com/trustknots/vcknots/tree/main/server/multi) ディレクトリに、Issuer と Verifier のサンプル実装があります。
+* **リファレンス Wallet:** このライブラリを使った OID4VC Wallet のリファレンス実装 — [GitHub](https://github.com/trustknots/vcknots/tree/main/wallet)
+* **サーバーサンプル:** Issuer + Verifier の動作するサーバー実装 — [GitHub](https://github.com/trustknots/vcknots/tree/main/server/single)
 
 ## コントリビューション
 

@@ -1,8 +1,14 @@
 # @trustknots/vcknots
 
+[![npm version](https://img.shields.io/npm/v/@trustknots/vcknots.svg)](https://www.npmjs.com/package/@trustknots/vcknots)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/trustknots/vcknots/blob/main/LICENSE)
+[![GitHub](https://img.shields.io/badge/GitHub-trustknots%2Fvcknots-181717?logo=github)](https://github.com/trustknots/vcknots)
+
 A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) 1.0 and OpenID for Verifiable Presentations (OID4VP) 1.0.
 
 This package provides the core logic for both Issuers and Verifiers, allowing you to build compliant SSI (Self-Sovereign Identity) applications. It is designed with a provider-based architecture, making it easy to swap out implementations for storage, key management, and other infrastructure dependencies.
+
+For the full list of supported specifications and credential formats, see the **[Support Matrix](https://trustknots.github.io/vcknots/docs/support-matrix)**.
 
 ## Features
 
@@ -49,7 +55,7 @@ For a step-by-step guide on how to use this library, please refer to our documen
 
 ## Usage
 
-For comprehensive examples and detailed configurations for both Issuer and Verifier flows, please refer to the example implementations located in the [`server/single`](https://github.com/trustknots/vcknots/tree/main/server/single) or [`server/multi`](https://github.com/trustknots/vcknots/tree/main/server/multi) directory.
+For comprehensive examples and detailed configurations for both Issuer and Verifier flows, please refer to the example implementations located in the [`server/single`](https://github.com/trustknots/vcknots/tree/main/server/single) directory.
 
 ### Issuer Flow
 
@@ -148,7 +154,7 @@ If `proofJwt` does not match the real flow, `aud` / `iss` checks may fail with `
 
 When using the [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) (OpenID4VCI), Wallets can obtain a `c_nonce` before sending credential requests. This is useful when requesting multiple credentials—a single nonce can be reused within its validity period.
 
-If your HTTP server implementation needs to expose a DPoP nonce, manage the DPoP mode in the Authorization Server OAuth policy store. Server implementations can consult this policy to decide whether `POST /nonce` should return a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values. See [server/core/src/routes/issue.ts](../server/core/src/routes/issue.ts) for an implementation example.
+If your HTTP server implementation needs to expose a DPoP nonce, manage the DPoP mode in the Authorization Server OAuth policy store. Server implementations can consult this policy to decide whether `POST /nonce` should return a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values. See [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts) for an implementation example.
 
 Set `nonce_endpoint` in your issuer metadata:
 
@@ -319,24 +325,10 @@ const { issuer } = vcknots({
 })
 ```
 
-## Developing & Testing
-
-To run the unit tests:
-
-```bash
-pnpm test
-```
-
-To run integration tests:
-
-```bash
-pnpm it
-```
-
 ## Related Projects
 
-* **Wallet Implementation:** For a reference OID4VC wallet implementation, see the [`wallet`](https://github.com/trustknots/vcknots/tree/main/wallet) directory in the root of this repository.
-* **Server Examples:** The [`server/single`](https://github.com/trustknots/vcknots/tree/main/server/single) and [`server/multi`](https://github.com/trustknots/vcknots/tree/main/server/multi) directories provide example implementations for Issuers and Verifiers.
+* **Reference Wallet:** A reference OID4VC wallet implementation built on top of this library — [GitHub](https://github.com/trustknots/vcknots/tree/main/wallet)
+* **Server Example:** A working Issuer + Verifier server implementation — [GitHub](https://github.com/trustknots/vcknots/tree/main/server/single)
 
 ## Contributing
 
