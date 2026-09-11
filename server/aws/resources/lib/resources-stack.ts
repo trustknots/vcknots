@@ -11,8 +11,8 @@ export class ResourcesStack extends cdk.Stack {
 
     const dataStores = new DataStores(this, 'DataStores');
 
-    const issuerApi = new IssuerApi(this, 'IssuerApi', dataStores);
     const authzApi = new AuthzApi(this, 'AuthzApi', dataStores);
+    const issuerApi = new IssuerApi(this, 'IssuerApi', dataStores, authzApi);
     const verifierApi = new VerifierApi(this, 'VerifierApi', dataStores);
 
     new cdk.CfnOutput(this, 'IssuerApiUrl', {

@@ -17,7 +17,7 @@ Issuer および Verifier の **実際の API 仕様・パラメーター・型�
 src/
 ├── apps/
 │   ├── create-base-app.ts      # 共通 Hono アプリファクトリ
-│   ├── create-issuer-app.ts    # Issuer アプリ（DynamoDB issuer メタデータストア + KMS 署名鍵ストア）
+│   ├── create-issuer-app.ts    # Issuer アプリ（DynamoDB issuer メタデータ / OAuth policy・client ストア、KMS issuer 署名鍵 + Authz 公開鍵ストア）
 │   ├── create-authz-app.ts     # Authorization Server アプリ（DynamoDB authz server メタデータストア）
 │   └── create-verifier-app.ts  # Verifier アプリ（DynamoDB verifier メタデータストア + KMS 署名鍵ストア）
 ├── handlers/
@@ -80,15 +80,15 @@ cp .env.example .env
 | `NONCES_TABLE_NAME` | Issuer **必須** | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
 | `PRE_CODES_TABLE_NAME` | Issuer・Authz **必須** | DynamoDB テーブル名（Issuer/Authz 共通、スタック出力: `PreCodesTableName`） |
 | `AUTH_SERVERS_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthServersTableName`） |
-| `AUTHZ_OAUTH_CLIENTS_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthzOAuthClientsTableName`） |
-| `AUTHZ_OAUTH_POLICIES_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthzOAuthPoliciesTableName`） |
+| `AUTHZ_OAUTH_CLIENTS_TABLE_NAME` | Issuer・Authz **必須** | DynamoDB テーブル名（Issuer/Authz 共通、スタック出力: `AuthzOAuthClientsTableName`） |
+| `AUTHZ_OAUTH_POLICIES_TABLE_NAME` | Issuer・Authz **必須** | DynamoDB テーブル名（Issuer/Authz 共通、スタック出力: `AuthzOAuthPoliciesTableName`） |
 | `VERIFIERS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `VerifiersTableName`） |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `RequestObjectsTableName`） |
 | `NONCES_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
 | `ISSUER_PORT` | Issuer（任意） | Issuer のリッスンポートを上書き（デフォルト: `8081`） |
 | `ISSUER_BASE_URL` | Issuer（任意） | Issuer メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{ISSUER_PORT}`） |
 | `AUTHZ_PORT` | Authz（任意） | Authorization Server のリッスンポートを上書き（デフォルト: `8082`） |
-| `AUTHZ_BASE_URL` | Authz（任意） | Authz メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{AUTHZ_PORT}`） |
+| `AUTHZ_BASE_URL` | Issuer **必須**、Authz（任意） | Issuer がアクセストークン検証と `authorization_servers` メタデータに使用する Authorization Server の issuer。トークンの `iss` と完全に一致させる（末尾スラッシュなし）。Authz メタデータで使用するベース URL も上書き（Authz のデフォルト: `http://localhost:{AUTHZ_PORT}`） |
 | `VERIFIER_PORT` | Verifier（任意） | Verifier のリッスンポートを上書き（デフォルト: `8083`） |
 | `VERIFIER_BASE_URL` | Verifier（任意） | Verifier メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{VERIFIER_PORT}`） |
 | `VERIFIER_CERTIFICATE_SECRET_PREFIX` | Verifier（任意） | Verifier 証明書を保存する Secrets Manager のシークレット名プレフィックス（デフォルト: `vcknots/verifier-certificates`）。変更する場合は `server/aws/resources` の IAM 許可も合わせて更新が必要 |
@@ -212,6 +212,7 @@ Issuer はクレデンシャル署名鍵を `kmsIssuerSignatureKeyStore()`（`@t
 - **エイリアス命名規則**: 各鍵はエイリアス `alias/vcknots/issuers/<md5(issuer)>-<alg>`（issuer 識別子の MD5 を16進数化したもの + JOSE アルゴリズム名。例: `ES256`）で参照されます。鍵ペアを指定しない場合、鍵は一度だけ作成され、以降の `save` では同じエイリアスが再利用されます。外部生成の鍵ペアをインポートする場合は、`save` を呼ぶたびに新しい KMS 鍵が作成され、エイリアスがその鍵に付け替えられます（古い鍵は削除されず残ります）。いずれの場合も追加の環境変数は不要です。
 - **対応アルゴリズム**: `ES256`・`ES384`・`RS256`・`RS512`・`PS256`・`PS512`。KMS 内での鍵生成はすべてのアルゴリズムに対応しています。外部で生成した鍵ペアのインポートは EC 系（`ES256`/`ES384`）のみ対応です — RSA 秘密鍵は RSAES_OAEP_SHA_256 のラップ上限を超えるため `RSA_AES_KEY_WRAP` が必要になりますが、これは未実装です（Google Cloud プロバイダと同じ制限）。
 - **必要な IAM 権限**（CDK スタックが Issuer Lambda ロールに付与）: `kms:CreateKey`・`kms:TagResource`・`kms:CreateAlias`・`kms:UpdateAlias`・`kms:DescribeKey`・`kms:GetPublicKey`・`kms:Sign`・`kms:GetParametersForImport`・`kms:ImportKeyMaterial`・`kms:ScheduleKeyDeletion`。ローカル実行時は AWS プロファイルに同等の権限が必要です。プロバイダが作成する鍵にはすべてタグ（`vcknots:issuer-signature-key=true`）が付与されます。新規作成直後の鍵にはまだエイリアスが無く、エイリアスによる権限の絞り込みができないため、CDK スタックはこのタグを使って鍵本体への`CreateAlias`/`UpdateAlias`を認可しています。
+- **Authz 公開鍵**: `/credentials` は Authorization Server が署名したアクセストークンを検証するため、Issuer は `kmsAuthzSignatureKeyStore()` も登録します。CDK スタックは `alias/vcknots/authz/*` に対して `kms:DescribeKey` と `kms:GetPublicKey` のみを付与します（`grantSignatureKeyPublicKeyAccess()`）。Authz 鍵への CreateKey / Sign は Authz ロールに残します。
 
 ## Verifier の署名鍵（AWS KMS）
 
@@ -246,9 +247,9 @@ Authorization Server はアクセストークン / レスポンスの署名鍵�
 
 - **エイリアス命名規則**: 各鍵はエイリアス `alias/vcknots/authz/<md5(issuer)>-<alg>`（authorization server の issuer URL の MD5 を16進数化したもの + JOSE アルゴリズム名）で参照されます。鍵は authorization server の登録時（`createAuthzServerMetadata`）に、常に `ES256` で作成されます（`create-authz-app.ts` はカスタムの `alg` を渡していません）。追加の環境変数は不要です。
 - **対応アルゴリズム**: Issuer・Verifier と同じです — KMS 内での生成は `ES256`・`ES384`・`RS256`・`RS512`・`PS256`・`PS512`、外部生成の鍵ペアのインポートは EC 系（`ES256`/`ES384`）のみ対応です。
-- **必要な IAM 権限**（CDK スタックが Authz Lambda ロールに付与）: Issuer・Verifier と同じアクション一式を、`alias/vcknots/authz/*` 名前空間と `vcknots:authz-signature-key=true` タグの付いた鍵にスコープを絞って付与しています。
+- **必要な IAM 権限**（CDK スタックが Authz Lambda ロールに付与）: Issuer・Verifier と同じアクション一式を、`alias/vcknots/authz/*` 名前空間と `vcknots:authz-signature-key=true` タグの付いた鍵にスコープを絞って付与しています。Issuer ロールはこの名前空間に対して `DescribeKey`/`GetPublicKey` も持ち、`/credentials` が Authz 発行トークンを検証できるようにしています。Authz 鍵の作成や署名はできません。
 - **ストア間のズレ**: authz サーバーメタデータは DynamoDB、鍵は KMS と別ストアにあるため、両者がズレることがあります（インメモリ鍵ストアで動かしていた環境を KMS に向けた場合に起こりやすいです）。`createAuthzServerMetadata` は登録済みの authorization server を弾くため自動修復できず、Authorization Server は起動時に警告を出して処理を続行します（`Authz server metadata exists but no <alg> key is registered in KMS`）。復旧は手動で、authorization server を最初に登録する手順と同じです。**登録処理はローカル起動時にしか実行されない**点に注意してください: `handlers/authz.ts` は `AWS_LAMBDA_FUNCTION_NAME` が設定されていると `initialize()` をスキップし、authorization server を登録する HTTP エンドポイントも存在しないため、デプロイ済みの Lambda が自力で登録することはありません。
-- **OAuth policy**: ローカルの `start:authz` は `server/samples/oauth-server.json` の `authorization_server` オブジェクトを Authz OAuth policies テーブル（`AUTHZ_OAUTH_POLICIES_TABLE_NAME`）へも投入します。ポリシーが未登録の場合のみ挿入し、既存のポリシーは上書きしません。authz metadata が既にあってもこの処理は走ります。デプロイ済み Authz Lambda はポリシーをシードしないので、同じテーブルに対して `start:authz` を一度実行するか、アイテムを手動で書いてください。同梱のサンプルは `default_client`・`anonymous_client` の両方で `senderConstrainedAccessToken.dpop.mode` を `optional` に設定しているため、Token Endpoint が DPoP を受け付けるようになります。ただし Credential Endpoint は Issuer 側の provider registry を通して同じポリシーを解決しており、`create-issuer-app.ts` はまだ DynamoDB のポリシーストアを登録していないため、空のインメモリストアを読んで DPoP を `off` として扱う点に注意してください。
+- **OAuth policy**: ローカルの `start:authz` は `server/samples/oauth-server.json` の `authorization_server` オブジェクトを Authz OAuth policies テーブル（`AUTHZ_OAUTH_POLICIES_TABLE_NAME`）へも投入します。ポリシーが未登録の場合のみ挿入し、既存のポリシーは上書きしません。authz metadata が既にあってもこの処理は走ります。デプロイ済み Authz Lambda はポリシーをシードしないので、同じテーブルに対して `start:authz` を一度実行するか、アイテムを手動で書いてください。同梱のサンプルは `default_client`・`anonymous_client` の両方で `senderConstrainedAccessToken.dpop.mode` を `optional` に設定しています。Issuer は同じ policy / client テーブルを読みます（シードはしません）。Credential・nonce エンドポイントの DPoP 解決が Authz の `/token` と同じテーブルを参照するようにするためです。
 - **OAuth client**: ローカルの `start:authz` は `server/samples/oauth-clients.json` を Authz OAuth clients テーブル（`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`）へも投入します。`client_id` ごとに未登録のものだけ挿入し、既存行は上書きしません。authz metadata が既にあってもこの処理は走ります。デプロイ済み Authz Lambda は client をシードしないので、同じテーブルに対して `start:authz` を一度実行するか、アイテムを手動で書いてください。
 
   `initialize()` は常に同梱の `server/samples/authorization_metadata.json` を登録するため、以下の手順は**その authorization server が持っていたメタデータを置き換えます**。サンプルメタデータで動かしている authorization server にのみ適用してください。

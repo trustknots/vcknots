@@ -103,3 +103,28 @@ export function grantSignatureKeyStoreAccess(
     }),
   );
 }
+
+/**
+ * Grants a Lambda role DescribeKey + GetPublicKey on another store's alias namespace.
+ *
+ * Used by the Issuer to fetch the Authorization Server's public key when verifying
+ * access tokens. CreateKey / Sign stay on the owning role — do not call
+ * grantSignatureKeyStoreAccess() for this cross-store read.
+ */
+export function grantSignatureKeyPublicKeyAccess(
+  scope: Construct,
+  role: iam.IRole,
+  aliasPrefix: string,
+): void {
+  role.addToPrincipalPolicy(
+    new iam.PolicyStatement({
+      actions: ['kms:DescribeKey', 'kms:GetPublicKey'],
+      resources: ['*'],
+      conditions: {
+        'ForAnyValue:StringLike': {
+          'kms:ResourceAliases': `${aliasPrefix}*`,
+        },
+      },
+    }),
+  );
+}
