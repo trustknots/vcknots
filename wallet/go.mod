@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/btcsuite/btcd/btcutil v1.2.0
-	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.11.1
