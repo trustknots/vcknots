@@ -23,11 +23,16 @@ const C_NONCE_TTL_MS = 2 * 60 * 1000
 const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
 const PRE_CODE_TTL_SEC = 10 * 60
 
-export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
+export const createIssueRouter = (
+  context: VcknotsContext,
+  baseUrl: string,
+  options?: { authzIssuer?: string }
+) => {
   const issueApp = new Hono()
 
   const issuerFlow = initializeIssuerFlow(context)
   const authzFlow = initializeAuthzFlow(context)
+  const authz = AuthorizationServerIssuer(options?.authzIssuer ?? baseUrl)
   const realm = baseUrl
 
   const unauthorized = (
@@ -171,7 +176,6 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
 
     try {
       const issuer = CredentialIssuer(baseUrl)
-      const authz = AuthorizationServerIssuer(baseUrl)
 
       let authorizationContext: CredentialEndpointAuthorizationContext
       try {
@@ -291,7 +295,6 @@ export const createIssueRouter = (context: VcknotsContext, baseUrl: string) => {
   issueApp.post('/nonce', async (c) => {
     try {
       const cnonce = await issuerFlow.createNonce(C_NONCE_TTL_MS)
-      const authz = AuthorizationServerIssuer(baseUrl)
       const dpopMode = await authzFlow.resolveAuthzPolicyDpopMode(authz, 'default_client')
       const headers: Record<string, string> = {
         'Cache-Control': 'no-store',

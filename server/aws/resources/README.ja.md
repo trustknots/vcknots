@@ -20,7 +20,7 @@ server/aws/
 │   │   ├── authz.ts       Lambda ハンドラ（Authz）
 │   │   └── verifier.ts    Lambda ハンドラ（Verifier）
 │   ├── apps/
-│   │   ├── create-issuer-app.ts   Issuer アプリ（DynamoDB issuer メタデータストア、KMS 署名鍵ストア）
+│   │   ├── create-issuer-app.ts   Issuer アプリ（DynamoDB issuer メタデータ / OAuth policy・client ストア、KMS issuer 署名鍵 + Authz 公開鍵ストア）
 │   │   ├── create-authz-app.ts    Authorization Server アプリ（DynamoDB authz メタデータストア、KMS 署名鍵ストア）
 │   │   └── create-verifier-app.ts Verifier アプリ（DynamoDB verifier メタデータストア、KMS 署名鍵ストア、Secrets Manager 証明書ストア）
 │   ├── context/
@@ -66,7 +66,7 @@ ResourcesStack
 | `authz.ts` | `@trustknots/server-core/routes/authz` |
 | `verifier.ts` | `@trustknots/server-core/routes/verify` |
 
-Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSignatureKeyStore` を、Authorization Server は `dynamodbAuthzServerMetadataStore` と `kmsAuthzSignatureKeyStore` を、Verifier は `dynamodbVerifierMetadataStore`、`kmsVerifierSignatureKeyStore`、`secretsManagerVerifierCertificateStore` を使用します。
+Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore`、`kmsIssuerSignatureKeyStore`、および公開鍵取得用の `kmsAuthzSignatureKeyStore` を、Authorization Server は `dynamodbAuthzServerMetadataStore` と `kmsAuthzSignatureKeyStore` を、Verifier は `dynamodbVerifierMetadataStore`、`kmsVerifierSignatureKeyStore`、`secretsManagerVerifierCertificateStore` を使用します。
 
 未処理エラーは `utils/error-logger.ts`（`sanitizeError`）経由でログ出力され、CloudWatch には安全なフィールドのみが記録されます。
 
@@ -89,7 +89,7 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSig
 
 | Lambda | ロググループ（`{stage}` = `API_STAGE`） | REST API 名 | 環境変数 |
 |---|---|---|---|
-| Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`、`NONCES_TABLE_NAME`、`PRE_CODES_TABLE_NAME`、`TX_CODE_PEPPER` |
+| Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`、`NONCES_TABLE_NAME`、`PRE_CODES_TABLE_NAME`、`AUTHZ_BASE_URL`、`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`、`AUTHZ_OAUTH_POLICIES_TABLE_NAME`、`TX_CODE_PEPPER` |
 | Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`、`PRE_CODES_TABLE_NAME`、`TX_CODE_PEPPER` |
 | Verifier | `/vcknots/{stage}/verifier` | `vcknots-verifier-{stage}` | `VERIFIERS_TABLE_NAME`、`REQUEST_OBJECTS_TABLE_NAME`、`NONCES_TABLE_NAME`、`VERIFIER_CERTIFICATE_SECRET_PREFIX` |
 
@@ -120,7 +120,7 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore` と `kmsIssuerSig
 
 | Lambda | DynamoDB アクセス |
 |---|---|
-| Issuer | IssuersTable、NoncesTable（読み書き）；PreCodesTable（書き込みのみ） |
+| Issuer | IssuersTable、NoncesTable（読み書き）；PreCodesTable（書き込みのみ）；AuthzOAuthClientsTable、AuthzOAuthPoliciesTable（読み取りのみ） |
 | Authz | AuthServersTable、PreCodesTable（読み書き） |
 | Verifier | VerifiersTable、RequestObjectsTable、NoncesTable（読み書き） |
 
@@ -142,6 +142,8 @@ Issuer ロール・Authz ロール・Verifier ロールには署名鍵ストア�
 | Issuer | `alias/vcknots/issuers/*` | `vcknots:issuer-signature-key=true` |
 | Authz | `alias/vcknots/authz/*` | `vcknots:authz-signature-key=true` |
 | Verifier | `alias/vcknots/verifiers/*` | `vcknots:verifier-signature-key=true` |
+
+Issuer ロールには `grantSignatureKeyPublicKeyAccess()` により `alias/vcknots/authz/*` への `DescribeKey`・`GetPublicKey` も付与されます。`/credentials` が Authz 発行のアクセストークンを検証するためです。Authz 鍵への CreateKey / Sign は Authz ロールに残します。
 
 Verifier ロールには `secretsManagerVerifierCertificateStore` 用にスコープを絞った Secrets Manager ポリシーも付与されています（`lib/construct/api/verifier-api.ts` 参照）。`CreateSecret` は Secrets Manager 側にリソースレベル権限がなく、リクエスト時点ではシークレットの ARN がまだ存在しないため、`Resource: '*'` に `secretsmanager:Name` 条件（`vcknots/verifier-certificates/*` に限定）を組み合わせて付与しています。`PutSecretValue`/`GetSecretValue` は別ステートメントとして `secret:vcknots/verifier-certificates/*` に限定して付与しています。末尾のワイルドカードは、Secrets Manager がすべてのシークレット ARN にランダムな6文字のサフィックスを付与するため必須です。プレフィックス定数は construct と `aws/src/providers/secrets-manager.ts` の2箇所に存在しますが、Lambda には `VERIFIER_CERTIFICATE_SECRET_PREFIX` として渡されるため両者がずれることはありません。シークレットは `aws/secretsmanager` マネージドキーで暗号化されるため、KMS 権限の付与は不要です。
 
