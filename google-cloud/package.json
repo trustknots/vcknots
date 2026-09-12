@@ -28,7 +28,7 @@
 		"@trustknots/vcknots": "workspace:*",
 		"ecdsa-sig-formatter": "1.0.11",
 		"firebase-admin": "14.1.0",
-		"jose": "6.2.10",
+		"jose": "6.2.12",
 		"zod": "4.4.3"
 	}
 }
