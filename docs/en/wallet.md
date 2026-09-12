@@ -9,7 +9,7 @@ This tutorial explains how to set up the VCKnots wallet library (a Go library), 
 The wallet implements the OpenID for Verifiable Credentials specifications:
 
 * **Receiving credentials (OID4VCI):** the wallet obtains a credential from an issuer using a credential offer and the pre-authorized code flow.
-* **Presenting credentials (OID4VP):** the wallet responds to an `openid4vp://` authorization request and submits a Verifiable Presentation to a verifier.
+* **Presenting credentials (OID4VP):** the wallet responds to an `openid4vp:` authorization request and submits a Verifiable Presentation to a verifier.
 
 Both **JWT-VC** (`application/vc+jwt`) and **SD-JWT VC** (`application/dc+sd-jwt`) are supported for receiving and presenting, including selective disclosure and Key Binding JWT for SD-JWT VC.
 

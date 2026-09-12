@@ -9,7 +9,7 @@ sidebar_position: 13
 wallet は OpenID for Verifiable Credentials の各仕様を実装しています。
 
 * **Credential の受領（OID4VCI）:** Credential Offer と pre-authorized code フローを使って、Issuer から Credential を受け取ります。
-* **Credential の提示（OID4VP）:** `openid4vp://` 形式の Authorization Request に応答し、Verifiable Presentation を Verifier に送信します。
+* **Credential の提示（OID4VP）:** `openid4vp:` 形式の Authorization Request に応答し、Verifiable Presentation を Verifier に送信します。
 
 受領と提示のどちらも **JWT-VC**（`application/vc+jwt`）と **SD-JWT VC**（`application/dc+sd-jwt`）に対応しています。
 SD-JWT VC では選択的開示と Key Binding JWT も利用できます。
