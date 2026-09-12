@@ -9,7 +9,7 @@ sidebar_position: 13
 wallet は OpenID for Verifiable Credentials の各仕様を実装しています。
 
 * **Credential の受領（OID4VCI）:** Credential Offer と pre-authorized code フローを使って、Issuer から Credential を受け取ります。
-* **Credential の提示（OID4VP）:** `openid4vp://` 形式の Authorization Request に応答し、Verifiable Presentation を Verifier に送信します。
+* **Credential の提示（OID4VP）:** `openid4vp:` 形式の Authorization Request に応答し、Verifiable Presentation を Verifier に送信します。
 
 受領と提示のどちらも **JWT-VC**（`application/vc+jwt`）と **SD-JWT VC**（`application/dc+sd-jwt`）に対応しています。
 SD-JWT VC では選択的開示と Key Binding JWT も利用できます。
@@ -346,7 +346,7 @@ func receiveSDJwtCredential(w *wallet.Wallet, key wallet.IKeyEntry, offerURI str
 
 ### 3-3. Credentialの提示 (OpenID4VP)
 
-Verifier から `openid4vp://authorize?...` 形式のリクエスト URI を受け取ったら（通常は QR コードのスキャンで取得します。ローカルのサンプルサーバーでは `POST /request` または `POST /request-object` で作成できます）、`PresentCredential` を呼び出します。
+Verifier から `openid4vp:?...` 形式のリクエスト URI を受け取ったら（通常は QR コードのスキャンで取得します。ローカルのサンプルサーバーでは `POST /request` または `POST /request-object` で作成できます）、`PresentCredential` を呼び出します。
 
 ```go
 import (
@@ -530,7 +530,7 @@ func (w *Wallet) PresentCredential(uriString string, key IKeyEntry, options seri
 ```
 
 **パラメータ**:
-- `uriString`: OID4VP リクエスト URI（`openid4vp://authorize?...`）
+- `uriString`: OID4VP リクエスト URI（`openid4vp:?...`）
 - `key`: Presentation の署名に使用する鍵（[IKeyEntry](#IKeyEntry)）
 - `options`: フォーマット固有の提示オプション（SD-JWT VC では [SdJwtVcPresentationOptions](#SdJwtVcPresentationOptions)）。`nil` を渡すと、その Credential のフォーマットのデフォルトが使われます
 
@@ -546,7 +546,7 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 ```
 
 **パラメータ**:
-- `uriString`: OID4VP リクエスト URI（`openid4vp://authorize?...`）
+- `uriString`: OID4VP リクエスト URI（`openid4vp:?...`）
 - `key`: Presentation の署名に使用する鍵（[IKeyEntry](#IKeyEntry)）
 - `options`: シリアライズオプションとリダイレクトコールバック（[PresentCredentialOptions](#PresentCredentialOptions)）
 

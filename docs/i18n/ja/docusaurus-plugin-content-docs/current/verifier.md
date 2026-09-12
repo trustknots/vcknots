@@ -59,7 +59,7 @@ const verifierFlow = initializeVerifierFlow(context);
 
 ### 1. Authorizationリクエストの作成
 
-Verifier が Wallet に提示を依頼するための認可リクエスト（openid4vp://authorize?...）を生成します。
+Verifier が Wallet に提示を依頼するための認可リクエスト（openid4vp:?...）を生成します。
 
 #### 1-1. 基本的な認可リクエスト
 
@@ -71,7 +71,7 @@ Verifier が Wallet に提示を依頼するための認可リクエスト（ope
   - `state` (string, 必須): 認可リクエストとレスポンスを紐づける識別子。予測困難なランダム値を指定すること。
   - `client_id` (string, 任意): Verifier の client_id を prefix:value 形式で指定。省略時は redirect_uri:localhost が使用されます。
 - **レスポンス**
-  - `200 OK`: テキストで `openid4vp://authorize?...` 形式の認可リクエスト URL を返却。
+  - `200 OK`: テキストで `openid4vp:?...` 形式の認可リクエスト URL を返却。
   - `400 Bad Request`: `credentialId` 、 `state`未指定時など。
 
 - **実際のコード**
@@ -142,7 +142,7 @@ verifyApp.post('/request', async (c) => {
         return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
       })
       .join('&')
-      return c.text(`openid4vp://authorize?${encoded}`)
+      return c.text(`openid4vp:?${encoded}`)
   } catch (err) {
     const errorResponse = handleError(err)
     const status = errorResponse.error === 'internal_server_error' ? 500 : 400
@@ -167,7 +167,7 @@ curl --location 'http://localhost:8080/request' \
 **レスポンス**
 
 ```
-openid4vp://authorize?response_type=vp_token&client_id=redirect_uri%3Alocalhost&state=example-state&client_metadata=...&nonce=cf0736e6f68d4bf094b38850169e8c04&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%220d67e47b-a5f0-48ae-b880-60b94c61fbfd%22%2C%22require_cryptographic_holder_binding%22%3Atrue%2C%22multiple%22%3Afalse%2C%22format%22%3A%22jwt_vc_json%22%2C%22meta%22%3A%7B%22type_values%22%3A%5B%5B%22UniversityDegreeCredential%22%5D%5D%7D%7D%5D%7D
+openid4vp:?response_type=vp_token&client_id=redirect_uri%3Alocalhost&state=example-state&client_metadata=...&nonce=cf0736e6f68d4bf094b38850169e8c04&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%220d67e47b-a5f0-48ae-b880-60b94c61fbfd%22%2C%22require_cryptographic_holder_binding%22%3Atrue%2C%22multiple%22%3Afalse%2C%22format%22%3A%22jwt_vc_json%22%2C%22meta%22%3A%7B%22type_values%22%3A%5B%5B%22UniversityDegreeCredential%22%5D%5D%7D%7D%5D%7D
 ```
 
 
@@ -184,7 +184,7 @@ openid4vp://authorize?response_type=vp_token&client_id=redirect_uri%3Alocalhost&
   - `is_transaction_data` (boolean, 任意): `true` の場合 transaction_data を付与（デフォルト: `false`）。
   - `response_uri` (string, 任意): Wallet がレスポンスを送信するコールバック URI。省略時は `${baseUrl}/callback`。
 - **レスポンス**
-  - `200 OK`: テキストで `openid4vp://authorize?...` 形式の認可リクエスト URL を返却（`request_uri` 情報を含みます）。
+  - `200 OK`: テキストで `openid4vp:?...` 形式の認可リクエスト URL を返却（`request_uri` 情報を含みます）。
   - `400 Bad Request`: JSON が不正な場合など、リクエスト内容に問題があるとき。
 
 - 実際のコード
@@ -273,7 +273,7 @@ verifyApp.post('/request-object', async (c) => {
         return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
       })
       .join('&')
-    return c.text(`openid4vp://authorize?${encoded}`)
+    return c.text(`openid4vp:?${encoded}`)
   } catch (err) {
     if (reserved?.ok) {
       vpAudTx.consume(requestObject.state)
@@ -319,7 +319,7 @@ curl --location 'http://localhost:8080/request-object' \
 
 **レスポンス**
 ```
-openid4vp://authorize?client_id=x509_san_dns%3Alocalhost&request_uri=http%3A%2F%2Flocalhost%3A8080%2Frequest.jwt%2F98feadd6e5d94254b91b132f4de0782e
+openid4vp:?client_id=x509_san_dns%3Alocalhost&request_uri=http%3A%2F%2Flocalhost%3A8080%2Frequest.jwt%2F98feadd6e5d94254b91b132f4de0782e
 ```
 
 

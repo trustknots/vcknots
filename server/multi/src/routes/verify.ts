@@ -100,7 +100,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         })
         .join('&')
 
-      return c.text(`openid4vp://authorize?${encoded}`)
+      return c.text(`openid4vp:?${encoded}`)
     } catch (err) {
       return c.json(handleError(err), 400)
     }
@@ -223,7 +223,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         })
         .join('&')
 
-      return c.text(`openid4vp://authorize?${encoded}`)
+      return c.text(`openid4vp:?${encoded}`)
     } catch (err) {
       return c.json(handleError(err), 400)
     }

@@ -487,7 +487,7 @@ The following illustrates typical fields on the single server. During initializa
 <a id="post-request"></a>
 #### `POST /request`
 
-Create authorization request. Generates an authorization request using a DCQL query and returns a URI with the `openid4vp://` scheme.
+Create authorization request. Generates an authorization request using a DCQL query and returns text in the `openid4vp:?{encoded_params}` format.
 
 **Request Body (JSON):**
 ```json
@@ -502,7 +502,7 @@ Create authorization request. Generates an authorization request using a DCQL qu
 - `redirect_uri:{uri}` - Redirect URI-based identifier
 
 **Response:**
-- `200 OK` - Text in the format `openid4vp://authorize?{encoded_params}`
+- `200 OK` - Text in the format `openid4vp:?{encoded_params}`
 - `400 Bad Request` - Invalid request (e.g., `credentialId` not specified)
 
 <a id="post-request-object"></a>
@@ -529,7 +529,7 @@ Create Request Object in JAR format.
 - Default: `"x509_san_dns:localhost"`
 
 **Response:**
-- `200 OK` - Text in the format `openid4vp://authorize?{encoded_params}`
+- `200 OK` - Text in the format `openid4vp:?{encoded_params}`
 - `400 Bad Request` - Invalid request
 
 <a id="post-callback"></a>
