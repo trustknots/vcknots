@@ -487,7 +487,7 @@ The following illustrates typical fields on the single server. During initializa
 <a id="post-request"></a>
 #### `POST /request`
 
-Create authorization request. Generates an authorization request using a DCQL query and returns a URI with the `openid4vp://` scheme.
+Create authorization request. Generates an authorization request using a DCQL query and returns text in the `openid4vp:?{encoded_params}` format.
 
 **Request Body (JSON):**
 ```json

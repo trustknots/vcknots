@@ -486,7 +486,7 @@ Authorization Server メタデータの取得
 <a id="post-request"></a>
 #### `POST /request`
 
-認証リクエストの作成。DCQL クエリを含む認可リクエストを生成し、`openid4vp://` スキームのURIを返します。
+認証リクエストの作成。DCQL クエリを含む認可リクエストを生成し、`openid4vp:?{encoded_params}` 形式のテキストを返します。
 
 **リクエストボディ (JSON):**
 ```json
