@@ -502,7 +502,7 @@ Create authorization request. Generates an authorization request using a DCQL qu
 - `redirect_uri:{uri}` - Redirect URI-based identifier
 
 **Response:**
-- `200 OK` - Text in the format `openid4vp://authorize?{encoded_params}`
+- `200 OK` - Text in the format `openid4vp:?{encoded_params}`
 - `400 Bad Request` - Invalid request (e.g., `credentialId` not specified)
 
 <a id="post-request-object"></a>
@@ -529,7 +529,7 @@ Create Request Object in JAR format.
 - Default: `"x509_san_dns:localhost"`
 
 **Response:**
-- `200 OK` - Text in the format `openid4vp://authorize?{encoded_params}`
+- `200 OK` - Text in the format `openid4vp:?{encoded_params}`
 - `400 Bad Request` - Invalid request
 
 <a id="post-callback"></a>

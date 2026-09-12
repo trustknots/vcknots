@@ -14,7 +14,7 @@ package main
 // Mode 2: Conformance Test (with OID4VP URI argument)
 //   - Tests against external conformance test services
 //   - Usage: go run server_integration_sdjwt.go "<OID4VP_URI>"
-//   - Example: go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_uri=..."
+//   - Example: go run server_integration_sdjwt.go "openid4vp:?client_id=...&request_uri=..."
 //
 // Mode 1 flow: receive SD-JWT VC via OID4VCI from local issuer -> present via OID4VP to local verifier.
 // Mode 2 flow: load credential from file -> present via OID4VP to external verifier.

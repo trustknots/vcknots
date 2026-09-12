@@ -146,7 +146,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         })
         .join('&')
 
-      return c.text(`openid4vp://authorize?${encoded}`)
+      return c.text(`openid4vp:?${encoded}`)
     } catch (err) {
       const errorResponse = handleError(err)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400
@@ -361,7 +361,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         })
         .join('&')
 
-      return c.text(`openid4vp://authorize?${encoded}`)
+      return c.text(`openid4vp:?${encoded}`)
     } catch (err) {
       if (reserved?.ok) {
         vpAudTx.consume(requestObject.state)

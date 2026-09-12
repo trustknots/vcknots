@@ -330,7 +330,7 @@ Notes on `ReceiveCredentialRequest`:
 
 ### 3-3. Presenting a Credential (OpenID4VP)
 
-After receiving a request URI in the form `openid4vp://authorize?...` from the verifier (typically by scanning a QR code; with the local sample server, via `POST /request` or `POST /request-object`), call `PresentCredential`:
+After receiving a request URI in the form `openid4vp:?...` from the verifier (typically by scanning a QR code; with the local sample server, via `POST /request` or `POST /request-object`), call `PresentCredential`:
 
 ```go
 import (
@@ -506,7 +506,7 @@ func (w *Wallet) PresentCredential(uriString string, key IKeyEntry, options seri
 ```
 
 **Parameters**:
-- `uriString`: The OID4VP request URI (`openid4vp://authorize?...`)
+- `uriString`: The OID4VP request URI (`openid4vp:?...`)
 - `key`: The key used to sign the presentation ([IKeyEntry](#IKeyEntry))
 - `options`: Format-specific presentation options (for SD-JWT VC, [SdJwtVcPresentationOptions](#SdJwtVcPresentationOptions)); pass `nil` to use the defaults for the credential's format
 
@@ -522,7 +522,7 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 ```
 
 **Parameters**:
-- `uriString`: The OID4VP request URI (`openid4vp://authorize?...`)
+- `uriString`: The OID4VP request URI (`openid4vp:?...`)
 - `key`: The key used to sign the presentation ([IKeyEntry](#IKeyEntry))
 - `options`: Serialization options and redirect callback ([PresentCredentialOptions](#PresentCredentialOptions))
 

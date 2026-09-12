@@ -346,7 +346,7 @@ func receiveSDJwtCredential(w *wallet.Wallet, key wallet.IKeyEntry, offerURI str
 
 ### 3-3. Credentialの提示 (OpenID4VP)
 
-Verifier から `openid4vp://authorize?...` 形式のリクエスト URI を受け取ったら（通常は QR コードのスキャンで取得します。ローカルのサンプルサーバーでは `POST /request` または `POST /request-object` で作成できます）、`PresentCredential` を呼び出します。
+Verifier から `openid4vp:?...` 形式のリクエスト URI を受け取ったら（通常は QR コードのスキャンで取得します。ローカルのサンプルサーバーでは `POST /request` または `POST /request-object` で作成できます）、`PresentCredential` を呼び出します。
 
 ```go
 import (
@@ -530,7 +530,7 @@ func (w *Wallet) PresentCredential(uriString string, key IKeyEntry, options seri
 ```
 
 **パラメータ**:
-- `uriString`: OID4VP リクエスト URI（`openid4vp://authorize?...`）
+- `uriString`: OID4VP リクエスト URI（`openid4vp:?...`）
 - `key`: Presentation の署名に使用する鍵（[IKeyEntry](#IKeyEntry)）
 - `options`: フォーマット固有の提示オプション（SD-JWT VC では [SdJwtVcPresentationOptions](#SdJwtVcPresentationOptions)）。`nil` を渡すと、その Credential のフォーマットのデフォルトが使われます
 
@@ -546,7 +546,7 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 ```
 
 **パラメータ**:
-- `uriString`: OID4VP リクエスト URI（`openid4vp://authorize?...`）
+- `uriString`: OID4VP リクエスト URI（`openid4vp:?...`）
 - `key`: Presentation の署名に使用する鍵（[IKeyEntry](#IKeyEntry)）
 - `options`: シリアライズオプションとリダイレクトコールバック（[PresentCredentialOptions](#PresentCredentialOptions)）
 

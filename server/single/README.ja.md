@@ -501,7 +501,7 @@ Authorization Server メタデータの取得
 - `redirect_uri:{uri}` - リダイレクトURIベースの識別子
 
 **レスポンス:**
-- `200 OK` - `openid4vp://authorize?{encoded_params}` 形式のテキスト
+- `200 OK` - `openid4vp:?{encoded_params}` 形式のテキスト
 - `400 Bad Request` - リクエストが無効な場合（例: `credentialId` 未指定）
 
 <a id="post-request-object"></a>
@@ -528,7 +528,7 @@ Request Object を JAR 形式で作成します。
 - デフォルト: `"x509_san_dns:localhost"`
 
 **レスポンス:**
-- `200 OK` - `openid4vp://authorize?{encoded_params}` 形式のテキスト
+- `200 OK` - `openid4vp:?{encoded_params}` 形式のテキスト
 - `400 Bad Request` - リクエストが無効な場合
 
 <a id="post-callback"></a>

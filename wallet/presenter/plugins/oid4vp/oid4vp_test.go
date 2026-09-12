@@ -271,6 +271,12 @@ func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
 		wantErr bool
 	}{
 		{
+			name:    "Query parameters without authority",
+			uri:     "openid4vp:?client_id=redirect_uri:http://example.com/callback&response_type=vp_token&nonce=test-nonce&dcql_query=" + testDcqlQueryParam + "&response_mode=direct_post&response_uri=https://example.com/response",
+			setup:   nil,
+			wantErr: false,
+		},
+		{
 			name:    "Query parameters",
 			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/callback&response_type=vp_token&nonce=test-nonce&dcql_query=" + testDcqlQueryParam + "&response_mode=direct_post&response_uri=https://example.com/response",
 			setup:   nil,

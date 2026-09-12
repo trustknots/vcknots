@@ -59,7 +59,7 @@ Introduction:
 
 ### 1. Creating an Authorization Request
 
-The Verifier generates an authorization request (openid4vp://authorize?...) to ask the Wallet to present credentials.
+The Verifier generates an authorization request (openid4vp:?...) to ask the Wallet to present credentials.
 
 #### 1-1. Basic Authorization Request
 
@@ -71,7 +71,7 @@ This endpoint uses an authorization request format compliant with OAuth 2.0.
   - `state` (string, required): Identifier that links the authorization request to the response. Must be a random, hard-to-predict value.
   - `client_id` (string, optional): Specifies the Verifier's client_id in `prefix:value` format. Defaults to `redirect_uri:localhost` if omitted.
 - **Response**
-  - `200 OK`: Returns an authorization request URL in the `openid4vp://authorize?...` format as text.
+  - `200 OK`: Returns an authorization request URL in the `openid4vp:?...` format as text.
   - `400 Bad Request`: For example, when `credentialId` or `state` is not specified.
 
 - **Actual code**
@@ -142,7 +142,7 @@ verifyApp.post('/request', async (c) => {
         return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
       })
       .join('&')
-      return c.text(`openid4vp://authorize?${encoded}`)
+      return c.text(`openid4vp:?${encoded}`)
   } catch (err) {
     const errorResponse = handleError(err)
     const status = errorResponse.error === 'internal_server_error' ? 500 : 400
@@ -167,7 +167,7 @@ curl --location 'http://localhost:8080/request' \
 **Response**
 
 ```
-openid4vp://authorize?response_type=vp_token&client_id=redirect_uri%3Alocalhost&state=example-state&client_metadata=...&nonce=cf0736e6f68d4bf094b38850169e8c04&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%220d67e47b-a5f0-48ae-b880-60b94c61fbfd%22%2C%22require_cryptographic_holder_binding%22%3Atrue%2C%22multiple%22%3Afalse%2C%22format%22%3A%22jwt_vc_json%22%2C%22meta%22%3A%7B%22type_values%22%3A%5B%5B%22UniversityDegreeCredential%22%5D%5D%7D%7D%5D%7D
+openid4vp:?response_type=vp_token&client_id=redirect_uri%3Alocalhost&state=example-state&client_metadata=...&nonce=cf0736e6f68d4bf094b38850169e8c04&response_mode=direct_post&response_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%220d67e47b-a5f0-48ae-b880-60b94c61fbfd%22%2C%22require_cryptographic_holder_binding%22%3Atrue%2C%22multiple%22%3Afalse%2C%22format%22%3A%22jwt_vc_json%22%2C%22meta%22%3A%7B%22type_values%22%3A%5B%5B%22UniversityDegreeCredential%22%5D%5D%7D%7D%5D%7D
 ```
 
 
@@ -184,7 +184,7 @@ This endpoint uses a JWT Authorization Request (JAR) to generate and store a Req
   - `is_transaction_data` (boolean, optional): If `true`, attaches transaction_data (default: `false`).
   - `response_uri` (string, optional): Callback URI for the Wallet to send the response. Defaults to `${baseUrl}/callback` if omitted.
 - **Response**
-  - `200 OK`: Returns an authorization request URL in the `openid4vp://authorize?...` format as text (including `request_uri` information).
+  - `200 OK`: Returns an authorization request URL in the `openid4vp:?...` format as text (including `request_uri` information).
   - `400 Bad Request`: When the JSON is invalid or when there is an issue with the request content.
 
 - Actual code
@@ -274,7 +274,7 @@ verifyApp.post('/request-object', async (c) => {
       })
       .join('&')
 
-    return c.text(`openid4vp://authorize?${encoded}`)
+    return c.text(`openid4vp:?${encoded}`)
   } catch (err) {
     if (reserved?.ok) {
       vpAudTx.consume(requestObject.state)
@@ -321,7 +321,7 @@ curl --location 'http://localhost:8080/request-object' \
 
 **Response**
 ```
-openid4vp://authorize?client_id=x509_san_dns%3Alocalhost&request_uri=http%3A%2F%2Flocalhost%3A8080%2Frequest.jwt%2F98feadd6e5d94254b91b132f4de0782e
+openid4vp:?client_id=x509_san_dns%3Alocalhost&request_uri=http%3A%2F%2Flocalhost%3A8080%2Frequest.jwt%2F98feadd6e5d94254b91b132f4de0782e
 ```
 
 

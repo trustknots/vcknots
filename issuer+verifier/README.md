@@ -283,7 +283,7 @@ const encoded = Object.entries(request)
   })
   .join('&')
 
-const scheme = `openid4vp://authorize?${encoded}`
+const scheme = `openid4vp:?${encoded}`
 
 console.log('Authorization Request', scheme)
 ```
