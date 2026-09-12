@@ -106,8 +106,8 @@ func (o runOptions) validate() error {
 	if o.CredentialOfferURI != "" && !strings.HasPrefix(o.CredentialOfferURI, credentialOfferURIPrefix) {
 		return fmt.Errorf("--credential-offer-uri must start with %q", credentialOfferURIPrefix)
 	}
-	if o.OID4VPURI != "" && !strings.HasPrefix(o.OID4VPURI, "openid4vp://") {
-		return fmt.Errorf("OID4VP URI must use the openid4vp:// scheme")
+	if o.OID4VPURI != "" && !strings.HasPrefix(o.OID4VPURI, "openid4vp:") {
+		return fmt.Errorf("OID4VP URI must use the openid4vp: scheme")
 	}
 	return nil
 }
