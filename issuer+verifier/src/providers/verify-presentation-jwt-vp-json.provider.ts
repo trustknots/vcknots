@@ -124,13 +124,16 @@ export const verifyVerifiablePresentation = (): VerifyVerifiablePresentationProv
       }
 
       const credential$ = this.providers.get('verify-verifiable-credential-provider')
-      const vcValid = await credential$.verify(credentials[0][1], {
-        allowedAlgs: options.allowedAlgs,
-      })
-      if (!vcValid) {
-        throw err('invalid_credential', {
-          message: 'credential is not valid.',
+
+      for (const [, vcJwt] of credentials) {
+        const vcValid = await credential$.verify(vcJwt, {
+          allowedAlgs: options.allowedAlgs,
         })
+        if (!vcValid) {
+          throw err('invalid_credential', {
+            message: 'One or more credentials are not valid.',
+          })
+        }
       }
 
       if (!decodedVp.header.kid) {

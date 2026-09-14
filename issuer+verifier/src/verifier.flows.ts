@@ -617,13 +617,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
       }
 
       if (expectedNonce) {
-        const nonceValid = await nonceStore$.validate(Nonce({nonce: expectedNonce}))
+        const nonceValid = await nonceStore$.validate(Nonce({ nonce: expectedNonce }))
         if (!nonceValid) {
           throw err('invalid_nonce', {
             message: 'nonce is not valid.',
           })
         }
-        await nonceStore$.revoke(Nonce({nonce: expectedNonce}))
+        await nonceStore$.revoke(Nonce({ nonce: expectedNonce }))
       }
 
       await transactionDataStore$.delete(TransactionId(transactionId))
@@ -638,6 +638,5 @@ export { ClientId as VerifierClientId } from './client-id.types'
 export { AuthorizationResponse as VerifierAuthorizationResponse } from './authorization-response.types'
 export { ClientIdPrefix as VerifierClientIdPrefix } from './client-id-prefix.types'
 export { RequestObjectId as VerifierRequestObjectId } from './request-object-id.types'
-export { PresentationExchange } from './presentation-exchange.types'
 export { Dcql } from './dcql.type'
 export { ClientIdentifier } from './client-id-prefix.types'

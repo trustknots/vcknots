@@ -1,8 +1,14 @@
 # @trustknots/vcknots
 
-A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) Draft 13 and OpenID for Verifiable Presentations (OID4VP) 1.0.
+[![npm version](https://img.shields.io/npm/v/@trustknots/vcknots.svg)](https://www.npmjs.com/package/@trustknots/vcknots)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/trustknots/vcknots/blob/main/LICENSE)
+[![GitHub](https://img.shields.io/badge/GitHub-trustknots%2Fvcknots-181717?logo=github)](https://github.com/trustknots/vcknots)
+
+A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) 1.0 and OpenID for Verifiable Presentations (OID4VP) 1.0.
 
 This package provides the core logic for both Issuers and Verifiers, allowing you to build compliant SSI (Self-Sovereign Identity) applications. It is designed with a provider-based architecture, making it easy to swap out implementations for storage, key management, and other infrastructure dependencies.
+
+For the full list of supported specifications and credential formats, see the **[Support Matrix](https://trustknots.github.io/vcknots/docs/support-matrix)**.
 
 ## Features
 
@@ -49,7 +55,7 @@ For a step-by-step guide on how to use this library, please refer to our documen
 
 ## Usage
 
-For comprehensive examples and detailed configurations for both Issuer and Verifier flows, please refer to the example implementations located in the [`server/single`](https://github.com/trustknots/vcknots/tree/main/server/single) or [`server/multi`](https://github.com/trustknots/vcknots/tree/main/server/multi) directory.
+For comprehensive examples and detailed configurations for both Issuer and Verifier flows, please refer to the example implementations located in the [`server/single`](https://github.com/trustknots/vcknots/tree/main/server/single) directory.
 
 ### Issuer Flow
 
@@ -83,10 +89,20 @@ await issuer.createIssuerMetadata(metadata)
 Generate a credential offer to be sent to the wallet.
 
 ```typescript
-const offer = await issuer.offerCredential(issuerId, ['MyCredential'])
+const { offer } = await issuer.offerCredential(issuerId, ['MyCredential'])
 const encoded = encodeURIComponent(JSON.stringify(offer))
 const scheme = `openid-credential-offer://?credential_offer=${encoded}`
 console.log('Credential Offer:', scheme)
+```
+
+To require the user to enter a Transaction Code (PIN) in their wallet, pass `txCode` to `offerCredential`. The generated PIN is returned as `tx_code` and must be communicated to the user out-of-band (e.g., via SMS or email).
+
+```typescript
+const { offer, tx_code } = await issuer.offerCredential(issuerId, ['MyCredential'], {
+  usePreAuth: true,
+  txCode: { input_mode: 'numeric', length: 6 },
+})
+console.log('PIN for user:', tx_code)
 ```
 
 #### 3. Issue a Credential
@@ -138,7 +154,7 @@ If `proofJwt` does not match the real flow, `aud` / `iss` checks may fail with `
 
 When using the [nonce endpoint](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-nonce-endpoint) (OpenID4VCI), Wallets can obtain a `c_nonce` before sending credential requests. This is useful when requesting multiple credentials—a single nonce can be reused within its validity period.
 
-If your HTTP server implementation needs to expose a DPoP nonce, manage the DPoP mode in the Authorization Server OAuth policy store. Server implementations can consult this policy to decide whether `POST /nonce` should return a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values. See [server/core/src/routes/issue.ts](../server/core/src/routes/issue.ts) for an implementation example.
+If your HTTP server implementation needs to expose a DPoP nonce, manage the DPoP mode in the Authorization Server OAuth policy store. Server implementations can consult this policy to decide whether `POST /nonce` should return a `DPoP-Nonce` response header in addition to the JSON body `c_nonce`. `c_nonce` and `DPoP-Nonce` are different values. See [server/core/src/routes/issue.ts](https://github.com/trustknots/vcknots/blob/main/server/core/src/routes/issue.ts) for an implementation example.
 
 Set `nonce_endpoint` in your issuer metadata:
 
@@ -182,6 +198,8 @@ const consumed = await nonceStore.consume(nonce)
 
 The `nonce` in a DPoP Proof is consumed only once to prevent replay. The credential proof `c_nonce` can be reused when requesting multiple credentials, while the DPoP Proof nonce is treated as a value bound to the token request proof.
 
+> **Note:** DPoP nonce consumption is handled internally by `authz.createAccessToken` when `dpopProof` is provided. Do **not** call `nonceStore.consume(nonce)` manually in that case — doing so will consume the nonce before the internal verification runs and cause the request to fail. Manual consumption via `nonceStore.consume()` is only appropriate in custom verification flows where `createAccessToken` is not used.
+
 #### 5. DPoP Proof and DPoP-bound access tokens
 
 Token endpoint implementations can pass the Proof JWT from the HTTP `DPoP` header to `createAccessToken` to verify DPoP Proof and issue a DPoP-bound access token.
@@ -218,15 +236,12 @@ Initialize the verifier identity.
 const base = 'https://myverifier.example.com'
 const verifierId = VerifierClientId(base)
 const metadata: VerifierMetadata = {
-	client_name: 'MyVerifier',
-	client_uri: base,
-	vp_formats_supported: {
-		'dc+sd-jwt': {
-			'sd-jwt_alg_values': ['ES256', 'ES384'],
-      'kb-jwt_alg_values': ['ES256', 'ES384']
-		},
-	},
-	client_id_scheme: 'redirect_uri'
+  vp_formats_supported: {
+    'dc+sd-jwt': {
+      'sd-jwt_alg_values': ['ES256', 'ES384'],
+      'kb-jwt_alg_values': ['ES256', 'ES384'],
+    },
+  },
 }
 
 // This will generate signing keys for the verifier (for JAR)
@@ -255,10 +270,10 @@ const { request, transactionId } = await verifier.createAuthzRequest(
       }]
     }
   },
-  true, // use request_uri (JAR)
-  { base_url: base }
+  false, // use inline request (not JAR)
+  {}
 )
-// Store transactionId alongside session/state — required when calling verifyPresentations.
+saveToSession(transactionId) // required for verifyPresentations in the wallet callback
 
 // Encode authorization request object
 const encoded = Object.entries(request)
@@ -277,22 +292,29 @@ console.log('Authorization Request', scheme)
 Verify the response sent by the wallet.
 
 ```typescript
-// req represents the HTTP request submitted by wallet
-const response = VerifierAuthorizationResponse(req.json())
-// transactionId was returned by createAuthzRequest and stored alongside the session
+// req represents the HTTP request submitted by wallet (application/x-www-form-urlencoded)
+const transactionId = loadFromSession() // restore the transactionId saved in step 2
+const formData = await req.formData()
+const vp_token = JSON.parse(formData.get('vp_token') as string)
+const state = formData.get('state') as string
+const response = VerifierAuthorizationResponse({ vp_token, state })
 await verifier.verifyPresentations(response, transactionId)
 console.log('Verification Successful!')
 ```
+
+> `saveToSession` and `loadFromSession` are placeholder functions — replace them with your own session or store implementation.
 
 ## Configuration & Providers
 
 To use persistent storage (e.g., Redis, PostgreSQL) or external KMS, you can override the default providers.
 
 ```typescript
-import { vcknots, Provider } from '@trustknots/vcknots'
+import { vcknots } from '@trustknots/vcknots'
+import { IssuerMetadataStoreProvider } from '@trustknots/vcknots/providers'
 
 const customMetadataStore: IssuerMetadataStoreProvider = {
   kind: 'issuer-metadata-store-provider',
+  name: 'my-issuer-metadata-store',
   single: true,
   fetch(issuer) { ... },
   save(metadata) { ... },
@@ -306,24 +328,10 @@ const { issuer } = vcknots({
 })
 ```
 
-## Developing & Testing
-
-To run the unit tests:
-
-```bash
-pnpm test
-```
-
-To run integration tests:
-
-```bash
-pnpm it
-```
-
 ## Related Projects
 
-* **Wallet Implementation:** For a reference OID4VC wallet implementation, see the [`wallet`](https://github.com/trustknots/vcknots/tree/main/wallet) directory in the root of this repository.
-* **Server Examples:** The [`server/single`](https://github.com/trustknots/vcknots/tree/main/server/single) and [`server/multi`](https://github.com/trustknots/vcknots/tree/main/server/multi) directories provide example implementations for Issuers and Verifiers.
+* **Reference Wallet:** A reference OID4VC wallet implementation built on top of this library — [GitHub](https://github.com/trustknots/vcknots/tree/main/wallet)
+* **Server Example:** A working Issuer + Verifier server implementation — [GitHub](https://github.com/trustknots/vcknots/tree/main/server/single)
 
 ## Contributing
 

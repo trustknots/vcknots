@@ -1,5 +1,14 @@
 # @trustknots/server-aws
 
+## 0.1.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @trustknots/vcknots@0.7.0
+  - @trustknots/aws@0.2.0
+  - @trustknots/server-core@0.1.4
+
 ## 0.1.1
 
 ### Patch Changes

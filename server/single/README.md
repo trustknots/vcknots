@@ -487,7 +487,7 @@ The following illustrates typical fields on the single server. During initializa
 <a id="post-request"></a>
 #### `POST /request`
 
-Create authorization request. Generates an authorization request containing a Presentation Definition and returns a URI with the `openid4vp://` scheme.
+Create authorization request. Generates an authorization request using a DCQL query and returns a URI with the `openid4vp://` scheme.
 
 **Request Body (JSON):**
 ```json
@@ -513,7 +513,7 @@ Create Request Object in JAR format.
 **Request Body (JSON, can be empty):**
 ```json
 {
-  "query"?: { "presentation_definition": object },
+  "query"?: { "dcql_query": object },
   "state"?: string,
   "base_url"?: string,
   "is_request_uri"?: boolean,
@@ -537,9 +537,10 @@ Create Request Object in JAR format.
 
 Authorization response callback. Receives Verifiable Presentation sent from Wallet and verifies it.
 
-**Request:** `application/json` or `application/x-www-form-urlencoded`
+**Request:** `application/x-www-form-urlencoded`
 
-- `vp_token` (required), `presentation_submission` (optional), `state` (optional)
+- `vp_token` (required): URL-encoded JSON string (produced by `JSON.stringify`) mapping credential query IDs to VP arrays; endpoints parse it with `JSON.parse`
+- `state` (required): State value issued in the authorization request, echoed back by the Wallet
 
 **Response:**
 - `200 OK` - `{ "redirect_uri": "{baseUrl}/verified" }`
@@ -550,7 +551,10 @@ Authorization response callback. Receives Verifiable Presentation sent from Wall
 
 Callback using Key Binding JWT.
 
-**Request (application/x-www-form-urlencoded):** `vp_token`, `presentation_submission`, `state`
+**Request:** `application/x-www-form-urlencoded`
+
+- `vp_token` (required): URL-encoded JSON string (produced by `JSON.stringify`) mapping credential query IDs to VP arrays; endpoints parse it with `JSON.parse`
+- `state` (required): State value issued in the authorization request, echoed back by the Wallet
 
 **Response:**
 - `200 OK` - `{ "redirect_uri": "{baseUrl}/verified" }`
