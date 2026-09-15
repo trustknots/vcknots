@@ -259,7 +259,12 @@ func build(document *Document, opts *options) (wallet.ClientAuthConfig, error) {
 				"client %q uses token_endpoint_auth_method %q, which signs nothing: %w",
 				entry.ClientID, method, ErrUnusedSigningKey)
 		}
-		return wallet.ClientAuthConfig{Method: receiverTypes.None}, nil
+		// client_id is carried through: OID4VCI 1.0 section 12.3 lets a token
+		// request go out unnamed only where the server advertises it.
+		return wallet.ClientAuthConfig{
+			Method:   receiverTypes.None,
+			ClientID: entry.ClientID,
+		}, nil
 	}
 
 	if strings.TrimSpace(entry.ClientID) == "" {
