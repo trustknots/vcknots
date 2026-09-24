@@ -52,7 +52,7 @@ func (m *MockSerializer) GetDefaultOption(flavor credential.SupportedSerializati
 }
 
 type MockSerializerOption struct {
-	Nonce string
+	Nonce    string
 	Audience string
 }
 
@@ -63,7 +63,6 @@ func (o *MockSerializerOption) SetAudience(audience string) {
 func (o *MockSerializerOption) SetNonce(nonce string) {
 	o.Nonce = nonce
 }
-
 
 type MockKeyEntry struct {
 	shouldSignError bool
@@ -106,8 +105,14 @@ func TestNewSerializationDispatcherWithDefaultConfig(t *testing.T) {
 	}
 
 	formats := dispatcher.GetSupportedFormats()
-	if len(formats) != 2 { // WithDefaultConfig supports only jwtvc
-		t.Errorf("Expected 1 supported formats, got %d", len(formats))
+	want := map[credential.SupportedSerializationFlavor]bool{credential.JwtVc: true, credential.SDJwtVC: true, credential.LdpVc: true}
+	if len(formats) != len(want) {
+		t.Errorf("Expected %d supported formats, got %v", len(want), formats)
+	}
+	for _, format := range formats {
+		if !want[format] {
+			t.Errorf("Unexpected default format %s", format)
+		}
 	}
 }
 

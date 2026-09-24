@@ -1,5 +1,9 @@
 # vcknots-wallet Local Server Integration Test and Conformance Test Sample
 
+The [public Wallet API driver](official_driver/README.md) is a separate program
+that drives the staged OpenID4VCI 1.0 and OpenID4VP 1.0 API, for example against
+the OpenID Foundation conformance suite.
+
 This directory contains sample code that demonstrates two key testing scenarios for vcknots-wallet:
 
 1. **Local server integration test mode**: Tests integration with a local vcknots server
@@ -14,10 +18,19 @@ Conformance test mode seeds a local credential and tests only the OpenID4VP pres
 | Sample | OpenID4VCI credential issuance | OpenID4VP presentation | Key binding |
 | --- | --- | --- | --- |
 | `server_integration_jwtvc` | JWT-VC | JWT-VC | Not applicable |
-| `server_integration_sdjwt` | SD-JWT VC (`dc+sd-jwt`) | Selective disclosure | Without KB-JWT |
+| `server_integration_sdjwt` | SD-JWT VC (`dc+sd-jwt`) | Selective disclosure | KB-JWT, because the DCQL query requires holder binding by default |
 | `server_integration_sdjwt+kbjwt` | SD-JWT VC (`dc+sd-jwt`) | Selective disclosure | With KB-JWT |
 
 Regardless of the credential format shown above, every local server integration test mode sample uses `private_key_jwt` client authentication and DPoP.
+
+## Wallet API used by the samples
+
+The samples call the one-call methods `ReceiveCredential` (OpenID4VCI Pre-Authorized Code Flow) and `PresentCredential` (OpenID4VP 1.0).
+A wallet with a user uses the staged API instead: `ResolveCredentialOffer`, `BeginIssuance`, `AuthorizeIssuance` or `AuthorizePreAuthorizedIssuance`, and `RequestCredential` for issuance, and `ParsePresentationRequest`, `SelectCredentials` and `SubmitPresentation` for presentation.
+The [wallet guide](../../docs/en/wallet.md) describes that API, the supported protocols, the HAIP profile and the security defaults, and the [public Wallet API driver](official_driver/README.md) shows a complete configuration.
+
+The samples set no `Config.CredentialAcceptance`, so `ReceiveCredential` parses the received credential without authenticating its issuer.
+The OpenID4VCI 1.0 methods refuse to run without an acceptance policy.
 
 ## Prerequisites
 
@@ -108,7 +121,7 @@ pnpm -F @trustknots/server build
 pnpm -F @trustknots/server start
 ```
 
-### Confirm the server is running
+#### Confirm the server is running
 
 When the server starts, you should see output similar to:
 
@@ -164,16 +177,22 @@ The samples read this registration from `examples/config/`, which the wallet loa
 | `examples/config/client-private.sample.jwks.json` | The matching private JWK used to sign the `client_assertion` |
 
 ```go
-clientAuth, err := clientconfig.Load(
-	"../config/wallet-clients.json",
-	clientconfig.WithClientID("test-client-id"),
-	clientconfig.WithPrivateJWKFile("../config/client-private.sample.jwks.json"),
+import (
+	"github.com/trustknots/vcknots/wallet"
+	"github.com/trustknots/vcknots/wallet/clientconfig"
 )
-if err != nil {
-	return err
-}
 
-w, err := wallet.NewWalletWithConfig(wallet.Config{ClientAuth: clientAuth})
+func newClientWallet() (*wallet.Wallet, error) {
+	clientAuth, err := clientconfig.Load(
+		"../config/wallet-clients.json",
+		clientconfig.WithClientID("test-client-id"),
+		clientconfig.WithPrivateJWKFile("../config/client-private.sample.jwks.json"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return wallet.NewWalletWithConfig(wallet.Config{ClientAuth: clientAuth})
+}
 ```
 
 The two files are kept apart on purpose. OpenID Connect Dynamic Client Registration 1.0 states that a `jwks` member MUST NOT contain private key values, so `wallet-clients.json` holds public keys only and can be handed to the authorization server as-is. `clientconfig.Load` rejects a `jwks` that carries a private key, and requires the private JWK file to be mode `0600`.
@@ -193,7 +212,7 @@ Open a new terminal, navigate to each test directory, and run the local server i
 cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 go run server_integration_jwtvc.go
 
-# SD-JWT integration test (without kb-jwt)
+# SD-JWT integration test (key binding from the DCQL query)
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go
 
@@ -217,7 +236,7 @@ go run server_integration_sdjwt.go --credential-offer-uri "$OFFER_URI" --tx-code
 
 
 
-### Step 3: Check the results
+#### Step 3: Check the results
 
 If everything works, you should see output similar to:
 
@@ -250,6 +269,8 @@ Reaching this point also means that the authorization server accepted the client
 
 ---
 
+For SD-JWT VC, `PresentCredential` attaches a Key Binding JWT when the answered DCQL query requires cryptographic holder binding (`require_cryptographic_holder_binding`, default `true`) or when `SdJwtVcPresentationOptions.RequireKeyBinding` is set; the options cannot remove a required one. A query that requires holder binding is not answered with a credential that has no `cnf`.
+
 ### Mode 2: Conformance Test Mode (External URL)
 
 Tests against external OpenID4VP conformance test services.
@@ -269,14 +290,14 @@ go run server_integration_sdjwt.go "openid4vp:?client_id=...&request_uri=..."
 
 Conformance Test mode automatically applies the following settings:
 
-- **Certificate Verification**: Uses system root certificate pool
-- **Certificate Chain Verification Skip**: `InsecureSkipX509Verify: true` is automatically set, enabling communication with conformance test servers that use self-signed or non-standard certificates
-- **Selected Claims**: Selects `given_name` and `family_name`
+- **Credential**: The SD-JWT VC in `example_sd_jwt.txt` is stored and presented
+- **Certificate Verification**: The system root certificate pool is set as `X509TrustChainRoots`
+- **Trust anchors**: The system roots plus the PEM file named by `VCKNOTS_CONFORMANCE_CA_PATH`, if set. Point it at the suite's root certificate so signed Request Objects are authenticated against it.
+- **Selected Claims**: `given_name`
 - **Key Binding**: Required (`RequireKeyBinding: true`)
-- **Audience/Nonce**: Automatically extracted from the request URI
-- **OID4VCI Client Authentication and DPoP**: Not configured; this mode tests the OpenID4VP presentation flow only
+- **Audience/Nonce**: Taken from the request
+- **OpenID4VCI Client Authentication and DPoP**: Not configured; this mode tests the OpenID4VP presentation flow only
 
-> ⚠️ **Warning**: `InsecureSkipX509Verify: true` should only be used in conformance tests and local development. **Never** use this in production environments.
 
 ---
 
@@ -306,7 +327,7 @@ go run server_integration_sdjwt.go "openid4vp:?..."
 ```
 - Tests against external OpenID4VP conformance test services
 - Uses system root certificate pool
-- `InsecureSkipX509Verify: true` is automatically set (supports non-standard certificates)
+- Signed Request Objects are authenticated against the system roots and `VCKNOTS_CONFORMANCE_CA_PATH`
 
 ### File Structure
 
@@ -319,13 +340,14 @@ examples/
 ├── server_integration_jwtvc/
 │   └── server_integration_jwtvc.go   # JWT-VC integration test
 ├── server_integration_sdjwt/
-│   ├── server_integration_sdjwt.go   # SD-JWT integration test (without kb-jwt)
+│   ├── server_integration_sdjwt.go   # SD-JWT integration test (key binding from the DCQL query)
 │   └── example_sd_jwt.txt            # Sample SD-JWT credential
 ├── server_integration_sdjwt+kbjwt/
 │   ├── server_integration_sdjwt_kbjwt.go # SD-JWT integration test with kb-jwt
 │   └── example_sd_jwt.txt                 # Sample SD-JWT credential
 ├── custom_dispatcher/                 # Example: custom dispatcher implementation
 ├── custom_plugin/                     # Example: custom plugin implementation
+├── official_driver/                   # Public Wallet API driver (staged API, JSON in/out)
 ├── README.md                          # This file
 └── README.ja.md                       # Japanese version
 ```
@@ -350,18 +372,19 @@ In addition to `VCKNOTS_CERT_PATH`, the wallet runtime behavior is controlled by
 | Variable | Default | Description |
 | :---- | :---- | :---- |
 | `VCKNOTS_WALLET_HTTP_ALLOWED` | `false` (unset/empty) | When set to `true`, HTTP endpoints are allowed for wallet HTTP calls (for local development/testing). A client assertion is the exception: it is sent over plain HTTP only to a loopback host, so `private_key_jwt` against a remote `http://` endpoint is refused even with this set. |
-| `VCKNOTS_WALLET_DEBUG` | `false` (unset/empty) | Enables debug mode. Debug mode also enables HTTP allowance behavior. |
+| `VCKNOTS_WALLET_DEBUG` | `false` (unset/empty) | Enables debug logging only. It does not relax the HTTPS requirement. |
 
 Behavior summary:
-- `IsHTTPAllowed()` becomes `true` when either `VCKNOTS_WALLET_HTTP_ALLOWED=true` or `VCKNOTS_WALLET_DEBUG=true`.
-- If both are unset (or not equal to `true`), `IsHTTPAllowed()` is `false`, and HTTPS-only validation remains active.
+- `IsHTTPAllowed()` becomes `true` only when `VCKNOTS_WALLET_HTTP_ALLOWED=true`.
+- The variable is read when the default dispatchers and plugins are built. A plugin constructed directly uses its own `AllowHTTP` field.
+- The local server integration test mode samples call `env.SetHTTPAllowed(true)` in their own process before they build the wallet, so the variable need not be set for them.
+- `VCKNOTS_WALLET_DEBUG=true` does not enable HTTP allowance; to use a local `http://` endpoint, set `VCKNOTS_WALLET_HTTP_ALLOWED=true` as well.
+- If `VCKNOTS_WALLET_HTTP_ALLOWED` is unset (or not equal to `true`), `IsHTTPAllowed()` is `false`, and HTTPS-only validation remains active.
 
 Example (local development only):
 
 ```bash
 export VCKNOTS_WALLET_HTTP_ALLOWED=true
-# or
-export VCKNOTS_WALLET_DEBUG=true
 ```
 
 > ⚠️ **Security warning**: Do not enable `VCKNOTS_WALLET_HTTP_ALLOWED` in production. Keep HTTPS-only validation enabled.
@@ -384,4 +407,4 @@ The conformance test suite intentionally sends malformed `client_id` values to t
 Conformance test servers may use self-signed or non-standard certificate structures for testing purposes.
 
 - **When running local server integration test mode (no arguments)**: Check that the certificate file is correctly placed at `../../../server/samples/certificate-openid-test/certificate_openid.pem`, or specify it via `VCKNOTS_CERT_PATH`.
-- **When running conformance test mode (with URI argument)**: `InsecureSkipX509Verify: true` is set automatically, so this error should not appear.
+- **When running conformance test mode (with URI argument)**: set `VCKNOTS_CONFORMANCE_CA_PATH` to the suite's root certificate so its signed Request Objects are trusted.

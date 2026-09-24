@@ -1,954 +1,271 @@
+// Package oid4vp implements the OpenID for Verifiable Presentations wallet
+// side: it parses and validates Authorization Requests and sends
+// Authorization Responses to the Verifier.
 package oid4vp
 
 import (
+	"context"
 	"crypto/x509"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
-	"github.com/go-jose/go-jose/v4/jwt"
-	commonX509 "github.com/trustknots/vcknots/wallet/common/x509"
-	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/presenter/types"
+	"github.com/trustknots/vcknots/wallet/profile"
 )
 
+// Oid4vpPresenter is the OpenID4VP presenter plugin. Its fields configure the
+// HTTP client, trust and protocol policy applied to requests and responses.
 type Oid4vpPresenter struct {
+	HTTPClient *http.Client
+	// AllowHTTP permits HTTP response endpoints for a local test verifier.
+	AllowHTTP           bool
 	X509TrustChainRoots *x509.CertPool
+	// RequestObjectValidation selects explicit trust, time and signing policy
+	// for Final. X509TrustChainRoots remains available for existing consumers.
+	RequestObjectValidation *RequestObjectValidationOptions
 	// InsecureSkipX509Verify skips certificate verification for testing purposes.
 	// WARNING: This should NEVER be set to true in production environments.
 	// This is only for conformance testing with self-signed or non-standard certificates.
 	InsecureSkipX509Verify bool
+	// Profile selects the OpenID4VP protocol policy. The zero value normalizes to
+	// profile.Final, which applies no HAIP constraints. Set it to profile.HAIP to
+	// enforce HAIP 1.0 on the Final path; the Draft24 entrypoints ignore it.
+	Profile profile.Profile
+	// WalletMetadata, when non-nil, is serialized as the wallet_metadata form
+	// parameter of a Final request_uri POST (OID4VP 1.0 §5.10). When nil the
+	// parameter is omitted.
+	WalletMetadata map[string]any
+	// RequestURINonce generates the wallet_nonce sent with a Final request_uri
+	// POST. A nil value uses 32 random bytes, base64url-encoded without padding.
+	RequestURINonce func() (string, error)
+	// SupportedTransactionDataTypes lists the transaction_data "type" values the
+	// wallet can process. A nil or empty list means the wallet supports no
+	// transaction_data type, so any request carrying transaction_data is
+	// rejected with invalid_transaction_data (OID4VP 1.0 §5.1, §8.4; Draft 24
+	// §5.1).
+	SupportedTransactionDataTypes []string
+	// PreRegisteredClients is the registry of Verifiers registered out of
+	// band, keyed by Client Identifier (OID4VP 1.0 §5.9.2). A Final request
+	// whose client_id has no ":" and resolves neither here nor through
+	// ResolvePreRegisteredClient is refused with ErrPreRegisteredClientUnknown.
+	// The Draft24 entry points refuse every pre-registered Client Identifier.
+	PreRegisteredClients map[string]PreRegisteredClient
+	// ResolvePreRegisteredClient is consulted when PreRegisteredClients holds no
+	// entry for the Client Identifier, so a wallet can keep its registry in a
+	// database instead of a map. A nil resolver means the map is the whole
+	// registry.
+	ResolvePreRegisteredClient PreRegisteredClientResolver
+	// SendParseErrorResponses posts the error authorization response of a
+	// parse-time refusal whose AuthorizationRequestError names a ResponseURI,
+	// with this presenter's client. The zero value posts nothing: the endpoint
+	// is chosen by an unauthenticated request, and a caller that wants to
+	// answer it calls AuthorizationRequestError.SendErrorResponse itself.
+	SendParseErrorResponses bool
+	// RequireClientMetadataJWKKeyIDs refuses a client_metadata.jwks member
+	// without a kid (ErrClientMetadataJWKKeyIDMissing) or with a duplicate kid
+	// (ErrClientMetadataJWKKeyIDDuplicate), as OID4VP 1.0 §5.1 requires. The
+	// zero value accepts them: the Wallet selects the encryption key by use
+	// and alg, and Verifiers in the field omit kid.
+	RequireClientMetadataJWKKeyIDs bool
 }
 
-// ParsePresentationRequest parses the presentation request URI and returns a CredentialPresentationRequest,
-// following the flow defined in the OID4VP specification and RFC9101 (OAuth 2.0 with JAR).
-//
-// Verifier may provide an Authorization Request using either of three options:
-// 1. request_uri (preferred): A URI that points to a JWT-encoded Authorization Request.
-// 2. request: A JWT-encoded Authorization Request directly in the query parameter.
-// 3. Query parameters: Individual parameters in the query string.
-//
-// This function detect which option is used and passes that to the proper handlers to obtain the CredentialPresentationRequest.
-func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*CredentialPresentationRequest, error) {
-	parsedURL, err := url.Parse(uriString)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse URI: %w", err)
-	}
-	queryParams := parsedURL.Query()
+var _ profile.Carrier = (*Oid4vpPresenter)(nil)
 
-	// Early validation of client_id format (before fetching request_uri)
-	// This prevents unnecessary network requests for obviously invalid client_ids
-	if clientID := strings.TrimSpace(queryParams.Get("client_id")); clientID != "" {
+func (p *Oid4vpPresenter) httpClient() *http.Client {
+	if p.HTTPClient != nil {
+		return p.HTTPClient
+	}
+	return &http.Client{Timeout: 30 * time.Second}
+}
+
+// ProtocolProfile reports the normalized OpenID4VP profile this presenter
+// enforces.
+func (p *Oid4vpPresenter) ProtocolProfile() profile.Profile {
+	normalized, err := p.Profile.Normalize()
+	if err != nil {
+		return p.Profile
+	}
+	return normalized
+}
+
+var (
+	_ types.RequestParser      = (*Oid4vpPresenter)(nil)
+	_ types.DCAPIRequestParser = (*Oid4vpPresenter)(nil)
+	_ types.Responder          = (*Oid4vpPresenter)(nil)
+)
+
+// ParsePresentationRequest parses and authenticates an OpenID4VP 1.0
+// Authorization Request URI. The request arrives as a Request Object by
+// reference (request_uri), by value (request), or as plain query parameters
+// (OID4VP 1.0 §5, RFC 9101). ParseRequest returns the same request as a
+// handle that can be answered.
+func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*CredentialPresentationRequest, error) {
+	handle, err := p.parseRequestURI(context.Background(), uriString)
+	if err != nil {
+		return nil, err
+	}
+	return handle.req, nil
+}
+
+// ParseRequest parses and admits an OpenID4VP 1.0 Authorization Request URI,
+// dereferencing its request_uri when present. The result is an
+// *AdmittedRequest.
+func (p *Oid4vpPresenter) ParseRequest(ctx context.Context, uri string) (types.AdmittedRequest, error) {
+	return asAdmitted(p.parseRequestURI(ctx, uri))
+}
+
+// ParseRequestObject authenticates an OpenID4VP 1.0 Request Object the caller
+// already holds, with the same checks as one ParseRequest fetched. src.ClientID
+// is the Authorization Request client_id the Request Object's claim must equal
+// (OID4VP 1.0 §5.10.1, ErrRequestObjectClientIDMismatch); it is empty only when
+// there is no outer client_id. The result is an *AdmittedRequest.
+func (p *Oid4vpPresenter) ParseRequestObject(ctx context.Context, requestObject string, src types.RequestObjectSource) (types.AdmittedRequest, error) {
+	return asAdmitted(p.parseRequestObject(ctx, requestObject, src))
+}
+
+func (p *Oid4vpPresenter) parseRequestURI(ctx context.Context, uriString string) (*AdmittedRequest, error) {
+	builder, err := p.newRequestBuilder(ctx)
+	if err != nil {
+		return nil, err
+	}
+	queryParams, err := authorizationRequestQuery(uriString)
+	if err != nil {
+		return nil, err
+	}
+	// Reject malformed outer identifiers before dereferencing request_uri.
+	clientID := strings.TrimSpace(queryParams.Get("client_id"))
+	if clientID != "" {
 		if _, err := parseOID4VPClientID(clientID); err != nil {
 			return nil, fmt.Errorf("invalid client_id in initial request: %w", err)
 		}
 	}
+	builder.expectedClientID = clientID
 
-	builder := NewRequestBuilder()
-	builder.x509TrustChainRoots = p.X509TrustChainRoots
-	builder.insecureSkipX509Verify = p.InsecureSkipX509Verify
-
-	// Request Object by Reference
-	if requestURI := queryParams.Get("request_uri"); requestURI != "" {
-		method := RequestURIMethodGET // Default to GET if not specified
-		if m := queryParams.Get("request_uri_method"); m != "" {
-			switch strings.ToLower(m) {
-			case "get":
-				method = RequestURIMethodGET
-			case "post":
-				method = RequestURIMethodPOST
-			default:
-				return nil, fmt.Errorf("unsupported request_uri_method: %s", m)
-			}
-		}
-		builder = builder.WithRequestObjectURI(requestURI, method)
-	} else if requestObj := queryParams.Get("request"); requestObj != "" {
-		builder = builder.WithRequestObject(requestObj)
-	} else {
-		builder = builder.WithQueryParams(queryParams)
+	requestURI := queryParams.Get("request_uri")
+	requestObj := queryParams.Get("request")
+	requestURIMethod := queryParams.Get("request_uri_method")
+	// RFC 9101 §5: "If this parameter is present in the authorization request,
+	// request_uri MUST NOT be present." OID4VP 1.0 §5.10.2 requires
+	// terminating.
+	if requestURI != "" && requestObj != "" {
+		return nil, newAuthorizationRequestError(InvalidRequestError, "request and request_uri must not both be present in the same request")
 	}
 
-	req, err := builder.Build()
+	switch {
+	case requestURI != "":
+		method := RequestURIMethodGET
+		// OID4VP 1.0 §5.1: the two valid values are case-sensitive get and
+		// post; anything else is invalid_request_uri_method (§8.5).
+		switch requestURIMethod {
+		case "", "get":
+		case "post":
+			method = RequestURIMethodPOST
+		default:
+			return nil, newAuthorizationRequestError(InvalidRequestURIMethodError, "request_uri_method must be 'get' or 'post' (case-sensitive), got %q", requestURIMethod)
+		}
+		builder.WithRequestObjectURI(requestURI, method)
+	case requestObj != "":
+		builder.WithRequestObject(requestObj)
+	default:
+		builder.WithQueryParams(queryParams)
+	}
+	return p.finishParse(&builder.requestCore, builder.Build, wireOpenID4VP1)
+}
+
+// parseRequestObject is the by-value counterpart of parseRequestURI.
+func (p *Oid4vpPresenter) parseRequestObject(ctx context.Context, requestObject string, src types.RequestObjectSource) (*AdmittedRequest, error) {
+	builder, err := p.newRequestBuilder(ctx)
 	if err != nil {
-		// OID4VP: when the Authorization Request is rejected with an OAuth
-		// error code and response_mode=direct_post, deliver the error
-		// authorization response to the Verifier's response_uri. Requests
-		// received as Request Objects are excluded: their validation fails
-		// before the signature is verified, so the response_uri is not yet
-		// trustworthy (see requestBuilder.errorResponseAllowed).
+		return nil, err
+	}
+	clientID := strings.TrimSpace(src.ClientID)
+	if clientID != "" {
+		if _, err := parseOID4VPClientID(clientID); err != nil {
+			return nil, fmt.Errorf("invalid client_id in initial request: %w", err)
+		}
+	}
+	builder.applySource(clientID, src)
+	builder.WithRequestObject(requestObject)
+	return p.finishParse(&builder.requestCore, builder.Build, wireOpenID4VP1)
+}
+
+// authorizationRequestQuery returns the query parameters of an Authorization
+// Request URI.
+func authorizationRequestQuery(uriString string) (url.Values, error) {
+	parsedURL, err := url.Parse(uriString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URI: %w", err)
+	}
+	return parsedURL.Query(), nil
+}
+
+// normalizedProfile returns the presenter's profile, failing closed on an
+// unknown value before any network access.
+func (p *Oid4vpPresenter) normalizedProfile() (profile.Profile, error) {
+	normalized, err := p.Profile.Normalize()
+	if err != nil {
+		return "", fmt.Errorf("invalid OID4VP profile: %w", err)
+	}
+	return normalized, nil
+}
+
+// configureCore copies the presenter's transport and trust policy into the
+// state of one parse.
+func (p *Oid4vpPresenter) configureCore(ctx context.Context, core *requestCore) {
+	core.ctx = ctx
+	core.httpClient = p.httpClient()
+	core.allowHTTP = p.AllowHTTP
+	core.x509TrustChainRoots = p.X509TrustChainRoots
+	core.insecureSkipX509Verify = p.InsecureSkipX509Verify
+	core.requireClientMetadataJWKKeyIDs = p.RequireClientMetadataJWKKeyIDs
+	if p.RequestObjectValidation != nil {
+		core.setRequestObjectValidation(*p.RequestObjectValidation)
+	}
+}
+
+// newRequestBuilder creates the builder of one OpenID4VP 1.0 parse with the
+// presenter's transport, trust and protocol policy.
+func (p *Oid4vpPresenter) newRequestBuilder(ctx context.Context) (*requestBuilder, error) {
+	normalizedProfile, err := p.normalizedProfile()
+	if err != nil {
+		return nil, err
+	}
+	if normalizedProfile.IsHAIP() && (p.AllowHTTP || p.InsecureSkipX509Verify) {
+		// HAIP §5: the profile requires TLS verifier endpoints and verified
+		// X.509 request signing; the test-only escapes must not weaken it.
+		return nil, newAuthorizationRequestError(InvalidRequestError, "HAIP profile does not permit AllowHTTP or InsecureSkipX509Verify")
+	}
+	builder := NewRequestBuilder()
+	builder.profile = normalizedProfile
+	p.configureCore(ctx, &builder.requestCore)
+	builder.policy = &builderPolicy{
+		walletMetadata:                p.WalletMetadata,
+		requestURINonce:               p.RequestURINonce,
+		supportedTransactionDataTypes: p.SupportedTransactionDataTypes,
+		preRegisteredClients:          p.PreRegisteredClients,
+		resolvePreRegisteredClient:    p.ResolvePreRegisteredClient,
+	}
+	return builder, nil
+}
+
+// finishParse runs build and admits the result. On a refusal it records where
+// an error authorization response may go; it is posted there only when the
+// presenter opted in with SendParseErrorResponses.
+func (p *Oid4vpPresenter) finishParse(core *requestCore, build func() (*CredentialPresentationRequest, error), wire wireContract) (*AdmittedRequest, error) {
+	req, err := build()
+	if err != nil {
+		core.attachErrorResponseTarget(err)
 		var authzErr *AuthorizationRequestError
-		if errors.As(err, &authzErr) && builder.errorResponseAllowed {
-			if sendErr := p.sendAuthorizationErrorResponse(builder.req, authzErr); sendErr != nil {
-				return nil, fmt.Errorf("failed to build CredentialPresentationRequest: %w (also failed to send error authorization response: %v)", err, sendErr)
+		if p.SendParseErrorResponses && errors.As(err, &authzErr) && authzErr.ResponseURI() != "" {
+			if sendErr := authzErr.SendErrorResponse(core.context(), p.httpClient()); sendErr != nil {
+				return nil, fmt.Errorf("failed to build CredentialPresentationRequest: %w (also %v)", err, sendErr)
 			}
 		}
 		return nil, fmt.Errorf("failed to build CredentialPresentationRequest: %w", err)
 	}
-
-	return req, nil
-}
-
-// sendAuthorizationErrorResponse posts the OAuth 2.0 error authorization
-// response (error, error_description and state) to the Verifier's
-// response_uri when response_mode=direct_post. It is a no-op when the
-// partially parsed request has no usable direct_post response_uri.
-func (p *Oid4vpPresenter) sendAuthorizationErrorResponse(req *CredentialPresentationRequest, authzErr *AuthorizationRequestError) error {
-	if req == nil || req.ResponseMode != OAuthAuthzReqResponseModeDirectPost || req.ResponseURI == "" {
-		return nil
-	}
-
-	responseURI, err := parseResponseURI(req.ResponseURI)
-	if err != nil {
-		return err
-	}
-
-	formData := url.Values{}
-	formData.Set("error", string(authzErr.Code))
-	if authzErr.Err != nil {
-		formData.Set("error_description", authzErr.Err.Error())
-	}
-	if req.State != "" {
-		formData.Set("state", req.State)
-	}
-
-	if _, err := postAuthorizationResponse(responseURI.String(), formData); err != nil {
-		return fmt.Errorf("failed to send error authorization response: %w", err)
-	}
-
-	return nil
-}
-
-// parseResponseURI parses a response_uri and enforces the https scheme unless
-// http is explicitly allowed for testing.
-func parseResponseURI(responseURI string) (*url.URL, error) {
-	parsed, err := url.Parse(responseURI)
-	if err != nil {
-		return nil, fmt.Errorf("response_uri must be URI: %w", err)
-	}
-	if !env.IsHTTPAllowed() && !strings.EqualFold(parsed.Scheme, "https") {
-		return nil, fmt.Errorf("response_uri must use https scheme")
-	}
-	return parsed, nil
-}
-
-// maxVerifierResponseBodySize bounds how much of a verifier response body the
-// wallet reads; the endpoint is derived from request input.
-const maxVerifierResponseBodySize = 1 << 20 // 1 MiB
-
-// postAuthorizationResponse form-POSTs an authorization response (or error
-// response) to the verifier and returns the response body on HTTP 200.
-func postAuthorizationResponse(endpoint string, formData url.Values) ([]byte, error) {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	resp, err := client.Post(endpoint, "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxVerifierResponseBodySize))
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("verifier returned non-200 status: %d, body: %s", resp.StatusCode, string(body))
-	}
-	if readErr != nil {
-		return nil, fmt.Errorf("failed to read verifier response: %w", readErr)
-	}
-	return body, nil
-}
-
-// Present sends the presentation to the verifier.
-// The vp_token is a JSON object keyed by the DCQL Credential Query id, as
-// defined in OID4VP 1.0 Section 8.1:
-// {"<credential query id>": ["<presentation>"]}
-func (p *Oid4vpPresenter) Present(protocol types.SupportedPresentationProtocol, endpoint url.URL, serializedPresentation []byte, request *types.PresentationRequest) (string, error) {
-	if protocol != types.Oid4vp {
-		return "", fmt.Errorf("plugin type mismatch")
-	}
-
-	if request == nil || request.CredentialQueryID == "" {
-		return "", fmt.Errorf("credential query id is required to build vp_token")
-	}
-	vpTokenJSON, err := json.Marshal(map[string][]string{
-		request.CredentialQueryID: {string(serializedPresentation)},
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal vp_token: %w", err)
-	}
-
-	// Check if JARM (JWT-Secured Authorization Response Mode) is required
-	var useJARM bool
-	var encryptionAlg, encryptionEnc string
-	var verifierJWKS *jose.JSONWebKeySet
-
-	if request.ClientMetadata != nil {
-		if metadata, ok := request.ClientMetadata.(*VerifierMetadata); ok {
-			if metadata.AuthorizationEncryptedResponseAlg != "" {
-				useJARM = true
-				encryptionAlg = metadata.AuthorizationEncryptedResponseAlg
-				encryptionEnc = metadata.AuthorizationEncryptedResponseEnc
-				verifierJWKS = &metadata.Jwks
-			}
-		}
-	}
-
-	// OID4VP direct_post requires application/x-www-form-urlencoded
-	formData := url.Values{}
-
-	if useJARM {
-		// JARM: Create JWT with response parameters, encrypt it, and send as "response" parameter
-		jarmToken, err := p.createJARMResponse(vpTokenJSON, request, encryptionAlg, encryptionEnc, verifierJWKS)
-		if err != nil {
-			return "", fmt.Errorf("failed to create JARM response: %w", err)
-		}
-		formData.Set("response", jarmToken)
-	} else {
-		// Standard response: Send the vp_token JSON object directly
-		formData.Set("vp_token", string(vpTokenJSON))
-
-		// Add state if present in the original request
-		if request.State != "" {
-			formData.Set("state", request.State)
-		}
-	}
-
-	respBody, err := postAuthorizationResponse(endpoint.String(), formData)
-	if err != nil {
-		return "", fmt.Errorf("failed to send presentation to verifier: %w", err)
-	}
-	if len(respBody) == 0 {
-		return "", nil
-	}
-	var verifierResponse struct {
-		RedirectURI string `json:"redirect_uri"`
-	}
-	if err := json.Unmarshal(respBody, &verifierResponse); err != nil {
-		return "", nil
-	}
-
-	return verifierResponse.RedirectURI, nil
-}
-
-// createJARMResponse creates a JWT-Secured Authorization Response (JARM)
-func (p *Oid4vpPresenter) createJARMResponse(vpTokenJSON []byte, request *types.PresentationRequest, encAlg, encEnc string, verifierJWKS *jose.JSONWebKeySet) (string, error) {
-	// Create the response payload; vp_token is embedded as a JSON object.
-	payload := map[string]interface{}{
-		"vp_token": json.RawMessage(vpTokenJSON),
-	}
-
-	// Add state if present
-	if request != nil && request.State != "" {
-		payload["state"] = request.State
-	}
-
-	// Marshal payload to JSON
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal JARM payload: %w", err)
-	}
-
-	// Find encryption key from verifier JWKS
-	if verifierJWKS == nil || len(verifierJWKS.Keys) == 0 {
-		return "", fmt.Errorf("verifier JWKS not available for encryption")
-	}
-
-	// Select appropriate key for encryption (prefer "enc" use, or first available key)
-	var encryptionKey *jose.JSONWebKey
-	for i := range verifierJWKS.Keys {
-		key := &verifierJWKS.Keys[i]
-		if key.Use == "enc" {
-			encryptionKey = key
-			break
-		}
-	}
-	if encryptionKey == nil {
-		// Use first key if no "enc" key found
-		encryptionKey = &verifierJWKS.Keys[0]
-	}
-
-	// Parse algorithm
-	var keyAlg jose.KeyAlgorithm
-	switch encAlg {
-	case "ECDH-ES":
-		keyAlg = jose.ECDH_ES
-	case "ECDH-ES+A128KW":
-		keyAlg = jose.ECDH_ES_A128KW
-	case "ECDH-ES+A192KW":
-		keyAlg = jose.ECDH_ES_A192KW
-	case "ECDH-ES+A256KW":
-		keyAlg = jose.ECDH_ES_A256KW
-	default:
-		return "", fmt.Errorf("unsupported encryption algorithm: %s", encAlg)
-	}
-
-	var contentEnc jose.ContentEncryption
-	switch encEnc {
-	case "A128GCM":
-		contentEnc = jose.A128GCM
-	case "A192GCM":
-		contentEnc = jose.A192GCM
-	case "A256GCM":
-		contentEnc = jose.A256GCM
-	case "A128CBC-HS256":
-		contentEnc = jose.A128CBC_HS256
-	case "A192CBC-HS384":
-		contentEnc = jose.A192CBC_HS384
-	case "A256CBC-HS512":
-		contentEnc = jose.A256CBC_HS512
-	default:
-		return "", fmt.Errorf("unsupported encryption encoding: %s", encEnc)
-	}
-
-	// Create encrypter
-	encrypter, err := jose.NewEncrypter(
-		contentEnc,
-		jose.Recipient{
-			Algorithm: keyAlg,
-			Key:       encryptionKey.Key,
-			KeyID:     encryptionKey.KeyID,
-		},
-		nil,
-	)
-	if err != nil {
-		return "", fmt.Errorf("failed to create encrypter: %w", err)
-	}
-
-	// Encrypt the payload
-	jwe, err := encrypter.Encrypt(payloadBytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to encrypt JARM payload: %w", err)
-	}
-
-	// Serialize to compact form
-	serialized, err := jwe.CompactSerialize()
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize JWE: %w", err)
-	}
-
-	return serialized, nil
-}
-
-
-type requestBuilder struct {
-	req                    *CredentialPresentationRequest
-	x509TrustChainRoots    *x509.CertPool
-	insecureSkipX509Verify bool
-	errValidation          error
-	// errorResponseAllowed marks that the request parameters came from plain
-	// query parameters (user-initiated URI). Validation failures on the
-	// Request Object paths occur before the object's signature is verified,
-	// so their response_uri is unauthenticated and must not receive an error
-	// authorization response (unauthenticated outbound POST / SSRF primitive).
-	errorResponseAllowed bool
-}
-
-func NewRequestBuilder() *requestBuilder {
-	return &requestBuilder{
-		req: &CredentialPresentationRequest{
-			OAuthAuthzRequest: &OAuthAuthzRequest{},
-			ClientMetadata:    &VerifierMetadata{},
-		},
-		x509TrustChainRoots:    nil,
-		insecureSkipX509Verify: false,
-	}
-}
-
-func (b *requestBuilder) validate() error {
-	if b.errValidation != nil {
-		return b.errValidation
-	}
-
-	if b.req.DcqlQuery == nil || len(b.req.DcqlQuery.Credentials) == 0 {
-		return newAuthorizationRequestError(InvalidRequestError, "dcql_query is required")
-	}
-
-	if b.req.ResponseType == "" {
-		return fmt.Errorf("response_type is required")
-	}
-
-	if b.req.ClientID == "" {
-		return fmt.Errorf("client_id is required")
-	}
-
-	if b.req.RedirectURI == "" {
-		return fmt.Errorf("redirect_uri is required")
-	}
-
-	if b.req.Nonce == "" {
-		return fmt.Errorf("nonce is required")
-	}
-
-	if b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost {
-		if _, err := parseResponseURI(b.req.ResponseURI); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// validateRedirectAndResponseURIExclusivity returns an error when the
-// redirect_uri and response_uri request parameters are both set. Per OID4VP
-// they are mutually exclusive on the wire: response_uri is used with
-// response_mode=direct_post (and its JWT variant), redirect_uri otherwise.
-func validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam string) error {
-	if redirectURIFromParam != "" && responseURIFromParam != "" {
-		return fmt.Errorf("redirect_uri and response_uri must not both be present in the same request")
-	}
-	return nil
-}
-
-// setParamsWithInterfaceMap sets the CredentialPresentationRequest fields from a map of any parameters,
-// tracking any missing required parameters.
-// Missing required parameters are recorded in b.errValidation and set as empty strings.
-func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
-	if b.errValidation != nil {
-		return
-	}
-
-	// OID4VP specification: MUST ignore 'iss' claim if present in Request Object
-	// Remove 'iss' claim from params to ensure it's not processed
-	if _, exists := params["iss"]; exists {
-		// Create a copy of params without 'iss' claim
-		filteredParams := make(map[string]any)
-		for k, v := range params {
-			if k != "iss" {
-				filteredParams[k] = v
-			}
-		}
-		params = filteredParams
-	}
-
-	missing := []string{}
-
-	getParam := func(key string, required bool) string {
-		if val, exists := params[key]; exists {
-			if strVal, ok := val.(string); ok {
-				return strVal
-			}
-			// Convert non-string values to string representation if possible
-			return fmt.Sprintf("%v", val)
-		}
-
-		if required {
-			missing = append(missing, key)
-		}
-
-		return ""
-	}
-
-	b.req.ResponseType = getParam("response_type", true)
-	b.req.ClientID = strings.TrimSpace(getParam("client_id", true))
-
-	redirectURIFromParam := getParam("redirect_uri", false) // redirect_uri may be emitted
-	redirectURIFromClientID := ""
-	if cid := b.req.ClientID; cid != "" {
-		if parsedCID, err := parseOID4VPClientID(cid); err == nil {
-			switch parsedCID.prefix {
-			case OID4VPClientIDPrefixRedirectURI, OID4VPClientIDPrefixX509SanDNS:
-				redirectURIFromClientID = parsedCID.original
-			default: // unimplemented: other client_id prefixes
-				b.errValidation = fmt.Errorf("unsupported client_id prefix: %s", parsedCID.prefix)
-			}
-		} else {
-			b.errValidation = fmt.Errorf("invalid client_id: %w", err)
-			return
-		}
-	}
-
-	if redirectURIFromParam != "" && redirectURIFromClientID != "" && redirectURIFromParam != redirectURIFromClientID {
-		b.errValidation = fmt.Errorf("redirect_uri mismatch between parameter and one derived from client_id")
-		return
-	}
-
-	b.req.RedirectURI = redirectURIFromClientID
-	b.req.State = getParam("state", false)
-	b.req.Nonce = getParam("nonce", true)
-
-	b.req.ResponseMode = OAuthAuthzReqResponseMode(getParam("response_mode", true))
-
-	responseURIFromParam := getParam("response_uri", b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost)
-
-	if err := validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam); err != nil {
-		b.errValidation = err
-		return
-	}
-
-	b.req.ResponseURI = responseURIFromParam
-
-	// The checks below are performed after the response parameters
-	// (response_mode, response_uri, state) are populated, so that the
-	// resulting *AuthorizationRequestError can be delivered to the Verifier
-	// as an error authorization response when response_mode=direct_post.
-
-	// Presentation Exchange based parameters were removed in OID4VP 1.0 in
-	// favor of dcql_query; this wallet does not accept them (Issue #606).
-	for _, unsupported := range []string{"presentation_definition", "presentation_definition_uri", "presentation_submission"} {
-		if _, exists := params[unsupported]; exists {
-			b.errValidation = newAuthorizationRequestError(InvalidRequestError, "%s is not supported; use dcql_query instead", unsupported)
-			return
-		}
-	}
-
-	// Requesting Credentials via the scope parameter is not supported by this wallet.
-	if scope, exists := params["scope"]; exists {
-		if scopeStr, ok := scope.(string); !ok || scopeStr != "" {
-			b.errValidation = newAuthorizationRequestError(InvalidScopeError, "scope parameter is not supported; use dcql_query instead")
-			return
-		}
-	}
-
-	if rawDcqlQuery, exists := params["dcql_query"]; exists {
-		dcqlQuery, err := parseDcqlQuery(rawDcqlQuery)
-		if err != nil {
-			b.errValidation = err
-			return
-		}
-		b.req.DcqlQuery = dcqlQuery
-	} else {
-		missing = append(missing, "dcql_query")
-	}
-
-	if cm, exists := params["client_metadata"]; exists && cm != nil {
-		var clientMeta VerifierMetadata
-		if cmMap, ok := cm.(map[string]any); ok {
-			// Convert map to JSON and then unmarshal to struct
-			jsonBytes, err := json.Marshal(cmMap)
-			if err != nil {
-				b.errValidation = fmt.Errorf("failed to marshal client_metadata: %w", err)
-				return
-			}
-			if err := json.Unmarshal(jsonBytes, &clientMeta); err != nil {
-				b.errValidation = fmt.Errorf("invalid client_metadata: %w", err)
-				return
-			}
-		} else if cmStr, ok := cm.(string); ok {
-			// Handle string format
-			if err := json.Unmarshal([]byte(cmStr), &clientMeta); err != nil {
-				b.errValidation = fmt.Errorf("invalid client_metadata: %w", err)
-				return
-			}
-		} else {
-			b.errValidation = fmt.Errorf("client_metadata must be a string or map")
-			return
-		}
-		b.req.ClientMetadata = &clientMeta
-	}
-
-	if len(missing) > 0 {
-		b.errValidation = newAuthorizationRequestError(InvalidRequestError, "missing required parameters: %s", strings.Join(missing, ", "))
-	}
-
-	if td, exists := params["transaction_data"]; exists && td != nil {
-		switch v := td.(type) {
-		case []interface{}:
-			for _, item := range v {
-				if str, ok := item.(string); ok {
-					b.req.TransactionData = append(b.req.TransactionData, str)
-				}
-			}
-		case []string:
-			b.req.TransactionData = v
-		}
-	}
-
-	b.req.TransactionDataHashesAlg = getParam("transaction_data_hashes_alg", false)
-}
-
-// WithQueryParams populates the CredentialPresentationRequest fields from URL query parameters.
-func (b *requestBuilder) WithQueryParams(params map[string][]string) *requestBuilder {
-	if b.errValidation != nil {
-		return b
-	}
-
-	b.errorResponseAllowed = true
-
-	singleParams := make(map[string]any)
-	for key, values := range params {
-		if len(values) > 1 {
-			b.errValidation = fmt.Errorf("multiple values provided for parameter: %s", key)
-			return b
-		}
-		singleParams[key] = values[0]
-	}
-
-	b.setParamsWithAnyMap(singleParams)
-
-	if err := b.validate(); err != nil {
-		b.errValidation = err
-		return b
-	}
-
-	return b
-}
-
-// WithRequestObject uses the provided JWT string as the request object
-// to populate the CredentialPresentationRequest,
-// validating its claims and signature as per OID4VP and RFC9101.
-func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
-	if b.errValidation != nil {
-		return b
-	}
-
-	// Parse the JWT
-	allowedAlgs := []jose.SignatureAlgorithm{jose.ES256, jose.RS256}
-	parsedJWT, err := jwt.ParseSigned(obj, allowedAlgs)
-	if err != nil {
-		b.errValidation = fmt.Errorf("failed to parse request object JWT: %w", err)
-		return b
-	}
-
-	// Validate 'typ' header as per OID4VP specification
-	// Request Objects MUST include typ Header Parameter with value "oauth-authz-req+jwt"
-	if len(parsedJWT.Headers) == 0 {
-		b.errValidation = fmt.Errorf("request object JWT must have headers")
-		return b
-	}
-
-	typHeader, exists := parsedJWT.Headers[0].ExtraHeaders["typ"]
-	if !exists {
-		b.errValidation = fmt.Errorf("request object JWT must include 'typ' header parameter")
-		return b
-	}
-
-	typStr, ok := typHeader.(string)
-	if !ok || typStr != "oauth-authz-req+jwt" {
-		b.errValidation = fmt.Errorf("request object JWT 'typ' header must be 'oauth-authz-req+jwt', got: %v", typHeader)
-		return b
-	}
-
-	// extract claims without verification for initial processing
-	claims := make(map[string]any)
-	if err := parsedJWT.UnsafeClaimsWithoutVerification(&claims); err != nil {
-		b.errValidation = fmt.Errorf("failed to get JWT claims: %w", err)
-		return b
-	}
-
-	b.setParamsWithAnyMap(claims)
-
-	if err := b.validate(); err != nil {
-		b.errValidation = err
-		return b
-	}
-
-	// x509_san_dns
-	clientID, err := parseOID4VPClientID(b.req.ClientID)
-	if err == nil && clientID.prefix == OID4VPClientIDPrefixX509SanDNS {
-		var certificates *[]*x509.Certificate = nil
-
-		if b.insecureSkipX509Verify {
-			// For testing: Parse certificates from x5c WITHOUT calling x509.Verify(),
-			// which in Go 1.20+ performs strict standards compliance checks that reject
-			// non-compliant certificates (e.g., "OIDF Test" from conformance test suites).
-			// We manually parse the x5c chain and use the certificates directly.
-
-			// Split JWT to get header part
-			parts := strings.Split(obj, ".")
-			if len(parts) < 2 {
-				b.errValidation = fmt.Errorf("invalid JWT format")
-				return b
-			}
-
-			// Decode header (JWT uses base64url encoding without padding)
-			headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
-			if err != nil {
-				b.errValidation = fmt.Errorf("failed to decode JWT header: %w", err)
-				return b
-			}
-
-			var header struct {
-				X5C []string `json:"x5c"`
-			}
-			if err := json.Unmarshal(headerJSON, &header); err != nil {
-				b.errValidation = fmt.Errorf("failed to parse JWT header: %w", err)
-				return b
-			}
-
-			if len(header.X5C) == 0 {
-				b.errValidation = fmt.Errorf("x5c header is empty")
-				return b
-			}
-
-			// Parse all certificates in the x5c chain
-			// x5c contains standard base64 encoded (not base64url) DER certificates
-			var certChain []*x509.Certificate
-			for i, certB64 := range header.X5C {
-				certDER, err := base64.StdEncoding.DecodeString(certB64)
-				if err != nil {
-					b.errValidation = fmt.Errorf("failed to decode x5c certificate at index %d: %w", i, err)
-					return b
-				}
-				cert, err := x509.ParseCertificate(certDER)
-				if err != nil {
-					b.errValidation = fmt.Errorf("failed to parse x5c certificate at index %d: %w", i, err)
-					return b
-				}
-				certChain = append(certChain, cert)
-			}
-
-			certificates = &certChain
-		} else {
-			// Production: verify certificate chain
-			certificateChains, err := parsedJWT.Headers[0].Certificates(x509.VerifyOptions{
-				Roots: b.x509TrustChainRoots,
-			})
-			if err != nil {
-				b.errValidation = err
-				return b
-			}
-
-			for _, chain := range certificateChains {
-				err = commonX509.CheckIfCertsRevoked(chain)
-				if err == nil {
-					b.errValidation = nil
-					certificates = &chain
-					break
-				} else {
-					b.errValidation = err
-				}
-			}
-			if certificates == nil {
-				return b
-			}
-		}
-
-		// Request object must be verified with the leaf certificate in the x5c array (RFC 7515).
-		claims := jwt.Claims{}
-		verifyKey := (*certificates)[0].PublicKey
-		if err := parsedJWT.Claims(verifyKey, &claims); err != nil {
-			b.errValidation = fmt.Errorf("failed to verify request object with x5c certificate: %v", err)
-			return b
-		}
-
-		// ClientID should contain DNS name which is same as the SAN of the leaf certificate in the x5c array (OID4VP x509_san_dns). #106
-		matched := false
-		for _, n := range (*certificates)[0].DNSNames {
-			if clientID.original == n {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			b.errValidation = fmt.Errorf("SAN of the certificate and client_id did not match")
-			return b
-		}
-
-		// response_uri / redirect_uri check #107
-		var uri *url.URL
-		if b.req.ResponseMode == "direct_post" {
-			uri, err = url.Parse(b.req.ResponseURI)
-			if err != nil {
-				b.errValidation = fmt.Errorf("response_uri must be URI: %w", err)
-				return b
-			}
-		} else {
-			uri, err = url.Parse(b.req.RedirectURI)
-			if err != nil {
-				b.errValidation = fmt.Errorf("redirect_uri must be URI: %w", err)
-				return b
-			}
-		}
-		if hostname := uri.Hostname(); hostname != clientID.original {
-			b.errValidation = fmt.Errorf("redirect_uri/response_uri and client_id (origin) must be same")
-			return b
-		}
-
-		return b
-	}
-
-	// JWT signature verification is mandatory for JWT request objects as per RFC9101
-	if b.req.ClientMetadata == nil {
-		b.errValidation = fmt.Errorf("client_metadata is required for JWT request object verification")
-		return b
-	}
-
-	// fetch the public key for signature verification
-	k, err := b.req.ClientMetadata.FetchKeyWithKID(parsedJWT.Headers[0].KeyID)
-	if err != nil {
-		b.errValidation = fmt.Errorf("failed to fetch public key for JWT verification: %w", err)
-		return b
-	}
-
-	// verify the JWT signature and extract standard claims for validation
-	standardClaims := jwt.Claims{}
-	if err := parsedJWT.Claims(&k, &standardClaims); err != nil {
-		b.errValidation = fmt.Errorf("failed to verify JWT signature: %w", err)
-		return b
-	}
-
-	// validate standard JWT claims as per RFC9101 and OID4VP requirements
-	if err := standardClaims.Validate(jwt.Expected{
-		Time: time.Now(), // validates exp, iat, nbf claims
-	}); err != nil {
-		b.errValidation = fmt.Errorf("JWT standard claims validation failed: %w", err)
-		return b
-	}
-
-	// extract all verified claims for parameter processing
-	verifiedClaims := make(map[string]any)
-	if err := parsedJWT.Claims(&k, &verifiedClaims); err != nil {
-		b.errValidation = fmt.Errorf("failed to extract verified claims: %w", err)
-		return b
-	}
-
-	// re-set parameters from verified claims to ensure integrity
-	b.setParamsWithAnyMap(verifiedClaims)
-
-	if err := b.validate(); err != nil {
-		b.errValidation = err
-		return b
-	}
-
-	return b
-}
-
-// WithRequestObjectURI constructs the CredentialPresentationRequest
-// with fetching the request object from the given URI using the specified method,
-// and validates its claims and signature as per OID4VP and RFC9101.
-//
-// Per OID4VP draft 24 §5.11, when method is POST the request MUST use the
-// https scheme, set Content-Type: application/x-www-form-urlencoded and
-// Accept: application/oauth-authz-req+jwt. The https requirement is also
-// applied to the GET method for project-wide consistency with the same
-// guard in wallet/receiver/plugins/oid4vci/oid4vci.go (Issue #29).
-// It can be relaxed by setting the VCKNOTS_WALLET_HTTP_ALLOWED environment
-// variable for testing.
-func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMethod) *requestBuilder {
-	if b.errValidation != nil {
-		return b
-	}
-
-	parsedURI, err := url.Parse(uri)
-	if err != nil {
-		b.errValidation = fmt.Errorf("failed to parse request_uri %q: %w", uri, err)
-		return b
-	}
-	scheme := parsedURI.Scheme
-	if strings.EqualFold(scheme, "https") {
-		// HTTPS is always allowed
-	} else if strings.EqualFold(scheme, "http") {
-		if !env.IsHTTPAllowed() {
-			b.errValidation = fmt.Errorf("unsupported URL scheme for request_uri: %q (https required; set VCKNOTS_WALLET_HTTP_ALLOWED=true to allow http for testing)", parsedURI.Scheme)
-			return b
-		}
-	} else {
-		b.errValidation = fmt.Errorf("unsupported URL scheme for request_uri: %q (https required; set VCKNOTS_WALLET_HTTP_ALLOWED=true to allow http for testing)", parsedURI.Scheme)
-		return b
-	}
-
-	var req *http.Request
-
-	switch method {
-	case RequestURIMethodGET:
-		req, err = http.NewRequest(http.MethodGet, parsedURI.String(), nil)
-	case RequestURIMethodPOST:
-		req, err = http.NewRequest(http.MethodPost, parsedURI.String(), nil)
-		if err == nil {
-			// OID4VP draft 24 §5.11: Request URI Method post
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			req.Header.Set("Accept", "application/oauth-authz-req+jwt")
-		}
-	default:
-		b.errValidation = fmt.Errorf("unsupported request_uri_method: %s", method)
-		return b
-	}
-
-	if err != nil {
-		b.errValidation = fmt.Errorf("failed to create %s request to %s: %w", method, uri, err)
-		return b
-	}
-
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	req.Header.Set("User-Agent", "")
-	resp, err := client.Do(req)
-	if err != nil {
-		b.errValidation = fmt.Errorf("failed to send %s request to %s: %w", method, uri, err)
-		return b
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		b.errValidation = fmt.Errorf("received non-200 status code: %d", resp.StatusCode)
-		return b
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		b.errValidation = fmt.Errorf("failed to read response body: %w", err)
-		return b
-	}
-
-	return b.WithRequestObject(string(body))
-}
-
-func (b *requestBuilder) Build() (*CredentialPresentationRequest, error) {
-	if b.errValidation != nil {
-		return nil, b.errValidation
-	}
-	return b.req, nil
-}
-
-type OID4VPClientID struct {
-	original string
-	prefix   OID4VPClientIDPrefix
-}
-
-type OID4VPClientIDPrefix string
-
-const (
-	OID4VPClientIDPrefixRedirectURI         OID4VPClientIDPrefix = "redirect_uri"
-	OID4VPClientIDPrefixOIDFederation       OID4VPClientIDPrefix = "openid_federation"
-	OID4VPClientIDPrefixDID                 OID4VPClientIDPrefix = "decentralized_identifier"
-	OID4VPClientIDPrefixVerifierAttestation OID4VPClientIDPrefix = "verifier_attestation"
-	OID4VPClientIDPrefixX509SanDNS          OID4VPClientIDPrefix = "x509_san_dns"
-	OID4VPClientIDPrefixX509Hash            OID4VPClientIDPrefix = "x509_hash"
-	OID4VPClientIDPrefixOriginal            OID4VPClientIDPrefix = "origin"
-)
-
-// parseOID4VPClientID parses and validates the client_id according to OID4VP specification.
-func parseOID4VPClientID(clientID string) (*OID4VPClientID, error) {
-	// Syntax: <client_id_prefix>:<orig_client_id>
-
-	// Trim whitespace from client_id
-	clientID = strings.TrimSpace(clientID)
-
-	parts := strings.SplitN(clientID, ":", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid client_id format")
-	}
-
-	prefix := parts[0]
-	origin := strings.TrimSpace(parts[1])
-
-	// Detect duplicate prefix (e.g., "x509_san_dns:x509_san_dns:...")
-	if strings.HasPrefix(origin, prefix+":") {
-		return nil, fmt.Errorf("invalid client_id: duplicate prefix detected")
-	}
-
-	switch OID4VPClientIDPrefix(prefix) {
-	case OID4VPClientIDPrefixRedirectURI,
-		OID4VPClientIDPrefixOIDFederation,
-		OID4VPClientIDPrefixDID,
-		OID4VPClientIDPrefixVerifierAttestation,
-		OID4VPClientIDPrefixX509SanDNS,
-		OID4VPClientIDPrefixX509Hash:
-		return &OID4VPClientID{
-			original: origin,
-			prefix:   OID4VPClientIDPrefix(prefix),
-		}, nil
-	case OID4VPClientIDPrefixOriginal:
-		// The Wallet MUST NOT accept this Client Identifier Prefix in requests.
-		return nil, fmt.Errorf("client_id prefix 'origin' is not allowed")
-	default:
-		return nil, fmt.Errorf("unsupported client_id prefix: %s", prefix)
-	}
+	return p.admit(req, wire, core.requestObject)
 }

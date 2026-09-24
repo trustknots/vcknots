@@ -1,342 +1,129 @@
+// Package oid4vci implements the OpenID for Verifiable Credential Issuance
+// receiver plugin, which performs the HTTP exchanges with a Credential Issuer
+// and its authorization server.
 package oid4vci
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
-
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
+	"sync"
 
 	"github.com/trustknots/vcknots/wallet/common"
+	"github.com/trustknots/vcknots/wallet/common/observe"
 	"github.com/trustknots/vcknots/wallet/credential"
-	"github.com/trustknots/vcknots/wallet/env"
+	"github.com/trustknots/vcknots/wallet/internal/httpfetch"
+	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp/federation"
+	"github.com/trustknots/vcknots/wallet/profile"
 	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
 
-type Oid4vciReceiver struct{}
+// Oid4vciReceiver is the bundled OpenID4VCI receiver plugin. It implements
+// the upstream types.Receiver, types.OID4VCITransport for OpenID4VCI 1.0 and
+// HAIP 1.0, and types.Draft13Transport. It performs HTTP only; every signed
+// value reaches it through a factory.
+//
+// Fields must not change once the receiver is registered. A zero
+// Oid4vciReceiver is usable and must not be copied after first use.
+type Oid4vciReceiver struct {
+	// HTTPClient sends every request; nil means a bounded default client.
+	// Redirects are never followed.
+	HTTPClient *http.Client
+	// AllowHTTP permits HTTP endpoints for a local test issuer. The zero value requires HTTPS.
+	AllowHTTP bool
+	// AppendedMetadataPathFallback retries Credential Issuer Metadata at the
+	// OpenID4VCI Draft 13 Section 11.2.2 location, the well-known path appended
+	// to an identifier that has a path, when the Section 12.2.2 location
+	// answers 404. It is off by default and never applies under HAIP.
+	AppendedMetadataPathFallback bool
+	// Profile selects the OpenID4VCI 1.0 policy. The zero value normalizes to
+	// profile.Final; profile.HAIP enforces HAIP 1.0.
+	Profile profile.Profile
+	// IssuerMetadataSigning configures OpenID4VCI 1.0 Section 12.2.3 signed
+	// Credential Issuer Metadata. A nil value requests signed metadata under
+	// HAIP and accepts an unsigned application/json document in every profile;
+	// see IssuerMetadataSigningOptions for the defaults each field takes.
+	IssuerMetadataSigning *IssuerMetadataSigningOptions
+	// IssuerMetadataFederation resolves the Credential Issuer Metadata of an
+	// issuer whose metadata document is not found (404) from its OpenID
+	// Federation Entity: the openid_credential_issuer metadata derived from a
+	// Trust Chain to one of the resolver's TrustAnchors (OpenID Federation 1.0
+	// Section 6.1.4). A nil HTTPClient uses HTTPClient. Without a valid chain
+	// the fetch fails. It does not apply when IssuerMetadataSigning.Require is
+	// set, because the result is not Section 12.2.3 signed metadata.
+	IssuerMetadataFederation *federation.Resolver
 
-const (
-	wellKnownCredentialIssuer    = "/.well-known/openid-credential-issuer"
-	wellKnownAuthorizationServer = "/.well-known/oauth-authorization-server"
+	// dpopNonceMu guards dpopNonces.
+	dpopNonceMu sync.Mutex
+	// dpopNonces is created on first use and kept behind a pointer so that
+	// Oid4vciReceiver stays comparable.
+	dpopNonces *dpopNonceCache
+}
+
+var (
+	_ types.Receiver         = (*Oid4vciReceiver)(nil)
+	_ types.OID4VCITransport = (*Oid4vciReceiver)(nil)
+	_ types.Draft13Transport = (*Oid4vciReceiver)(nil)
+	_ types.HTTPSchemePolicy = (*Oid4vciReceiver)(nil)
+	_ profile.Carrier        = (*Oid4vciReceiver)(nil)
 )
 
-type credentialNonceResponse struct {
-	CNonce *string `json:"c_nonce"`
-	Nonce  *string `json:"nonce"`
+// ProtocolProfile reports the normalized OID4VCI profile this receiver enforces.
+func (o *Oid4vciReceiver) ProtocolProfile() profile.Profile {
+	normalized, err := o.Profile.Normalize()
+	if err != nil {
+		return o.Profile
+	}
+	return normalized
 }
 
-var nonceHTTPClient = &http.Client{
-	Timeout: 10 * time.Second,
+// normalizedProfile normalizes the configured profile once. Unknown values fail
+// closed before any network access so every checkpoint reads a validated value.
+func (o *Oid4vciReceiver) normalizedProfile() (profile.Profile, error) {
+	normalized, err := o.Profile.Normalize()
+	if err != nil {
+		return "", fmt.Errorf("invalid OID4VCI profile: %w", err)
+	}
+	return normalized, nil
 }
 
-const maxNonceResponseBodyBytes int64 = 4 << 10
-
-var oid4vciHTTPClient = &http.Client{Timeout: 15 * time.Second}
-
-// tokenHTTPClient refuses to follow redirects. The token request carries the
-// client_assertion in its body, and a 307 or 308 response would make the HTTP
-// client replay that body against whatever origin the redirect names. Token
-// endpoints do not redirect, so failing is the safe reading.
-var tokenHTTPClient = &http.Client{
-	Timeout: 15 * time.Second,
-	CheckRedirect: func(req *http.Request, _ []*http.Request) error {
-		return fmt.Errorf("token endpoint redirected to %s: redirects are not followed for token requests", req.URL.Redacted())
-	},
+// requireHAIPTransport rejects the test-only HTTP escape when HAIP is selected.
+// HAIP §4 requires TLS for issuer and authorization server endpoints.
+func (o *Oid4vciReceiver) requireHAIPTransport(normalized profile.Profile) error {
+	if normalized.IsHAIP() && o.AllowHTTP {
+		return fmt.Errorf("%w: HAIP profile does not permit AllowHTTP", common.ErrInvalidInput)
+	}
+	return nil
 }
 
-// OID4VCICredentialFormatToSerializationFlavor maps OID4VCI credential format identifiers
-// to wallet serialization flavors.
+// ErrHTTPRedirectNotAllowed reports that an OpenID4VCI endpoint answered with
+// a redirect. No OpenID4VCI endpoint is defined to redirect, and following one
+// would replay the body and the Authorization, DPoP and client attestation
+// headers to an origin the response chose.
+var ErrHTTPRedirectNotAllowed = common.NewCodedError("http_redirect_not_allowed", "OID4VCI endpoint redirected; redirects are not followed")
+
+// OID4VCICredentialFormatToSerializationFlavor maps OID4VCI credential format
+// identifiers to wallet serialization flavors. SD-JWT VC is "dc+sd-jwt" in
+// OpenID4VCI 1.0 Appendix A.3 and "vc+sd-jwt" in Draft 13 Appendix A.3.
 func OID4VCICredentialFormatToSerializationFlavor(format string) (credential.SupportedSerializationFlavor, error) {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "jwt_vc_json", "jwt_vc", string(credential.JwtVc):
 		return credential.JwtVc, nil
-	case "dc+sd-jwt", string(credential.SDJwtVC):
+	case "dc+sd-jwt", "vc+sd-jwt", string(credential.SDJwtVC):
 		return credential.SDJwtVC, nil
+	case "ldp_vc", string(credential.LdpVc):
+		return credential.LdpVc, nil
 	default:
 		return "", fmt.Errorf("unsupported credential format: %q", format)
 	}
 }
 
-// doRequest performs an HTTP request and unmarshals the JSON response into target.
-// It handles common patterns: URL construction, status checking, body reading, and JSON parsing.
-func (o *Oid4vciReceiver) doRequest(method string, endpoint common.URIField, path string, body io.Reader, target interface{}) error {
-	endpointURL := url.URL(endpoint)
-	if !env.IsHTTPAllowed() && !strings.EqualFold(endpointURL.Scheme, "https") {
-		return fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
-	}
-
-	// Both metadata discovery URLs are formed by inserting the well-known string between the
-	// host component and the path component of the identifier, but the two specs differ on
-	// whether the identifier's trailing slash survives, so they are handled separately.
-	switch path {
-	case wellKnownCredentialIssuer:
-		// OID4VCI 1.0 §12.2.2: the path component is preserved verbatim, trailing slash
-		// included, so "https://issuer.example.com/tenant/" resolves to
-		// "https://issuer.example.com/.well-known/openid-credential-issuer/tenant/".
-		originalPath := endpointURL.Path
-		if originalPath == "/" {
-			// Bare issuer identifier with no path component.
-			originalPath = ""
-		}
-		if !strings.HasPrefix(originalPath, path) {
-			endpointURL.Path = path + originalPath
-		}
-	case wellKnownAuthorizationServer:
-		// RFC 8414 §3.1: the same insertion, but the identifier's trailing slash is not part
-		// of the path component, so "https://as.example.com/tenant/" resolves to
-		// "https://as.example.com/.well-known/oauth-authorization-server/tenant".
-		originalPath := strings.TrimSuffix(endpointURL.Path, "/")
-		if !strings.HasPrefix(originalPath, path) {
-			endpointURL.Path = path + originalPath
-		}
-	default:
-		// OID4VCI Draft 13 (ID1) §11.2.2, etc...
-		if !strings.HasSuffix(endpointURL.Path, path) {
-			endpointURL = *endpointURL.JoinPath(path)
-		}
-	}
-
-	switch method {
-	case "GET":
-	case "POST":
-		if body == nil {
-			return fmt.Errorf("POST request requires a body")
-		}
-	default:
-		return fmt.Errorf("unsupported HTTP method: %s", method)
-	}
-
-	req, err := http.NewRequest(method, endpointURL.String(), body)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	if method == "POST" {
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	}
-
-	resp, err := oid4vciHTTPClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-	if len(bodyBytes) == 0 {
-		return fmt.Errorf("empty response body")
-	}
-	if err := json.Unmarshal(bodyBytes, target); err != nil {
-		return fmt.Errorf("failed to parse JSON: %w", err)
-	}
-
-	return nil
-}
-
-func (o *Oid4vciReceiver) FetchIssuerMetadata(endpoint common.URIField, receivingTypes types.SupportedReceivingTypes) (*types.CredentialIssuerMetadata, error) {
-	if receivingTypes != types.Oid4vci {
-		return nil, fmt.Errorf("unsupported serialization flavor")
-	}
-
-	var metadata types.CredentialIssuerMetadata
-	if err := o.doRequest("GET", endpoint, wellKnownCredentialIssuer, nil, &metadata); err != nil {
-		return nil, fmt.Errorf("failed to fetch issuer metadata: %w", err)
-	}
-
-	return &metadata, nil
-}
-
-func (o *Oid4vciReceiver) FetchAuthorizationServerMetadata(endpoint common.URIField, receivingTypes types.SupportedReceivingTypes) (*types.AuthorizationServerMetadata, error) {
-	if receivingTypes != types.Oid4vci {
-		return nil, fmt.Errorf("unsupported flavor: %v", receivingTypes)
-	}
-
-	var metadata types.AuthorizationServerMetadata
-	if err := o.doRequest("GET", endpoint, wellKnownAuthorizationServer, nil, &metadata); err != nil {
-		return nil, fmt.Errorf("failed to fetch authorization server metadata: %w", err)
-	}
-
-	return &metadata, nil
-}
-
-func (o *Oid4vciReceiver) FetchAccessToken(
-	receivingTypes types.SupportedReceivingTypes,
-	endpoint common.URIField,
-	authzCode string,
-	txCode string,
-	opts ...types.TokenRequestOption,
-) (*types.CredentialIssuanceAccessToken, error) {
-	if receivingTypes != types.Oid4vci {
-		return nil, fmt.Errorf("unsupported flavor: %v", receivingTypes)
-	}
-	formData := url.Values{}
-	formData.Set("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
-	formData.Set("pre-authorized_code", authzCode)
-	if txCode != "" {
-		formData.Set("tx_code", txCode)
-	}
-	requestConfig := types.NewTokenRequestConfig(opts...)
-	if requestConfig.ClientAssertion != "" {
-		// private_key_jwt identifies the client by client_id, and an empty one
-		// would only be rejected at the authorization server, where the cause
-		// is far harder to see.
-		if strings.TrimSpace(requestConfig.ClientID) == "" {
-			return nil, fmt.Errorf("client_id is required when a client assertion is sent")
-		}
-		formData.Set("client_assertion", requestConfig.ClientAssertion)
-		formData.Set("client_assertion_type", types.ClientAssertionTypeJWTBearer)
-	}
-	// Sent for both authenticated and unauthenticated requests: client_id is
-	// OPTIONAL for the pre-authorized code grant, so it is included whenever the
-	// caller configured one.
-	if strings.TrimSpace(requestConfig.ClientID) != "" {
-		formData.Set("client_id", requestConfig.ClientID)
-	}
-	endpointURLString := types.ResolveTokenEndpointURL(endpoint)
-	endpointURL, err := url.Parse(endpointURLString)
-	if err != nil {
-		return nil, fmt.Errorf("invalid token endpoint URL: %w", err)
-	}
-
-	if !env.IsHTTPAllowed() && !strings.EqualFold(endpointURL.Scheme, "https") {
-		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
-	}
-
-	// A client assertion proves possession of the registered client key, and
-	// RFC 6749 section 10.8 requires client credentials never to travel in the
-	// clear. VCKNOTS_WALLET_HTTP_ALLOWED exists so that the local samples can
-	// talk to a development server on this machine, which is why loopback
-	// stays permitted; it is not a licence to send the assertion across a
-	// network unprotected.
-	if requestConfig.ClientAssertion != "" &&
-		!strings.EqualFold(endpointURL.Scheme, "https") &&
-		!common.IsLoopbackHost(endpointURL.Hostname()) {
-		return nil, fmt.Errorf(
-			"refusing to send a client assertion to %q over %q: https is required for any host other than loopback",
-			endpointURL.Host, endpointURL.Scheme)
-	}
-
-	req, err := http.NewRequest(
-		http.MethodPost,
-		endpointURL.String(),
-		strings.NewReader(formData.Encode()),
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to create token request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-
-	if requestConfig.DPoPProof != "" {
-		req.Header.Set("DPoP", requestConfig.DPoPProof)
-	}
-	resp, err := tokenHTTPClient.Do(req)
-
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	defer resp.Body.Close()
-	bodyBytes, err := io.ReadAll(resp.Body)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		if isUseDPoPNonceResponse(resp, bodyBytes) {
-			return nil, types.NewDPoPNonceError(resp.Header.Get("DPoP-Nonce"), types.ErrTokenRequestFailed)
-		}
-		if resp.StatusCode == http.StatusBadRequest {
-			if errorCode := tokenErrorCode(bodyBytes); errorCode != "" {
-				return nil, fmt.Errorf(
-					"token request failed: %s; status: %d; response: %s: %w",
-					errorCode,
-					resp.StatusCode,
-					string(bodyBytes),
-					types.ErrTokenRequestFailed,
-				)
-			}
-		}
-		return nil, fmt.Errorf(
-			"unexpected status code: %d response: %s",
-			resp.StatusCode,
-			string(bodyBytes),
-		)
-	}
-
-	var accessToken types.CredentialIssuanceAccessToken
-	if err := json.Unmarshal(bodyBytes, &accessToken); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %w", err)
-	}
-	return &accessToken, nil
-
-}
-
-func (o *Oid4vciReceiver) FetchNonce(receivingTypes types.SupportedReceivingTypes, endpoint common.URIField) (*string, error) {
-	if receivingTypes != types.Oid4vci {
-		return nil, fmt.Errorf("unsupported flavor: %v", receivingTypes)
-	}
-
-	nonceEndpointURL := url.URL(endpoint)
-	if !env.IsHTTPAllowed() && !strings.EqualFold(nonceEndpointURL.Scheme, "https") {
-		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", nonceEndpointURL.Scheme)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, nonceEndpointURL.String(), http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create nonce request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := nonceHTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch nonce: %w", err)
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxNonceResponseBodyBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read nonce response: %w", err)
-	}
-
-	if int64(len(bodyBytes)) > maxNonceResponseBodyBytes {
-		return nil, fmt.Errorf("nonce endpoint response exceeds %d bytes", maxNonceResponseBodyBytes)
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("nonce endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	if len(bodyBytes) == 0 {
-		return nil, fmt.Errorf("nonce endpoint returned empty response")
-	}
-
-	var nonceResponse credentialNonceResponse
-	if err := json.Unmarshal(bodyBytes, &nonceResponse); err != nil {
-		return nil, fmt.Errorf("failed to parse nonce response: %w", err)
-	}
-
-	if nonceResponse.CNonce != nil && *nonceResponse.CNonce != "" {
-		return nonceResponse.CNonce, nil
-	}
-	if nonceResponse.Nonce != nil && *nonceResponse.Nonce != "" {
-		return nonceResponse.Nonce, nil
-	}
-
-	return nil, fmt.Errorf("nonce response does not contain c_nonce or nonce")
-}
-
+// ReceiveCredential performs a Draft 13 credential request. It is a
+// types.Receiver method and carries no context; it binds its request to
+// context.Background().
 func (o *Oid4vciReceiver) ReceiveCredential(
 	receivingTypes types.SupportedReceivingTypes,
 	endpoint common.URIField,
@@ -352,9 +139,6 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	}
 
 	endpointURL := url.URL(endpoint)
-	if !env.IsHTTPAllowed() && !strings.EqualFold(endpointURL.Scheme, "https") {
-		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", endpointURL.Scheme)
-	}
 
 	// Prepare credential request body
 	reqBody := map[string]interface{}{}
@@ -375,50 +159,42 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 		return nil, err
 	}
 
-	// Create HTTP request
-	req, err := http.NewRequest("POST", endpointURL.String(), bytes.NewReader(reqBodyBytes))
-	if err != nil {
-		return nil, err
-	}
-
 	requestOptions := firstCredentialRequestOptions(options)
-
-	// Set headers
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	tokenType := authorizationScheme(accessToken.TokenType)
-	req.Header.Set("Authorization", fmt.Sprintf("%s %s", tokenType, accessToken.Token))
-	if strings.EqualFold(accessToken.TokenType, "DPoP") {
+	var dpopProof string
+	if strings.EqualFold(accessToken.TokenType, dpopAuthorizationScheme) {
 		if requestOptions == nil || requestOptions.DPoPProofJWT == nil || *requestOptions.DPoPProofJWT == "" {
 			return nil, fmt.Errorf("DPoP proof JWT is required for DPoP access token")
 		}
-		req.Header.Set("DPoP", *requestOptions.DPoPProofJWT)
+		dpopProof = *requestOptions.DPoPProofJWT
 	}
-	req.Header.Set("Accept", "application/json")
-	req.ContentLength = int64(len(reqBodyBytes))
-
-	// Execute request
-	resp, err := oid4vciHTTPClient.Do(req)
+	response, err := o.do(observe.WithEndpoint(context.Background(), observe.EndpointCredential), exchange{
+		method:      http.MethodPost,
+		url:         endpointURL,
+		contentType: "application/json; charset=utf-8",
+		body:        func() ([]byte, error) { return reqBodyBytes, nil },
+		header: func(header http.Header) error {
+			if dpopProof != "" {
+				header.Set("DPoP", dpopProof)
+			}
+			return nil
+		},
+		accessToken: &accessToken,
+		limit:       httpfetch.CredentialBodyLimit,
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != 200 {
-		if isUseDPoPNonceResponse(resp, bodyBytes) {
+	bodyBytes := response.body
+	if response.statusCode != http.StatusOK {
+		if isUseDPoPNonce(response) {
 			return nil, fmt.Errorf(
-				"%w; status: %d; endpoint: %s; response: %s",
-				types.NewDPoPNonceError(resp.Header.Get("DPoP-Nonce"), types.ErrUseDPoPNonce),
-				resp.StatusCode,
+				"%w; status: %d; endpoint: %s",
+				types.NewDPoPNonceError(response.header.Get("DPoP-Nonce"), types.ErrUseDPoPNonce),
+				response.statusCode,
 				endpointURL.String(),
-				string(bodyBytes),
 			)
 		}
-		return nil, fmt.Errorf("failed to receive credential; status: %d; endpoint: %s; response: %s", resp.StatusCode, endpointURL.String(), string(bodyBytes))
+		return nil, fmt.Errorf("failed to receive credential from %s: %w", endpointURL.String(), response.statusError())
 	}
 
 	if len(bodyBytes) == 0 {
@@ -470,45 +246,4 @@ func (o *Oid4vciReceiver) ReceiveCredential(
 	}
 
 	return &credentialStr, nil
-}
-
-func firstCredentialRequestOptions(options []*types.CredentialRequestOptions) *types.CredentialRequestOptions {
-	for _, option := range options {
-		if option != nil {
-			return option
-		}
-	}
-	return nil
-}
-
-func authorizationScheme(tokenType string) string {
-	switch {
-	case strings.EqualFold(tokenType, "bearer"):
-		return "Bearer"
-	case strings.EqualFold(tokenType, "dpop"):
-		return "DPoP"
-	default:
-		return cases.Title(language.English).String(strings.ToLower(tokenType))
-	}
-}
-
-func tokenErrorCode(bodyBytes []byte) string {
-	var errorResponse struct {
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal(bodyBytes, &errorResponse); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(errorResponse.Error)
-}
-
-func isUseDPoPNonceError(bodyBytes []byte) bool {
-	return tokenErrorCode(bodyBytes) == "use_dpop_nonce"
-}
-
-func isUseDPoPNonceResponse(resp *http.Response, bodyBytes []byte) bool {
-	if isUseDPoPNonceError(bodyBytes) {
-		return true
-	}
-	return strings.Contains(strings.ToLower(resp.Header.Get("WWW-Authenticate")), "use_dpop_nonce")
 }

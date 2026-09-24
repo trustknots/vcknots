@@ -1,5 +1,7 @@
 # vcknots-wallet ローカルサーバー統合テスト・コンフォーマンステストサンプル
 
+[公開 Wallet API driver](official_driver/README.ja.md) は、OpenID4VCI 1.0 と OpenID4VP 1.0 の段階的 API を、たとえば OpenID Foundation のコンフォーマンススイートに対して実行する別のプログラムです。
+
 このディレクトリには、vcknots-walletの2つの主要なテストシナリオを実演するサンプルコードが含まれています：
 
 1. **ローカルサーバー統合テストモード**: ローカルのvcknotsサーバーとの統合をテスト
@@ -14,10 +16,20 @@
 | サンプル | OpenID4VCI によるクレデンシャル発行 | OpenID4VP による提示 | キーバインディング |
 | --- | --- | --- | --- |
 | `server_integration_jwtvc` | JWT-VC | JWT-VC | 対象外 |
-| `server_integration_sdjwt` | SD-JWT VC（`dc+sd-jwt`） | 選択的開示 | KB-JWT なし |
+| `server_integration_sdjwt` | SD-JWT VC（`dc+sd-jwt`） | 選択的開示 | KB-JWT あり（DCQL query が既定で holder binding を要求するため） |
 | `server_integration_sdjwt+kbjwt` | SD-JWT VC（`dc+sd-jwt`） | 選択的開示 | KB-JWT あり |
 
 上表のクレデンシャル形式にかかわらず、ローカルサーバー統合テストモードのサンプルはいずれも `private_key_jwt` によるクライアント認証と DPoP を使用します。
+
+## サンプルが使う Wallet API
+
+サンプルは、1 回の呼出しでフローを実行する `ReceiveCredential`（OpenID4VCI の Pre-Authorized Code Flow）と `PresentCredential`（OpenID4VP 1.0）を呼び出します。
+ユーザーのいる wallet は代わりに段階的 API を使います。
+発行では `ResolveCredentialOffer`、`BeginIssuance`、`AuthorizeIssuance` または `AuthorizePreAuthorizedIssuance`、`RequestCredential` を、提示では `ParsePresentationRequest`、`SelectCredentials`、`SubmitPresentation` を使います。
+[wallet ガイド](../../docs/i18n/ja/docusaurus-plugin-content-docs/current/wallet.md) がその API、対応プロトコル、HAIP プロファイル、セキュリティ上の既定値を説明し、[公開 Wallet API driver](official_driver/README.ja.md) が完全な構成を示します。
+
+サンプルは `Config.CredentialAcceptance` を設定しないため、`ReceiveCredential` は受領した Credential を解析するだけで、Issuer を認証しません。
+OpenID4VCI 1.0 のメソッドは受理ポリシーなしでは実行を拒否します。
 
 ## 前提条件
 
@@ -164,16 +176,22 @@ Authz metadata initialized
 | `examples/config/client-private.sample.jwks.json` | `client_assertion` の署名に使う秘密鍵 JWK |
 
 ```go
-clientAuth, err := clientconfig.Load(
-	"../config/wallet-clients.json",
-	clientconfig.WithClientID("test-client-id"),
-	clientconfig.WithPrivateJWKFile("../config/client-private.sample.jwks.json"),
+import (
+	"github.com/trustknots/vcknots/wallet"
+	"github.com/trustknots/vcknots/wallet/clientconfig"
 )
-if err != nil {
-	return err
-}
 
-w, err := wallet.NewWalletWithConfig(wallet.Config{ClientAuth: clientAuth})
+func newClientWallet() (*wallet.Wallet, error) {
+	clientAuth, err := clientconfig.Load(
+		"../config/wallet-clients.json",
+		clientconfig.WithClientID("test-client-id"),
+		clientconfig.WithPrivateJWKFile("../config/client-private.sample.jwks.json"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return wallet.NewWalletWithConfig(wallet.Config{ClientAuth: clientAuth})
+}
 ```
 
 2つのファイルを分けているのは意図的です。OpenID Connect Dynamic Client Registration 1.0 は `jwks` に秘密鍵を含めてはならない（MUST NOT）と規定しているため、`wallet-clients.json` は公開鍵だけを持ち、そのまま認可サーバーへ渡せます。`clientconfig.Load` は `jwks` に秘密鍵が含まれていればエラーにし、秘密鍵ファイルにはパーミッション `0600` を要求します。
@@ -193,7 +211,7 @@ Go のコードで直接設定する方法も同様に使えます。`clientconf
 cd /path/to/vcknots/wallet/examples/server_integration_jwtvc
 go run server_integration_jwtvc.go
 
-# SD-JWT 統合テスト（kb-jwt なし）
+# SD-JWT 統合テスト（key binding は DCQL query に従う）
 cd /path/to/vcknots/wallet/examples/server_integration_sdjwt
 go run server_integration_sdjwt.go
 
@@ -217,7 +235,7 @@ go run server_integration_sdjwt.go --credential-offer-uri "$OFFER_URI" --tx-code
 
 
 
-### ステップ3: 結果の確認
+#### ステップ3: 結果の確認
 
 うまくいけば、以下のような出力が表示されます：
 
@@ -250,6 +268,10 @@ time=2025-11-27T14:03:25.174+09:00 level=INFO msg="Credential presented successf
 
 ---
 
+SD-JWT VC では、答える DCQL query が cryptographic holder binding を要求するとき（`require_cryptographic_holder_binding`、省略時は `true`）、または `SdJwtVcPresentationOptions.RequireKeyBinding` を設定したときに、`PresentCredential` が Key Binding JWT を付けます。
+オプションで必須の Key Binding JWT を外すことはできません。
+holder binding を要求する query には、`cnf` のない Credential で答えません。
+
 ### モード2: コンフォーマンステストモード（外部URL使用）
 
 外部のOpenID4VPコンフォーマンステストサービスに対してテストを実行します。
@@ -269,14 +291,14 @@ go run server_integration_sdjwt.go "openid4vp:?client_id=...&request_uri=..."
 
 コンフォーマンステストモードでは、以下の設定が自動的に適用されます：
 
-- **証明書検証**: システムルート証明書プールを使用
-- **証明書チェーン検証スキップ**: `InsecureSkipX509Verify: true` が自動設定され、自己署名証明書や非標準証明書を使用するコンフォーマンステストサーバーとの通信を可能にします
-- **選択クレーム**: `given_name`と`family_name`を選択
+- **Credential**: `example_sd_jwt.txt` の SD-JWT VC を保存して提示
+- **証明書検証**: システムルート証明書プールを `X509TrustChainRoots` に設定
+- **トラストアンカー**: システムのルート証明書に加えて、`VCKNOTS_CONFORMANCE_CA_PATH` で指定した PEM ファイルを信頼します。スイートのルート証明書を指定すると、署名付き Request Object をそれで認証します。
+- **選択クレーム**: `given_name`
 - **キーバインディング**: 必須（`RequireKeyBinding: true`）
-- **Audience/Nonce**: リクエストURIから自動的に抽出
-- **OID4VCI クライアント認証と DPoP**: 設定しない（このモードでは OpenID4VP の提示フローだけをテスト）
+- **Audience/Nonce**: 要求から取得
+- **OpenID4VCI のクライアント認証と DPoP**: 設定しない（このモードでは OpenID4VP の提示フローだけをテスト）
 
-> ⚠️ **警告**: `InsecureSkipX509Verify: true` はコンフォーマンステストやローカル開発時のみ有効です。本番環境では**絶対に**使用しないでください。
 
 ---
 
@@ -306,7 +328,7 @@ go run server_integration_sdjwt.go "openid4vp:?..."
 ```
 - 外部のOpenID4VPコンフォーマンステストサービスに対してテスト
 - システムルート証明書プールを使用
-- `InsecureSkipX509Verify: true` を自動設定（非標準証明書に対応）
+- 署名付き Request Object はシステムのルート証明書と `VCKNOTS_CONFORMANCE_CA_PATH` で認証
 
 ### ファイル構成
 
@@ -319,13 +341,14 @@ examples/
 ├── server_integration_jwtvc/
 │   └── server_integration_jwtvc.go   # JWT-VC 統合テスト
 ├── server_integration_sdjwt/
-│   ├── server_integration_sdjwt.go   # SD-JWT 統合テスト（kb-jwt なし）
+│   ├── server_integration_sdjwt.go   # SD-JWT 統合テスト（key binding は DCQL query に従う）
 │   └── example_sd_jwt.txt            # サンプル SD-JWT クレデンシャル
 ├── server_integration_sdjwt+kbjwt/
 │   ├── server_integration_sdjwt_kbjwt.go # kb-jwt 付き SD-JWT 統合テスト
 │   └── example_sd_jwt.txt                 # サンプル SD-JWT クレデンシャル
 ├── custom_dispatcher/                 # カスタムディスパッチャー実装例
 ├── custom_plugin/                     # カスタムプラグイン実装例
+├── official_driver/                   # 公開 Wallet API driver（段階的 API、JSON 入出力）
 ├── README.md                          # 英語版
 └── README.ja.md                       # このファイル
 ```
@@ -350,18 +373,19 @@ VCKNOTS_CERT_PATH=/path/to/custom/cert.pem go run server_integration_jwtvc.go
 | 環境変数 | 既定値 | 説明 |
 | :---- | :---- | :---- |
 | `VCKNOTS_WALLET_HTTP_ALLOWED` | `false`（未設定/空） | `true` を設定すると、Wallet の HTTP 通信で HTTP エンドポイントを許可します（ローカル開発/テスト用途）。ただし client assertion だけは例外で、平文 HTTP で送るのはループバックホスト宛てに限られます。リモートの `http://` エンドポイントへの `private_key_jwt` は、この設定を有効にしても拒否されます。 |
-| `VCKNOTS_WALLET_DEBUG` | `false`（未設定/空） | デバッグモードを有効化します。デバッグモード時は HTTP 許可動作も有効になります。 |
+| `VCKNOTS_WALLET_DEBUG` | `false`（未設定/空） | デバッグログのみを有効化します。HTTPS 必須要件は緩和されません。 |
 
 挙動の要点:
-- `VCKNOTS_WALLET_HTTP_ALLOWED=true` または `VCKNOTS_WALLET_DEBUG=true` のいずれかで、`IsHTTPAllowed()` は `true` になります。
-- 両方とも未設定（または `true` 以外）の場合、`IsHTTPAllowed()` は `false` となり、HTTPS 必須の検証が有効のままになります。
+- `IsHTTPAllowed()` が `true` になるのは `VCKNOTS_WALLET_HTTP_ALLOWED=true` の場合だけです。
+- この変数は既定のディスパッチャと plugin を構築するときに読み取られます。直接構築した plugin は自身の `AllowHTTP` フィールドに従います。
+- ローカルサーバー統合テストモードのサンプルは、wallet を構築する前に自プロセスで `env.SetHTTPAllowed(true)` を呼ぶため、この変数を設定する必要はありません。
+- `VCKNOTS_WALLET_DEBUG=true` だけでは HTTP 許可は有効になりません。ローカルの `http://` エンドポイントを使うには `VCKNOTS_WALLET_HTTP_ALLOWED=true` も設定してください。
+- `VCKNOTS_WALLET_HTTP_ALLOWED` が未設定（または `true` 以外）の場合、`IsHTTPAllowed()` は `false` となり、HTTPS 必須の検証が有効のままになります。
 
 設定例（ローカル開発のみ）:
 
 ```bash
 export VCKNOTS_WALLET_HTTP_ALLOWED=true
-# または
-export VCKNOTS_WALLET_DEBUG=true
 ```
 
 > ⚠️ **セキュリティ警告**: 本番環境では `VCKNOTS_WALLET_HTTP_ALLOWED` を有効化しないでください。HTTPS 必須検証を維持してください。
@@ -384,5 +408,5 @@ export VCKNOTS_WALLET_DEBUG=true
 コンフォーマンステストサーバーは、テスト目的で自己署名証明書や非標準的な証明書構造を使用することがあります。
 
 - **状況**: ローカルサーバー統合テストモード（引数なし）で発生する場合、証明書ファイルが正しく設定されていない可能性があります。
-- **状況**: コンフォーマンステストモード（引数あり）では `InsecureSkipX509Verify: true` が自動設定されるため、通常は発生しません。
+- **状況**: コンフォーマンステストモード（引数あり）では、`VCKNOTS_CONFORMANCE_CA_PATH` にスイートのルート証明書を指定すると、その署名付き Request Object を信頼します。
 - **解決策（ローカルサーバー統合テストモード向け）**: 正しい証明書ファイルが `../../../server/samples/certificate-openid-test/certificate_openid.pem` に配置されていることを確認するか、`VCKNOTS_CERT_PATH` で指定してください。

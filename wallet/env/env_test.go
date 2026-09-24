@@ -49,12 +49,12 @@ func TestIsDebugMode(t *testing.T) {
 
 		os.Setenv(env.DEBUG.String(), "true")
 		if result := env.IsDebugMode(); !result {
-			t.Fatalf("Set debug mode on, but result is %v", result);
+			t.Fatalf("Set debug mode on, but result is %v", result)
 		}
 
 		os.Setenv(env.DEBUG.String(), "false")
 		if result := env.IsDebugMode(); result {
-			t.Fatalf("Set debug mode on, but result is %v", result);
+			t.Fatalf("Set debug mode on, but result is %v", result)
 		}
 	})
 }
@@ -77,17 +77,31 @@ func TestIsHTTPAllowed(t *testing.T) {
 		if result := env.IsHTTPAllowed(); !result {
 			t.Fatalf("Set HTTP allowed on, but result is %v", result)
 		}
-
-		os.Setenv(env.DEBUG.String(), "true")
-		os.Setenv(env.HTTP_ALLOWED.String(), "")
-		if result := env.IsHTTPAllowed(); !result {
-			t.Fatalf("Set debug mode on, but result is %v", result)
-		}
-
-		os.Setenv(env.DEBUG.String(), "true")
-		os.Setenv(env.HTTP_ALLOWED.String(), "true")
-		if result := env.IsHTTPAllowed(); !result {
-			t.Fatalf("Set debug mode on, but result is %v", result)
-		}
 	})
+}
+
+func TestIsHTTPAllowedIgnoresDebugMode(t *testing.T) {
+	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	dbg_mode := env.IsDebugMode()
+	defer env.SetHTTPAllowed(http_allowed)
+	defer env.SetDebugMode(dbg_mode)
+
+	env.SetDebugMode(true)
+	env.SetHTTPAllowed(false)
+	if result := env.IsHTTPAllowed(); result {
+		t.Fatalf("Debug mode on with HTTP allowed unset, but result is %v", result)
+	}
+}
+
+func TestIsHTTPAllowedHonoursExplicitFlag(t *testing.T) {
+	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
+	dbg_mode := env.IsDebugMode()
+	defer env.SetHTTPAllowed(http_allowed)
+	defer env.SetDebugMode(dbg_mode)
+
+	env.SetDebugMode(false)
+	env.SetHTTPAllowed(true)
+	if result := env.IsHTTPAllowed(); !result {
+		t.Fatalf("HTTP allowed on, but result is %v", result)
+	}
 }

@@ -1,13 +1,22 @@
 package verifier
 
 import (
+	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
+	commonJOSE "github.com/trustknots/vcknots/wallet/common/jose"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/verifier/plugins/es256"
 	"github.com/trustknots/vcknots/wallet/verifier/types"
@@ -140,20 +149,132 @@ func TestVerificationDispatcher_Verify(t *testing.T) {
 		t.Error("Verify() should return true for valid signature")
 	}
 
-	// Test with unsupported algorithm
-	unsupportedProof := credential.CredentialProof{
-		Algorithm: jose.ES384, // Not registered by default
-		Signature: signature,
-		Payload:   payload,
+	// Test with unsupported algorithm. HS256 is a MAC rather than a digital
+	// signature and "none" is the unsigned JWS of RFC 7515 Section 3.6;
+	// WithDefaultConfig() registers neither, so both reach no plugin.
+	for _, algorithm := range []jose.SignatureAlgorithm{jose.HS256, jose.SignatureAlgorithm("none")} {
+		unsupportedProof := credential.CredentialProof{
+			Algorithm: algorithm,
+			Signature: signature,
+			Payload:   payload,
+		}
+
+		_, err = dispatcher.Verify(&unsupportedProof, publicKeyJWK)
+		if err == nil {
+			t.Errorf("Verify() should return error for unsupported algorithm %s", algorithm)
+			continue
+		}
+		expectedErr := fmt.Sprintf("verification error (algorithm: %s): plugin not found: verifier plugin not found", algorithm)
+		if err.Error() != expectedErr {
+			t.Errorf("Expected error message '%s', got '%s'", expectedErr, err.Error())
+		}
+		if !errors.Is(err, types.ErrPluginNotFound) {
+			t.Errorf("Verify() should report ErrPluginNotFound for %s", algorithm)
+		}
+	}
+}
+
+// TestWithDefaultConfig_RegistersEveryBundledAlgorithm pins the algorithms a
+// default dispatcher can verify, so a plugin that stops being registered is
+// caught here rather than in a credential acceptance failure.
+func TestWithDefaultConfig_RegistersEveryBundledAlgorithm(t *testing.T) {
+	dispatcher, err := NewVerificationDispatcher(WithDefaultConfig())
+	if err != nil {
+		t.Fatalf("NewVerificationDispatcher() should not return error: %v", err)
 	}
 
-	_, err = dispatcher.Verify(&unsupportedProof, publicKeyJWK)
-	if err == nil {
-		t.Error("Verify() should return error for unsupported algorithm")
+	expected := []jose.SignatureAlgorithm{
+		jose.ES256, jose.ES384, jose.ES512,
+		jose.RS256, jose.RS384, jose.RS512,
+		jose.PS256, jose.PS384, jose.PS512,
+		jose.EdDSA,
 	}
-	expectedErr := "verification error (algorithm: ES384): plugin not found: verifier plugin not found"
-	if err.Error() != expectedErr {
-		t.Errorf("Expected error message '%s', got '%s'", expectedErr, err.Error())
+	supported := dispatcher.GetSupportedAlgorithms()
+	if len(supported) != len(expected) {
+		t.Errorf("GetSupportedAlgorithms() returned %v, want the %d bundled algorithms", supported, len(expected))
+	}
+	for _, algorithm := range expected {
+		if !slices.Contains(supported, algorithm) {
+			t.Errorf("GetSupportedAlgorithms() should include %s", algorithm)
+		}
+	}
+	for _, algorithm := range []jose.SignatureAlgorithm{jose.HS256, jose.HS384, jose.HS512, jose.SignatureAlgorithm("none")} {
+		if slices.Contains(supported, algorithm) {
+			t.Errorf("GetSupportedAlgorithms() must not include %s", algorithm)
+		}
+	}
+}
+
+// TestWithDefaultConfig_WiresEachAlgorithmToItsPlugin signs with go-jose under
+// every bundled algorithm and verifies through the default dispatcher, and
+// checks that each plugin refuses a proof naming another algorithm. The
+// signature rules themselves are tested in plugins/internal/signature.
+func TestWithDefaultConfig_WiresEachAlgorithmToItsPlugin(t *testing.T) {
+	dispatcher, err := NewVerificationDispatcher(WithDefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecKey := func(curve elliptic.Curve) crypto.Signer {
+		key, err := ecdsa.GenerateKey(curve, rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return key
+	}
+	_, edKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := map[jose.SignatureAlgorithm]crypto.Signer{
+		jose.ES256: ecKey(elliptic.P256()), jose.ES384: ecKey(elliptic.P384()), jose.ES512: ecKey(elliptic.P521()),
+		jose.RS256: rsaKey, jose.RS384: rsaKey, jose.RS512: rsaKey,
+		jose.PS256: rsaKey, jose.PS384: rsaKey, jose.PS512: rsaKey,
+		jose.EdDSA: edKey,
+	}
+	for _, algorithm := range commonJOSE.AcceptedSignatureAlgorithms() {
+		t.Run(string(algorithm), func(t *testing.T) {
+			key, ok := keys[algorithm]
+			if !ok {
+				t.Fatalf("no test key for %s", algorithm)
+			}
+			signer, err := jose.NewSigner(jose.SigningKey{Algorithm: algorithm, Key: key}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			signed, err := signer.Sign([]byte(`{"iss":"https://issuer.example"}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			compact, err := signed.CompactSerialize()
+			if err != nil {
+				t.Fatal(err)
+			}
+			parts := strings.Split(compact, ".")
+			signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+			if err != nil {
+				t.Fatal(err)
+			}
+			proof := credential.CredentialProof{Algorithm: algorithm, Signature: signature, Payload: []byte(parts[0] + "." + parts[1])}
+			publicKey := &jose.JSONWebKey{Key: key.Public()}
+
+			valid, err := dispatcher.Verify(&proof, publicKey)
+			if err != nil || !valid {
+				t.Fatalf("Verify() = %v, %v; want true", valid, err)
+			}
+
+			mislabelled := proof
+			mislabelled.Algorithm = jose.ES256
+			if algorithm == jose.ES256 {
+				mislabelled.Algorithm = jose.ES384
+			}
+			if _, err := bundledVerifier(algorithm).Verify(&mislabelled, publicKey); !errors.Is(err, types.ErrUnsupportedAlgorithm) {
+				t.Fatalf("plugin accepted a proof naming %s: %v", mislabelled.Algorithm, err)
+			}
+		})
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"github.com/trustknots/vcknots/wallet/env"
 	"math/big"
 	"os"
 
@@ -151,6 +152,7 @@ func NewOID4VPRuntime(certPath string) (*Runtime, error) {
 	}
 
 	oid4vpPresenter := &oid4vp.Oid4vpPresenter{
+		AllowHTTP:           env.IsHTTPAllowed(),
 		X509TrustChainRoots: certPool,
 	}
 	presenterDispatcher, err := presenter.NewPresentationDispatcher(

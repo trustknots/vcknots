@@ -11,9 +11,13 @@ import (
 	"github.com/trustknots/vcknots/wallet/idprof/types"
 )
 
+// IdentityProfile is types.IdentityProfile.
 type IdentityProfile = types.IdentityProfile
+
+// IdentityProfiler is types.IdentityProfiler.
 type IdentityProfiler = types.IdentityProfiler
 
+// IDProfileStore is store.IDProfileStore.
 type IDProfileStore = store.IDProfileStore
 
 // IdentityProfileDispatcher routes each type to the corresponding plugin and manages storage

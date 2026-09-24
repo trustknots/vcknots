@@ -40,7 +40,6 @@ package clientconfig
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -52,26 +51,28 @@ import (
 	joseutil "github.com/trustknots/vcknots/wallet/common/jose"
 	"github.com/trustknots/vcknots/wallet/keystore"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
+
+	"github.com/trustknots/vcknots/wallet/common"
 )
 
 // Sentinel errors for client configuration loading.
 var (
-	ErrInvalidDocument         = errors.New("invalid client configuration document")
-	ErrNoClientEntries         = errors.New("no client entries in client configuration")
-	ErrClientNotFound          = errors.New("client_id not found in client configuration")
-	ErrAmbiguousClient         = errors.New("multiple client entries: client_id must be specified")
-	ErrDuplicateClientID       = errors.New("duplicate client_id in client configuration")
-	ErrUnsupportedAuthMethod   = errors.New("unsupported token_endpoint_auth_method")
-	ErrUnsupportedSigningAlg   = errors.New("unsupported token_endpoint_auth_signing_alg")
-	ErrSigningAlgMismatch      = errors.New("JWK alg does not match token_endpoint_auth_signing_alg")
-	ErrSigningKeyNotFound      = errors.New("no usable signing key for the selected client")
-	ErrAmbiguousSigningKey     = errors.New("multiple candidate signing keys: kid must be specified")
-	ErrJWKSConflict            = errors.New("jwks and jwks_uri must not both be present")
-	ErrJWKSURIUnsupported      = errors.New("jwks_uri alone cannot supply a local signing key")
-	ErrPrivateKeyInJWKS        = errors.New("jwks must not contain private key values")
-	ErrKeyMismatch             = errors.New("supplied signing key does not match the registered public key")
-	ErrUnusedSigningKey        = errors.New("a signing key was supplied for a client that signs nothing")
-	ErrInsecureFilePermissions = errors.New("private key file is readable by group or others")
+	ErrInvalidDocument         = common.NewCodedError("client_config_invalid_document", "invalid client configuration document")
+	ErrNoClientEntries         = common.NewCodedError("client_config_no_client_entries", "no client entries in client configuration")
+	ErrClientNotFound          = common.NewCodedError("client_config_client_not_found", "client_id not found in client configuration")
+	ErrAmbiguousClient         = common.NewCodedError("client_config_ambiguous_client", "multiple client entries: client_id must be specified")
+	ErrDuplicateClientID       = common.NewCodedError("client_config_duplicate_client_id", "duplicate client_id in client configuration")
+	ErrUnsupportedAuthMethod   = common.NewCodedError("client_config_unsupported_auth_method", "unsupported token_endpoint_auth_method")
+	ErrUnsupportedSigningAlg   = common.NewCodedError("client_config_unsupported_signing_alg", "unsupported token_endpoint_auth_signing_alg")
+	ErrSigningAlgMismatch      = common.NewCodedError("client_config_signing_alg_mismatch", "JWK alg does not match token_endpoint_auth_signing_alg")
+	ErrSigningKeyNotFound      = common.NewCodedError("client_config_signing_key_not_found", "no usable signing key for the selected client")
+	ErrAmbiguousSigningKey     = common.NewCodedError("client_config_ambiguous_signing_key", "multiple candidate signing keys: kid must be specified")
+	ErrJWKSConflict            = common.NewCodedError("client_config_jwks_conflict", "jwks and jwks_uri must not both be present")
+	ErrJWKSURIUnsupported      = common.NewCodedError("client_config_jwksuri_unsupported", "jwks_uri alone cannot supply a local signing key")
+	ErrPrivateKeyInJWKS        = common.NewCodedError("client_config_private_key_in_jwks", "jwks must not contain private key values")
+	ErrKeyMismatch             = common.NewCodedError("client_config_key_mismatch", "supplied signing key does not match the registered public key")
+	ErrUnusedSigningKey        = common.NewCodedError("client_config_unused_signing_key", "a signing key was supplied for a client that signs nothing")
+	ErrInsecureFilePermissions = common.NewCodedError("client_config_insecure_file_permissions", "private key file is readable by group or others")
 )
 
 // Document is the on-disk representation of the configuration file.

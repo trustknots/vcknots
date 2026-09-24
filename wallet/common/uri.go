@@ -7,6 +7,7 @@ import (
 	"strings"
 )
 
+// URIField is a url.URL that encodes to and decodes from a JSON string.
 type URIField url.URL
 
 // UnmarshalJSON implements json.Unmarshaler
@@ -25,6 +26,7 @@ func (u *URIField) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON implements json.Marshaler.
 func (u URIField) MarshalJSON() ([]byte, error) {
 	x := url.URL(u)
 	str := x.String()
@@ -37,6 +39,7 @@ func (u URIField) String() string {
 	return x.String()
 }
 
+// ParseURIField parses raw with url.Parse and returns it as a URIField.
 func ParseURIField(raw string) (*URIField, error) {
 	x, err := url.Parse(raw)
 	if err != nil {

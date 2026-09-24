@@ -2,25 +2,26 @@
 package types
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/keystore"
+
+	"github.com/trustknots/vcknots/wallet/common"
 )
 
 // Sentinel errors for common serialization failures
 var (
-	ErrUnsupportedFormat    = errors.New("unsupported serialization format")
-	ErrInvalidJWT           = errors.New("invalid JWT format")
-	ErrInvalidCredential    = errors.New("invalid credential structure")
-	ErrInvalidPresentation  = errors.New("invalid presentation structure")
-	ErrMissingProof         = errors.New("missing or invalid proof")
-	ErrSigningFailed        = errors.New("failed to sign data")
-	ErrDecodingFailed       = errors.New("failed to decode data")
-	ErrUnsupportedAlgorithm = errors.New("unsupported cryptographic algorithm")
-	ErrPluginNotFound       = errors.New("serialization plugin not found")
-	ErrNilPlugin            = errors.New("serialization plugin cannot be nil")
+	ErrUnsupportedFormat    = common.NewCodedError("serializer_unsupported_format", "unsupported serialization format")
+	ErrInvalidJWT           = common.NewCodedError("serializer_invalid_jwt", "invalid JWT format")
+	ErrInvalidCredential    = common.NewCodedError("serializer_invalid_credential", "invalid credential structure")
+	ErrInvalidPresentation  = common.NewCodedError("serializer_invalid_presentation", "invalid presentation structure")
+	ErrMissingProof         = common.NewCodedError("serializer_missing_proof", "missing or invalid proof")
+	ErrSigningFailed        = common.NewCodedError("serializer_signing_failed", "failed to sign data")
+	ErrDecodingFailed       = common.NewCodedError("serializer_decoding_failed", "failed to decode data")
+	ErrUnsupportedAlgorithm = common.NewCodedError("serializer_unsupported_algorithm", "unsupported cryptographic algorithm")
+	ErrPluginNotFound       = common.NewCodedError("serializer_plugin_not_found", "serialization plugin not found")
+	ErrNilPlugin            = common.NewCodedError("serializer_nil_plugin", "serialization plugin cannot be nil")
 )
 
 // SerializePresentationOptions is a marker interface for presentation serialization options

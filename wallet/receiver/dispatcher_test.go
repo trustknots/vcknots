@@ -3,9 +3,12 @@ package receiver
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/trustknots/vcknots/wallet/common"
+	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
 
@@ -203,4 +206,58 @@ func TestReceivingDispatcher_ReceiveCredential(t *testing.T) {
 		}
 		mock.shouldError = false
 	})
+}
+
+func TestReceivingDispatcher_TransportCapabilities(t *testing.T) {
+	dispatcher, err := NewReceivingDispatcher(WithDefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if transport, err := dispatcher.OID4VCITransport(types.Oid4vci); err != nil || transport == nil {
+		t.Fatalf("built-in OID4VCI transport: %v, %v", transport, err)
+	}
+	if transport, err := dispatcher.Draft13Transport(types.Oid4vci); err != nil || transport == nil {
+		t.Fatalf("built-in Draft 13 transport: %v, %v", transport, err)
+	}
+	for _, protocol := range []types.SupportedReceivingTypes{types.Mock, types.SupportedReceivingTypes(999)} {
+		transport, err := dispatcher.OID4VCITransport(protocol)
+		if transport != nil || !errors.Is(err, types.ErrUnsupportedProtocol) {
+			t.Errorf("protocol %v: expected no OID4VCI transport, got %v, %v", protocol, transport, err)
+		}
+		draft13, err := dispatcher.Draft13Transport(protocol)
+		if draft13 != nil || !errors.Is(err, types.ErrUnsupportedProtocol) {
+			t.Errorf("protocol %v: expected no Draft 13 transport, got %v, %v", protocol, draft13, err)
+		}
+	}
+}
+
+func TestReceivingDispatcher_DefaultHTTPPolicyIsCaptured(t *testing.T) {
+	t.Setenv(env.DEBUG.String(), "")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"credential_issuer":"http://%s","credential_endpoint":"http://%s/credential"}`, r.Host, r.Host)
+	}))
+	defer server.Close()
+	endpoint, err := common.ParseURIField(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, allow := range []bool{false, true} {
+		t.Run(fmt.Sprintf("allow_%t", allow), func(t *testing.T) {
+			t.Setenv(env.HTTP_ALLOWED.String(), fmt.Sprint(allow))
+			dispatcher, err := NewReceivingDispatcher(WithDefaultConfig())
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Changing the process setting must not mutate an existing receiver policy.
+			t.Setenv(env.HTTP_ALLOWED.String(), fmt.Sprint(!allow))
+			_, err = dispatcher.FetchIssuerMetadata(*endpoint, types.Oid4vci)
+			if allow && err != nil {
+				t.Fatalf("explicitly allowed local HTTP: %v", err)
+			}
+			if !allow && err == nil {
+				t.Fatal("HTTP must remain disabled")
+			}
+		})
+	}
 }

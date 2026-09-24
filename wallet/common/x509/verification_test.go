@@ -6,21 +6,18 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
-
-	"golang.org/x/crypto/ocsp"
 )
 
 type testCerts struct {
 	issuerCert *x509.Certificate
 	issuerKey  *ecdsa.PrivateKey
 	leafCert   *x509.Certificate
-	leafKey    *ecdsa.PrivateKey
 }
 
 func genCA(t *testing.T, cn string) (*x509.Certificate, *ecdsa.PrivateKey) {
@@ -48,19 +45,26 @@ func genCA(t *testing.T, cn string) (*x509.Certificate, *ecdsa.PrivateKey) {
 	return cert, key
 }
 
-func genLeaf(t *testing.T, issuer *x509.Certificate, issuerKey *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey) {
+// genLeaf issues the leaf with its revocation endpoints in the signed
+// certificate, where the checker reads them.
+func genLeaf(t *testing.T, issuer *x509.Certificate, issuerKey *ecdsa.PrivateKey, crlURL, ocspURL string) *x509.Certificate {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("failed to gen key: %v", err)
 	}
-	serial := big.NewInt(2)
 	tmpl := &x509.Certificate{
-		SerialNumber:          serial,
+		SerialNumber:          big.NewInt(2),
 		Subject:               pkix.Name{CommonName: "Leaf"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
+	}
+	if crlURL != "" {
+		tmpl.CRLDistributionPoints = []string{crlURL}
+	}
+	if ocspURL != "" {
+		tmpl.OCSPServer = []string{ocspURL}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, issuer, &key.PublicKey, issuerKey)
 	if err != nil {
@@ -70,34 +74,7 @@ func genLeaf(t *testing.T, issuer *x509.Certificate, issuerKey *ecdsa.PrivateKey
 	if err != nil {
 		t.Fatalf("failed to parse leaf cert: %v", err)
 	}
-	return cert, key
-}
-
-func setupOCSPServer(t *testing.T, tc *testCerts, status int, stale bool) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		_, _ = io.ReadAll(r.Body)
-		thisUpdate := time.Now().Add(-5 * time.Minute)
-		nextUpdate := time.Now().Add(30 * time.Minute)
-		if stale {
-			nextUpdate = time.Now().Add(-1 * time.Minute)
-		}
-		resp, err := ocsp.CreateResponse(tc.issuerCert, tc.issuerCert, ocsp.Response{
-			Status:       status,
-			SerialNumber: tc.leafCert.SerialNumber,
-			ThisUpdate:   thisUpdate,
-			NextUpdate:   nextUpdate,
-		}, tc.issuerKey)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		w.Write(resp)
-	}))
+	return cert
 }
 
 func setupCRLServer(t *testing.T, issuer *x509.Certificate, issuerKey *ecdsa.PrivateKey, revoked bool, stale bool, signWithOther bool, includeNonMatching bool) *httptest.Server {
@@ -134,86 +111,58 @@ func setupCRLServer(t *testing.T, issuer *x509.Certificate, issuerKey *ecdsa.Pri
 	}))
 }
 
-func prepareCerts(t *testing.T) *testCerts {
+func prepareCerts(t *testing.T, crlURL, ocspURL string) *testCerts {
 	issuer, issuerKey := genCA(t, "Test CA")
-	leaf, leafKey := genLeaf(t, issuer, issuerKey)
-	return &testCerts{issuerCert: issuer, issuerKey: issuerKey, leafCert: leaf, leafKey: leafKey}
+	leaf := genLeaf(t, issuer, issuerKey, crlURL, ocspURL)
+	return &testCerts{issuerCert: issuer, issuerKey: issuerKey, leafCert: leaf}
 }
 
 func TestCheckIfCertsRevoked_NoEndpoints(t *testing.T) {
-	c := prepareCerts(t)
-	// no OCSP/CRL endpoints
+	c := prepareCerts(t, "", "")
 	if err := CheckIfCertsRevoked([]*x509.Certificate{c.leafCert, c.issuerCert}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestCheckIfCertsRevoked_OCSP_ServerError(t *testing.T) {
-	c := prepareCerts(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(500) }))
+// TestCheckIfCertsRevoked_OCSPOnlyIsRefused pins that OCSP is not consulted:
+// a certificate whose only revocation mechanism is OCSP has no established
+// status, so it is refused without contacting the responder.
+func TestCheckIfCertsRevoked_OCSPOnlyIsRefused(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { requests.Add(1) }))
 	defer srv.Close()
-	c.leafCert.OCSPServer = []string{srv.URL}
-	if err := CheckIfCertsRevoked([]*x509.Certificate{c.leafCert, c.issuerCert}); err == nil {
-		t.Fatalf("expected OCSP error")
+	c := prepareCerts(t, "", srv.URL)
+	err := CheckIfCertsRevoked([]*x509.Certificate{c.leafCert, c.issuerCert})
+	assertCRLTestKind(t, err, CRLErrorUnsupported)
+	if requests.Load() != 0 {
+		t.Fatal("the OCSP responder was contacted")
 	}
 }
 
-func TestCheckIfCertsRevoked_OCSP_Good(t *testing.T) {
-	c := prepareCerts(t)
-	srv := setupOCSPServer(t, c, ocsp.Good, false)
-	defer srv.Close()
-	c.leafCert.OCSPServer = []string{srv.URL}
-	if err := CheckIfCertsRevoked([]*x509.Certificate{c.leafCert, c.issuerCert}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestCheckIfCertsRevoked_OCSP_Revoked(t *testing.T) {
-	c := prepareCerts(t)
-	srv := setupOCSPServer(t, c, ocsp.Revoked, false)
-	defer srv.Close()
-	c.leafCert.OCSPServer = []string{srv.URL}
-	if err := CheckIfCertsRevoked([]*x509.Certificate{c.leafCert, c.issuerCert}); err == nil {
-		t.Fatalf("expected revoked error")
-	}
-}
-
-func TestCheckIfCertsRevoked_OCSP_Stale(t *testing.T) {
-	c := prepareCerts(t)
-	srv := setupOCSPServer(t, c, ocsp.Good, true)
-	defer srv.Close()
-	c.leafCert.OCSPServer = []string{srv.URL}
-	if err := CheckIfCertsRevoked([]*x509.Certificate{c.leafCert, c.issuerCert}); err == nil {
-		t.Fatalf("expected stale OCSP error")
-	}
-}
-
-func TestCheckIfCertsRevoked_CRL_Success(t *testing.T) {
-	c := prepareCerts(t)
-	srv := setupCRLServer(t, c.issuerCert, c.issuerKey, false, false, false, true)
-	defer srv.Close()
-	c.leafCert.CRLDistributionPoints = []string{srv.URL}
-	if err := CheckIfCertsRevoked([]*x509.Certificate{c.leafCert, c.issuerCert}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestCheckIfCertsRevoked_CRL_Revoked(t *testing.T) {
-	c := prepareCerts(t)
-	srv := setupCRLServer(t, c.issuerCert, c.issuerKey, true, false, false, false)
-	defer srv.Close()
-	c.leafCert.CRLDistributionPoints = []string{srv.URL}
-	if err := CheckIfCertsRevoked([]*x509.Certificate{c.leafCert, c.issuerCert}); err == nil {
-		t.Fatalf("expected CRL revoked error")
-	}
-}
-
-func TestCheckIfCertsRevoked_CRL_SignatureInvalid(t *testing.T) {
-	c := prepareCerts(t)
-	srv := setupCRLServer(t, c.issuerCert, c.issuerKey, false, false, true, false)
-	defer srv.Close()
-	c.leafCert.CRLDistributionPoints = []string{srv.URL}
-	if err := CheckIfCertsRevoked([]*x509.Certificate{c.leafCert, c.issuerCert}); err == nil {
-		t.Fatalf("expected CRL signature error")
+func TestCheckIfCertsRevoked_CRL(t *testing.T) {
+	for _, tc := range []struct {
+		name                          string
+		revoked, stale, signWithOther bool
+		wantKind                      CRLCheckErrorKind
+	}{
+		{name: "current CRL without the serial"},
+		{name: "revoked", revoked: true, wantKind: CRLErrorRevoked},
+		{name: "stale", stale: true, wantKind: CRLErrorStale},
+		{name: "signed by another key", signWithOther: true, wantKind: CRLErrorSignature},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			issuer, issuerKey := genCA(t, "Test CA")
+			srv := setupCRLServer(t, issuer, issuerKey, tc.revoked, tc.stale, tc.signWithOther, true)
+			defer srv.Close()
+			leaf := genLeaf(t, issuer, issuerKey, srv.URL+"/ca.crl", "")
+			err := CheckIfCertsRevoked([]*x509.Certificate{leaf, issuer})
+			if tc.wantKind == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			assertCRLTestKind(t, err, tc.wantKind)
+		})
 	}
 }

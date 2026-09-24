@@ -50,7 +50,7 @@ func NewOID4VPVerifierServer(config *OID4VPVerifierConfig) *OID4VPVerifierServer
 func (vs *OID4VPVerifierServer) setupRoutes() {
 	// Verifier metadata endpoint
 	vs.server.HandleFunc("/.well-known/openid-verifier", vs.handleVerifierMetadata)
-	
+
 	// JWKS endpoint
 	vs.server.HandleFunc("/.well-known/jwks.json", vs.handleJWKS)
 }
@@ -58,7 +58,7 @@ func (vs *OID4VPVerifierServer) setupRoutes() {
 // handleVerifierMetadata handles the verifier metadata endpoint
 func (vs *OID4VPVerifierServer) handleVerifierMetadata(w http.ResponseWriter, r *http.Request) {
 	baseURL := "http://" + r.Host
-	
+
 	metadata := map[string]interface{}{
 		"issuer":   baseURL,
 		"jwks_uri": baseURL + "/.well-known/jwks.json",
@@ -107,14 +107,14 @@ func (vs *OID4VPVerifierServer) GetKeyPair() *KeyPair {
 // OID4VPPresenterConfig holds configuration for an OID4VP presenter mock server
 type OID4VPPresenterConfig struct {
 	AcceptAllPresentations bool
-	CustomResponses       map[string]interface{}
+	CustomResponses        map[string]interface{}
 }
 
 // DefaultOID4VPPresenterConfig creates a default configuration for OID4VP presenter
 func DefaultOID4VPPresenterConfig() *OID4VPPresenterConfig {
 	return &OID4VPPresenterConfig{
 		AcceptAllPresentations: true,
-		CustomResponses:       make(map[string]interface{}),
+		CustomResponses:        make(map[string]interface{}),
 	}
 }
 
@@ -131,7 +131,7 @@ func NewOID4VPPresenterServer(config *OID4VPPresenterConfig) *OID4VPPresenterSer
 	}
 
 	server := NewMockServer()
-	
+
 	ps := &OID4VPPresenterServer{
 		server: server,
 		config: config,

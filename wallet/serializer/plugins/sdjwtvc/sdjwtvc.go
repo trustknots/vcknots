@@ -1,6 +1,9 @@
+// Package sdjwtvc serializes SD-JWT VCs and builds their presentations with
+// selected disclosures and an optional Key Binding JWT.
 package sdjwtvc
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
@@ -32,6 +35,15 @@ func NewSdJwtVcSerializer() (*SdJwtVcSerializer, error) {
 type SdJwtVcPresentationOptions struct {
 	// SelectedClaims specifies which claims to disclose in the presentation
 	SelectedClaims []string
+	// LimitDisclosureToSelectedClaims makes SelectedClaims authoritative even
+	// when it is empty. When false, an empty SelectedClaims discloses every
+	// available disclosure.
+	LimitDisclosureToSelectedClaims bool
+	// RequireRootClaimMatch resolves SelectedClaims against issuer-signed root
+	// properties and root disclosure commitments. Public Final DCQL APIs enable
+	// this for one-segment paths. False selects disclosures by name alone,
+	// including disclosures inside issuer-signed objects.
+	RequireRootClaimMatch bool
 	// RequireKeyBinding indicates whether a Key Binding JWT is required
 	RequireKeyBinding bool
 	// Audience is the intended audience for the Key Binding JWT (required if RequireKeyBinding is true)
@@ -49,12 +61,14 @@ type SdJwtVcPresentationOptions struct {
 // IsSerializePresentationOptions implements the marker interface
 func (o *SdJwtVcPresentationOptions) IsSerializePresentationOptions() {}
 
+// SetAudience sets Audience. It is a no-op on a nil receiver.
 func (o *SdJwtVcPresentationOptions) SetAudience(audience string) {
 	if o != nil {
 		o.Audience = audience
 	}
 }
 
+// SetNonce sets Nonce. It is a no-op on a nil receiver.
 func (o *SdJwtVcPresentationOptions) SetNonce(nonce string) {
 	if o != nil {
 		o.Nonce = nonce
@@ -122,7 +136,12 @@ func parseDisclosure(encodedDisclosure string, sdAlg string) (credential.SDJwtDi
 
 	// Parse JSON array
 	var arr []interface{}
-	if err := json.Unmarshal(decoded, &arr); err != nil {
+	if !json.Valid(decoded) {
+		return credential.SDJwtDisclosure{}, types.NewDecodingError("disclosure is not valid JSON", nil)
+	}
+	disclosureDecoder := json.NewDecoder(bytes.NewReader(decoded))
+	disclosureDecoder.UseNumber()
+	if err := disclosureDecoder.Decode(&arr); err != nil {
 		return credential.SDJwtDisclosure{}, types.NewDecodingError("disclosure is not a valid JSON array", err)
 	}
 
@@ -368,7 +387,7 @@ func (s *SdJwtVcSerializer) DeserializeCredential(flavor credential.SupportedSer
 		return nil, types.NewInvalidJWTError("invalid SD-JWT payload encoding", err)
 	}
 
-	var payloadMap map[string]interface{}
+	var payloadMap josehelper.Claims
 	if err := json.Unmarshal(payloadData, &payloadMap); err != nil {
 		return nil, types.NewInvalidJWTError("SD-JWT payload is not valid JSON", err)
 	}
@@ -396,8 +415,21 @@ func (s *SdJwtVcSerializer) DeserializeCredential(flavor credential.SupportedSer
 		}
 	}
 
-	// Parse disclosures and build disclosed claims map
-	disclosedClaims := make(map[string]interface{})
+	// Reconstruct only root claims here. A nested disclosure with the same
+	// name is not a root claim and must not overwrite it during DCQL matching.
+	allClaims := make(map[string]interface{})
+	for k, v := range payloadMap {
+		if k != "_sd" && k != "_sd_alg" && k != "cnf" {
+			allClaims[k] = v
+		}
+	}
+	rootDigests := make(map[string]bool, len(sdHashes))
+	for _, digest := range sdHashes {
+		if rootDigests[digest] {
+			return nil, types.NewInvalidCredentialError("duplicate root disclosure digest", nil)
+		}
+		rootDigests[digest] = true
+	}
 	parsedDisclosures := make([]credential.SDJwtDisclosure, 0, len(cf.Disclosures))
 	for _, discStr := range cf.Disclosures {
 		disc, err := parseDisclosure(discStr, sdAlg)
@@ -405,22 +437,19 @@ func (s *SdJwtVcSerializer) DeserializeCredential(flavor credential.SupportedSer
 			return nil, types.NewDecodingError("failed to parse disclosure", err)
 		}
 		parsedDisclosures = append(parsedDisclosures, disc)
-		if !disc.IsArrayElement && disc.Name != "" {
-			disclosedClaims[disc.Name] = disc.Value
-		}
-	}
-
-	// Merge disclosed claims with non-selective claims from payload
-	allClaims := make(map[string]interface{})
-	for k, v := range payloadMap {
-		// Skip SD-JWT specific claims
-		if k == "_sd" || k == "_sd_alg" || k == "cnf" {
+		if !rootDigests[disc.Digest] {
 			continue
 		}
-		allClaims[k] = v
-	}
-	for k, v := range disclosedClaims {
-		allClaims[k] = v
+		if disc.IsArrayElement || disc.Name == "" || disc.Name == "_sd" || disc.Name == "..." {
+			return nil, types.NewInvalidCredentialError("invalid root object disclosure", nil)
+		}
+		if _, exists := payloadMap[disc.Name]; exists {
+			return nil, types.NewInvalidCredentialError("disclosure overwrites a plaintext claim", nil)
+		}
+		if _, exists := allClaims[disc.Name]; exists {
+			return nil, types.NewInvalidCredentialError("duplicate root disclosure claim", nil)
+		}
+		allClaims[disc.Name] = disc.Value
 	}
 
 	// Extract credential fields
@@ -443,12 +472,20 @@ func (s *SdJwtVcSerializer) DeserializeCredential(flavor credential.SupportedSer
 
 	// Parse validity period
 	validPeriod := &credential.CredentialValidPeriod{}
-	if iat, ok := payloadMap["iat"].(float64); ok {
-		t := time.Unix(int64(iat), 0)
+	if iat, ok := payloadMap["iat"].(json.Number); ok {
+		value, err := iat.Float64()
+		if err != nil {
+			return nil, types.NewInvalidCredentialError("invalid iat", err)
+		}
+		t := time.Unix(int64(value), 0)
 		validPeriod.From = &t
 	}
-	if exp, ok := payloadMap["exp"].(float64); ok {
-		t := time.Unix(int64(exp), 0)
+	if exp, ok := payloadMap["exp"].(json.Number); ok {
+		value, err := exp.Float64()
+		if err != nil {
+			return nil, types.NewInvalidCredentialError("invalid exp", err)
+		}
+		t := time.Unix(int64(value), 0)
 		validPeriod.To = &t
 	}
 	if validPeriod.From != nil || validPeriod.To != nil {
@@ -560,24 +597,14 @@ func (s *SdJwtVcSerializer) SerializePresentation(
 	// Filter disclosures based on selected claims
 	var selectedDisclosures []string
 	if sdOpts != nil {
-		if len(sdOpts.SelectedClaims) > 0 {
-			// Parse all disclosures
-			for _, discStr := range cf.Disclosures {
-				disc, err := parseDisclosure(discStr, sdAlg)
-				if err != nil {
-					continue
-				}
-				// Include if the claim name is in selected claims
-				for _, selectedClaim := range sdOpts.SelectedClaims {
-					if disc.Name == selectedClaim {
-						selectedDisclosures = append(selectedDisclosures, discStr)
-						break
-					}
-				}
+		if sdOpts.LimitDisclosureToSelectedClaims || len(sdOpts.SelectedClaims) > 0 {
+			if sdOpts.RequireRootClaimMatch {
+				selectedDisclosures, err = selectTopLevelDisclosures(payloadMap, cf.Disclosures, sdAlg, sdOpts.SelectedClaims)
+			} else {
+				selectedDisclosures, err = selectDisclosuresByName(cf.Disclosures, sdAlg, sdOpts.SelectedClaims)
 			}
-			// compare selectedDisclosures and sdOpts.SelectedClaims
-			if len(selectedDisclosures) != len(sdOpts.SelectedClaims) {
-				return nil, nil, fmt.Errorf("error: Some of the given selected claims don't exist in the credential")
+			if err != nil {
+				return nil, nil, err
 			}
 		} else {
 			// Include all disclosures if no specific claims selected
@@ -766,6 +793,8 @@ func (s *SdJwtVcSerializer) DeserializePresentation(flavor credential.SupportedS
 	return presentation, nil
 }
 
+// GetDefaultOption returns empty SdJwtVcPresentationOptions for
+// credential.SDJwtVC and an error for any other flavor.
 func (s *SdJwtVcSerializer) GetDefaultOption(flavor credential.SupportedSerializationFlavor) (types.SerializePresentationOptions, error) {
 	if flavor != credential.SDJwtVC {
 		return nil, types.NewFormatError(flavor, types.ErrUnsupportedFormat, "expected SD-JWT VC format")

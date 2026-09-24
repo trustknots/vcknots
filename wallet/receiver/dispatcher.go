@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/trustknots/vcknots/wallet/common"
+	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/receiver/plugins/mock"
 	"github.com/trustknots/vcknots/wallet/receiver/plugins/oid4vci"
 	"github.com/trustknots/vcknots/wallet/receiver/types"
@@ -35,7 +36,7 @@ func NewReceivingDispatcher(options ...func(*ReceivingDispatcher) error) (*Recei
 func WithDefaultConfig() func(d *ReceivingDispatcher) error {
 	return func(d *ReceivingDispatcher) error {
 		// Register built-in receiving components
-		oid4vciReceiver := &oid4vci.Oid4vciReceiver{}
+		oid4vciReceiver := &oid4vci.Oid4vciReceiver{AllowHTTP: env.IsHTTPAllowed()}
 		d.registerPlugin(types.Oid4vci, oid4vciReceiver)
 
 		examplesDir, _ := filepath.Abs("./examples")
@@ -69,6 +70,43 @@ func (d *ReceivingDispatcher) getPlugin(receivingType types.SupportedReceivingTy
 		return nil, types.NewReceiverError(receivingType, "", "get_plugin", types.ErrUnsupportedProtocol)
 	}
 	return plugin, nil
+}
+
+// Plugins returns the registered receiver plugins for profile propagation and
+// inspection. The returned slice is a copy, so callers cannot mutate the
+// dispatcher's registry.
+func (d *ReceivingDispatcher) Plugins() []types.Receiver {
+	plugins := make([]types.Receiver, 0, len(d.plugins))
+	for _, plugin := range d.plugins {
+		plugins = append(plugins, plugin)
+	}
+	return plugins
+}
+
+// OID4VCITransport returns the OpenID4VCI 1.0 transport of the plugin
+// registered for receivingType.
+func (d *ReceivingDispatcher) OID4VCITransport(receivingType types.SupportedReceivingTypes) (types.OID4VCITransport, error) {
+	return capability[types.OID4VCITransport](d, receivingType, "get_oid4vci_transport")
+}
+
+// Draft13Transport returns the OpenID4VCI Draft 13 transport of the plugin
+// registered for receivingType.
+func (d *ReceivingDispatcher) Draft13Transport(receivingType types.SupportedReceivingTypes) (types.Draft13Transport, error) {
+	return capability[types.Draft13Transport](d, receivingType, "get_draft13_transport")
+}
+
+// capability asserts the plugin registered for receivingType to T.
+func capability[T any](d *ReceivingDispatcher, receivingType types.SupportedReceivingTypes, op string) (T, error) {
+	var zero T
+	plugin, err := d.getPlugin(receivingType)
+	if err != nil {
+		return zero, err
+	}
+	transport, ok := plugin.(T)
+	if !ok {
+		return zero, types.NewReceiverError(receivingType, "", op, types.ErrUnsupportedProtocol)
+	}
+	return transport, nil
 }
 
 // FetchIssuerMetadata fetches OID4VCI Credential Issuer Metadata using the appropriate plugin

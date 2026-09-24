@@ -28,6 +28,13 @@ func TestSupportedSerializationFlavor_OID4VPFormatIdentifier(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "Normal case (LdpVc)",
+			flavor:  LdpVc,
+			wantVc:  "ldp_vc",
+			wantVp:  "ldp_vp",
+			wantErr: false,
+		},
+		{
 			name:    "Normal case (Mock)",
 			flavor:  MockFormat,
 			wantVc:  "mock_vc",
