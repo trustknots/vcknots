@@ -20,15 +20,15 @@
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@11.10.0",
+	"packageManager": "pnpm@12.5.1",
 	"dependencies": {
-		"@google-cloud/kms": "5.5.1",
+		"@google-cloud/kms": "6.2.0",
 		"@node-rs/crc32": "1.10.7",
-		"@google-cloud/secret-manager": "6.2.0",
+		"@google-cloud/secret-manager": "7.1.0",
 		"@trustknots/vcknots": "workspace:*",
 		"ecdsa-sig-formatter": "1.0.11",
-		"firebase-admin": "14.1.0",
+		"firebase-admin": "14.4.0",
 		"jose": "6.2.12",
-		"zod": "4.4.3"
+		"zod": "4.6.5"
 	}
 }

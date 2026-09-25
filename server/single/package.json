@@ -16,10 +16,10 @@
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@11.10.0",
+	"packageManager": "pnpm@12.5.1",
 	"dependencies": {
 		"@trustknots/server-core": "workspace:*",
 		"@trustknots/vcknots": "workspace:*",
-		"dotenv": "17.4.2"
+		"dotenv": "18.0.1"
 	}
 }
