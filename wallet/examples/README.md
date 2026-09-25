@@ -278,6 +278,74 @@ Conformance Test mode automatically applies the following settings:
 
 > ⚠️ **Warning**: `InsecureSkipX509Verify: true` should only be used in conformance tests and local development. **Never** use this in production environments.
 
+### OpenID4VCI Conformance Test (`conformance_sdjwt`)
+
+Tests the flow that receives an SD-JWT VC against an external OpenID4VCI conformance test service. This is a separate program from the two modes above and targets the OIDF Conformance Suite test plan `OpenID for Verifiable Credential Issuance 1.0 Final/HAIP: Test a Wallet`.
+
+#### Test Plan Settings
+
+Select the test plan variants as follows.
+
+| Variant | Value |
+| --- | --- |
+| `credential_format` | `sd_jwt_vc` |
+| `vci_grant_type` | `pre_authorization_code` |
+| `vci_authorization_code_flow_variant` | `issuer_initiated` |
+| `vci_credential_offer_variant` | `by_value` or `by_reference` |
+| `client_auth_type` | `private_key_jwt` |
+| `sender_constrain` | `dpop` or `none` |
+
+Under `client` in the configuration, register the same `client_id` and public key as `config/wallet-clients.json`.
+
+```json
+"client": {
+  "client_id": "test-client-id",
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "crv": "P-256",
+        "alg": "ES256",
+        "use": "sig",
+        "kid": "client-key-1",
+        "x": "ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ",
+        "y": "Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo"
+      }
+    ]
+  }
+}
+```
+
+#### How to Run
+
+When you start a test module, the suite displays an offer URI beginning with `openid-credential-offer://`. Pass it as the argument.
+
+```bash
+cd /path/to/vcknots/wallet/examples/conformance_sdjwt
+OID4VCI_CLIENT_CONFIG=../config/wallet-clients.json \
+OID4VCI_CLIENT_PRIVATE_JWK=../config/client-private.sample.jwks.json \
+OID4VCI_CLIENT_ASSERTION_AUDIENCE= \
+OID4VCI_ALLOW_INSECURE_KEY_PERMS=1 \
+OID4VCI_DPOP=1 \
+go run conformance_sdjwt.go "openid-credential-offer://?credential_offer=..."
+```
+
+| Environment variable | Required | Description |
+| :---- | :---- | :---- |
+| `OID4VCI_CLIENT_CONFIG` | Yes | Client registration file. When unset, the authentication method defaults to `none`, and because the suite accepts only `private_key_jwt`, the wallet stops with an error before sending the Token Request. |
+| `OID4VCI_CLIENT_PRIVATE_JWK` | Yes | Private key file used to sign the `client_assertion`. |
+| `OID4VCI_CLIENT_ASSERTION_AUDIENCE` | Yes, as an empty string, when using the sample configuration | `config/wallet-clients.json` pins `client_assertion_audience` to `https://authz.example.com` for local testing. An empty string removes that override, so `aud` becomes the suite's issuer. Without it, the token endpoint reports `aud mismatch`. |
+| `OID4VCI_ALLOW_INSECURE_KEY_PERMS` | Yes, unless the key file is mode 0600 | The private key file must be mode 0600 by default. The sample key checked out from the repository is 0644, so set this to `1` or run `chmod 600`. |
+| `OID4VCI_DPOP` | When `sender_constrain=dpop` | Set to `1` to enable DPoP. Leave it unset for a `none` test plan. |
+| `OID4VCI_CLIENT_ID` | No | Selects a client when the configuration file lists more than one. The sample has one, so it is not needed. |
+| `OID4VCI_TX_CODE` | No | Specifies the `tx_code` (the second argument also works). The suite's offer includes `<123456>` in its description, so it is normally extracted automatically. |
+
+> ⚠️ **Warning**: The private key in `config/client-private.sample.jwks.json` is public in this repository. Use it only for conformance tests and local testing.
+
+#### Checking the Results
+
+- If the wallet stops before sending the Token Request, the reason does not appear in the suite's log. It appears only in the wallet's output (`Failed to receive credential`).
+
 ---
 
 ## File Layout and Usage
@@ -324,6 +392,8 @@ examples/
 ├── server_integration_sdjwt+kbjwt/
 │   ├── server_integration_sdjwt_kbjwt.go # SD-JWT integration test with kb-jwt
 │   └── example_sd_jwt.txt                 # Sample SD-JWT credential
+├── conformance_sdjwt/
+│   └── conformance_sdjwt.go          # OpenID4VCI conformance test (receiving an SD-JWT VC)
 ├── custom_dispatcher/                 # Example: custom dispatcher implementation
 ├── custom_plugin/                     # Example: custom plugin implementation
 ├── README.md                          # This file

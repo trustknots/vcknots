@@ -278,6 +278,74 @@ go run server_integration_sdjwt.go "openid4vp://authorize?client_id=...&request_
 
 > ⚠️ **警告**: `InsecureSkipX509Verify: true` はコンフォーマンステストやローカル開発時のみ有効です。本番環境では**絶対に**使用しないでください。
 
+### OpenID4VCI コンフォーマンステスト（`conformance_sdjwt`）
+
+外部の OpenID4VCI コンフォーマンステストサービスに対して、SD-JWT VC を受け取るフローをテストします。上の2モードとは別のプログラムで、OIDF Conformance Suite のテストプラン `OpenID for Verifiable Credential Issuance 1.0 Final/HAIP: Test a Wallet` を対象にしています。
+
+#### テストプランの設定
+
+テストプランの variant は次のように選びます。
+
+| variant | 値 |
+| --- | --- |
+| `credential_format` | `sd_jwt_vc` |
+| `vci_grant_type` | `pre_authorization_code` |
+| `vci_authorization_code_flow_variant` | `issuer_initiated` |
+| `vci_credential_offer_variant` | `by_value` または `by_reference` |
+| `client_auth_type` | `private_key_jwt` |
+| `sender_constrain` | `dpop` または `none` |
+
+Configuration の `client` には、`config/wallet-clients.json` と同じ `client_id` と公開鍵を登録します。
+
+```json
+"client": {
+  "client_id": "test-client-id",
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "crv": "P-256",
+        "alg": "ES256",
+        "use": "sig",
+        "kid": "client-key-1",
+        "x": "ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ",
+        "y": "Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo"
+      }
+    ]
+  }
+}
+```
+
+#### 実行方法
+
+テストモジュールを開始すると、Suite が `openid-credential-offer://` で始まる offer URI を表示します。それを引数に渡します。
+
+```bash
+cd /path/to/vcknots/wallet/examples/conformance_sdjwt
+OID4VCI_CLIENT_CONFIG=../config/wallet-clients.json \
+OID4VCI_CLIENT_PRIVATE_JWK=../config/client-private.sample.jwks.json \
+OID4VCI_CLIENT_ASSERTION_AUDIENCE= \
+OID4VCI_ALLOW_INSECURE_KEY_PERMS=1 \
+OID4VCI_DPOP=1 \
+go run conformance_sdjwt.go "openid-credential-offer://?credential_offer=..."
+```
+
+| 環境変数 | 要否 | 説明 |
+| :---- | :---- | :---- |
+| `OID4VCI_CLIENT_CONFIG` | 必須 | クライアント登録ファイル。未設定だと認証方式が既定の `none` になり、`private_key_jwt` しか受け付けない Suite に対しては、Token Request を送る前にエラーで停止します。 |
+| `OID4VCI_CLIENT_PRIVATE_JWK` | 必須 | `client_assertion` の署名に使う秘密鍵ファイル。 |
+| `OID4VCI_CLIENT_ASSERTION_AUDIENCE` | サンプル設定を使う場合は必須（空文字） | `config/wallet-clients.json` は `client_assertion_audience` をローカル検証用の `https://authz.example.com` に固定しています。空文字を設定するとこの固定が外れ、`aud` が Suite の issuer になります。外さないと Token Endpoint で `aud mismatch` になります。 |
+| `OID4VCI_ALLOW_INSECURE_KEY_PERMS` | 鍵ファイルが 0600 でない場合は必須 | 秘密鍵ファイルは既定で 0600 が必須です。リポジトリから取り出したサンプル鍵は 0644 なので、`1` を設定するか `chmod 600` します。 |
+| `OID4VCI_DPOP` | `sender_constrain=dpop` の場合 | `1` で DPoP を有効にします。`none` のテストプランでは設定しません。 |
+| `OID4VCI_CLIENT_ID` | 任意 | 設定ファイルに複数のクライアントがある場合に選択します。サンプルは1件なので不要です。 |
+| `OID4VCI_TX_CODE` | 任意 | `tx_code` を指定します（第2引数でも可）。Suite の offer は説明文に `<123456>` を含むため、通常は自動で抽出されます。 |
+
+> ⚠️ **警告**: `config/client-private.sample.jwks.json` の秘密鍵はリポジトリで公開されています。コンフォーマンステストとローカル検証以外では使用しないでください。
+
+#### 結果の確認
+
+- Wallet が Token Request を送る前に停止した場合、その理由は Suite のログには残らず、Wallet の出力（`Failed to receive credential`）にだけ表示されます。
+
 ---
 
 ## ファイル構成と使用方法
@@ -324,6 +392,8 @@ examples/
 ├── server_integration_sdjwt+kbjwt/
 │   ├── server_integration_sdjwt_kbjwt.go # kb-jwt 付き SD-JWT 統合テスト
 │   └── example_sd_jwt.txt                 # サンプル SD-JWT クレデンシャル
+├── conformance_sdjwt/
+│   └── conformance_sdjwt.go          # OpenID4VCI コンフォーマンステスト（SD-JWT VC の受領）
 ├── custom_dispatcher/                 # カスタムディスパッチャー実装例
 ├── custom_plugin/                     # カスタムプラグイン実装例
 ├── README.md                          # 英語版
