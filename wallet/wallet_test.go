@@ -221,6 +221,7 @@ func newReceiveCredentialTestServer(t *testing.T) (*url.URL, <-chan url.Values, 
 			"issuer":         server.URL,
 			"token_endpoint": server.URL + "/token",
 			"pre-authorized_grant_anonymous_access_supported": true,
+			"token_endpoint_auth_methods_supported":           []string{"none"},
 			"response_types_supported":                        []string{"code"},
 		})
 	})
@@ -996,7 +997,8 @@ func TestWallet_obtainAccessToken_DPoPEnabledControlsProof(t *testing.T) {
 	tokenEndpoint, err := common.ParseURIField("https://server.example.com/token")
 	require.NoError(t, err)
 	authMetadata := &receiverTypes.AuthorizationServerMetadata{
-		TokenEndpoint: tokenEndpoint,
+		TokenEndpoint:                              tokenEndpoint,
+		TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.None),
 		PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
 	}
 	t.Run("disabled does not attach proof", func(t *testing.T) {
@@ -1091,7 +1093,8 @@ func TestWallet_obtainAccessToken_DPoPNonceChallengeRetriesWithNonce(t *testing.
 	tokenEndpoint, err := common.ParseURIField(server.URL + "/token")
 	require.NoError(t, err)
 	authMetadata := &receiverTypes.AuthorizationServerMetadata{
-		TokenEndpoint: tokenEndpoint,
+		TokenEndpoint:                              tokenEndpoint,
+		TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.None),
 		PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
 	}
 	dpopKey, err := newInMemoryECKeyEntry()
@@ -1411,6 +1414,63 @@ func TestWallet_generateClientAssertion_ErrorsOnMissingInputs(t *testing.T) {
 
 func boolPtr(v bool) *bool { return &v }
 
+// TestValidateAuthorizationServerIssuer pins RFC 8414 section 3.3: the issuer in
+// the returned metadata must be the identifier the metadata was fetched from.
+// The value also becomes the client_assertion aud, so a mismatch has to stop the
+// flow rather than redirect the assertion at whatever the responder named.
+func TestValidateAuthorizationServerIssuer(t *testing.T) {
+	requested, err := common.ParseURIField("https://as.example.com/tenant")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		issuer  string
+		wantErr string
+	}{
+		{name: "identical", issuer: "https://as.example.com/tenant"},
+		{name: "trailing slash only", issuer: "https://as.example.com/tenant/"},
+		{name: "different host", issuer: "https://attacker.example.com/tenant", wantErr: "does not match"},
+		{name: "different path", issuer: "https://as.example.com/other", wantErr: "does not match"},
+		{name: "different scheme", issuer: "http://as.example.com/tenant", wantErr: "does not match"},
+		{name: "missing", issuer: "", wantErr: "issuer is missing"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authMetadata := &receiverTypes.AuthorizationServerMetadata{}
+			if tt.issuer != "" {
+				issuer, parseErr := common.ParseURIField(tt.issuer)
+				require.NoError(t, parseErr)
+				authMetadata.Issuer = *issuer
+			}
+
+			err := validateAuthorizationServerIssuer(*requested, authMetadata)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+
+	// The OpenID conformance suite gives every test instance a path-bearing
+	// identifier and keeps the trailing slash on both the authorization_servers
+	// entry and the issuer it returns. Pinning the real shape keeps this check
+	// from becoming the reason the suite never reaches the token endpoint.
+	t.Run("conformance suite identifier with trailing slash on both sides", func(t *testing.T) {
+		const identifier = "https://www.certification.openid.net/test/a/vcknots-wallet-oid4vci-sdjwt-vc-conformance-test/"
+
+		advertised, parseErr := common.ParseURIField(identifier)
+		require.NoError(t, parseErr)
+		issuer, parseErr := common.ParseURIField(identifier)
+		require.NoError(t, parseErr)
+
+		err := validateAuthorizationServerIssuer(*advertised, &receiverTypes.AuthorizationServerMetadata{Issuer: *issuer})
+		require.NoError(t, err)
+	})
+}
+
 func authMethodsPtr(methods ...receiverTypes.TokenEndpointAuthMethod) *[]receiverTypes.TokenEndpointAuthMethod {
 	m := methods
 	return &m
@@ -1419,75 +1479,56 @@ func authMethodsPtr(methods ...receiverTypes.TokenEndpointAuthMethod) *[]receive
 func TestResolveClientAuthMethod(t *testing.T) {
 	key, _ := newClientAuthKeyEntry(t, "client-key-1")
 
-	t.Run("defaults to none when anonymous supported and nothing configured", func(t *testing.T) {
+	t.Run("rejects when token_endpoint_auth_methods_supported is omitted", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
 		}
-		method, ok := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
-		require.True(t, ok)
-		assert.Equal(t, receiverTypes.None, method)
+		_, err := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
+		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+		assert.Contains(t, err.Error(), "token_endpoint_auth_methods_supported is absent")
+		assert.Contains(t, err.Error(), "client_secret_basic",
+			"the rule that decides this is nowhere in the metadata, so the error has to name it")
 	})
 
-	t.Run("selects private_key_jwt when configured and advertised", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
-			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.ES256},
-		}
-		method, ok := resolveClientAuthMethod(ClientAuthConfig{
-			Method:   receiverTypes.PrivateKeyJwt,
-			ClientID: "client-id",
-			Key:      key,
-		}, authMetadata)
-		require.True(t, ok)
-		assert.Equal(t, receiverTypes.PrivateKeyJwt, method)
-	})
-
-	t.Run("defaults to none even when private_key_jwt credentials are configured", func(t *testing.T) {
+	// Configured private_key_jwt credentials never promote an unset Method.
+	t.Run("an unset method is never promoted to private_key_jwt", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
 			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
 		}
-		method, ok := resolveClientAuthMethod(ClientAuthConfig{
+		_, err := resolveClientAuthMethod(ClientAuthConfig{
 			ClientID: "client-id",
 			Key:      key,
 		}, authMetadata)
-		require.True(t, ok)
-		assert.Equal(t, receiverTypes.None, method)
-	})
-
-	t.Run("honors explicit private_key_jwt method", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
-			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
-			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.ES256},
-		}
-		method, ok := resolveClientAuthMethod(ClientAuthConfig{
-			Method:   receiverTypes.PrivateKeyJwt,
-			ClientID: "client-id",
-			Key:      key,
-		}, authMetadata)
-		require.True(t, ok)
-		assert.Equal(t, receiverTypes.PrivateKeyJwt, method)
+		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+		assert.Contains(t, err.Error(), `the wallet is configured for "none"`)
 	})
 
 	t.Run("does not fall back to none when private_key_jwt is not advertised", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
 			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.None),
 		}
-		_, ok := resolveClientAuthMethod(ClientAuthConfig{
+		_, err := resolveClientAuthMethod(ClientAuthConfig{
 			Method:   receiverTypes.PrivateKeyJwt,
 			ClientID: "client-id",
 			Key:      key,
 		}, authMetadata)
-		assert.False(t, ok)
+		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+		assert.Contains(t, err.Error(), `the wallet is configured for "private_key_jwt"`,
+			"none is usable here, and the wallet still must not silently take it")
 	})
 
-	t.Run("returns false when no method is usable", func(t *testing.T) {
+	t.Run("a method list without none outweighs explicit anonymous support", func(t *testing.T) {
 		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(false),
+			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
 		}
-		_, ok := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
-		assert.False(t, ok)
+		_, err := resolveClientAuthMethod(ClientAuthConfig{}, authMetadata)
+		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+		assert.Contains(t, err.Error(), `the wallet is configured for "none"`)
+		assert.Contains(t, err.Error(), "only whether client_id may be omitted",
+			"an operator reading anonymous access: true needs to be told why it was not enough")
 	})
 
 	t.Run("private_key_jwt rejected when alg not supported", func(t *testing.T) {
@@ -1495,47 +1536,29 @@ func TestResolveClientAuthMethod(t *testing.T) {
 			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
 			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.RS256},
 		}
-		_, ok := resolveClientAuthMethod(ClientAuthConfig{
+		_, err := resolveClientAuthMethod(ClientAuthConfig{
 			Method:   receiverTypes.PrivateKeyJwt,
 			ClientID: "client-id",
 			Key:      key,
 		}, authMetadata)
-		assert.False(t, ok)
+		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+		assert.Contains(t, err.Error(), "does not advertise ES256")
 	})
 
-	t.Run("private_key_jwt rejected when signing alg metadata is omitted", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.PrivateKeyJwt),
+	// RFC 8414 section 2 defines no default, so absent and empty fail alike.
+	t.Run("private_key_jwt rejected when signing alg metadata is unusable", func(t *testing.T) {
+		for _, algs := range []*[]jose.SignatureAlgorithm{nil, {}} {
+			_, err := resolveClientAuthMethod(ClientAuthConfig{
+				Method:   receiverTypes.PrivateKeyJwt,
+				ClientID: "client-id",
+				Key:      key,
+			}, &receiverTypes.AuthorizationServerMetadata{
+				TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
+				TokenEndpointAuthSigningAlgValuesSupported: algs,
+			})
+			require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+			assert.Contains(t, err.Error(), "omits token_endpoint_auth_signing_alg_values_supported")
 		}
-		_, ok := resolveClientAuthMethod(ClientAuthConfig{
-			Method:   receiverTypes.PrivateKeyJwt,
-			ClientID: "client-id",
-			Key:      key,
-		}, authMetadata)
-		assert.False(t, ok)
-	})
-
-	t.Run("private_key_jwt rejected when signing alg metadata is empty", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
-			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{},
-		}
-		_, ok := resolveClientAuthMethod(ClientAuthConfig{
-			Method:   receiverTypes.PrivateKeyJwt,
-			ClientID: "client-id",
-			Key:      key,
-		}, authMetadata)
-		assert.False(t, ok)
-	})
-
-	t.Run("private_key_jwt rejected when client id/key missing", func(t *testing.T) {
-		authMetadata := &receiverTypes.AuthorizationServerMetadata{
-			TokenEndpointAuthMethodsSupported: authMethodsPtr(receiverTypes.PrivateKeyJwt),
-		}
-		_, ok := resolveClientAuthMethod(ClientAuthConfig{
-			Method: receiverTypes.PrivateKeyJwt,
-		}, authMetadata)
-		assert.False(t, ok)
 	})
 }
 
@@ -1622,7 +1645,166 @@ func TestClientAuthConfig_SignatureAlgorithmDefaultsToES256(t *testing.T) {
 	assert.Equal(t, jose.ES384, ClientAuthConfig{SigningAlg: jose.ES384}.signatureAlgorithm())
 }
 
-func TestClientAuthMethodAvailable_HonoursConfiguredSigningAlg(t *testing.T) {
+// TestResolveClientAuthMethod_Matrix covers metadata list x anonymous flag x
+// wallet config. The disagreeing cells used to resolve the other way round.
+func TestResolveClientAuthMethod_Matrix(t *testing.T) {
+	key, _ := newClientAuthKeyEntry(t, "client-key-1")
+
+	// Without C2's client_id, "sent none" and "had none to send" look identical.
+	var (
+		configNoClientID = ClientAuthConfig{}
+		configClientID   = ClientAuthConfig{Method: receiverTypes.None, ClientID: "wallet-id"}
+		configPrivateKey = ClientAuthConfig{Method: receiverTypes.PrivateKeyJwt, ClientID: "wallet-id", Key: key}
+	)
+
+	const (
+		errListAbsent      = "token_endpoint_auth_methods_supported is absent"
+		errNotAdvertised   = `the wallet is configured for "none"`
+		errClientIDAbsent  = "pre-authorized_grant_anonymous_access_supported is absent"
+		errClientIDRefused = "pre-authorized_grant_anonymous_access_supported is false"
+	)
+
+	tests := []struct {
+		name             string
+		methods          *[]receiverTypes.TokenEndpointAuthMethod
+		anon             *bool
+		clientAuth       ClientAuthConfig
+		wantMethod       receiverTypes.TokenEndpointAuthMethod
+		wantSendClientID bool
+		wantErrContains  string
+	}{
+		// Absent list: RFC 8414 section 2 default, nothing else is consulted.
+		{name: "methods=absent/anon=absent/config=C1", methods: nil, anon: nil, clientAuth: configNoClientID, wantErrContains: errListAbsent},
+		{name: "methods=absent/anon=absent/config=C2", methods: nil, anon: nil, clientAuth: configClientID, wantErrContains: errListAbsent},
+		{name: "methods=absent/anon=absent/config=C3", methods: nil, anon: nil, clientAuth: configPrivateKey, wantErrContains: errListAbsent},
+		{name: "methods=absent/anon=true/config=C1", methods: nil, anon: boolPtr(true), clientAuth: configNoClientID, wantErrContains: errListAbsent},
+		{name: "methods=absent/anon=true/config=C2", methods: nil, anon: boolPtr(true), clientAuth: configClientID, wantErrContains: errListAbsent},
+		{name: "methods=absent/anon=true/config=C3", methods: nil, anon: boolPtr(true), clientAuth: configPrivateKey, wantErrContains: errListAbsent},
+		{name: "methods=absent/anon=false/config=C1", methods: nil, anon: boolPtr(false), clientAuth: configNoClientID, wantErrContains: errListAbsent},
+		{name: "methods=absent/anon=false/config=C2", methods: nil, anon: boolPtr(false), clientAuth: configClientID, wantErrContains: errListAbsent},
+		{name: "methods=absent/anon=false/config=C3", methods: nil, anon: boolPtr(false), clientAuth: configPrivateKey, wantErrContains: errListAbsent},
+
+		// none is advertised, so the anonymous parameter gets to do its one job.
+		{name: "methods=contains_none/anon=absent/config=C1", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: nil, clientAuth: configNoClientID, wantErrContains: errClientIDAbsent},
+		{name: "methods=contains_none/anon=absent/config=C2", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: nil, clientAuth: configClientID, wantMethod: receiverTypes.None, wantSendClientID: true},
+		{name: "methods=contains_none/anon=absent/config=C3", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: nil, clientAuth: configPrivateKey, wantMethod: receiverTypes.PrivateKeyJwt, wantSendClientID: true},
+		{name: "methods=contains_none/anon=true/config=C1", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: boolPtr(true), clientAuth: configNoClientID, wantMethod: receiverTypes.None},
+		{name: "methods=contains_none/anon=true/config=C2", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: boolPtr(true), clientAuth: configClientID, wantMethod: receiverTypes.None},
+		// The cell that tells the two readings apart: none must not downgrade.
+		{name: "methods=contains_none/anon=true/config=C3", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: boolPtr(true), clientAuth: configPrivateKey, wantMethod: receiverTypes.PrivateKeyJwt, wantSendClientID: true},
+		{name: "methods=contains_none/anon=false/config=C1", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: boolPtr(false), clientAuth: configNoClientID, wantErrContains: errClientIDRefused},
+		// Refusing anonymous access does not close the endpoint to a named client.
+		{name: "methods=contains_none/anon=false/config=C2", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: boolPtr(false), clientAuth: configClientID, wantMethod: receiverTypes.None, wantSendClientID: true},
+		{name: "methods=contains_none/anon=false/config=C3", methods: authMethodsPtr(receiverTypes.None, receiverTypes.PrivateKeyJwt), anon: boolPtr(false), clientAuth: configPrivateKey, wantMethod: receiverTypes.PrivateKeyJwt, wantSendClientID: true},
+
+		// none not advertised: no anonymous-access claim can override that.
+		{name: "methods=lacks_none/anon=absent/config=C1", methods: authMethodsPtr(receiverTypes.PrivateKeyJwt), anon: nil, clientAuth: configNoClientID, wantErrContains: errNotAdvertised},
+		{name: "methods=lacks_none/anon=absent/config=C2", methods: authMethodsPtr(receiverTypes.PrivateKeyJwt), anon: nil, clientAuth: configClientID, wantErrContains: errNotAdvertised},
+		{name: "methods=lacks_none/anon=absent/config=C3", methods: authMethodsPtr(receiverTypes.PrivateKeyJwt), anon: nil, clientAuth: configPrivateKey, wantMethod: receiverTypes.PrivateKeyJwt, wantSendClientID: true},
+		{name: "methods=lacks_none/anon=true/config=C1", methods: authMethodsPtr(receiverTypes.PrivateKeyJwt), anon: boolPtr(true), clientAuth: configNoClientID, wantErrContains: errNotAdvertised},
+		{name: "methods=lacks_none/anon=true/config=C2", methods: authMethodsPtr(receiverTypes.PrivateKeyJwt), anon: boolPtr(true), clientAuth: configClientID, wantErrContains: errNotAdvertised},
+		{name: "methods=lacks_none/anon=true/config=C3", methods: authMethodsPtr(receiverTypes.PrivateKeyJwt), anon: boolPtr(true), clientAuth: configPrivateKey, wantMethod: receiverTypes.PrivateKeyJwt, wantSendClientID: true},
+		{name: "methods=lacks_none/anon=false/config=C1", methods: authMethodsPtr(receiverTypes.PrivateKeyJwt), anon: boolPtr(false), clientAuth: configNoClientID, wantErrContains: errNotAdvertised},
+		{name: "methods=lacks_none/anon=false/config=C2", methods: authMethodsPtr(receiverTypes.PrivateKeyJwt), anon: boolPtr(false), clientAuth: configClientID, wantErrContains: errNotAdvertised},
+		{name: "methods=lacks_none/anon=false/config=C3", methods: authMethodsPtr(receiverTypes.PrivateKeyJwt), anon: boolPtr(false), clientAuth: configPrivateKey, wantMethod: receiverTypes.PrivateKeyJwt, wantSendClientID: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authMetadata := &receiverTypes.AuthorizationServerMetadata{
+				TokenEndpointAuthMethodsSupported:          tt.methods,
+				TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.ES256},
+				PreAuthorizedGrantAnonymousAccessSupported: tt.anon,
+			}
+
+			auth, err := resolveClientAuthMethod(tt.clientAuth, authMetadata)
+			if tt.wantErrContains != "" {
+				require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+				assert.Contains(t, err.Error(), tt.wantErrContains)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMethod, auth.Method)
+			assert.Equal(t, tt.wantSendClientID, auth.SendClientID)
+		})
+	}
+}
+
+// TestResolveClientAuthMethod_UnusableCombinations covers refusals that stop the
+// negotiation early.
+func TestResolveClientAuthMethod_UnusableCombinations(t *testing.T) {
+	key, _ := newClientAuthKeyEntry(t, "client-key-1")
+
+	// Returns before anon or the wallet config is read, so one call covers the
+	// grid the rest of this file walks; anon=true is the tempting cell.
+	t.Run("empty method list advertises nothing", func(t *testing.T) {
+		_, err := resolveClientAuthMethod(ClientAuthConfig{}, &receiverTypes.AuthorizationServerMetadata{
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(),
+			PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
+		})
+		require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+		assert.Contains(t, err.Error(), "token_endpoint_auth_methods_supported is an empty array")
+	})
+
+	t.Run("list of methods this wallet does not implement", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.ClientSecretBasic),
+			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.ES256},
+		}
+		for _, clientAuth := range []ClientAuthConfig{
+			{},
+			{Method: receiverTypes.None, ClientID: "wallet-id"},
+			{Method: receiverTypes.PrivateKeyJwt, ClientID: "wallet-id", Key: key},
+		} {
+			_, err := resolveClientAuthMethod(clientAuth, authMetadata)
+			require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+			assert.Contains(t, err.Error(), "token_endpoint_auth_methods_supported is [client_secret_basic]")
+		}
+	})
+
+	t.Run("private_key_jwt without complete credentials", func(t *testing.T) {
+		authMetadata := &receiverTypes.AuthorizationServerMetadata{
+			TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
+			TokenEndpointAuthSigningAlgValuesSupported: &[]jose.SignatureAlgorithm{jose.ES256},
+		}
+		for _, clientAuth := range []ClientAuthConfig{
+			{Method: receiverTypes.PrivateKeyJwt, Key: key},
+			{Method: receiverTypes.PrivateKeyJwt, ClientID: "wallet-id"},
+		} {
+			_, err := resolveClientAuthMethod(clientAuth, authMetadata)
+			require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+			assert.Contains(t, err.Error(), "requires both a client_id and a client authentication key")
+		}
+	})
+
+	// Reported before the metadata is read, so an absent list must not mask it.
+	t.Run("method this wallet does not implement", func(t *testing.T) {
+		for _, methods := range []*[]receiverTypes.TokenEndpointAuthMethod{
+			nil,
+			authMethodsPtr(receiverTypes.None),
+			authMethodsPtr(receiverTypes.ClientSecretBasic),
+		} {
+			_, err := resolveClientAuthMethod(
+				ClientAuthConfig{Method: receiverTypes.ClientSecretBasic, ClientID: "wallet-id"},
+				&receiverTypes.AuthorizationServerMetadata{
+					TokenEndpointAuthMethodsSupported:          methods,
+					PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
+				})
+			require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+			assert.Contains(t, err.Error(), `token_endpoint_auth_method "client_secret_basic" is configured`)
+		}
+	})
+
+	// A programming error, not a failed negotiation.
+	t.Run("missing authorization server metadata", func(t *testing.T) {
+		_, err := resolveClientAuthMethod(ClientAuthConfig{}, nil)
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, errNoUsableClientAuthMethod)
+		assert.Contains(t, err.Error(), "authorization server metadata is required")
+	})
+}
+
+func TestClientAuthMethodUsable_HonoursConfiguredSigningAlg(t *testing.T) {
 	key, _ := newClientAuthKeyEntry(t, "client-key-1")
 	authMetadata := &receiverTypes.AuthorizationServerMetadata{
 		TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.PrivateKeyJwt),
@@ -1631,13 +1813,13 @@ func TestClientAuthMethodAvailable_HonoursConfiguredSigningAlg(t *testing.T) {
 
 	// The authorization server advertises ES384 only, so the ES256 default
 	// finds no usable method.
-	assert.False(t, clientAuthMethodAvailable(
+	assert.Error(t, clientAuthMethodUsable(
 		receiverTypes.PrivateKeyJwt,
 		ClientAuthConfig{ClientID: "wallet-id", Key: key},
 		authMetadata,
 	))
 
-	assert.True(t, clientAuthMethodAvailable(
+	assert.NoError(t, clientAuthMethodUsable(
 		receiverTypes.PrivateKeyJwt,
 		ClientAuthConfig{ClientID: "wallet-id", Key: key, SigningAlg: jose.ES384},
 		authMetadata,
@@ -1817,7 +1999,8 @@ func TestWallet_obtainAccessToken_AnonymousByDefaultDoesNotAttachAssertion(t *te
 	tokenEndpoint, err := common.ParseURIField("https://as.example.com/token")
 	require.NoError(t, err)
 	authMetadata := &receiverTypes.AuthorizationServerMetadata{
-		TokenEndpoint: tokenEndpoint,
+		TokenEndpoint:                              tokenEndpoint,
+		TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.None),
 		PreAuthorizedGrantAnonymousAccessSupported: boolPtr(true),
 	}
 
@@ -1826,32 +2009,71 @@ func TestWallet_obtainAccessToken_AnonymousByDefaultDoesNotAttachAssertion(t *te
 	require.NoError(t, err)
 	w := &Wallet{
 		receiver: d,
+		// A client_id is configured so the assertion below has something to omit.
+		clientAuth: ClientAuthConfig{
+			Method:   receiverTypes.None,
+			ClientID: "wallet-id",
+		},
 	}
 
 	token, err := w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
 	require.NoError(t, err)
 	require.NotNil(t, token)
 	assert.Nil(t, cap.capturedClientAssertion, "client assertion must not be attached for anonymous flow")
+	assert.Nil(t, cap.capturedClientID,
+		"the server advertised anonymous access, so the request must not name the wallet")
 }
 
 func TestWallet_obtainAccessToken_NoUsableMethodReturnsError(t *testing.T) {
 	tokenEndpoint, err := common.ParseURIField("https://as.example.com/token")
 	require.NoError(t, err)
-	authMetadata := &receiverTypes.AuthorizationServerMetadata{
-		TokenEndpoint: tokenEndpoint,
-		PreAuthorizedGrantAnonymousAccessSupported: boolPtr(false),
+
+	tests := []struct {
+		name         string
+		authMetadata *receiverTypes.AuthorizationServerMetadata
+		wantContains []string
+	}{
+		{
+			name: "method list omitted",
+			authMetadata: &receiverTypes.AuthorizationServerMetadata{
+				TokenEndpoint: tokenEndpoint,
+				PreAuthorizedGrantAnonymousAccessSupported: boolPtr(false),
+			},
+			wantContains: []string{
+				"token_endpoint_auth_methods_supported is absent",
+				"client_secret_basic",
+			},
+		},
+		{
+			name: "none advertised but anonymous access refused and no client_id configured",
+			authMetadata: &receiverTypes.AuthorizationServerMetadata{
+				TokenEndpoint:                              tokenEndpoint,
+				TokenEndpointAuthMethodsSupported:          authMethodsPtr(receiverTypes.None),
+				PreAuthorizedGrantAnonymousAccessSupported: boolPtr(false),
+			},
+			wantContains: []string{
+				"pre-authorized_grant_anonymous_access_supported is false",
+				"must carry a client_id",
+			},
+		},
 	}
 
-	cap := &captureClientAuthReceiver{}
-	d, err := receiver.NewReceivingDispatcher(receiver.WithPlugin(receiverTypes.Mock, cap))
-	require.NoError(t, err)
-	w := &Wallet{
-		receiver: d,
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cap := &captureClientAuthReceiver{}
+			d, err := receiver.NewReceivingDispatcher(receiver.WithPlugin(receiverTypes.Mock, cap))
+			require.NoError(t, err)
+			w := &Wallet{
+				receiver: d,
+			}
 
-	_, err = w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no usable client authentication method")
+			_, err = w.obtainAccessToken(receiverTypes.Mock, tt.authMetadata, "pre-auth-code", "")
+			require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+			for _, want := range tt.wantContains {
+				assert.Contains(t, err.Error(), want)
+			}
+		})
+	}
 }
 
 func TestWallet_obtainAccessToken_PrivateKeyJwtEndToEndWithMockServer(t *testing.T) {
@@ -2023,9 +2245,10 @@ func TestWallet_fetchCredentialMetadata_RejectsWhenNoUsableMethod(t *testing.T) 
 	env.SetHTTPAllowed(true)
 
 	issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
-		KeyPair:                     mockserver.MustGenerateKeyPair("issuer-key-id"),
-		IssuerID:                    "test-issuer",
-		PreAuthorizedGrantAnonymous: mockserver.BoolPtr(false),
+		KeyPair:                           mockserver.MustGenerateKeyPair("issuer-key-id"),
+		IssuerID:                          "test-issuer",
+		PreAuthorizedGrantAnonymous:       mockserver.BoolPtr(false),
+		TokenEndpointAuthMethodsSupported: []string{"none"},
 		CredentialConfigurations: map[string]interface{}{
 			"test-config": map[string]interface{}{
 				"format": "jwt_vc_json",
@@ -2056,15 +2279,15 @@ func TestWallet_fetchCredentialMetadata_RejectsWhenNoUsableMethod(t *testing.T) 
 	}
 
 	_, _, err = w.fetchCredentialMetadata(req)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no usable client authentication method")
+	require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+	assert.Contains(t, err.Error(), "pre-authorized_grant_anonymous_access_supported is false")
+	assert.Contains(t, err.Error(), "must carry a client_id")
 }
 
-// TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess pins the three
-// states of the OPTIONAL pre-authorized_grant_anonymous_access_supported metadata
-// parameter. Omitting it means "unknown", not "unsupported" — issuers commonly leave it
-// out, the OpenID conformance suite among them — so only an explicit false may stop the
-// pre-authorized code flow.
+// TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess pins the
+// three states for a wallet with no client_id; OID4VCI 1.0 12.3 makes an omitted
+// value a refusal. TestWallet_obtainAccessToken_AnonymousAccessDecidesWhetherClientIDIsSent
+// covers the wallet that has one.
 func TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess(t *testing.T) {
 	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
@@ -2075,7 +2298,7 @@ func TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess(t *tes
 		anonymousAccess *bool
 		wantErr         bool
 	}{
-		{name: "omitted", anonymousAccess: nil, wantErr: false},
+		{name: "omitted", anonymousAccess: nil, wantErr: true},
 		{name: "explicit true", anonymousAccess: mockserver.BoolPtr(true), wantErr: false},
 		{name: "explicit false", anonymousAccess: mockserver.BoolPtr(false), wantErr: true},
 	}
@@ -2083,9 +2306,10 @@ func TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess(t *tes
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
-				KeyPair:                     mockserver.MustGenerateKeyPair("issuer-key-id"),
-				IssuerID:                    "test-issuer",
-				PreAuthorizedGrantAnonymous: tt.anonymousAccess,
+				KeyPair:                           mockserver.MustGenerateKeyPair("issuer-key-id"),
+				IssuerID:                          "test-issuer",
+				PreAuthorizedGrantAnonymous:       tt.anonymousAccess,
+				TokenEndpointAuthMethodsSupported: []string{"none"},
 				CredentialConfigurations: map[string]interface{}{
 					"test-config": map[string]interface{}{
 						"format": "jwt_vc_json",
@@ -2115,8 +2339,8 @@ func TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess(t *tes
 			})
 
 			if tt.wantErr {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), "no usable client authentication method")
+				require.ErrorIs(t, err, errNoUsableClientAuthMethod)
+				assert.Contains(t, err.Error(), "must carry a client_id")
 				return
 			}
 			require.NoError(t, err)
@@ -2125,65 +2349,79 @@ func TestWallet_fetchCredentialMetadata_PreAuthorizedGrantAnonymousAccess(t *tes
 	}
 }
 
-// TestWallet_obtainAccessToken_OmittedAnonymousAccessSendsClientID checks that an issuer
-// which never advertises pre-authorized_grant_anonymous_access_supported still receives a
-// token request, and that the request names the configured client. The assertion is on
-// what reached the server rather than on the returned token, because the failure this
-// guards against stopped the wallet before any request went out.
-func TestWallet_obtainAccessToken_OmittedAnonymousAccessSendsClientID(t *testing.T) {
+// TestWallet_obtainAccessToken_AnonymousAccessDecidesWhetherClientIDIsSent pins that
+// the parameter decides whether the request names the wallet, asserting on the wire.
+func TestWallet_obtainAccessToken_AnonymousAccessDecidesWhetherClientIDIsSent(t *testing.T) {
 	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
 	env.SetHTTPAllowed(true)
 
-	issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
-		KeyPair:                     mockserver.MustGenerateKeyPair("issuer-key-id"),
-		IssuerID:                    "test-issuer",
-		PreAuthorizedGrantAnonymous: nil,
-		CredentialConfigurations: map[string]interface{}{
-			"test-config": map[string]interface{}{
-				"format": "jwt_vc_json",
-				"credential_definition": map[string]interface{}{
-					"type": []string{"VerifiableCredential"},
-				},
-			},
-		},
-		TokenResponse: map[string]interface{}{
-			"access_token": "mock-access-token",
-			"token_type":   "Bearer",
-			"expires_in":   3600,
-		},
-		CustomCredentials: make(map[string]string),
-	})
-	defer issuer.Close()
-
-	issuerURL, err := url.Parse(issuer.URL())
-	require.NoError(t, err)
-
-	d, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
-	require.NoError(t, err)
-	w := &Wallet{
-		receiver: d,
-		clientAuth: ClientAuthConfig{
-			Method:   receiverTypes.None,
-			ClientID: "wallet-id",
-		},
+	tests := []struct {
+		name            string
+		anonymousAccess *bool
+		wantClientID    string
+	}{
+		{name: "explicit true sends no client_id", anonymousAccess: mockserver.BoolPtr(true), wantClientID: ""},
+		{name: "omitted names the client", anonymousAccess: nil, wantClientID: "wallet-id"},
+		{name: "explicit false names the client", anonymousAccess: mockserver.BoolPtr(false), wantClientID: "wallet-id"},
 	}
 
-	authMetadata, err := d.FetchAuthorizationServerMetadata(common.URIField(*issuerURL), receiverTypes.Oid4vci)
-	require.NoError(t, err)
-	require.Nil(t, authMetadata.PreAuthorizedGrantAnonymousAccessSupported,
-		"the mock must omit the parameter for this test to mean anything")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
+				KeyPair:                           mockserver.MustGenerateKeyPair("issuer-key-id"),
+				IssuerID:                          "test-issuer",
+				PreAuthorizedGrantAnonymous:       tt.anonymousAccess,
+				TokenEndpointAuthMethodsSupported: []string{"none"},
+				CredentialConfigurations: map[string]interface{}{
+					"test-config": map[string]interface{}{
+						"format": "jwt_vc_json",
+						"credential_definition": map[string]interface{}{
+							"type": []string{"VerifiableCredential"},
+						},
+					},
+				},
+				TokenResponse: map[string]interface{}{
+					"access_token": "mock-access-token",
+					"token_type":   "Bearer",
+					"expires_in":   3600,
+				},
+				CustomCredentials: make(map[string]string),
+			})
+			defer issuer.Close()
 
-	token, err := w.obtainAccessToken(receiverTypes.Oid4vci, authMetadata, "pre-auth-code", "")
-	require.NoError(t, err)
-	require.NotNil(t, token)
-	assert.Equal(t, "mock-access-token", token.Token)
+			issuerURL, err := url.Parse(issuer.URL())
+			require.NoError(t, err)
 
-	tokenRequests := issuer.TokenRequests()
-	require.Len(t, tokenRequests, 1, "the wallet must reach the token endpoint")
-	assert.Equal(t, "urn:ietf:params:oauth:grant-type:pre-authorized_code", tokenRequests[0].Get("grant_type"))
-	assert.Equal(t, "wallet-id", tokenRequests[0].Get("client_id"))
-	assert.Empty(t, tokenRequests[0].Get("client_assertion"), "no client authentication is configured")
+			d, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+			require.NoError(t, err)
+			w := &Wallet{
+				receiver: d,
+				clientAuth: ClientAuthConfig{
+					Method:   receiverTypes.None,
+					ClientID: "wallet-id",
+				},
+			}
+
+			authMetadata, err := d.FetchAuthorizationServerMetadata(common.URIField(*issuerURL), receiverTypes.Oid4vci)
+			require.NoError(t, err)
+			if tt.anonymousAccess == nil {
+				require.Nil(t, authMetadata.PreAuthorizedGrantAnonymousAccessSupported,
+					"the mock must omit the parameter for this case to mean anything")
+			}
+
+			token, err := w.obtainAccessToken(receiverTypes.Oid4vci, authMetadata, "pre-auth-code", "")
+			require.NoError(t, err)
+			require.NotNil(t, token)
+			assert.Equal(t, "mock-access-token", token.Token)
+
+			tokenRequests := issuer.TokenRequests()
+			require.Len(t, tokenRequests, 1, "the wallet must reach the token endpoint")
+			assert.Equal(t, "urn:ietf:params:oauth:grant-type:pre-authorized_code", tokenRequests[0].Get("grant_type"))
+			assert.Equal(t, tt.wantClientID, tokenRequests[0].Get("client_id"))
+			assert.Empty(t, tokenRequests[0].Get("client_assertion"), "no client authentication is configured")
+		})
+	}
 }
 
 func TestController_generateJWTProof_NonAnonymousFlow_EmptyClientIDReturnsError(t *testing.T) {
@@ -3209,6 +3447,7 @@ func newCredentialIssuanceMockServer(t *testing.T, opts credentialIssuanceMockSe
 				"issuer":         baseURL,
 				"token_endpoint": baseURL + "/token",
 				"pre-authorized_grant_anonymous_access_supported": true,
+				"token_endpoint_auth_methods_supported":           []string{"none"},
 				"response_types_supported":                        []string{"code"},
 			})
 		case "/token":
