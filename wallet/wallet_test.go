@@ -1009,7 +1009,7 @@ func TestWallet_obtainAccessToken_DPoPEnabledControlsProof(t *testing.T) {
 			receiver: d,
 			dpop:     DPoPConfig{Enabled: false},
 		}
-		_, err = w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
+		_, _, err = w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
 		require.NoError(t, err)
 		assert.Nil(t, cap.capturedProof)
 	})
@@ -1026,7 +1026,7 @@ func TestWallet_obtainAccessToken_DPoPEnabledControlsProof(t *testing.T) {
 				Key:     key,
 			},
 		}
-		_, err = w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
+		_, _, err = w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
 		require.NoError(t, err)
 		require.NotNil(t, cap.capturedProof)
 		assert.NotEmpty(t, *cap.capturedProof)
@@ -1109,7 +1109,7 @@ func TestWallet_obtainAccessToken_DPoPNonceChallengeRetriesWithNonce(t *testing.
 		},
 	}
 
-	token, err := w.obtainAccessToken(receiverTypes.Oid4vci, authMetadata, "pre-auth-code", "")
+	token, _, err := w.obtainAccessToken(receiverTypes.Oid4vci, authMetadata, "pre-auth-code", "")
 	require.NoError(t, err)
 	require.NotNil(t, token)
 	assert.Equal(t, accessTokenValue, token.Token)
@@ -1468,6 +1468,57 @@ func TestValidateAuthorizationServerIssuer(t *testing.T) {
 
 		err := validateAuthorizationServerIssuer(*advertised, &receiverTypes.AuthorizationServerMetadata{Issuer: *issuer})
 		require.NoError(t, err)
+	})
+}
+
+func TestValidateCredentialIssuer(t *testing.T) {
+	requested, err := url.Parse("https://issuer.example.com/tenant")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name             string
+		credentialIssuer string
+		wantErr          string
+	}{
+		{name: "identical", credentialIssuer: "https://issuer.example.com/tenant"},
+		{name: "trailing slash only", credentialIssuer: "https://issuer.example.com/tenant/"},
+		{name: "different host", credentialIssuer: "https://attacker.example.com/tenant", wantErr: "does not match"},
+		{name: "different path", credentialIssuer: "https://issuer.example.com/other", wantErr: "does not match"},
+		{name: "different scheme", credentialIssuer: "http://issuer.example.com/tenant", wantErr: "does not match"},
+		{name: "missing", credentialIssuer: "", wantErr: "credential_issuer is missing"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateCredentialIssuer(requested, &receiverTypes.CredentialIssuerMetadata{
+				CredentialIssuer: tt.credentialIssuer,
+			})
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+
+	// The conformance suite gives every test instance a path-bearing identifier and
+	// keeps the trailing slash on both the offer and the metadata it returns.
+	t.Run("conformance suite identifier with trailing slash on both sides", func(t *testing.T) {
+		const identifier = "https://www.certification.openid.net/test/a/vcknots-wallet-oid4vci-sdjwt-vc-conformance-test/"
+		advertised, parseErr := url.Parse(identifier)
+		require.NoError(t, parseErr)
+		require.NoError(t, validateCredentialIssuer(advertised, &receiverTypes.CredentialIssuerMetadata{
+			CredentialIssuer: identifier,
+		}))
+	})
+
+	t.Run("identifier is required", func(t *testing.T) {
+		err := validateCredentialIssuer(nil, &receiverTypes.CredentialIssuerMetadata{
+			CredentialIssuer: "https://issuer.example.com/tenant",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "credential issuer identifier is required")
 	})
 }
 
@@ -1986,7 +2037,7 @@ func TestWallet_obtainAccessToken_PrivateKeyJwtAttachesAssertion(t *testing.T) {
 		},
 	}
 
-	token, err := w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
+	token, _, err := w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
 	require.NoError(t, err)
 	require.NotNil(t, token)
 	require.NotNil(t, cap.capturedClientAssertion)
@@ -2016,7 +2067,7 @@ func TestWallet_obtainAccessToken_AnonymousByDefaultDoesNotAttachAssertion(t *te
 		},
 	}
 
-	token, err := w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
+	token, _, err := w.obtainAccessToken(receiverTypes.Mock, authMetadata, "pre-auth-code", "")
 	require.NoError(t, err)
 	require.NotNil(t, token)
 	assert.Nil(t, cap.capturedClientAssertion, "client assertion must not be attached for anonymous flow")
@@ -2067,7 +2118,7 @@ func TestWallet_obtainAccessToken_NoUsableMethodReturnsError(t *testing.T) {
 				receiver: d,
 			}
 
-			_, err = w.obtainAccessToken(receiverTypes.Mock, tt.authMetadata, "pre-auth-code", "")
+			_, _, err = w.obtainAccessToken(receiverTypes.Mock, tt.authMetadata, "pre-auth-code", "")
 			require.ErrorIs(t, err, errNoUsableClientAuthMethod)
 			for _, want := range tt.wantContains {
 				assert.Contains(t, err.Error(), want)
@@ -2140,7 +2191,7 @@ func TestWallet_obtainAccessToken_PrivateKeyJwtEndToEndWithMockServer(t *testing
 
 	authMetadata.TokenEndpoint = tokenEndpoint
 
-	token, err := w.obtainAccessToken(receiverTypes.Oid4vci, authMetadata, "pre-auth-code", "")
+	token, _, err := w.obtainAccessToken(receiverTypes.Oid4vci, authMetadata, "pre-auth-code", "")
 	require.NoError(t, err)
 	require.NotNil(t, token)
 	assert.Equal(t, "mock-access-token", token.Token)
@@ -2198,6 +2249,47 @@ func TestWallet_fetchCredentialMetadata_UsesCredentialIssuerAsAuthorizationServe
 	_, authMetadata, err := w.fetchCredentialMetadata(req)
 	require.NoError(t, err)
 	require.NotNil(t, authMetadata)
+}
+
+func TestWallet_fetchCredentialMetadata_RejectsCredentialIssuerMismatch(t *testing.T) {
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+
+	issuer := mockserver.NewOID4VCIIssuerServer(&mockserver.OID4VCIIssuerConfig{
+		KeyPair:                     mockserver.MustGenerateKeyPair("issuer-key-id"),
+		PreAuthorizedGrantAnonymous: mockserver.BoolPtr(true),
+		// The metadata claims an identifier the wallet never asked for. Accepting it
+		// would put that value in the aud of the key proof (OID4VCI 1.0 section 8.2).
+		CredentialIssuerOverride: "https://attacker.example.com",
+		CredentialConfigurations: map[string]interface{}{
+			"test-config": map[string]interface{}{
+				"format": "jwt_vc_json",
+				"credential_definition": map[string]interface{}{
+					"type": []string{"VerifiableCredential"},
+				},
+			},
+		},
+		CustomCredentials: make(map[string]string),
+	})
+	defer issuer.Close()
+
+	issuerURL, err := url.Parse(issuer.URL())
+	require.NoError(t, err)
+	dispatcher, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+	require.NoError(t, err)
+	w := &Wallet{receiver: dispatcher}
+
+	_, _, err = w.fetchCredentialMetadata(ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           issuerURL,
+			CredentialConfigurationIDs: []string{"test-config"},
+			Grants:                     map[string]*CredentialOfferGrant{},
+		},
+		Type: receiverTypes.Oid4vci,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not match the credential issuer identifier")
 }
 
 func TestWallet_fetchCredentialMetadata_RejectsEmptyAuthorizationServers(t *testing.T) {
@@ -2410,7 +2502,7 @@ func TestWallet_obtainAccessToken_AnonymousAccessDecidesWhetherClientIDIsSent(t 
 					"the mock must omit the parameter for this case to mean anything")
 			}
 
-			token, err := w.obtainAccessToken(receiverTypes.Oid4vci, authMetadata, "pre-auth-code", "")
+			token, _, err := w.obtainAccessToken(receiverTypes.Oid4vci, authMetadata, "pre-auth-code", "")
 			require.NoError(t, err)
 			require.NotNil(t, token)
 			assert.Equal(t, "mock-access-token", token.Token)
@@ -2715,57 +2807,6 @@ func TestController_fetchCredentialNonce_ReturnsErrorWhenResponseTooLargeWithout
 	assert.Contains(t, err.Error(), "nonce endpoint response exceeds")
 }
 
-func TestController_fetchDPoPNonce_ReturnsHeaderValue(t *testing.T) {
-	controller := createTestControllerWithDefaults(t)
-	httpAllowed := env.IsHTTPAllowed()
-	defer env.SetHTTPAllowed(httpAllowed)
-	env.SetHTTPAllowed(true)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		w.Header().Set("DPoP-Nonce", "dpop-nonce")
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"c_nonce":"credential-proof-nonce"}`))
-	}))
-	defer server.Close()
-
-	nonceEndpoint, err := common.ParseURIField(server.URL)
-	require.NoError(t, err)
-	nonce, err := controller.fetchDPoPNonce(&receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint})
-	require.NoError(t, err)
-	require.NotNil(t, nonce)
-	assert.Equal(t, "dpop-nonce", *nonce)
-}
-
-func TestController_fetchDPoPNonce_ReturnsErrorWhenEndpointMissing(t *testing.T) {
-	controller := createTestControllerWithDefaults(t)
-
-	nonce, err := controller.fetchDPoPNonce(&receiverTypes.CredentialIssuerMetadata{})
-	require.Error(t, err)
-	require.Nil(t, nonce)
-	assert.Contains(t, err.Error(), "nonce endpoint")
-}
-
-func TestController_fetchDPoPNonce_ReturnsErrorWhenHeaderMissing(t *testing.T) {
-	controller := createTestControllerWithDefaults(t)
-	httpAllowed := env.IsHTTPAllowed()
-	defer env.SetHTTPAllowed(httpAllowed)
-	env.SetHTTPAllowed(true)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"c_nonce":"credential-proof-nonce"}`))
-	}))
-	defer server.Close()
-
-	nonceEndpoint, err := common.ParseURIField(server.URL)
-	require.NoError(t, err)
-	nonce, err := controller.fetchDPoPNonce(&receiverTypes.CredentialIssuerMetadata{NonceEndpoint: nonceEndpoint})
-	require.Error(t, err)
-	require.Nil(t, nonce)
-	assert.Contains(t, err.Error(), "DPoP-Nonce")
-}
-
 func TestController_requestCredential_DPoPAccessTokenRetriesWithNonceFromHeader(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 	httpAllowed := env.IsHTTPAllowed()
@@ -2791,7 +2832,8 @@ func TestController_requestCredential_DPoPAccessTokenRetriesWithNonceFromHeader(
 				http.Error(w, "invalid method", http.StatusMethodNotAllowed)
 				return
 			}
-			w.Header().Set("DPoP-Nonce", dpopNonce)
+			// Deliberately no DPoP-Nonce header: the Nonce Endpoint only serves the
+			// c_nonce of the key proof, so the retry must not depend on it.
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"c_nonce":"credential-proof-nonce"}`))
 		case "/credential":
@@ -2834,6 +2876,7 @@ func TestController_requestCredential_DPoPAccessTokenRetriesWithNonceFromHeader(
 					http.Error(w, "first DPoP proof should not include nonce", http.StatusBadRequest)
 					return
 				}
+				w.Header().Set("DPoP-Nonce", dpopNonce)
 				mockserver.JSONResponse(w, http.StatusBadRequest, map[string]string{
 					"error": "use_dpop_nonce",
 				})
@@ -2881,7 +2924,7 @@ func TestController_requestCredential_DPoPAccessTokenRetriesWithNonceFromHeader(
 		TokenType: "DPoP",
 	}
 
-	credential, err := controller.requestCredential(req, issuerMetadata, accessToken, "test-config", nil)
+	credential, err := controller.requestCredential(req, issuerMetadata, accessToken, tokenEndpointAuth{}, "test-config", nil)
 	require.NoError(t, err)
 	require.NotNil(t, credential)
 	assert.Equal(t, 2, credentialRequests)
@@ -2954,12 +2997,12 @@ func TestController_requestCredential_DPoPAccessTokenUsesConfiguredDPoPKey(t *te
 		CredentialEndpoint: *credentialEndpoint,
 	}
 
-	credential, err := controller.requestCredential(req, issuerMetadata, accessToken, "test-config", nil)
+	credential, err := controller.requestCredential(req, issuerMetadata, accessToken, tokenEndpointAuth{}, "test-config", nil)
 	require.NoError(t, err)
 	require.NotNil(t, credential)
 }
 
-func TestController_requestCredential_DPoPNonceChallengeUsesNonceEndpoint(t *testing.T) {
+func TestController_requestCredential_DPoPNonceChallengePrefersCredentialEndpointHeader(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
@@ -3023,8 +3066,10 @@ func TestController_requestCredential_DPoPNonceChallengeUsesNonceEndpoint(t *tes
 			return
 		}
 
-		if payload["nonce"] != nonceEndpointDPoPNonce {
-			http.Error(w, "retry DPoP proof missing nonce", http.StatusBadRequest)
+		// The Nonce Endpoint offers a different value on purpose: RFC 9449 section 8
+		// makes the DPoP-Nonce header of the rejecting response the only source.
+		if payload["nonce"] != credentialHeaderNonce {
+			http.Error(w, "retry DPoP proof did not use the credential endpoint nonce", http.StatusBadRequest)
 			return
 		}
 		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
@@ -3060,13 +3105,13 @@ func TestController_requestCredential_DPoPNonceChallengeUsesNonceEndpoint(t *tes
 	require.NoError(t, err)
 	issuerMetadata.NonceEndpoint = nonceEndpoint
 
-	credential, err := controller.requestCredential(req, issuerMetadata, accessToken, "test-config", nil)
+	credential, err := controller.requestCredential(req, issuerMetadata, accessToken, tokenEndpointAuth{}, "test-config", nil)
 	require.NoError(t, err)
 	require.NotNil(t, credential)
 	assert.Equal(t, 2, credentialRequests)
 }
 
-func TestController_requestCredential_DPoPNonceError_NoNonceEndpoint(t *testing.T) {
+func TestController_requestCredential_DPoPNonceChallengeWithoutNonceHeaderFails(t *testing.T) {
 	controller := createTestControllerWithDefaults(t)
 	httpAllowed := env.IsHTTPAllowed()
 	defer env.SetHTTPAllowed(httpAllowed)
@@ -3095,7 +3140,7 @@ func TestController_requestCredential_DPoPNonceError_NoNonceEndpoint(t *testing.
 			http.Error(w, "missing DPoP header", http.StatusBadRequest)
 			return
 		}
-		w.Header().Set("DPoP-Nonce", "credential-endpoint-nonce")
+		// No DPoP-Nonce header: there is nothing to retry with.
 		mockserver.JSONResponse(w, http.StatusBadRequest, map[string]string{
 			"error": "use_dpop_nonce",
 		})
@@ -3124,12 +3169,109 @@ func TestController_requestCredential_DPoPNonceError_NoNonceEndpoint(t *testing.
 		TokenType: "DPoP",
 	}
 
-	credential, err := controller.requestCredential(req, issuerMetadata, accessToken, "test-config", nil)
+	credential, err := controller.requestCredential(req, issuerMetadata, accessToken, tokenEndpointAuth{}, "test-config", nil)
 	require.Error(t, err)
 	require.Nil(t, credential)
-	assert.Contains(t, err.Error(), "failed to fetch DPoP nonce")
-	assert.Contains(t, err.Error(), "nonce endpoint")
+	assert.Contains(t, err.Error(), "asked for a DPoP nonce without supplying one")
 	assert.Equal(t, 1, credentialRequests)
+}
+
+// captureKeyProofClaims runs one Credential Request against a stub credential
+// endpoint and returns the claims of the key proof it carried.
+func captureKeyProofClaims(t *testing.T, controller *Wallet, tokenAuth tokenEndpointAuth) map[string]interface{} {
+	t.Helper()
+
+	var capturedProof string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/credential" {
+			http.NotFound(w, r)
+			return
+		}
+		var body struct {
+			Proofs struct {
+				JWT []string `json:"jwt"`
+			} `json:"proofs"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Proofs.JWT) != 1 {
+			http.Error(w, "credential request does not carry exactly one jwt key proof", http.StatusBadRequest)
+			return
+		}
+		capturedProof = body.Proofs.JWT[0]
+		mockserver.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"credentials": []map[string]string{{
+				"credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
+			}},
+		})
+	}))
+	defer server.Close()
+
+	credentialEndpoint, err := common.ParseURIField(server.URL + "/credential")
+	require.NoError(t, err)
+	offerURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	issuerMetadata := &receiverTypes.CredentialIssuerMetadata{
+		CredentialIssuer:   server.URL,
+		CredentialEndpoint: *credentialEndpoint,
+	}
+	req := ReceiveCredentialRequest{
+		CredentialOffer: &CredentialOffer{
+			CredentialIssuer:           offerURL,
+			CredentialConfigurationIDs: []string{"test-config"},
+		},
+		Type: receiverTypes.Oid4vci,
+		Key:  newMockKeyEntry(),
+	}
+	accessToken := &receiverTypes.CredentialIssuanceAccessToken{
+		Token:     "access-token",
+		TokenType: "Bearer",
+	}
+
+	credentialJWT, err := controller.requestCredential(req, issuerMetadata, accessToken, tokenAuth, "test-config", nil)
+	require.NoError(t, err)
+	require.NotNil(t, credentialJWT)
+	require.NotEmpty(t, capturedProof, "credential endpoint was not called with a key proof")
+
+	parts := strings.Split(capturedProof, ".")
+	require.Len(t, parts, 3, "key proof should be a compact JWT")
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+
+	var claims map[string]interface{}
+	require.NoError(t, json.Unmarshal(payloadBytes, &claims))
+	return claims
+}
+
+func TestController_requestCredential_KeyProofCarriesIssWhenTokenRequestNamedWallet(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+	controller.clientAuth = ClientAuthConfig{Method: receiverTypes.None, ClientID: "wallet-id"}
+
+	claims := captureKeyProofClaims(t, controller, tokenEndpointAuth{
+		Method:       receiverTypes.None,
+		SendClientID: true,
+	})
+
+	assert.Equal(t, "wallet-id", claims["iss"],
+		"OID4VCI 1.0 section 8.2 makes iss REQUIRED once the token request named the wallet")
+}
+
+func TestController_requestCredential_KeyProofOmitsIssForAnonymousAccessToken(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+	// Configured but never sent: the token request omitted client_id, so the access
+	// token is anonymous and the key proof must not name the wallet either.
+	controller.clientAuth = ClientAuthConfig{Method: receiverTypes.None, ClientID: "wallet-id"}
+
+	claims := captureKeyProofClaims(t, controller, tokenEndpointAuth{Method: receiverTypes.None})
+
+	_, hasIss := claims["iss"]
+	assert.False(t, hasIss, "an anonymous access token must not produce an iss claim")
+	assert.NotEmpty(t, claims["aud"], "aud stays required regardless of iss")
 }
 
 func TestAccessTokenCredentialIdentifier(t *testing.T) {

@@ -26,7 +26,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -161,12 +160,6 @@ func curveForSignatureAlgorithm(alg jose.SignatureAlgorithm) (elliptic.Curve, er
 		return nil, fmt.Errorf("unsupported client authentication signing algorithm: %q", alg)
 	}
 }
-
-var dpopNonceHTTPClient = &http.Client{
-	Timeout: 10 * time.Second,
-}
-
-const maxDPoPNonceResponseBodyBytes int64 = 4 << 10
 
 // NewWallet creates a Wallet with default dispatcher configurations.
 //
@@ -925,6 +918,37 @@ func validateAuthorizationServerIssuer(requested common.URIField, authMetadata *
 	return nil
 }
 
+// validateCredentialIssuer checks the credential_issuer returned in the metadata
+// against the Credential Issuer Identifier the Credential Offer pointed at.
+//
+// OID4VCI 1.0 section 12.2.2 derives the metadata URL from that identifier, so the
+// document has to claim the identifier it was fetched from. Skipping the check
+// matters beyond discovery hygiene: section 8.2 requires the key proof to carry the
+// Credential Issuer Identifier as its audience, and requestCredential takes that
+// audience from this field. An unchecked value therefore points the proof at an
+// audience of the responder's choosing.
+//
+// Only a trailing slash is normalized away. Section 12.2.1 defines the identifier as
+// a case sensitive URL with no query or fragment, so comparing more loosely would
+// defeat the check.
+func validateCredentialIssuer(requested *url.URL, issuerMetadata *receiverTypes.CredentialIssuerMetadata) error {
+	if requested == nil {
+		return fmt.Errorf("credential issuer identifier is required")
+	}
+
+	credentialIssuer := strings.TrimSpace(issuerMetadata.CredentialIssuer)
+	if credentialIssuer == "" {
+		return fmt.Errorf("credential_issuer is missing on credential issuer metadata")
+	}
+
+	if strings.TrimSuffix(credentialIssuer, "/") != strings.TrimSuffix(strings.TrimSpace(requested.String()), "/") {
+		return fmt.Errorf(
+			"credential issuer metadata credential_issuer %q does not match the credential issuer identifier %q it was fetched from",
+			credentialIssuer, requested.String())
+	}
+	return nil
+}
+
 func asMetadataSupportsAuthMethod(authMetadata *receiverTypes.AuthorizationServerMetadata, method receiverTypes.TokenEndpointAuthMethod) bool {
 	if authMetadata == nil || authMetadata.TokenEndpointAuthMethodsSupported == nil {
 		return false
@@ -1075,13 +1099,13 @@ func (w *Wallet) ReceiveCredential(req ReceiveCredentialRequest) (*SavedCredenti
 		return nil, err
 	}
 
-	accessToken, err := w.obtainAccessToken(req.Type, authMetadata, preAuthCode, req.TxCode)
+	accessToken, tokenAuth, err := w.obtainAccessToken(req.Type, authMetadata, preAuthCode, req.TxCode)
 
 	if err != nil {
 		return nil, err
 	}
 
-	credentialJWT, err := w.requestCredential(req, issuerMetadata, accessToken, credentialConfigurationID, credentialConfiguration)
+	credentialJWT, err := w.requestCredential(req, issuerMetadata, accessToken, tokenAuth, credentialConfigurationID, credentialConfiguration)
 	if err != nil {
 		return nil, err
 	}
@@ -1271,6 +1295,10 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 		}
 	}
 
+	if err := validateCredentialIssuer(req.CredentialOffer.CredentialIssuer, issuerMetadata); err != nil {
+		return nil, nil, err
+	}
+
 	if err := w.validateCredentialConfigurationIDs(req.CredentialOffer, issuerMetadata); err != nil {
 		return nil, nil, err
 	}
@@ -1311,9 +1339,12 @@ func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receive
 }
 
 // obtainAccessToken obtains an access token using pre-authorization code.
-func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivingTypes, authMetadata *receiverTypes.AuthorizationServerMetadata, preAuthCode string, txCode string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
+// obtainAccessToken also returns how the token request authenticated. The key proof
+// of the following Credential Request needs it: OID4VCI 1.0 section 8.2 requires iss
+// unless the access token was obtained anonymously (see proofIssuer).
+func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivingTypes, authMetadata *receiverTypes.AuthorizationServerMetadata, preAuthCode string, txCode string) (*receiverTypes.CredentialIssuanceAccessToken, tokenEndpointAuth, error) {
 	if authMetadata == nil || authMetadata.TokenEndpoint == nil {
-		return nil, fmt.Errorf("token endpoint is missing on authorization server")
+		return nil, tokenEndpointAuth{}, fmt.Errorf("token endpoint is missing on authorization server")
 	}
 
 	tokenEndpoint := *authMetadata.TokenEndpoint
@@ -1322,7 +1353,7 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 
 	auth, err := resolveClientAuthMethod(w.clientAuth, authMetadata)
 	if err != nil {
-		return nil, err
+		return nil, tokenEndpointAuth{}, err
 	}
 
 	fetchAccessToken := func(dpopNonce *string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
@@ -1370,9 +1401,9 @@ func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivin
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch access token: %w", err)
+		return nil, tokenEndpointAuth{}, fmt.Errorf("failed to fetch access token: %w", err)
 	}
-	return accessToken, nil
+	return accessToken, auth, nil
 }
 
 func accessTokenNonce(accessToken *receiverTypes.CredentialIssuanceAccessToken) *string {
@@ -1435,47 +1466,22 @@ func (w *Wallet) fetchCredentialNonce(
 	return nil, fmt.Errorf("nonce response does not contain c_nonce or nonce")
 }
 
-func (w *Wallet) fetchDPoPNonce(issuerMetadata *receiverTypes.CredentialIssuerMetadata) (*string, error) {
-	if issuerMetadata == nil || issuerMetadata.NonceEndpoint == nil {
-		return nil, fmt.Errorf("issuer metadata does not contain nonce endpoint")
+// proofIssuer reports the iss to put in the key proof of a Credential Request.
+//
+// OID4VCI 1.0 section 8.2 makes iss REQUIRED unless the access token was obtained
+// in a pre-authorized code flow without Client identification, so the signal is
+// whether the token request named this wallet. Do not branch on the authentication
+// method: none still sends client_id unless the Authorization Server advertises
+// pre-authorized_grant_anonymous_access_supported (section 12.3).
+func proofIssuer(tokenAuth tokenEndpointAuth, clientAuth ClientAuthConfig) *string {
+	if !tokenAuth.SendClientID {
+		return nil
 	}
-
-	nonceEndpointURL := url.URL(*issuerMetadata.NonceEndpoint)
-	if !env.IsHTTPAllowed() && !strings.EqualFold(nonceEndpointURL.Scheme, "https") {
-		return nil, fmt.Errorf("unsupported URL scheme for OID4VCI endpoint: %q (https required)", nonceEndpointURL.Scheme)
+	clientID := strings.TrimSpace(clientAuth.ClientID)
+	if clientID == "" {
+		return nil
 	}
-
-	req, err := http.NewRequest(http.MethodPost, nonceEndpointURL.String(), http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create DPoP nonce request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := dpopNonceHTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch DPoP nonce: %w", err)
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxDPoPNonceResponseBodyBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read DPoP nonce response: %w", err)
-	}
-	if int64(len(bodyBytes)) > maxDPoPNonceResponseBodyBytes {
-		return nil, fmt.Errorf("DPoP nonce endpoint response exceeds %d bytes", maxDPoPNonceResponseBodyBytes)
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("DPoP nonce endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	nonce := strings.TrimSpace(resp.Header.Get("DPoP-Nonce"))
-	if nonce == "" {
-		return nil, fmt.Errorf("DPoP nonce endpoint response does not contain DPoP-Nonce header")
-	}
-
-	return &nonce, nil
+	return &clientID
 }
 
 // requestCredential requests the credential from the issuer with JWT proof.
@@ -1483,6 +1489,7 @@ func (w *Wallet) requestCredential(
 	req ReceiveCredentialRequest,
 	issuerMetadata *receiverTypes.CredentialIssuerMetadata,
 	accessToken *receiverTypes.CredentialIssuanceAccessToken,
+	tokenAuth tokenEndpointAuth,
 	credentialConfigurationID string,
 	credentialConfiguration *receiverTypes.CredentialConfiguration,
 ) (*string, error) {
@@ -1526,7 +1533,7 @@ func (w *Wallet) requestCredential(
 			did,
 			nonce,
 			issuerMetadata.CredentialIssuer,
-			nil,
+			proofIssuer(tokenAuth, w.clientAuth),
 			proofBindingMethod,
 		)
 		if err != nil {
@@ -1570,11 +1577,15 @@ func (w *Wallet) requestCredential(
 
 	credentialJWT, err := receiveCredential(nil)
 	if err != nil && strings.EqualFold(accessToken.TokenType, "DPoP") && errors.Is(err, receiverTypes.ErrUseDPoPNonce) {
-		dpopNonce, nonceErr := w.fetchDPoPNonce(issuerMetadata)
-		if nonceErr != nil {
-			return nil, fmt.Errorf("failed to fetch DPoP nonce: %w", nonceErr)
+		// RFC 9449 section 8 supplies the nonce a resource server accepts in the
+		// DPoP-Nonce header of the response that rejected the request, and the
+		// receiver plugin carries it on the error. The OID4VCI Nonce Endpoint is a
+		// different thing: it returns the c_nonce for the key proof.
+		dpopNonce, ok := receiverTypes.DPoPNonceFromError(err)
+		if !ok || dpopNonce == "" {
+			return nil, fmt.Errorf("credential endpoint asked for a DPoP nonce without supplying one: %w", err)
 		}
-		credentialJWT, err = receiveCredential(dpopNonce)
+		credentialJWT, err = receiveCredential(&dpopNonce)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive credential: %w", err)

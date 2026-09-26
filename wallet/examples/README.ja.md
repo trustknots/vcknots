@@ -344,6 +344,39 @@ go run conformance_sdjwt.go "openid-credential-offer://?credential_offer=..."
 
 #### 結果の確認
 
+成功した実行は Suite 側で **FINISHED / PASSED** になります。個々の挙動は、Suite からエクスポートした JSON ログで確認します（`F` にそのファイルを指定してください）。
+
+```bash
+F=test-log-oid4vci-1_0-wallet-test-credential-issuance-<テスト ID>.json
+
+# ① 到達したエンドポイントの順序
+jq -r '.results[]|select(.incoming_path!=null)|.incoming_path|sub(".*/";"")' "$F" | nl
+
+# ② Credential Endpoint の DPoP nonce 判定
+jq -r '.results[]|select(.src=="ValidateResourceEndpointDpopProofNonce")|[(.result//"NO-RESULT"),.msg]|@tsv' "$F"
+
+# ③ 各リクエストの DPoP proof が載せた nonce
+jq -r '.results[]|select(.src=="ExtractDpopProofFromHeader")|.claims|[(.htu|sub(".*/";"")),(.nonce//"(none)")]|@tsv' "$F"
+
+# ④ Credential Request の key proof のクレーム
+jq -r '.results[]|select(.src=="VCIExtractCredentialRequestProof")|(.proof_jwts//empty)[].claims' "$F"
+
+# ⑤ モジュールの最終状態
+jq -r '.testInfo|[.status,(.result//"null")]|@tsv' "$F"
+```
+
+`sender_constrain=dpop` で成功した実行では、次のようになります。
+
+| # | 期待される出力 |
+| :---- | :---- |
+| ① | 末尾 5 行が `token`、`token`、`nonce`、`credential`、`credential`（先頭はオファーとメタデータの取得）。Credential Endpoint は 401（`use_dpop_nonce`）のあと `/credential` へ再送します。`/nonce` へ戻る場合は DPoP nonce の取得元が誤っています |
+| ② | 3 行目が `SUCCESS` / `Resource endpoint DPoP nonce matches expected value` |
+| ③ | `credential` の行が 2 本あり、2 本目に 401 応答の `DPoP-Nonce` と同じ値が入ります |
+| ④ | `aud`（末尾スラッシュを含む Credential Issuer 識別子）、`iss`（`client_id`）、`iat`、`nonce` |
+| ⑤ | `FINISHED` / `PASSED` |
+
+- 1 回目の `/credential` は DPoP 層で 401 になるため、Suite は key proof を検証しません。`c_nonce` も消費されないので、2 回目は同じ key proof をそのまま送れます。
+- Suite は key proof の `aud` は検査しますが `iss` は検査しません。`iss` は ④ の出力で確認してください。
 - Wallet が Token Request を送る前に停止した場合、その理由は Suite のログには残らず、Wallet の出力（`Failed to receive credential`）にだけ表示されます。
 
 ---
@@ -456,3 +489,10 @@ export VCKNOTS_WALLET_DEBUG=true
 - **状況**: ローカルサーバー統合テストモード（引数なし）で発生する場合、証明書ファイルが正しく設定されていない可能性があります。
 - **状況**: コンフォーマンステストモード（引数あり）では `InsecureSkipX509Verify: true` が自動設定されるため、通常は発生しません。
 - **解決策（ローカルサーバー統合テストモード向け）**: 正しい証明書ファイルが `../../../server/samples/certificate-openid-test/certificate_openid.pem` に配置されていることを確認するか、`VCKNOTS_CERT_PATH` で指定してください。
+
+### `Couldn't find DPoP Proof header`（コンフォーマンステストモード）
+
+`sender_constrain=dpop` のテストプランに対して `OID4VCI_DPOP=1` を設定せずに実行すると、Token Endpoint で `ExtractDpopProofFromHeader: Couldn't find DPoP Proof header` となり、テストが INTERRUPTED で終了します。
+
+- Wallet は DPoP なしで送ったことに気づかずエラーも出さないため、Suite 側のログでしか判別できません。
+- `OID4VCI_DPOP=1` を付けて実行し直してください。テストプランが `sender_constrain=none` の場合は、逆に設定しません。
