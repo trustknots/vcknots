@@ -930,18 +930,19 @@ func validateAuthorizationServerIssuer(requested common.URIField, authMetadata *
 //
 // Only a trailing slash is normalized away. Section 12.2.1 defines the identifier as
 // a case sensitive URL with no query or fragment, so comparing more loosely would
-// defeat the check.
+// defeat the check. The comparison reads the raw field for the same reason: a value
+// this function trims is not the value the proof would carry.
 func validateCredentialIssuer(requested *url.URL, issuerMetadata *receiverTypes.CredentialIssuerMetadata) error {
 	if requested == nil {
 		return fmt.Errorf("credential issuer identifier is required")
 	}
 
-	credentialIssuer := strings.TrimSpace(issuerMetadata.CredentialIssuer)
-	if credentialIssuer == "" {
+	credentialIssuer := issuerMetadata.CredentialIssuer
+	if strings.TrimSpace(credentialIssuer) == "" {
 		return fmt.Errorf("credential_issuer is missing on credential issuer metadata")
 	}
 
-	if strings.TrimSuffix(credentialIssuer, "/") != strings.TrimSuffix(strings.TrimSpace(requested.String()), "/") {
+	if strings.TrimSuffix(credentialIssuer, "/") != strings.TrimSuffix(requested.String(), "/") {
 		return fmt.Errorf(
 			"credential issuer metadata credential_issuer %q does not match the credential issuer identifier %q it was fetched from",
 			credentialIssuer, requested.String())

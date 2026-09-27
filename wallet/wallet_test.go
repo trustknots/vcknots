@@ -1485,6 +1485,9 @@ func TestValidateCredentialIssuer(t *testing.T) {
 		{name: "different host", credentialIssuer: "https://attacker.example.com/tenant", wantErr: "does not match"},
 		{name: "different path", credentialIssuer: "https://issuer.example.com/other", wantErr: "does not match"},
 		{name: "different scheme", credentialIssuer: "http://issuer.example.com/tenant", wantErr: "does not match"},
+		// requestCredential passes this field to the proof audience verbatim, so a value
+		// that only matches after trimming would be accepted here and rejected there.
+		{name: "trailing whitespace", credentialIssuer: "https://issuer.example.com/tenant ", wantErr: "does not match"},
 		{name: "missing", credentialIssuer: "", wantErr: "credential_issuer is missing"},
 	}
 
