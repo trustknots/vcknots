@@ -2,6 +2,7 @@
 package jwks
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,9 +11,12 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/trustknots/vcknots/wallet/common/observe"
 	"github.com/trustknots/vcknots/wallet/idprof/types"
+	"github.com/trustknots/vcknots/wallet/internal/httpfetch"
 )
 
+// IDProfileTypeID is the identity profile type handled by JWKSPlugin.
 const IDProfileTypeID = "jwks"
 
 // JWKSPlugin implements the IdentityProfiler interface for JWKS-based profiles
@@ -39,9 +43,7 @@ type JWKSProfileUpdateOptions struct {
 // NewJWKSPlugin creates a new JWKS plugin
 func NewJWKSPlugin() *JWKSPlugin {
 	return &JWKSPlugin{
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		httpClient: httpfetch.NewDefaultClient(30 * time.Second),
 	}
 }
 
@@ -120,7 +122,11 @@ func (p *JWKSPlugin) fetchJWKS(jwksURL string) (*jose.JSONWebKeySet, error) {
 	if p.httpClient == nil {
 		return nil, fmt.Errorf("failed to fetch JWKS: httpClient is nil")
 	}
-	resp, err := p.httpClient.Get(jwksURL)
+	req, err := http.NewRequestWithContext(observe.WithEndpoint(context.Background(), observe.EndpointJWKS), http.MethodGet, jwksURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
+	}
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
 	}

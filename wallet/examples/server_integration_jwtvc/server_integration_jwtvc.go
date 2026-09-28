@@ -19,6 +19,7 @@ package main
 // - /.well-known/oauth-authorization-server
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -32,9 +33,7 @@ import (
 	"time"
 
 	"github.com/trustknots/vcknots/wallet"
-	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/examples/common"
-	"github.com/trustknots/vcknots/wallet/receiver/types"
 )
 
 const requestTimeout = 10 * time.Second
@@ -119,96 +118,50 @@ func receiveCredential(w *wallet.Wallet, key *common.MockKeyEntry, logger *slog.
 	// Parse the openid-credential-offer URL
 	logger.Info("Received offer URL", "url", offerURL)
 
-	// Extract the credential_offer parameter from the URL
-	// Format: openid-credential-offer://?credential_offer={encoded-json}
-	if !strings.HasPrefix(offerURL, credentialOfferURIPrefix) {
-		logger.Error("Invalid offer URL format", "url", offerURL)
-		panic(fmt.Errorf("invalid offer URL format"))
-	}
-
-	encodedOffer := strings.TrimPrefix(offerURL, credentialOfferURIPrefix)
-	decodedOffer, err := url.QueryUnescape(encodedOffer)
+	// ParseCredentialOfferURL reads the by-value offer
+	// (openid-credential-offer://?credential_offer=...) without any I/O.
+	credentialOffer, err := wallet.ParseCredentialOfferURL(offerURL)
 	if err != nil {
-		logger.Error("Failed to decode offer", "error", err)
+		logger.Error("Failed to parse credential offer", "error", err)
 		panic(err)
-	}
-
-	logger.Info("Decoded offer", "offer", decodedOffer)
-
-	// Parse the credential offer JSON
-	var offerData map[string]interface{}
-	if err := json.Unmarshal([]byte(decodedOffer), &offerData); err != nil {
-		logger.Error("Failed to parse offer JSON", "error", err)
-		panic(err)
-	}
-
-	// Extract credential_issuer
-	credentialIssuerStr, ok := offerData["credential_issuer"].(string)
-	if !ok {
-		logger.Error("Missing credential_issuer in offer")
-		panic(fmt.Errorf("missing credential_issuer"))
-	}
-
-	credentialIssuerURL, err := url.Parse(credentialIssuerStr)
-	if err != nil {
-		logger.Error("Failed to parse credential issuer URL", "error", err)
-		panic(err)
-	}
-
-	// Extract credential_configuration_ids
-	configIDs := []string{}
-	if ids, ok := offerData["credential_configuration_ids"].([]interface{}); ok {
-		for _, id := range ids {
-			if idStr, ok := id.(string); ok {
-				configIDs = append(configIDs, idStr)
-			}
-		}
-	}
-
-	// Extract grants
-	grants := make(map[string]*wallet.CredentialOfferGrant)
-	if grantsData, ok := offerData["grants"].(map[string]interface{}); ok {
-		for grantType, grantValue := range grantsData {
-			if grantMap, ok := grantValue.(map[string]interface{}); ok {
-				grant := &wallet.CredentialOfferGrant{}
-				if preAuthCode, ok := grantMap["pre-authorized_code"].(string); ok {
-					grant.PreAuthorizedCode = preAuthCode
-				}
-				grants[grantType] = grant
-			}
-		}
-	}
-
-	credentialOffer := &wallet.CredentialOffer{
-		CredentialIssuer:           credentialIssuerURL,
-		CredentialConfigurationIDs: configIDs,
-		Grants:                     grants,
 	}
 
 	logger.Info("Parsed credential offer",
-		"issuer", credentialIssuerURL.String(),
-		"configs", configIDs,
-		"grants", len(grants))
-
-	// Create ReceiveCredentialRequest using OID4VCI
-	receiveReq := wallet.ReceiveCredentialRequest{
-		CredentialOffer: credentialOffer,
-		Type:            types.Oid4vci,
-		Key:             key,
-		TxCode:          txCode,
-	}
+		"issuer", credentialOffer.CredentialIssuer.String(),
+		"configs", credentialOffer.CredentialConfigurationIDs,
+		"grants", len(credentialOffer.Grants))
 	if txCode != "" {
 		logger.Info("Using tx_code from command line")
 	}
 
-	// Use w.ReceiveCredential with proper parameters
-	savedCredential, err := w.ReceiveCredential(receiveReq)
+	// The local server speaks OpenID4VCI 1.0: the Pre-Authorized Code Token
+	// Request (Section 6), then a Credential Request naming the
+	// credential_configuration_id with a key proof for the holder key
+	// (Section 8). The wallet's Config.CredentialAcceptance authenticates the
+	// issuer before the credential is stored.
+	ctx := context.Background()
+	grant, err := w.AuthorizePreAuthorizedIssuance(ctx, wallet.PreAuthorizedIssuanceRequest{
+		CredentialOffer: credentialOffer,
+		TxCode:          txCode,
+	})
 	if err != nil {
-		logger.Error("Failed to receive credential via controller", "error", err)
+		logger.Error("Failed to obtain an access token", "error", err)
 		panic(err)
 	}
+	result, err := w.RequestCredential(ctx, grant, wallet.CredentialRequest{
+		HolderKeys: []wallet.IKeyEntry{key},
+	})
+	if err != nil {
+		logger.Error("Failed to receive credential", "error", err)
+		panic(err)
+	}
+	if result.Deferred != nil || len(result.Credentials) == 0 {
+		logger.Error("The issuer deferred the credential; this sample does not poll")
+		panic(fmt.Errorf("credential issuance was deferred"))
+	}
+	savedCredential := result.Credentials[0]
 
-	logger.Info("Successfully imported demo credential via wallet.ReceiveCredential",
+	logger.Info("Successfully imported demo credential via wallet.RequestCredential",
 		"entry_id", savedCredential.Entry.Id,
 		"raw_length", len(savedCredential.Entry.Raw),
 	)
@@ -372,7 +325,7 @@ func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential
 	logger.Info("Request URI is valid", "scheme", urlParsed.Scheme)
 
 	// Present demo credential to the verifier
-	redirectURI, err := w.PresentCredential(string(body), key, nil)
+	redirectURI, err := common.PresentAll(context.Background(), w, string(body), key, nil)
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
 		panic(err)
@@ -384,10 +337,6 @@ func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential
 }
 
 func main() {
-	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
-	defer env.SetHTTPAllowed(http_allowed)
-	env.SetHTTPAllowed(true)
-
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	opts, err := parseRunOptions(os.Args[1:])
 	if err != nil {
@@ -395,7 +344,8 @@ func main() {
 		os.Exit(2)
 	}
 
-	runtime, err := common.NewOID4VPRuntime(os.Getenv("VCKNOTS_CERT_PATH"))
+	// The local sample server listens on plain http.
+	runtime, err := common.NewOID4VPRuntime(os.Getenv("VCKNOTS_CERT_PATH"), true)
 	if err != nil {
 		panic(err)
 	}

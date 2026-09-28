@@ -2,25 +2,26 @@
 package types
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/go-jose/go-jose/v4"
+
+	"github.com/trustknots/vcknots/wallet/common"
 )
 
 // Sentinel errors for identity profile operations
 var (
-	ErrProfileNotFound   = errors.New("identity profile not found")
-	ErrInvalidProfileID  = errors.New("invalid profile ID")
-	ErrUnsupportedTypeID = errors.New("unsupported profile type ID")
-	ErrProfileExists     = errors.New("profile already exists")
-	ErrInvalidKeys       = errors.New("invalid key set")
-	ErrProfileValidation = errors.New("profile validation failed")
-	ErrResolutionFailed  = errors.New("failed to resolve profile from remote source")
-	ErrUpdateFailed      = errors.New("failed to update profile")
-	ErrInvalidConfig     = errors.New("invalid configuration")
-	ErrPluginNotFound    = errors.New("identity profile plugin not found")
-	ErrNilPlugin         = errors.New("identity profile plugin cannot be nil")
+	ErrProfileNotFound   = common.NewCodedError("idprof_profile_not_found", "identity profile not found")
+	ErrInvalidProfileID  = common.NewCodedError("idprof_invalid_profile_id", "invalid profile ID")
+	ErrUnsupportedTypeID = common.NewCodedError("idprof_unsupported_type_id", "unsupported profile type ID")
+	ErrProfileExists     = common.NewCodedError("idprof_profile_exists", "profile already exists")
+	ErrInvalidKeys       = common.NewCodedError("idprof_invalid_keys", "invalid key set")
+	ErrProfileValidation = common.NewCodedError("idprof_profile_validation", "profile validation failed")
+	ErrResolutionFailed  = common.NewCodedError("idprof_resolution_failed", "failed to resolve profile from remote source")
+	ErrUpdateFailed      = common.NewCodedError("idprof_update_failed", "failed to update profile")
+	ErrInvalidConfig     = common.NewCodedError("idprof_invalid_config", "invalid configuration")
+	ErrPluginNotFound    = common.NewCodedError("idprof_plugin_not_found", "identity profile plugin not found")
+	ErrNilPlugin         = common.NewCodedError("idprof_nil_plugin", "identity profile plugin cannot be nil")
 )
 
 // IdentityProfileError represents an error with identity profile operations
@@ -31,6 +32,7 @@ type IdentityProfileError struct {
 	Err    error  `json:"error"`
 }
 
+// Error implements error.
 func (e *IdentityProfileError) Error() string {
 	if e.ID != "" {
 		return fmt.Sprintf("identity profile %s (type: %s) operation %s: %v", e.ID, e.TypeID, e.Op, e.Err)
@@ -38,6 +40,7 @@ func (e *IdentityProfileError) Error() string {
 	return fmt.Sprintf("identity profile type %s operation %s: %v", e.TypeID, e.Op, e.Err)
 }
 
+// Unwrap returns the wrapped error.
 func (e *IdentityProfileError) Unwrap() error {
 	return e.Err
 }

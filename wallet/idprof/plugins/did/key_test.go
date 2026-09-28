@@ -2,6 +2,7 @@ package did
 
 import (
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"errors"
@@ -195,4 +196,42 @@ func TestDIDKeyPlugin_Validate(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestDIDKeyPluginEd25519 pins the did:key Ed25519 encoding (multicodec 0xed)
+// against an identifier produced by an independent implementation for the
+// RFC 8032 seed 0x22 repeated 32 times.
+func TestDIDKeyPluginEd25519(t *testing.T) {
+	plugin := &DIDKeyPlugin{}
+	seed := make([]byte, ed25519.SeedSize)
+	for index := range seed {
+		seed[index] = 0x22
+	}
+	publicKey := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+	const want = "did:key:z6MkqGC3nWZhYieEVTVDKW5v588CiGfsDSmRVG9ZwwWTvLSK"
+
+	profile, err := plugin.Create(WithPublicKey(&jose.JSONWebKey{Key: publicKey, Algorithm: string(jose.EdDSA)}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if profile.ID != want {
+		t.Fatalf("Create ID = %s, want %s", profile.ID, want)
+	}
+	if err := plugin.Validate(profile); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+
+	resolved, err := plugin.Resolve(want)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	key := resolved.Keys.Keys[0]
+	if key.Algorithm != string(jose.EdDSA) || !publicKey.Equal(key.Key) {
+		t.Fatalf("Resolve key = %#v, want the Ed25519 public key", key)
+	}
+
+	short := "did:key:z" + base58.Encode(encodeMulticodec(Ed25519Pub, publicKey[:31]))
+	if _, err := plugin.Resolve(short); err == nil || !strings.Contains(err.Error(), "Ed25519") {
+		t.Fatalf("Resolve of a truncated Ed25519 key: got %v", err)
+	}
 }

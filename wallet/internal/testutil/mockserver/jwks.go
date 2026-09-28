@@ -34,7 +34,7 @@ func NewJWKSServer(config *JWKSConfig) *JWKSServer {
 	}
 
 	server := NewMockServer()
-	
+
 	js := &JWKSServer{
 		server: server,
 		config: config,
@@ -48,10 +48,10 @@ func NewJWKSServer(config *JWKSConfig) *JWKSServer {
 func (js *JWKSServer) setupRoutes() {
 	// Standard JWKS endpoint
 	js.server.HandleFunc("/.well-known/jwks.json", js.handleJWKS)
-	
+
 	// Alternative JWKS endpoint
 	js.server.HandleFunc("/jwks", js.handleJWKS)
-	
+
 	// Health check endpoint
 	js.server.HandleFunc("/health", js.handleHealth)
 }

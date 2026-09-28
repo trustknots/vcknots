@@ -1,3 +1,4 @@
+// Package local implements a credential store backed by a local bbolt database file.
 package local
 
 import (
@@ -11,13 +12,18 @@ import (
 const bucketName = "CredentialStorage"
 
 const (
+	// Local is the storage location handled by LocalCredentialStorage.
 	Local types.SupportedCredStoreTypes = iota
 )
 
+// LocalCredentialStorage is a types.CredStore that keeps credential entries in
+// a bbolt database file, opening the file for each operation.
 type LocalCredentialStorage struct {
 	path string
 }
 
+// NewLocalCredentialStorage opens or creates the bbolt database at path and
+// ensures its credential bucket exists.
 func NewLocalCredentialStorage(path string) (*LocalCredentialStorage, error) {
 	db, err := bolt.Open(path, 0600, &bolt.Options{ReadOnly: false})
 	if err != nil {
@@ -36,6 +42,8 @@ func NewLocalCredentialStorage(path string) (*LocalCredentialStorage, error) {
 	return &LocalCredentialStorage{path: path}, nil
 }
 
+// SaveCredentialEntry implements types.CredStore. It stores credentialEntry under
+// its Id, replacing any entry with the same Id. location must be Local.
 func (l *LocalCredentialStorage) SaveCredentialEntry(credentialEntry types.CredentialEntry, location types.SupportedCredStoreTypes) error {
 	if location != Local {
 		return fmt.Errorf("locations is unexpected. expected = %v, actual = %v", Local, location)
@@ -62,6 +70,9 @@ func (l *LocalCredentialStorage) SaveCredentialEntry(credentialEntry types.Crede
 	return err
 }
 
+// GetCredentialEntries implements types.CredStore. It returns up to limit entries
+// in key order after skipping offset, with the total entry count; a nil limit
+// returns all remaining entries. location must be Local.
 func (l *LocalCredentialStorage) GetCredentialEntries(offset int, limit *int, location types.SupportedCredStoreTypes) (*types.GetCredentialEntriesResult, error) {
 	if location != Local {
 		return nil, fmt.Errorf("locations is unexpected. expected = %v, actual = %v", Local, location)
@@ -112,6 +123,8 @@ func (l *LocalCredentialStorage) GetCredentialEntries(offset int, limit *int, lo
 	return &result, nil
 }
 
+// GetCredentialEntry implements types.CredStore. It returns the entry stored
+// under id, or an error when there is none. location must be Local.
 func (l *LocalCredentialStorage) GetCredentialEntry(id string, location types.SupportedCredStoreTypes) (*types.CredentialEntry, error) {
 	if location != Local {
 		return nil, fmt.Errorf("locations is unexpected. expected = %v, actual = %v", Local, location)

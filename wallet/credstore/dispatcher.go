@@ -8,10 +8,14 @@ import (
 	"github.com/trustknots/vcknots/wallet/credstore/types"
 )
 
+// CredStoreDispatcher is a CredStore that routes each call to the plugin
+// registered for the requested storage location.
 type CredStoreDispatcher struct {
 	plugins map[SupportedCredStoreTypes]CredStore
 }
 
+// NewCredStoreDispatcher returns a CredStoreDispatcher configured by options,
+// such as WithDefaultConfig and WithPlugin.
 func NewCredStoreDispatcher(options ...func(*CredStoreDispatcher) error) (*CredStoreDispatcher, error) {
 	d := &CredStoreDispatcher{
 		plugins: make(map[SupportedCredStoreTypes]CredStore),
@@ -25,6 +29,8 @@ func NewCredStoreDispatcher(options ...func(*CredStoreDispatcher) error) (*CredS
 	return d, nil
 }
 
+// WithDefaultConfig registers a local.LocalCredentialStorage for local.Local,
+// stored under vcknots/wallet in the user configuration directory.
 func WithDefaultConfig() func(*CredStoreDispatcher) error {
 	return func(d *CredStoreDispatcher) error {
 		appDir, err := os.UserConfigDir()
@@ -43,6 +49,7 @@ func WithDefaultConfig() func(*CredStoreDispatcher) error {
 	}
 }
 
+// WithPlugin registers plugin for credStoreType. A nil plugin is an error.
 func WithPlugin(credStoreType types.SupportedCredStoreTypes, plugin CredStore) func(*CredStoreDispatcher) error {
 	return func(d *CredStoreDispatcher) error {
 		return d.registerPlugin(credStoreType, plugin)
@@ -83,6 +90,8 @@ func (d *CredStoreDispatcher) SaveCredentialEntry(credentialEntry CredentialEntr
 	return nil
 }
 
+// GetCredentialEntries implements CredStore by delegating to the plugin for
+// location.
 func (d *CredStoreDispatcher) GetCredentialEntries(offset int, limit *int, location types.SupportedCredStoreTypes) (*types.GetCredentialEntriesResult, error) {
 	plugin, err := d.getPlugin(location)
 	if err != nil {
@@ -97,6 +106,8 @@ func (d *CredStoreDispatcher) GetCredentialEntries(offset int, limit *int, locat
 	return result, nil
 }
 
+// GetCredentialEntry implements CredStore by delegating to the plugin for
+// location. An empty id is refused with types.ErrInvalidCredentialID.
 func (d *CredStoreDispatcher) GetCredentialEntry(id string, location SupportedCredStoreTypes) (*CredentialEntry, error) {
 	if id == "" {
 		return nil, types.NewCredStoreError(location, "", "get", types.ErrInvalidCredentialID)
