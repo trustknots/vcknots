@@ -130,6 +130,19 @@ func TestNewKeyEntryFromJWK_RejectsUnusableKeys(t *testing.T) {
 		_, err := NewKeyEntryFromJWK(jose.JSONWebKey{Key: []byte("symmetric"), KeyID: "client-key-1"})
 		require.ErrorIs(t, err, ErrUnsupportedAlgorithm)
 	})
+
+	// A caller can hand over an *ecdsa.PrivateKey carrying only the public
+	// half. Copying the embedded PublicKey leaves the private scalar unset
+	// without naming the raw fields Go 1.26 deprecates.
+	t.Run("EC private key without a scalar", func(t *testing.T) {
+		privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+
+		noScalar := &ecdsa.PrivateKey{PublicKey: privKey.PublicKey}
+
+		_, err = NewKeyEntryFromJWK(jose.JSONWebKey{Key: noScalar, KeyID: "client-key-1"})
+		require.ErrorIs(t, err, ErrInvalidPrivateKey)
+	})
 }
 
 func TestNewKeyEntryFromJWKBytes(t *testing.T) {

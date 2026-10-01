@@ -51,7 +51,9 @@ func NewKeyEntryFromJWK(jwk jose.JSONWebKey) (KeyEntry, error) {
 			fmt.Errorf("only EC private keys are supported for signing: %w", ErrUnsupportedAlgorithm))
 	}
 
-	if privKey.D == nil {
+	// Valid checks Curve, X, Y and D on an EC private key. It stands in for a
+	// direct D == nil test, which Go 1.26 deprecates.
+	if !jwk.Valid() {
 		return nil, NewKeyStoreError(alg, jwk.KeyID, op,
 			fmt.Errorf("JWK contains no private key material: %w", ErrInvalidPrivateKey))
 	}

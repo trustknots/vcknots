@@ -49,7 +49,7 @@ func (p *DIDKeyPlugin) Create(opts ...types.CreateOption) (*types.IdentityProfil
 	if !exists {
 		return nil, fmt.Errorf("publicKey parameter is required for did:key creation")
 	}
-	
+
 	pubKey, ok := pubKeyParam.(*jose.JSONWebKey)
 	if !ok {
 		return nil, fmt.Errorf("publicKey parameter must be a *jose.JSONWebKey")
@@ -58,7 +58,7 @@ func (p *DIDKeyPlugin) Create(opts ...types.CreateOption) (*types.IdentityProfil
 	// Create the DID key profile
 	createOpts := &DIDKeyProfileCreateOptions{
 		DIDProfileCreateOptions: DIDProfileCreateOptions{Method: "key"},
-		PublicKey:              pubKey,
+		PublicKey:               pubKey,
 	}
 
 	didKeyProfile, err := NewDIDKeyProfile(createOpts)
@@ -215,12 +215,19 @@ func NewDIDKeyProfile(opts *DIDKeyProfileCreateOptions) (*DIDKeyProfile, error) 
 		return nil, fmt.Errorf("only P256 curve is supported for DIDKeyProfile")
 	}
 
-	encoded := base58.Encode(
-		encodeMulticodec(
-			P256Pub,
-			elliptic.MarshalCompressed(elliptic.P256(), pubKey.X, pubKey.Y),
-		),
-	)
+	// did:key carries the compressed point. PublicKey.Bytes returns the SEC 1
+	// uncompressed form (0x04 || X || Y), 65 bytes on the P-256 curve checked
+	// above, so the compressed form is a parity prefix followed by X.
+	uncompressed, err := pubKey.Bytes()
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode public key: %w", err)
+	}
+
+	compressed := make([]byte, 33)
+	compressed[0] = 0x02 | uncompressed[64]&1
+	copy(compressed[1:], uncompressed[1:33])
+
+	encoded := base58.Encode(encodeMulticodec(P256Pub, compressed))
 
 	if len(encoded) == 0 {
 		return nil, fmt.Errorf("encoded public key cannot be empty")
@@ -273,11 +280,14 @@ func parseCompressedP256Key(keyBytes []byte) (*ecdsa.PublicKey, error) {
 		return nil, fmt.Errorf("failed to parse compressed P256 key")
 	}
 
-	return &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     x,
-		Y:     y,
-	}, nil
+	// ParseUncompressedPublicKey stands in for assigning X and Y directly, so
+	// the point is re-encoded in the SEC 1 uncompressed form it expects.
+	uncompressed := make([]byte, 65)
+	uncompressed[0] = 4
+	x.FillBytes(uncompressed[1:33])
+	y.FillBytes(uncompressed[33:])
+
+	return ecdsa.ParseUncompressedPublicKey(elliptic.P256(), uncompressed)
 }
 
 func encodeMulticodec(code uint64, bytes []byte) []byte {

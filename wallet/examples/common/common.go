@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
-	"math/big"
 	"os"
 
 	"github.com/go-jose/go-jose/v4"
@@ -56,21 +55,14 @@ type MockKeyEntry struct {
 }
 
 func NewMockKeyEntry() *MockKeyEntry {
-	xBytes, _ := base64.RawURLEncoding.DecodeString("ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ")
-	yBytes, _ := base64.RawURLEncoding.DecodeString("Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo")
 	dBytes, _ := base64.RawURLEncoding.DecodeString("jAfOh_53IRxqpEsFojZK8iHP--L8ol3ePEo3DnwiIyM")
 
-	x := new(big.Int).SetBytes(xBytes)
-	y := new(big.Int).SetBytes(yBytes)
-	d := new(big.Int).SetBytes(dBytes)
-
-	privateKey := &ecdsa.PrivateKey{
-		PublicKey: ecdsa.PublicKey{
-			Curve: elliptic.P256(),
-			X:     x,
-			Y:     y,
-		},
-		D: d,
+	// The public half is derived from d, so the x and y of the sample JWK are
+	// not needed here. ParseRawPrivateKey also rejects a scalar outside the
+	// curve order, which assigning D directly did not.
+	privateKey, err := ecdsa.ParseRawPrivateKey(elliptic.P256(), dBytes)
+	if err != nil {
+		panic(fmt.Sprintf("mock client key is not a valid P-256 private key: %v", err))
 	}
 
 	return &MockKeyEntry{
