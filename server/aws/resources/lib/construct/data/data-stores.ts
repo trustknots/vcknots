@@ -19,6 +19,7 @@ export class DataStores extends Construct {
   public readonly requestObjectsTable: dynamodb.Table;
   public readonly authzOAuthClientsTable: dynamodb.Table;
   public readonly authzOAuthPoliciesTable: dynamodb.Table;
+  public readonly allowedCredentialConfigurationsTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string) {
     super(scope, id);
@@ -53,5 +54,16 @@ export class DataStores extends Construct {
 
     // OAuth policy is persistent config, not ephemeral state — no TTL.
     this.authzOAuthPoliciesTable = new dynamodb.Table(this, 'AuthzOAuthPoliciesTable', baseTableProps);
+
+    // Credential configuration ids allowed per access token (keyed by access token hash).
+    this.allowedCredentialConfigurationsTable = new dynamodb.Table(
+      this,
+      'AllowedCredentialConfigurationsTable',
+      {
+        ...baseTableProps,
+        // `expires_at` is app-level epoch ms; DynamoDB TTL uses the epoch-seconds `ttl` attribute.
+        timeToLiveAttribute: 'ttl',
+      },
+    );
   }
 }
