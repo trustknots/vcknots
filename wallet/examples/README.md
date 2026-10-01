@@ -348,6 +348,174 @@ go run conformance_sdjwt.go "openid-credential-offer://?credential_offer=..."
 
 ---
 
+## OpenID4VP Conformance Test (Independent of OpenID4VCI, Recommended)
+
+This uses `conformance_sdjwt/conformance_sdjwt.go`. It does **not require running the
+OpenID4VCI test first**, so OpenID4VP can be verified on its own.
+
+### Before You Start
+
+`conformance_sdjwt.go` switches behaviour on the scheme of its first argument.
+
+| Argument | Behaviour |
+|---|---|
+| `openid-credential-offer://...` | OpenID4VCI: receive a credential and store it |
+| `openid4vp://...` | OpenID4VP: present a stored credential |
+| anything else | Treated as a path to an SD-JWT VC and loaded into the store |
+
+The credential store persists at `$(os.UserConfigDir())/vcknots/wallet/.local_credstore.db`.
+Load it once and every module of the test plan can use it.
+
+> **Note**: `server_integration_sdjwt` deletes this credential store on startup.
+> Load the credential again after running it.
+
+### Step 1: Create the Test Plan
+
+On the [OIDF Conformance Suite](https://www.certification.openid.net/), create a
+`OpenID for Verifiable Presentations 1.0 Final: Test a wallet` plan with these variants.
+
+| Field | Value | Reason |
+|---|---|---|
+| Credential Format | `sd_jwt_vc` | |
+| Client Id Prefix | `x509_san_dns` | The wallet implements `redirect_uri` and `x509_san_dns` only, and `request_uri_signed` needs the certificate that `x509_san_dns` carries. `pre_registered` yields a client_id with no prefix; `decentralized_identifier` and `x509_hash` are rejected with `unsupported client_id prefix` |
+| Request Method | `request_uri_signed` | `x509_san_dns` carries its certificate in the x5c of a signed Request Object, so nothing else works |
+| VP Profile | `plain_vp` | |
+| Response Mode | `direct_post` | `dc_api` / `dc_api.jwt` go through the Digital Credentials API and are unimplemented. `direct_post.jwt` is not supported yet |
+
+### Step 2: Configure the Test Plan JSON
+
+```json
+{
+    "alias": "<your plan name>",
+    "description": "vcknots Wallet OID4VP SD-JWT VC conformance test",
+    "server": {
+        "authorization_endpoint": "openid4vp://authorize"
+    },
+    "client": {
+        "dcql": {
+            "credentials": [
+                {
+                    "id": "pid_credential",
+                    "format": "dc+sd-jwt",
+                    "meta": { "vct_values": ["<vct of the credential you present>"] },
+                    "claims": [
+                        { "path": ["given_name"] },
+                        { "path": ["family_name"] },
+                        { "path": ["birthdate"] }
+                    ]
+                }
+            ]
+        },
+        "jwks": { "keys": [ "<JWK with the private d and an x5c, generated below>" ] }
+    }
+}
+```
+
+**Leave `client.client_id` unset.** The suite then derives `x509_san_dns:<hostname>` from
+the response_uri hostname. A value that already carries the prefix makes it appear twice,
+and the wallet rejects it with `invalid client_id: duplicate prefix detected`.
+
+**`client.jwks` is required and must contain a private key.** The suite signs the Request
+Object with it, so a public-only key stops at `ValidateClientJWKsPrivatePart`. With
+`x509_san_dns`, the dNSName SAN of the x5c leaf certificate must also match the client_id.
+
+Provide your own certificate for the suite's hostname. A self-signed test certificate is fine.
+
+```bash
+cat > vp_client.cnf <<'CNF'
+[req]
+distinguished_name = dn
+x509_extensions = v3
+prompt = no
+[dn]
+CN = <suite hostname>
+[v3]
+subjectAltName = DNS:<suite hostname>
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature
+CNF
+
+openssl ecparam -name prime256v1 -genkey -noout -out vp_client_key.pem
+openssl req -new -x509 -key vp_client_key.pem -out vp_client_cert.pem -days 3650 -config vp_client.cnf
+```
+
+Convert it to a JWK for `client.jwks`. Note that `x5c` alone is standard base64, not base64url.
+
+```bash
+b64url() { xxd -r -p | base64 | tr '+/' '-_' | tr -d '=\n'; }
+txt=$(openssl ec -in vp_client_key.pem -text -noout 2>/dev/null)
+hexpriv=$(printf '%s\n' "$txt" | sed -n '/priv:/,/pub:/p' | grep -v 'priv:\|pub:' | tr -d ' :\n')
+hexpub=$(printf '%s\n' "$txt" | sed -n '/pub:/,/ASN1 OID/p' | grep -v 'pub:\|ASN1' | tr -d ' :\n')
+[ ${#hexpriv} -eq 66 ] && hexpriv=${hexpriv:2}
+
+echo "x   = $(printf '%s' "${hexpub:2:64}" | b64url)"
+echo "y   = $(printf '%s' "${hexpub:66:64}" | b64url)"
+echo "d   = $(printf '%s' "$hexpriv" | b64url)"
+echo "x5c = $(openssl x509 -in vp_client_cert.pem -outform DER | base64 | tr -d '\n')"
+```
+
+Combine those with `kty: EC` / `crv: P-256` / `alg: ES256` / `use: sig` / `kid: <any>`
+into a single JWK.
+
+> ⚠️ **Warning**: This key and certificate are for conformance testing only.
+> They contain the private key `d`, so never commit them to the repository.
+
+### Step 3: Load a Credential into the Credential Store
+
+```bash
+cd /path/to/vcknots/wallet
+go run ./examples/conformance_sdjwt ./examples/server_integration_sdjwt/example_sd_jwt.txt
+```
+
+`example_sd_jwt.txt` works as is because its `cnf` holds the public key of
+`common.NewMockKeyEntry()`. **Any other credential needs that same key, or the Key Binding
+JWT fails.**
+
+**Import it again right before each run.** The wallet presents the credential it received most
+recently and does not yet match it against the DCQL query, so a newer credential (for example one
+from an OID4VCI run) would be presented instead and fail `ValidateCredentialVctMatchesDcqlQuery`.
+
+### Step 4: Run the Module
+
+Start `oid4vp-1final-wallet-happy-flow` in the test plan. It moves to `WAITING` and shows an
+`openid4vp://authorize?...` URI. Copy it and run:
+
+```bash
+cd /path/to/vcknots/wallet
+go run ./examples/conformance_sdjwt "openid4vp://authorize?client_id=...&request_uri=..."
+```
+
+**Always quote the URI** since it contains `?` and `&`.
+
+The run logs the `vct` and the disclosure names of the stored credential. Align the
+test plan's dcql with those values. The list is flat, so a nested claim appears under its
+own name (`18` sits under `age_equal_or_over`, `locality` under `place_of_birth`). Use a
+top-level name in the dcql, or give a nested one its full path, such as
+`["place_of_birth", "locality"]`.
+
+```
+level=INFO msg="Stored credential" id=... vct=urn:eu.europa.ec.eudi:pid:1 disclosures="[family_name given_name birthdate ...]"
+level=INFO msg="=== Credential Presented ==="
+```
+
+### Known Limitations
+
+- **The wallet discloses every claim it holds.** It does not read the DCQL `claims` yet, so
+  `oid4vp-1final-wallet-happy-flow` ends with a single FAILURE on `CheckOnlyRequestedClaimsDisclosed`
+  (`OID4VP-1FINAL-6.4.1`). Everything up to and including the Key Binding JWT checks succeeds.
+- **`oid4vp-1final-wallet-alternate-happy-flow` cannot run with `direct_post` on suite 5.3.1.**
+  The suite stops with `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`
+  before it contacts the wallet (conformance-suite issue #1982). The wallet cannot fix this.
+- **Some negative modules end in REVIEW, not PASSED.** An invalid Request Object signature and
+  a mismatched or invalid `client_id` cannot be authenticated, so rejecting them without
+  answering the Verifier is correct and REVIEW is the final result. `missing-nonce` and
+  `redirect-uri-with-direct-post` are different: those requests are validly signed, so the
+  wallet should POST an error response to the `response_uri`. It aborts instead, which is a
+  gap of its own. In every case the runner exits with an error and sends nothing; upload a
+  screenshot of that terminal output to the module's placeholder.
+
+---
+
 ## File Layout and Usage
 
 ### Integration Test Program

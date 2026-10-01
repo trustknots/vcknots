@@ -193,3 +193,17 @@ func NewOID4VPRuntime(certPath string) (*Runtime, error) {
 		Wallet:     w,
 	}, nil
 }
+
+// NewConformancePresentationDispatcher builds the presentation dispatcher an OIDF
+// conformance run needs: it accepts whatever certificate arrives in the Request Object's
+// x5c and only checks that a dNSName SAN matches the client_id. There is no trust anchor to
+// configure, because the suite signs with a certificate the operator generates per test plan
+// (see examples/README.md). Never do this outside a test suite: it removes the trust anchor
+// behind client_id x509_san_dns.
+func NewConformancePresentationDispatcher() (*presenter.PresentationDispatcher, error) {
+	return presenter.NewPresentationDispatcher(
+		presenter.WithPlugin(presenter.Oid4vp, &oid4vp.Oid4vpPresenter{
+			InsecureSkipX509Verify: true,
+		}),
+	)
+}

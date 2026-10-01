@@ -348,6 +348,171 @@ go run conformance_sdjwt.go "openid-credential-offer://?credential_offer=..."
 
 ---
 
+## OpenID4VP コンフォーマンステスト（OpenID4VCI 非依存・推奨）
+
+`conformance_sdjwt/conformance_sdjwt.go` を使う方法である。
+**OpenID4VCI のテストを先に流す必要がない**ため、OpenID4VP の検証を単独で回せる。
+
+### 前提
+
+`conformance_sdjwt.go` は第 1 引数のスキームで動作を切り替える。
+
+| 引数 | 動作 |
+|---|---|
+| `openid-credential-offer://...` | OpenID4VCI。資格情報を受領して保存する |
+| `openid4vp://...` | OpenID4VP。保存済みの資格情報を提示する |
+| 上記以外 | SD-JWT VC のファイルパスとみなし、credstore に投入する |
+
+credstore は `$(os.UserConfigDir())/vcknots/wallet/.local_credstore.db` に永続する。
+一度投入すればテスト計画の全モジュールで使い回せる。
+
+> **注意**: `server_integration_sdjwt` は起動時にこの credstore を削除する。
+> そちらを実行したあとは、投入をやり直すこと。
+
+### ステップ1: テスト計画を作成する
+
+[OIDF Conformance Suite](https://www.certification.openid.net/) で
+`OpenID for Verifiable Presentations 1.0 Final: Test a wallet` の計画を作る。
+バリアントは次を選ぶ。
+
+| 項目 | 値 | 理由 |
+|---|---|---|
+| Credential Format | `sd_jwt_vc` | |
+| Client Id Prefix | `x509_san_dns` | Wallet が実装しているのは `redirect_uri` と `x509_san_dns` の 2 つだけで、`request_uri_signed` には `x509_san_dns` が運ぶ証明書が要る。`pre_registered` はプレフィックスの無い client_id になり、`decentralized_identifier` と `x509_hash` は `unsupported client_id prefix` で拒否される |
+| Request Method | `request_uri_signed` | `x509_san_dns` は署名済みリクエストオブジェクトの x5c で証明書を運ぶため、これ以外は成立しない |
+| VP Profile | `plain_vp` | |
+| Response Mode | `direct_post` | `dc_api` / `dc_api.jwt` は Digital Credentials API 経路で未対応。`direct_post.jwt` は未対応 |
+
+### ステップ2: テスト計画の JSON を設定する
+
+```json
+{
+    "alias": "<任意の計画名>",
+    "description": "vcknots Wallet OID4VP SD-JWT VC conformance test",
+    "server": {
+        "authorization_endpoint": "openid4vp://authorize"
+    },
+    "client": {
+        "dcql": {
+            "credentials": [
+                {
+                    "id": "pid_credential",
+                    "format": "dc+sd-jwt",
+                    "meta": { "vct_values": ["<提示する資格情報の vct>"] },
+                    "claims": [
+                        { "path": ["given_name"] },
+                        { "path": ["family_name"] },
+                        { "path": ["birthdate"] }
+                    ]
+                }
+            ]
+        },
+        "jwks": { "keys": [ "<秘密鍵 d と x5c を含む JWK（下記で生成）>" ] }
+    }
+}
+```
+
+**`client.client_id` は設定しないこと。** 空にしておくと、Suite が response_uri のホスト名から
+`x509_san_dns:<ホスト名>` を組み立てる。プレフィックスを含む値を書くと二重に付き、
+Wallet が `invalid client_id: duplicate prefix detected` で拒否する。
+
+**`client.jwks` は必須で、秘密鍵を含む必要がある。** Suite はこの鍵でリクエストオブジェクトに
+署名するため、公開鍵だけだと `ValidateClientJWKsPrivatePart` で止まる。
+`x509_san_dns` では x5c の leaf 証明書の dNSName SAN が client_id と一致する必要もある。
+
+Suite のホスト名に対する証明書は自分で用意する。テスト専用の自己署名証明書でよい。
+
+```bash
+cat > vp_client.cnf <<'CNF'
+[req]
+distinguished_name = dn
+x509_extensions = v3
+prompt = no
+[dn]
+CN = <Suite のホスト名>
+[v3]
+subjectAltName = DNS:<Suite のホスト名>
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature
+CNF
+
+openssl ecparam -name prime256v1 -genkey -noout -out vp_client_key.pem
+openssl req -new -x509 -key vp_client_key.pem -out vp_client_cert.pem -days 3650 -config vp_client.cnf
+```
+
+これを JWK に変換して `client.jwks` に入れる。`x5c` だけは base64url ではなく通常の base64 である。
+
+```bash
+b64url() { xxd -r -p | base64 | tr '+/' '-_' | tr -d '=\n'; }
+txt=$(openssl ec -in vp_client_key.pem -text -noout 2>/dev/null)
+hexpriv=$(printf '%s\n' "$txt" | sed -n '/priv:/,/pub:/p' | grep -v 'priv:\|pub:' | tr -d ' :\n')
+hexpub=$(printf '%s\n' "$txt" | sed -n '/pub:/,/ASN1 OID/p' | grep -v 'pub:\|ASN1' | tr -d ' :\n')
+[ ${#hexpriv} -eq 66 ] && hexpriv=${hexpriv:2}
+
+echo "x   = $(printf '%s' "${hexpub:2:64}" | b64url)"
+echo "y   = $(printf '%s' "${hexpub:66:64}" | b64url)"
+echo "d   = $(printf '%s' "$hexpriv" | b64url)"
+echo "x5c = $(openssl x509 -in vp_client_cert.pem -outform DER | base64 | tr -d '\n')"
+```
+
+`kty: EC` / `crv: P-256` / `alg: ES256` / `use: sig` / `kid: <任意>` と併せて 1 つの JWK にする。
+
+> ⚠️ **警告**: この鍵と証明書はコンフォーマンステスト専用である。
+> `d`（秘密鍵）を含むため、リポジトリにコミットしないこと。
+
+### ステップ3: 資格情報を credstore に投入する
+
+```bash
+cd /path/to/vcknots/wallet
+go run ./examples/conformance_sdjwt ./examples/server_integration_sdjwt/example_sd_jwt.txt
+```
+
+`example_sd_jwt.txt` をそのまま使えるのは、その `cnf` が `common.NewMockKeyEntry()` の
+公開鍵と一致しているからである。**別の資格情報でも同じモック鍵が `cnf` に必要で、
+無ければ Key Binding JWT が失敗する。**
+
+**実行の直前に毎回投入し直すこと。** Wallet は最後に受け取った資格情報を提示し、DCQL との照合はまだ行わない。
+そのため OID4VCI の実行などで新しい資格情報が入っていると、そちらが提示されて
+`ValidateCredentialVctMatchesDcqlQuery` で失敗する。
+
+### ステップ4: モジュールを実行する
+
+テスト計画で `oid4vp-1final-wallet-happy-flow` を Start すると `WAITING` になり、
+`openid4vp://authorize?...` が表示される。これをコピーして実行する。
+
+```bash
+cd /path/to/vcknots/wallet
+go run ./examples/conformance_sdjwt "openid4vp://authorize?client_id=...&request_uri=..."
+```
+
+`?` と `&` を含むので、**必ずクォートで囲むこと。**
+
+実行すると、保持している資格情報の `vct` と disclosure 名がログに出る。
+テスト計画の dcql はこの値に合わせる。一覧はフラットなので、入れ子のクレームも自身の名前で出る
+（`18` は `age_equal_or_over` の下、`locality` は `place_of_birth` の下にある）。dcql には最上位の
+名前を使うか、入れ子のものは `["place_of_birth", "locality"]` のように親からのパスで書く。
+
+```
+level=INFO msg="Stored credential" id=... vct=urn:eu.europa.ec.eudi:pid:1 disclosures="[family_name given_name birthdate ...]"
+level=INFO msg="=== Credential Presented ==="
+```
+
+### 既知の制約
+
+- **Wallet は保有するクレームをすべて開示する。** DCQL の `claims` をまだ読まないため、
+  `oid4vp-1final-wallet-happy-flow` は `CheckOnlyRequestedClaimsDisclosed`
+  （`OID4VP-1FINAL-6.4.1`）1 件だけ FAILURE になる。Key Binding JWT の検証までは SUCCESS になる。
+- **suite 5.3.1 では `oid4vp-1final-wallet-alternate-happy-flow` を `direct_post` で実行できない。**
+  suite が Wallet に接続する前に `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`
+  で停止する（conformance-suite issue #1982）。Wallet 側では直せない。
+- **一部の否定系モジュールは PASSED ではなく REVIEW で終わる。** Request Object の署名不正と `client_id` の
+  不一致・不正は、リクエストを認証できないため、Verifier に応答せず拒否するのが正しく、REVIEW が最終結果になる。
+  一方 `missing-nonce` と `redirect-uri-with-direct-post` は署名自体は正しいので、本来は `response_uri` に
+  エラー応答を POST すべきである。現状は応答せずに中断しており、これは別途の課題である。いずれの場合もランナーは
+  エラーで終了して何も送らないので、その端末出力のスクリーンショットを各モジュールのプレースホルダにアップロードする。
+
+---
+
 ## ファイル構成と使用方法
 
 ### 統合テストプログラム
