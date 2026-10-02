@@ -91,7 +91,26 @@ export const dynamodbAllowedCredentialConfigurationStore = (
       const item = result.Item as AllowedCredentialConfigurationItem
       if (isExpired(item.expires_at)) {
         // Match the Firestore provider: proactively delete expired entries instead of waiting for TTL.
-        await deleteItem(accessTokenHash)
+        try {
+          await client.send(
+            new DeleteCommand({
+              TableName: tableName,
+              Key: { id: accessTokenHash },
+              // Preserve any replacement saved after this fetch read the expired entry.
+              ConditionExpression:
+                item.expires_at === undefined
+                  ? 'attribute_not_exists(expires_at)'
+                  : 'expires_at = :expires_at',
+              ...(item.expires_at !== undefined && {
+                ExpressionAttributeValues: { ':expires_at': item.expires_at },
+              }),
+            })
+          )
+        } catch (error) {
+          if ((error as { name?: string })?.name !== 'ConditionalCheckFailedException') {
+            throw error
+          }
+        }
         return null
       }
 

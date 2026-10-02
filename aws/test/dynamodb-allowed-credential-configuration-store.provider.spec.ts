@@ -133,11 +133,12 @@ describe('dynamodbAllowedCredentialConfigurationStore', () => {
   })
 
   it('fetch should return null and delete an expired entry', async () => {
+    const expires_at = Date.now() - 1000
     ddbMock.on(GetCommand).resolves({
       Item: {
         id: 'expired-access-token-hash',
         credential_configuration_ids: configurations,
-        expires_at: Date.now() - 1000,
+        expires_at,
       },
     })
     ddbMock.on(DeleteCommand).resolves({})
@@ -149,6 +150,41 @@ describe('dynamodbAllowedCredentialConfigurationStore', () => {
     const deleteCall = ddbMock.commandCalls(DeleteCommand)[0]
     assert.equal(deleteCall?.args[0].input.TableName, TABLE_NAME)
     assert.deepEqual(deleteCall?.args[0].input.Key, { id: 'expired-access-token-hash' })
+    assert.equal(deleteCall?.args[0].input.ConditionExpression, 'expires_at = :expires_at')
+    assert.deepEqual(deleteCall?.args[0].input.ExpressionAttributeValues, {
+      ':expires_at': expires_at,
+    })
+  })
+
+  it('fetch should preserve a replacement saved before expired-entry cleanup', async () => {
+    const provider = createProvider()
+    let item = { credential_configuration_ids: configurations, expires_at: Date.now() - 1000 }
+    ddbMock.on(PutCommand).callsFake((input) => {
+      item = input.Item
+      return {}
+    })
+    ddbMock.on(GetCommand).callsFake(async () => {
+      const expiredItem = item
+      await provider.save('replaced', configurations, 60)
+      return { Item: expiredItem }
+    })
+    ddbMock.on(DeleteCommand).callsFake((input) => {
+      assert.equal(input.ConditionExpression, 'expires_at = :expires_at')
+      assert.notEqual(input.ExpressionAttributeValues[':expires_at'], item.expires_at)
+      throw Object.assign(new Error('Item updated'), { name: 'ConditionalCheckFailedException' })
+    })
+
+    assert.equal(await provider.fetch('replaced'), null)
+    ddbMock.on(GetCommand).resolves({ Item: item })
+    assert.deepEqual(await provider.fetch('replaced'), configurations)
+  })
+
+  it('fetch should propagate cleanup failures other than condition mismatches', async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { expires_at: Date.now() - 1000 } })
+    const error = new Error('DynamoDB unavailable')
+    ddbMock.on(DeleteCommand).rejects(error)
+
+    await assert.rejects(createProvider().fetch('expired'), (caught) => caught === error)
   })
 
   it('fetch should treat a missing expires_at as expired', async () => {
@@ -160,6 +196,9 @@ describe('dynamodbAllowedCredentialConfigurationStore', () => {
     const provider = createProvider()
     assert.equal(await provider.fetch('no-expiry'), null)
     assert.equal(ddbMock.commandCalls(DeleteCommand).length, 1)
+    const deleteInput = ddbMock.commandCalls(DeleteCommand)[0]?.args[0].input
+    assert.equal(deleteInput?.ConditionExpression, 'attribute_not_exists(expires_at)')
+    assert.equal(deleteInput?.ExpressionAttributeValues, undefined)
   })
 
   it('delete should remove the entry by access token hash', async () => {
@@ -171,5 +210,6 @@ describe('dynamodbAllowedCredentialConfigurationStore', () => {
     const deleteCall = ddbMock.commandCalls(DeleteCommand)[0]
     assert.equal(deleteCall?.args[0].input.TableName, TABLE_NAME)
     assert.deepEqual(deleteCall?.args[0].input.Key, { id: 'delete-me' })
+    assert.equal(deleteCall?.args[0].input.ConditionExpression, undefined)
   })
 })
