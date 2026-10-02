@@ -1284,3 +1284,73 @@ func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
 		}
 	})
 }
+
+// TestConformanceShapeRequestURISignedDirectPost pins the combination the conformance test
+// plan uses: client_id prefix x509_san_dns, a Request Object fetched from a request_uri, and
+// response_mode direct_post.
+func TestConformanceShapeRequestURISignedDirectPost(t *testing.T) {
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		DNSNames:              []string{"verifier.example.org"},
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	require.NoError(t, err)
+
+	signerOpts := (&jose.SignerOptions{}).
+		WithType("oauth-authz-req+jwt").
+		WithHeader("x5c", []string{base64.StdEncoding.EncodeToString(der)})
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: priv}, signerOpts)
+	require.NoError(t, err)
+
+	requestObject, err := jwt.Signed(signer).Claims(map[string]any{
+		"aud":           "https://self-issued.me/v2",
+		"nonce":         "conformance-nonce",
+		"client_id":     "x509_san_dns:verifier.example.org",
+		"response_type": "vp_token",
+		"response_mode": "direct_post",
+		"state":         "conformance-state",
+		"response_uri":  "https://verifier.example.org/response",
+		"dcql_query": map[string]any{
+			"credentials": []any{
+				map[string]any{
+					"id":     "pid_credential",
+					"format": "dc+sd-jwt",
+					"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+				},
+			},
+		},
+	}).Serialize()
+	require.NoError(t, err)
+
+	requestURIServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(requestObject))
+	}))
+	defer requestURIServer.Close()
+
+	// Same wiring as examples/conformance_sdjwt.
+	p := &Oid4vpPresenter{InsecureSkipX509Verify: true}
+	req, err := p.ParsePresentationRequest(
+		"openid4vp://authorize?client_id=x509_san_dns:verifier.example.org&request_uri=" +
+			url.QueryEscape(requestURIServer.URL),
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, OAuthAuthzReqResponseModeDirectPost, req.ResponseMode)
+	assert.Equal(t, "https://verifier.example.org/response", req.ResponseURI)
+	assert.Equal(t, "conformance-nonce", req.Nonce)
+	assert.Equal(t, "conformance-state", req.State)
+	require.NotNil(t, req.DcqlQuery)
+	require.Len(t, req.DcqlQuery.Credentials, 1)
+	assert.Equal(t, "pid_credential", req.DcqlQuery.Credentials[0].ID)
+}
