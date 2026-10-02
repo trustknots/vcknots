@@ -1481,7 +1481,9 @@ func TestValidateCredentialIssuer(t *testing.T) {
 		wantErr          string
 	}{
 		{name: "identical", credentialIssuer: "https://issuer.example.com/tenant"},
-		{name: "trailing slash only", credentialIssuer: "https://issuer.example.com/tenant/"},
+		// Section 12.2.4 compares with no normalization, so this is a mismatch even
+		// though both URLs address the same resource.
+		{name: "trailing slash difference", credentialIssuer: "https://issuer.example.com/tenant/", wantErr: "does not match"},
 		{name: "different host", credentialIssuer: "https://attacker.example.com/tenant", wantErr: "does not match"},
 		{name: "different path", credentialIssuer: "https://issuer.example.com/other", wantErr: "does not match"},
 		{name: "different scheme", credentialIssuer: "http://issuer.example.com/tenant", wantErr: "does not match"},
@@ -3259,6 +3261,24 @@ func TestController_requestCredential_KeyProofCarriesIssWhenTokenRequestNamedWal
 
 	assert.Equal(t, "wallet-id", claims["iss"],
 		"OID4VCI 1.0 section 8.2 makes iss REQUIRED once the token request named the wallet")
+}
+
+// The token request sends client_id exactly as configured, so a proof that trimmed
+// it would name a client the issuer never saw.
+func TestController_requestCredential_KeyProofIssMatchesTheConfiguredClientID(t *testing.T) {
+	controller := createTestControllerWithDefaults(t)
+	httpAllowed := env.IsHTTPAllowed()
+	defer env.SetHTTPAllowed(httpAllowed)
+	env.SetHTTPAllowed(true)
+	controller.clientAuth = ClientAuthConfig{Method: receiverTypes.None, ClientID: " wallet-id "}
+
+	claims := captureKeyProofClaims(t, controller, tokenEndpointAuth{
+		Method:       receiverTypes.None,
+		SendClientID: true,
+	})
+
+	assert.Equal(t, " wallet-id ", claims["iss"],
+		"iss has to carry the client_id the token request sent, not a normalized copy")
 }
 
 func TestController_requestCredential_KeyProofOmitsIssForAnonymousAccessToken(t *testing.T) {

@@ -928,10 +928,12 @@ func validateAuthorizationServerIssuer(requested common.URIField, authMetadata *
 // audience from this field. An unchecked value therefore points the proof at an
 // audience of the responder's choosing.
 //
-// Only a trailing slash is normalized away. Section 12.2.1 defines the identifier as
-// a case sensitive URL with no query or fragment, so comparing more loosely would
-// defeat the check. The comparison reads the raw field for the same reason: a value
-// this function trims is not the value the proof would carry.
+// Section 12.2.4 settles how to compare: the value "MUST be identical" to the
+// identifier the metadata URL was built from, "compared using a simple string
+// comparison with no normalization", and a document that fails that test "MUST NOT
+// be used". So nothing is normalized away here, not even a trailing slash, and the
+// raw field is compared because a value this function rewrote is not the value the
+// proof would carry.
 func validateCredentialIssuer(requested *url.URL, issuerMetadata *receiverTypes.CredentialIssuerMetadata) error {
 	if requested == nil {
 		return fmt.Errorf("credential issuer identifier is required")
@@ -942,7 +944,7 @@ func validateCredentialIssuer(requested *url.URL, issuerMetadata *receiverTypes.
 		return fmt.Errorf("credential_issuer is missing on credential issuer metadata")
 	}
 
-	if strings.TrimSuffix(credentialIssuer, "/") != strings.TrimSuffix(requested.String(), "/") {
+	if credentialIssuer != requested.String() {
 		return fmt.Errorf(
 			"credential issuer metadata credential_issuer %q does not match the credential issuer identifier %q it was fetched from",
 			credentialIssuer, requested.String())
@@ -1474,15 +1476,18 @@ func (w *Wallet) fetchCredentialNonce(
 // whether the token request named this wallet. Do not branch on the authentication
 // method: none still sends client_id unless the Authorization Server advertises
 // pre-authorized_grant_anonymous_access_supported (section 12.3).
+//
+// The configured value is returned unchanged. The token request sends client_id
+// exactly as configured, and the issuer matches iss against what it received, so
+// normalizing here would put an identifier in the proof that was never sent.
 func proofIssuer(tokenAuth tokenEndpointAuth, clientAuth ClientAuthConfig) *string {
 	if !tokenAuth.SendClientID {
 		return nil
 	}
-	clientID := strings.TrimSpace(clientAuth.ClientID)
-	if clientID == "" {
+	if strings.TrimSpace(clientAuth.ClientID) == "" {
 		return nil
 	}
-	return &clientID
+	return &clientAuth.ClientID
 }
 
 // requestCredential requests the credential from the issuer with JWT proof.
