@@ -20,8 +20,8 @@ server/aws/
 │   │   ├── authz.ts       Lambda handler (Authz)
 │   │   └── verifier.ts    Lambda handler (Verifier)
 │   ├── apps/
-│   │   ├── create-issuer-app.ts   Issuer app (DynamoDB issuer metadata, OAuth policy/client stores, KMS issuer + Authz public-key stores)
-│   │   ├── create-authz-app.ts    Authorization Server app (DynamoDB authz metadata store, KMS signature key store)
+│   │   ├── create-issuer-app.ts   Issuer app (DynamoDB issuer metadata, OAuth policy/client stores, allowed credential configuration store, KMS issuer + Authz public-key stores)
+│   │   ├── create-authz-app.ts    Authorization Server app (DynamoDB authz metadata store, allowed credential configuration store, KMS signature key store)
 │   │   └── create-verifier-app.ts Verifier app (DynamoDB verifier metadata store, KMS signature key store, Secrets Manager certificate store)
 │   ├── context/
 │   │   └── vcknots-context.ts context / baseUrl helpers
@@ -89,8 +89,8 @@ Physical names (log groups, REST API names) include the deployment stage from `A
 
 | Lambda | Log group (`{stage}` = `API_STAGE`) | REST API name | Environment variables |
 |---|---|---|---|
-| Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`, `NONCES_TABLE_NAME`, `PRE_CODES_TABLE_NAME`, `AUTHZ_BASE_URL`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `TX_CODE_PEPPER` |
-| Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME`, `TX_CODE_PEPPER` |
+| Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`, `NONCES_TABLE_NAME`, `PRE_CODES_TABLE_NAME`, `AUTHZ_BASE_URL`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`, `TX_CODE_PEPPER` |
+| Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`, `TX_CODE_PEPPER` |
 | Verifier | `/vcknots/{stage}/verifier` | `vcknots-verifier-{stage}` | `VERIFIERS_TABLE_NAME`, `REQUEST_OBJECTS_TABLE_NAME`, `NONCES_TABLE_NAME`, `VERIFIER_CERTIFICATE_SECRET_PREFIX` |
 
 `TX_CODE_PEPPER` is read from the deploy-time environment (see [Deploy](#deploy)) and injected into the Issuer/Authz Lambda environment; CDK synth fails fast if it is unset.
@@ -113,15 +113,16 @@ Billing is on-demand (`PAY_PER_REQUEST`). Tables use `RETAIN` on stack deletion 
 | NoncesTable | Nonce string | yes (`ttl`) | Nonce for replay protection |
 | VerifiersTable | Hash of Verifier client ID | no | Verifier metadata |
 | RequestObjectsTable | Request Object ID | yes (`ttl`) | VP request Request Object |
+| AllowedCredentialConfigurationsTable | Access token hash (SHA-256, base64url) | yes (`ttl`) | `credential_configuration_ids` allowed for the access token |
 
-Attributes other than `id` (metadata body, `expires_at`, `ttl`, and so on) are written by the application. For the TTL-enabled tables (PreCodesTable / NoncesTable / RequestObjectsTable), `expires_at` is the application-level expiry in **epoch milliseconds** (used for expiry checks, matching the Firestore / in-memory providers) and `ttl` is a separate **epoch-seconds** attribute used only by DynamoDB TTL.
+Attributes other than `id` (metadata body, `expires_at`, `ttl`, and so on) are written by the application. For the TTL-enabled tables (PreCodesTable / NoncesTable / RequestObjectsTable / AllowedCredentialConfigurationsTable), `expires_at` is the application-level expiry in **epoch milliseconds** (used for expiry checks, matching the Firestore / in-memory providers) and `ttl` is a separate **epoch-seconds** attribute used only by DynamoDB TTL.
 
 ### IAM
 
 | Lambda | DynamoDB access |
 |---|---|
-| Issuer | IssuersTable, NoncesTable (read/write); PreCodesTable (write only); AuthzOAuthClientsTable, AuthzOAuthPoliciesTable (read only) |
-| Authz | AuthServersTable, PreCodesTable (read/write) |
+| Issuer | IssuersTable, NoncesTable (read/write); PreCodesTable (write only); AuthzOAuthClientsTable, AuthzOAuthPoliciesTable (read only); AllowedCredentialConfigurationsTable (read + `DeleteItem` for expired entries) |
+| Authz | AuthServersTable, PreCodesTable, AuthzOAuthClientsTable, AuthzOAuthPoliciesTable, AllowedCredentialConfigurationsTable (read/write) |
 | Verifier | VerifiersTable, RequestObjectsTable, NoncesTable (read/write) |
 
 The Issuer, Authz, and Verifier roles also have a scoped KMS policy for their signature key store, granted by `grantSignatureKeyStoreAccess()` (`lib/construct/security/signature-key-policy.ts`). Keys are created at runtime, so none of them can be referenced by ARN here; each statement is scoped by a condition instead:
@@ -150,7 +151,7 @@ The Verifier role also has a scoped Secrets Manager policy for `secretsManagerVe
 ### Stack Outputs
 
 - `IssuerApiUrl`, `AuthzApiUrl`, `VerifierApiUrl`
-- `IssuersTableName`, `AuthServersTableName`, `PreCodesTableName`, `NoncesTableName`, `VerifiersTableName`, `RequestObjectsTableName`
+- `IssuersTableName`, `AuthServersTableName`, `PreCodesTableName`, `NoncesTableName`, `VerifiersTableName`, `RequestObjectsTableName`, `AuthzOAuthClientsTableName`, `AuthzOAuthPoliciesTableName`, `AllowedCredentialConfigurationsTableName`
 
 ## Prerequisites
 
