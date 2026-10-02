@@ -344,6 +344,39 @@ go run conformance_sdjwt.go "openid-credential-offer://?credential_offer=..."
 
 #### Checking the Results
 
+A successful run ends as **FINISHED / PASSED** in the suite. Check the individual behaviours in the JSON log exported from the suite (point `F` at that file).
+
+```bash
+F=test-log-oid4vci-1_0-wallet-test-credential-issuance-<test id>.json
+
+# 1. The order of the endpoints that were reached
+jq -r '.results[]|select(.incoming_path!=null)|.incoming_path|sub(".*/";"")' "$F" | nl
+
+# 2. The DPoP nonce decision at the credential endpoint
+jq -r '.results[]|select(.src=="ValidateResourceEndpointDpopProofNonce")|[(.result//"NO-RESULT"),.msg]|@tsv' "$F"
+
+# 3. The nonce each request carried in its DPoP proof
+jq -r '.results[]|select(.src=="ExtractDpopProofFromHeader")|.claims|[(.htu|sub(".*/";"")),(.nonce//"(none)")]|@tsv' "$F"
+
+# 4. The claims of the key proof in the Credential Request
+jq -r '.results[]|select(.src=="VCIExtractCredentialRequestProof")|(.proof_jwts//empty)[].claims' "$F"
+
+# 5. The final state of the module
+jq -r '.testInfo|[.status,(.result//"null")]|@tsv' "$F"
+```
+
+A successful run with `sender_constrain=dpop` looks like this.
+
+| # | Expected output |
+| :---- | :---- |
+| 1 | The last five lines are `token`, `token`, `nonce`, `credential`, `credential` (the earlier ones are the offer and metadata fetches). After the 401 (`use_dpop_nonce`) the credential endpoint is retried at `/credential`. Going back to `/nonce` means the DPoP nonce is taken from the wrong place |
+| 2 | The third line is `SUCCESS` / `Resource endpoint DPoP nonce matches expected value` |
+| 3 | Two `credential` lines, the second carrying the same value as the `DPoP-Nonce` of the 401 response |
+| 4 | `aud` (the Credential Issuer Identifier including its trailing slash), `iss` (the `client_id`), `iat`, `nonce` |
+| 5 | `FINISHED` / `PASSED` |
+
+- The first `/credential` is rejected at the DPoP layer, so the suite never validates the key proof and the `c_nonce` is not consumed. The retry can therefore send the same key proof unchanged.
+- The suite checks the `aud` of the key proof but not its `iss`. Confirm `iss` in the output of 4.
 - If the wallet stops before sending the Token Request, the reason does not appear in the suite's log. It appears only in the wallet's output (`Failed to receive credential`).
 
 ---
@@ -455,3 +488,10 @@ Conformance test servers may use self-signed or non-standard certificate structu
 
 - **When running local server integration test mode (no arguments)**: Check that the certificate file is correctly placed at `../../../server/samples/certificate-openid-test/certificate_openid.pem`, or specify it via `VCKNOTS_CERT_PATH`.
 - **When running conformance test mode (with URI argument)**: `InsecureSkipX509Verify: true` is set automatically, so this error should not appear.
+
+### `Couldn't find DPoP Proof header` (Conformance Test Mode)
+
+Running against a `sender_constrain=dpop` test plan without setting `OID4VCI_DPOP=1` makes the token endpoint report `ExtractDpopProofFromHeader: Couldn't find DPoP Proof header`, and the test ends as INTERRUPTED.
+
+- The wallet does not notice that it sent no DPoP and reports no error, so this is visible only in the suite's log.
+- Re-run with `OID4VCI_DPOP=1`. For a `sender_constrain=none` test plan, leave it unset instead.

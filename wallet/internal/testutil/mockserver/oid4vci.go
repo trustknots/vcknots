@@ -28,6 +28,12 @@ type OID4VCIIssuerConfig struct {
 	OmitAuthorizationServers    bool
 	EmptyAuthorizationServers   bool
 
+	// CredentialIssuerOverride replaces the credential_issuer of the credential
+	// issuer metadata. Only a test that needs the value to disagree with the
+	// identifier the metadata was fetched from sets it; the default derives the
+	// value from the request host, as a real issuer does.
+	CredentialIssuerOverride string
+
 	// TokenEndpointAuthMethodsSupported is advertised in the authorization
 	// server metadata as token_endpoint_auth_methods_supported.
 	TokenEndpointAuthMethodsSupported []string
@@ -128,8 +134,13 @@ func (is *OID4VCIIssuerServer) setupRoutes() {
 func (is *OID4VCIIssuerServer) handleCredentialIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 	baseURL := "http://" + r.Host
 
+	credentialIssuer := baseURL
+	if is.config.CredentialIssuerOverride != "" {
+		credentialIssuer = is.config.CredentialIssuerOverride
+	}
+
 	metadata := map[string]interface{}{
-		"credential_issuer":                   baseURL,
+		"credential_issuer":                   credentialIssuer,
 		"credential_endpoint":                 baseURL + "/credential",
 		"nonce_endpoint":                      baseURL + "/nonce",
 		"credential_configurations_supported": is.config.CredentialConfigurations,
