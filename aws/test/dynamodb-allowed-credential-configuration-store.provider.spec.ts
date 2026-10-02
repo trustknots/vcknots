@@ -111,6 +111,7 @@ describe('dynamodbAllowedCredentialConfigurationStore', () => {
     const getCall = ddbMock.commandCalls(GetCommand)[0]
     assert.equal(getCall?.args[0].input.TableName, TABLE_NAME)
     assert.deepEqual(getCall?.args[0].input.Key, { id: 'test-access-token-hash' })
+    assert.equal(getCall?.args[0].input.ConsistentRead, true)
     assert.equal(ddbMock.commandCalls(DeleteCommand).length, 0)
   })
 

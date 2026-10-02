@@ -77,6 +77,9 @@ export const dynamodbAllowedCredentialConfigurationStore = (
         new GetCommand({
           TableName: tableName,
           Key: { id: accessTokenHash },
+          // Issuer reads this right after Authz saves it at token issuance; an eventually
+          // consistent read could miss the new item and reject a valid Credential request.
+          ConsistentRead: true,
         })
       )
 
