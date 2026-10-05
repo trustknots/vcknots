@@ -522,7 +522,7 @@ go run ./examples/conformance_sdjwt "openid4vp://authorize?client_id=...&request
 
 実行すると、保持している資格情報の `vct` と disclosure 名がログに出る。テスト計画の dcql には
 その `vct` を書き、`claims` は `given_name` / `family_name` / `birthdate` の 3 つにする。
-Wallet はまだ DCQL を読まず、常にこの 3 つを開示するためである。
+DCQL の `claims` はまだどこも読んでおらず、この example はクエリの内容によらずこの 3 つを開示するためである。
 
 ```
 level=INFO msg="Stored credential" id=... vct=urn:eu.europa.ec.eudi:pid:1 disclosures="[family_name given_name birthdate ...]"
@@ -531,8 +531,8 @@ level=INFO msg="=== Credential Presented ==="
 
 ### 既知の制約
 
-- **開示するクレームは固定である。** Wallet はまだ DCQL の `claims` を読まず、常に
-  `given_name` / `family_name` / `birthdate` を開示する。これ以外を要求するテスト計画では
+- **開示するクレームは固定である。** DCQL の `claims` はまだどこも読んでいないため、この example は
+  `given_name` / `family_name` / `birthdate` を決め打ちで開示する。これ以外を要求するテスト計画では
   `CheckOnlyRequestedClaimsDisclosed`（`OID4VP-1FINAL-6.4.1`）で FAILURE になる。
 - **suite 5.3.1 では `oid4vp-1final-wallet-alternate-happy-flow` を `direct_post` で実行できない。**
   suite が Wallet に接続する前に `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`

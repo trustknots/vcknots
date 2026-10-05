@@ -522,8 +522,8 @@ go run ./examples/conformance_sdjwt "openid4vp://authorize?client_id=...&request
 
 The run logs the `vct` and the disclosure names of the stored credential. The test plan's
 dcql has to name that `vct`, and its `claims` have to be exactly `given_name`, `family_name`
-and `birthdate`, because the wallet does not read the DCQL yet and always discloses those
-three.
+and `birthdate`, because nothing reads the DCQL `claims` yet and this example discloses those
+three whatever the query asks for.
 
 ```
 level=INFO msg="Stored credential" id=... vct=urn:eu.europa.ec.eudi:pid:1 disclosures="[family_name given_name birthdate ...]"
@@ -532,9 +532,10 @@ level=INFO msg="=== Credential Presented ==="
 
 ### Known Limitations
 
-- **The disclosed claims are fixed.** The wallet does not read the DCQL `claims` yet and always
-  discloses `given_name`, `family_name` and `birthdate`. A test plan that requests anything else
-  fails `CheckOnlyRequestedClaimsDisclosed` (`OID4VP-1FINAL-6.4.1`).
+- **The disclosed claims are fixed.** Nothing reads the DCQL `claims` yet, so this example
+  hardcodes `given_name`, `family_name` and `birthdate` instead of deriving them from the query.
+  A test plan that requests anything else fails `CheckOnlyRequestedClaimsDisclosed`
+  (`OID4VP-1FINAL-6.4.1`).
 - **`oid4vp-1final-wallet-alternate-happy-flow` cannot run with `direct_post` on suite 5.3.1.**
   The suite stops with `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`
   before it contacts the wallet (conformance-suite issue #1982). The wallet cannot fix this.
