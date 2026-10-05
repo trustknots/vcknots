@@ -367,7 +367,203 @@ go run conformance_sdjwt.go "openid-credential-offer://?credential_offer=..."
 
 #### 結果の確認
 
+成功した実行は Suite 側で **FINISHED / PASSED** になります。個々の挙動は、Suite からエクスポートした JSON ログで確認します（`F` にそのファイルを指定してください）。
+
+```bash
+F=test-log-oid4vci-1_0-wallet-test-credential-issuance-<テスト ID>.json
+
+# ① 到達したエンドポイントの順序
+jq -r '.results[]|select(.incoming_path!=null)|.incoming_path|sub(".*/";"")' "$F" | nl
+
+# ② Credential Endpoint の DPoP nonce 判定
+jq -r '.results[]|select(.src=="ValidateResourceEndpointDpopProofNonce")|[(.result//"NO-RESULT"),.msg]|@tsv' "$F"
+
+# ③ 各リクエストの DPoP proof が載せた nonce
+jq -r '.results[]|select(.src=="ExtractDpopProofFromHeader")|.claims|[(.htu|sub(".*/";"")),(.nonce//"(none)")]|@tsv' "$F"
+
+# ④ Credential Request の key proof のクレーム
+jq -r '.results[]|select(.src=="VCIExtractCredentialRequestProof")|(.proof_jwts//empty)[].claims' "$F"
+
+# ⑤ モジュールの最終状態
+jq -r '.testInfo|[.status,(.result//"null")]|@tsv' "$F"
+```
+
+`sender_constrain=dpop` で成功した実行では、次のようになります。
+
+| # | 期待される出力 |
+| :---- | :---- |
+| ① | 末尾 5 行が `token`、`token`、`nonce`、`credential`、`credential`（先頭はオファーとメタデータの取得）。Credential Endpoint は 401（`use_dpop_nonce`）のあと `/credential` へ再送します。`/nonce` へ戻る場合は DPoP nonce の取得元が誤っています |
+| ② | 3 行目が `SUCCESS` / `Resource endpoint DPoP nonce matches expected value` |
+| ③ | `credential` の行が 2 本あり、2 本目に 401 応答の `DPoP-Nonce` と同じ値が入ります |
+| ④ | `aud`（末尾スラッシュを含む Credential Issuer 識別子）、`iss`（`client_id`）、`iat`、`nonce` |
+| ⑤ | `FINISHED` / `PASSED` |
+
+- 1 回目の `/credential` は DPoP 層で 401 になるため、Suite は key proof を検証しません。`c_nonce` も消費されないので、2 回目は同じ key proof をそのまま送れます。
+- Suite は key proof の `aud` は検査しますが `iss` は検査しません。`iss` は ④ の出力で確認してください。
 - Wallet が Token Request を送る前に停止した場合、その理由は Suite のログには残らず、Wallet の出力（`Failed to obtain an access token`）にだけ表示されます。
+
+---
+
+## OpenID4VP コンフォーマンステスト（OpenID4VCI 非依存・推奨）
+
+`conformance_sdjwt/conformance_sdjwt.go` を使う方法である。
+**OpenID4VCI のテストを先に流す必要がない**ため、OpenID4VP の検証を単独で回せる。
+
+### 前提
+
+`conformance_sdjwt.go` は第 1 引数のスキームで動作を切り替える。
+
+| 引数 | 動作 |
+|---|---|
+| `openid-credential-offer://...` | OpenID4VCI。資格情報を受領して保存する |
+| `openid4vp://...` | OpenID4VP。保存済みの資格情報を提示する |
+| 上記以外 | SD-JWT VC のファイルパスとみなし、credstore に投入する |
+
+credstore は `$(os.UserConfigDir())/vcknots/wallet/.local_credstore.db` に永続する。
+一度投入すればテスト計画の全モジュールで使い回せる。
+
+> **注意**: `server_integration_sdjwt` は起動時にこの credstore を削除する。
+> そちらを実行したあとは、投入をやり直すこと。
+
+### ステップ1: テスト計画を作成する
+
+[OIDF Conformance Suite](https://www.certification.openid.net/) で
+`OpenID for Verifiable Presentations 1.0 Final: Test a wallet` の計画を作る。
+バリアントは次を選ぶ。
+
+| 項目 | 値 | 理由 |
+|---|---|---|
+| Credential Format | `sd_jwt_vc` | |
+| Client Id Prefix | `x509_san_dns` | この例では、明示した CA で署名済み Request Object の証明書を検証します。 |
+| Request Method | `request_uri_signed` | 署名済み Request Object を `request_uri` から取得します。 |
+| VP Profile | `plain_vp` | |
+| Response Mode | `direct_post` | この例は URI を受け取り、HTTP で応答します。Digital Credentials API には別の呼び出しが必要です。 |
+
+### ステップ2: テスト計画の JSON を設定する
+
+```json
+{
+    "alias": "<任意の計画名>",
+    "description": "vcknots Wallet OID4VP SD-JWT VC conformance test",
+    "server": {
+        "authorization_endpoint": "openid4vp://authorize"
+    },
+    "client": {
+        "dcql": {
+            "credentials": [
+                {
+                    "id": "pid_credential",
+                    "format": "dc+sd-jwt",
+                    "meta": { "vct_values": ["<提示する資格情報の vct>"] },
+                    "claims": [
+                        { "path": ["given_name"] },
+                        { "path": ["family_name"] },
+                        { "path": ["birthdate"] }
+                    ]
+                }
+            ]
+        },
+        "jwks": { "keys": [ "<秘密鍵 d と x5c を含む JWK（下記で生成）>" ] }
+    }
+}
+```
+
+**`client.client_id` は設定しないこと。** 空にしておくと、Suite が response_uri のホスト名から
+`x509_san_dns:<ホスト名>` を組み立てる。プレフィックスを含む値を書くと二重に付き、
+Wallet が `invalid client_id: duplicate prefix detected` で拒否する。
+
+**`client.jwks` は必須で、秘密鍵を含む必要がある。** Suite はこの鍵でリクエストオブジェクトに
+署名するため、公開鍵だけだと `ValidateClientJWKsPrivatePart` で止まる。
+`x509_san_dns` では x5c の leaf 証明書の dNSName SAN が client_id と一致する必要もある。
+
+Suite のホスト名に対するテスト用 CA と、CA が署名した別の証明書を作る。
+Wallet は自己署名の署名用証明書を拒否する。
+
+```bash
+cat > vp_client.cnf <<'CNF'
+[req]
+distinguished_name = dn
+x509_extensions = v3
+prompt = no
+[dn]
+CN = <Suite のホスト名>
+[v3]
+subjectAltName = DNS:<Suite のホスト名>
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature
+CNF
+
+openssl ecparam -name prime256v1 -genkey -noout -out vp_client_key.pem
+openssl req -new -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+  -keyout vp_ca_key.pem -out vp_ca_cert.pem -days 3650 -subj '/CN=VP Test CA' \
+  -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign'
+openssl req -new -key vp_client_key.pem -out vp_client.csr -config vp_client.cnf
+openssl x509 -req -in vp_client.csr -CA vp_ca_cert.pem -CAkey vp_ca_key.pem \
+  -CAcreateserial -out vp_client_cert.pem -days 365 -extfile vp_client.cnf -extensions v3
+```
+
+これを JWK に変換して `client.jwks` に入れる。`x5c` だけは base64url ではなく通常の base64 である。
+
+```bash
+b64url() { xxd -r -p | base64 | tr '+/' '-_' | tr -d '=\n'; }
+txt=$(openssl ec -in vp_client_key.pem -text -noout 2>/dev/null)
+hexpriv=$(printf '%s\n' "$txt" | sed -n '/priv:/,/pub:/p' | grep -v 'priv:\|pub:' | tr -d ' :\n')
+hexpub=$(printf '%s\n' "$txt" | sed -n '/pub:/,/ASN1 OID/p' | grep -v 'pub:\|ASN1' | tr -d ' :\n')
+[ ${#hexpriv} -eq 66 ] && hexpriv=${hexpriv:2}
+
+echo "x   = $(printf '%s' "${hexpub:2:64}" | b64url)"
+echo "y   = $(printf '%s' "${hexpub:66:64}" | b64url)"
+echo "d   = $(printf '%s' "$hexpriv" | b64url)"
+echo "x5c = $(openssl x509 -in vp_client_cert.pem -outform DER | base64 | tr -d '\n')"
+```
+
+`kty: EC` / `crv: P-256` / `alg: ES256` / `use: sig` / `kid: <任意>` と併せて 1 つの JWK にする。
+
+> ⚠️ **警告**: この鍵と証明書はコンフォーマンステスト専用である。
+> `d`（秘密鍵）を含むため、リポジトリにコミットしないこと。
+
+### ステップ3: 資格情報を credstore に投入する
+
+```bash
+cd /path/to/vcknots/wallet
+go run ./examples/conformance_sdjwt ./examples/server_integration_sdjwt/example_sd_jwt.txt
+```
+
+`example_sd_jwt.txt` をそのまま使えるのは、その `cnf` が `common.NewMockKeyEntry()` の
+公開鍵と一致しているからである。**別の資格情報でも同じモック鍵が `cnf` に必要で、
+無ければ Key Binding JWT が失敗する。**
+
+Wallet は DCQL に一致する資格情報と開示項目を選択します。テスト計画の `vct` とクレームを、投入した資格情報に合わせてください。
+
+### ステップ4: モジュールを実行する
+
+テスト計画で `oid4vp-1final-wallet-happy-flow` を Start すると `WAITING` になり、
+`openid4vp://authorize?...` が表示される。これをコピーして実行する。
+
+```bash
+cd /path/to/vcknots/wallet
+VCKNOTS_CONFORMANCE_CA_PATH=/path/to/vp_ca_cert.pem \
+  go run ./examples/conformance_sdjwt "openid4vp://authorize?client_id=...&request_uri=..."
+```
+
+`?` と `&` を含むので、**必ずクォートで囲むこと。**
+
+実行すると、保持している資格情報の `vct` と disclosure 名がログに出る。
+テスト計画の dcql はこの値に合わせる。一覧はフラットなので、入れ子のクレームも自身の名前で出る
+（`18` は `age_equal_or_over` の下、`locality` は `place_of_birth` の下にある）。dcql には最上位の
+名前を使うか、入れ子のものは `["place_of_birth", "locality"]` のように親からのパスで書く。
+
+```
+level=INFO msg="Stored credential" id=... vct=urn:eu.europa.ec.eudi:pid:1 disclosures="[family_name given_name birthdate ...]"
+level=INFO msg="=== Credential Presented ==="
+```
+
+### 検証範囲
+
+この例は署名済み Request Object を検証し、DCQL に一致する資格情報と開示項目を選んで応答します。
+テスト用 CA は `VCKNOTS_CONFORMANCE_CA_PATH` で指定してください。CA が署名した別の証明書を
+`client.jwks` の `x5c` に設定します。失効確認先のないテスト証明書を許可しますが、証明書チェーンは検証します。
+外部 Suite の各モジュールの結果は、実行後に Suite のログで確認してください。
 
 ---
 
@@ -481,3 +677,10 @@ client assertion を平文 HTTP で送るのは、引き続きループバック
 - **状況**: ローカルサーバー統合テストモード（引数なし）で発生する場合、証明書ファイルが正しく設定されていない可能性があります。
 - **状況**: コンフォーマンステストモード（引数あり）では、`VCKNOTS_CONFORMANCE_CA_PATH` にスイートのルート証明書を指定すると、その署名付き Request Object を信頼します。
 - **解決策（ローカルサーバー統合テストモード向け）**: 正しい証明書ファイルが `../../../server/samples/certificate-openid-test/certificate_openid.pem` に配置されていることを確認するか、`VCKNOTS_CERT_PATH` で指定してください。
+
+### `Couldn't find DPoP Proof header`（コンフォーマンステストモード）
+
+`sender_constrain=dpop` のテストプランに対して `OID4VCI_DPOP=1` を設定せずに実行すると、Token Endpoint で `ExtractDpopProofFromHeader: Couldn't find DPoP Proof header` となり、テストが INTERRUPTED で終了します。
+
+- Wallet は DPoP なしで送ったことに気づかずエラーも出さないため、Suite 側のログでしか判別できません。
+- `OID4VCI_DPOP=1` を付けて実行し直してください。テストプランが `sender_constrain=none` の場合は、逆に設定しません。

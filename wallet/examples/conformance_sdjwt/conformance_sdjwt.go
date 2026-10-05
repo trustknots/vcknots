@@ -1,8 +1,17 @@
 package main
 
-// OID4VCI Final 1.0 Conformance Test (Issuer-Initiated, SD-JWT VC)
+// OID4VCI / OID4VP Final 1.0 Conformance Test (SD-JWT VC)
 //
-// Setup:
+// The first argument selects the flow:
+//
+//	openid-credential-offer://  -> OID4VCI, receive a credential and store it
+//	openid4vp://                -> OID4VP, present a stored credential
+//	anything else               -> a file holding an SD-JWT VC, loaded into the store
+//
+// The OID4VP flow logs the vct and the claim names of every stored credential before it
+// presents one; that is where the dcql_query of the test plan has to get its values from.
+//
+// OID4VCI setup (commands run from this directory, wallet/examples/conformance_sdjwt):
 //  1. Open https://www.certification.openid.net/ and create a test plan:
 //     - Test plan: "OpenID for Verifiable Credential Issuance 1.0 Final/HAIP: Test a Wallet"
 //     - Credential Format: sd_jwt_vc
@@ -52,22 +61,33 @@ package main
 //
 //  3. Run each test module; copy the openid-credential-offer:// URI shown by the suite.
 //  4. Execute: go run conformance_sdjwt.go "<openid-credential-offer-uri>" [tx_code]
-//     VCKNOTS_ISSUER_CA_PATH names a PEM file with the certificate authority the
-//     suite signs its SD-JWT VC (x5c) with.
+//
+// OID4VP setup (commands run from the wallet module root, the directory holding go.mod):
+//  1. Create the test plan as described in examples/README.md, section "OpenID4VP
+//     Conformance Test".
+//  2. Right before running, import the credential to present:
+//     go run ./examples/conformance_sdjwt ./examples/server_integration_sdjwt/example_sd_jwt.txt
+//  3. Run each test module; copy the openid4vp:// URI shown by the suite.
+//  4. Execute: go run ./examples/conformance_sdjwt "<openid4vp-uri>"
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/trustknots/vcknots/wallet"
 	"github.com/trustknots/vcknots/wallet/clientconfig"
+	"github.com/trustknots/vcknots/wallet/credential"
+	"github.com/trustknots/vcknots/wallet/credstore"
 	"github.com/trustknots/vcknots/wallet/examples/common"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
+	"github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 )
 
 const preAuthorizedGrantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
@@ -218,12 +238,126 @@ func resolveTxCode(offer *wallet.CredentialOffer, explicitTxCode string, logger 
 	return "", fmt.Errorf("tx_code is required by credential offer; pass it as 2nd arg or OID4VCI_TX_CODE")
 }
 
+// importCredential loads an SD-JWT VC from a file, because the OID4VP test plan issues no
+// credentials and the flow needs something to present without running OID4VCI first. The
+// credential's cnf MUST hold the public key of common.NewMockKeyEntry(), otherwise the Key
+// Binding JWT will not verify at the Verifier.
+func importCredential(path string, logger *slog.Logger) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		logger.Error("Failed to read the credential file; pass an SD-JWT VC file path, or a URI starting with openid-credential-offer:// or openid4vp://",
+			"path", path, "error", err)
+		os.Exit(1)
+	}
+
+	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
+	if err != nil {
+		logger.Error("Failed to open the credential store", "error", err)
+		os.Exit(1)
+	}
+
+	// The staged presentation API selects credentials matching the DCQL query.
+	entry := credstore.CredentialEntry{
+		Id:         filepath.Base(path),
+		ReceivedAt: time.Now(),
+		Raw:        []byte(strings.TrimSpace(string(raw))),
+		MimeType:   string(credential.SDJwtVC),
+	}
+	if err := credStore.SaveCredentialEntry(entry, credstore.SupportedCredStoreTypes(0)); err != nil {
+		logger.Error("Failed to store the credential", "error", err)
+		os.Exit(1)
+	}
+
+	logger.Info("=== Credential Imported ===", "id", entry.Id, "bytes", len(entry.Raw))
+	logger.Info("Run this command again with the openid4vp:// URI to present it")
+}
+
+// presentStoredCredential answers the conformance suite, which acts as the Verifier.
+func presentStoredCredential(oid4vpURI string, logger *slog.Logger) {
+	presenterDispatcher, err := common.NewConformancePresentationDispatcher(os.Getenv("VCKNOTS_CONFORMANCE_CA_PATH"))
+	if err != nil {
+		logger.Error("Failed to configure presenter", "error", err)
+		os.Exit(1)
+	}
+
+	// Every other field is filled with its default implementation, so the credential store
+	// is the same one importCredential and the OID4VCI flow write to.
+	w, err := wallet.NewWalletWithConfig(wallet.Config{Presenter: presenterDispatcher})
+	if err != nil {
+		logger.Error("Failed to initialize wallet", "error", err)
+		os.Exit(1)
+	}
+
+	entries, stored, err := w.GetCredentialEntries(wallet.GetCredentialEntriesRequest{})
+	if err != nil {
+		logger.Error("Failed to read the credential store", "error", err)
+		os.Exit(1)
+	}
+	// stored counts what the store holds; entries drops what could not be decoded, and only
+	// those can be presented.
+	if len(entries) == 0 {
+		logger.Error("No usable credential in the store; import one first: go run ./examples/conformance_sdjwt <path-to-sd-jwt-file>",
+			"stored_entries", stored)
+		os.Exit(1)
+	}
+	logger.Info("Wallet initialized", "stored_credentials", len(entries))
+
+	for _, entry := range entries {
+		vct := ""
+		var disclosures []string
+		if entry.Credential != nil {
+			if entry.Credential.Claims != nil {
+				if v, ok := (*entry.Credential.Claims)["vct"].(string); ok {
+					vct = v
+				}
+			}
+			if entry.Credential.SDJwt != nil {
+				for _, disclosure := range entry.Credential.SDJwt.Disclosures {
+					if disclosure.Name != "" {
+						disclosures = append(disclosures, disclosure.Name)
+					}
+				}
+			}
+		}
+		logger.Info("Stored credential",
+			"id", entry.Entry.Id,
+			"received_at", entry.Entry.ReceivedAt,
+			"vct", vct,
+			"disclosures", disclosures,
+		)
+	}
+
+	// Which claims are disclosed is left to the library, so no SelectedClaims are set here.
+	redirectURI, err := common.PresentAll(context.Background(), w, oid4vpURI, common.NewMockKeyEntry(), &sdjwtvc.SdJwtVcPresentationOptions{
+		RequireKeyBinding: true,
+	})
+	if err != nil {
+		logger.Error("Failed to present credential", "error", err)
+		os.Exit(1)
+	}
+
+	logger.Info("=== Credential Presented ===")
+	if redirectURI != "" {
+		logger.Info("Verifier requested redirect", "redirect_uri", redirectURI)
+	}
+}
+
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	if len(os.Args) < 2 {
-		logger.Error("Usage: conformance_sdjwt <openid-credential-offer-uri> [tx_code]")
+		logger.Error("Usage: conformance_sdjwt <openid-credential-offer-uri|openid4vp-uri|sd-jwt-vc-file> [tx_code]")
 		os.Exit(1)
+	}
+
+	if strings.HasPrefix(os.Args[1], "openid4vp://") {
+		presentStoredCredential(os.Args[1], logger)
+		return
+	}
+
+	if !strings.HasPrefix(os.Args[1], "openid-credential-offer://") {
+		importCredential(os.Args[1], logger)
+		return
 	}
 
 	explicitTxCode := strings.TrimSpace(os.Getenv("OID4VCI_TX_CODE"))

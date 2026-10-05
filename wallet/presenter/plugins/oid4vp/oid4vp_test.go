@@ -1340,3 +1340,29 @@ func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
 		}
 	})
 }
+
+// TestConformanceShapeRequestURISignedDirectPost pins the combination the conformance test
+// plan uses: client_id prefix x509_san_dns, a Request Object fetched from a request_uri, and
+// response_mode direct_post.
+func TestConformanceShapeRequestURISignedDirectPost(t *testing.T) {
+	f := newRequestObjectFixture(t, "verifier.example")
+	claims := f.claims()
+	claims["client_id"] = "x509_san_dns:verifier.example"
+	claims["response_mode"] = "direct_post"
+	claims["state"] = "conformance-state"
+	delete(claims, "client_metadata")
+	f.mu.Lock()
+	f.requestObject = []byte(f.sign(t, claims, nil))
+	f.mu.Unlock()
+	request, err := f.presenter().ParsePresentationRequest(
+		"openid4vp://authorize?client_id=x509_san_dns:verifier.example&request_uri=" + url.QueryEscape(f.server.URL+"/request-object"),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, OAuthAuthzReqResponseModeDirectPost, request.ResponseMode)
+	assert.Equal(t, "https://verifier.example/response", request.ResponseURI)
+	assert.Equal(t, "nonce", request.Nonce)
+	assert.Equal(t, "conformance-state", request.State)
+	require.NotNil(t, request.DcqlQuery)
+	require.Len(t, request.DcqlQuery.Credentials, 1)
+	assert.Equal(t, "pid", request.DcqlQuery.Credentials[0].ID)
+}

@@ -198,6 +198,9 @@ func (a *IssuanceAuthorization) RequestURIExpired(now time.Time) bool {
 // stopped before sending anything, such as with *KeyAttestationRequiredError,
 // may be repeated with it.
 type IssuanceGrant struct {
+	// ClientID is the exact client_id sent in the token request; empty for
+	// anonymous access. It supplies iss in the credential key proof.
+	ClientID                  string          `json:"client_id,omitempty"`
 	Profile                   profile.Profile `json:"profile"`
 	CredentialIssuer          string          `json:"credential_issuer"`
 	CredentialConfigurationID string          `json:"credential_configuration_id"`

@@ -272,3 +272,23 @@ func PresentAll(ctx context.Context, w *wallet.Wallet, uri string, key wallet.IK
 	}
 	return result.RedirectURI, nil
 }
+
+// NewConformancePresentationDispatcher trusts the suite's explicitly supplied CA.
+// Test certificates may omit revocation endpoints, but their chain is verified.
+func NewConformancePresentationDispatcher(caPath string) (*presenter.PresentationDispatcher, error) {
+	if caPath == "" {
+		return nil, fmt.Errorf("VCKNOTS_CONFORMANCE_CA_PATH must name the verifier CA PEM file")
+	}
+	pem, err := os.ReadFile(caPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read conformance CA: %w", err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(pem) {
+		return nil, fmt.Errorf("failed to parse conformance CA")
+	}
+	return presenter.NewPresentationDispatcher(presenter.WithPlugin(presenter.Oid4vp, &oid4vp.Oid4vpPresenter{
+		X509TrustChainRoots:     roots,
+		RequestObjectValidation: &oid4vp.RequestObjectValidationOptions{AllowUnadvertisedRevocation: true},
+	}))
+}

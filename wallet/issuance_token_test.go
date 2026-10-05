@@ -1055,3 +1055,55 @@ func TestClientInstanceKeyIsCarriedFromPARToTheTokenRequest(t *testing.T) {
 	require.Equal(t, jwkThumbprintForTest(t, tokenTestCnfKey(t, par)), jwkThumbprintForTest(t, tokenTestCnfKey(t, token)))
 	require.NotEqual(t, jwkThumbprintForTest(t, fixture.clientKey), jwkThumbprintForTest(t, tokenTestCnfKey(t, par)))
 }
+
+func TestCredentialKeyProofPreservesTokenClientIdentification(t *testing.T) {
+	for _, tc := range []struct {
+		name                            string
+		anonymous, privateKey, authCode bool
+	}{
+		{name: "named none"}, {name: "anonymous", anonymous: true},
+		{name: "private key", privateKey: true}, {name: "authorization code", authCode: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := []func(*finalIssuanceFixture){func(f *finalIssuanceFixture) { f.anonymousAccess = boolPtr(tc.anonymous) }}
+			if tc.privateKey {
+				opt, _ := clientAuthTestPrivateKeyJWT(t, receiverTypes.PrivateKeyJwt)
+				opts = append(opts, opt)
+			}
+			f := newFinalIssuanceFixture(t, opts...)
+			// Whitespace is part of the identifier, not a normalization opportunity.
+			f.wallet.clientAuth.ClientID = " client-1 "
+			var grant *IssuanceGrant
+			var err error
+			if tc.authCode {
+				authorization, beginErr := f.wallet.BeginIssuance(t.Context(), f.issuanceRequest())
+				require.NoError(t, beginErr)
+				location, followErr := f.followAuthorization(authorization)
+				require.NoError(t, followErr)
+				grant, err = f.wallet.AuthorizeIssuance(t.Context(), authorization, location)
+			} else {
+				grant, err = f.tokenTestPreAuthorize(f.tokenTestPreAuthorizedRequest(nil))
+			}
+			require.NoError(t, err)
+			expected := " client-1 "
+			if tc.anonymous {
+				expected = ""
+			}
+			require.Equal(t, expected, f.tokenForms[0].Get("client_id"))
+			var restored IssuanceGrant
+			requireJSONRoundTrip(t, grant, &restored)
+			// A resumed grant must use the token request's identity, not this wallet's.
+			resumed := f.newWallet(t)
+			resumed.clientAuth.ClientID = "different-client"
+			_, err = resumed.RequestCredential(t.Context(), &restored, f.credentialRequest())
+			require.NoError(t, err)
+			claims := tokenTestVerifyJWT(t, f.proofJWTs(t)[0], f.holderKey)
+			require.Equal(t, f.server.URL, claims["aud"])
+			if expected == "" {
+				require.NotContains(t, claims, "iss")
+			} else {
+				require.Equal(t, expected, claims["iss"])
+			}
+		})
+	}
+}

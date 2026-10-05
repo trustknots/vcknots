@@ -250,6 +250,7 @@ func (w *Wallet) authorizeIssuance(ctx context.Context, a *IssuanceAuthorization
 	if err != nil {
 		return nil, err
 	}
+	grant.ClientID = a.ClientID
 	return grant.carryAcceptance(a.Acceptance), nil
 }
 

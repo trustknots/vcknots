@@ -207,7 +207,7 @@ func tokenRequestForm(request types.TokenRequest) (url.Values, error) {
 	default:
 		return nil, fmt.Errorf("%w: unsupported grant_type %q", common.ErrInvalidInput, request.GrantType)
 	}
-	setIfNotEmpty(formData, "client_id", strings.TrimSpace(request.ClientID))
+	setIfNotEmpty(formData, "client_id", request.ClientID)
 	if len(request.AuthorizationDetails) > 0 {
 		encoded, err := json.Marshal(request.AuthorizationDetails)
 		if err != nil {

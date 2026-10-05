@@ -44,8 +44,8 @@ func (w *Wallet) authorizePreAuthorizedIssuance(ctx context.Context, req PreAuth
 	if err := checkTxCode(offered.grant, req.TxCode); err != nil {
 		return nil, err
 	}
-	clientID := strings.TrimSpace(w.clientAuth.ClientID)
-	if w.options().RequireClientAuthentication && clientID == "" {
+	clientID := w.clientAuth.ClientID
+	if w.options().RequireClientAuthentication && strings.TrimSpace(clientID) == "" {
 		return nil, invalidArgument("%w requires a client_id on the pre-authorized_code token request", profile.Refused("RequireClientAuthentication"))
 	}
 	hint := strings.TrimSpace(req.AuthorizationServer)
@@ -104,6 +104,7 @@ func (w *Wallet) authorizePreAuthorizedIssuance(ctx context.Context, req PreAuth
 	if err != nil {
 		return nil, err
 	}
+	grant.ClientID = clientID
 	return grant.carryAcceptance(req.Acceptance), nil
 }
 

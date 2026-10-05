@@ -156,6 +156,7 @@ func (w *Wallet) requestFinalCredential(ctx context.Context, grant *IssuanceGran
 		for _, key := range req.HolderKeys {
 			proof, err := jwtproof.KeyProof(ctx, key, jwtproof.KeyProofOptions{
 				Audience:         md.CredentialIssuer,
+				Issuer:           grant.ClientID,
 				Nonce:            cNonce,
 				KeyAttestation:   keyAttestation,
 				SigningAlgValues: signingAlgValues,

@@ -365,7 +365,203 @@ go run conformance_sdjwt.go "openid-credential-offer://?credential_offer=..."
 
 #### Checking the Results
 
+A successful run ends as **FINISHED / PASSED** in the suite. Check the individual behaviours in the JSON log exported from the suite (point `F` at that file).
+
+```bash
+F=test-log-oid4vci-1_0-wallet-test-credential-issuance-<test id>.json
+
+# 1. The order of the endpoints that were reached
+jq -r '.results[]|select(.incoming_path!=null)|.incoming_path|sub(".*/";"")' "$F" | nl
+
+# 2. The DPoP nonce decision at the credential endpoint
+jq -r '.results[]|select(.src=="ValidateResourceEndpointDpopProofNonce")|[(.result//"NO-RESULT"),.msg]|@tsv' "$F"
+
+# 3. The nonce each request carried in its DPoP proof
+jq -r '.results[]|select(.src=="ExtractDpopProofFromHeader")|.claims|[(.htu|sub(".*/";"")),(.nonce//"(none)")]|@tsv' "$F"
+
+# 4. The claims of the key proof in the Credential Request
+jq -r '.results[]|select(.src=="VCIExtractCredentialRequestProof")|(.proof_jwts//empty)[].claims' "$F"
+
+# 5. The final state of the module
+jq -r '.testInfo|[.status,(.result//"null")]|@tsv' "$F"
+```
+
+A successful run with `sender_constrain=dpop` looks like this.
+
+| # | Expected output |
+| :---- | :---- |
+| 1 | The last five lines are `token`, `token`, `nonce`, `credential`, `credential` (the earlier ones are the offer and metadata fetches). After the 401 (`use_dpop_nonce`) the credential endpoint is retried at `/credential`. Going back to `/nonce` means the DPoP nonce is taken from the wrong place |
+| 2 | The third line is `SUCCESS` / `Resource endpoint DPoP nonce matches expected value` |
+| 3 | Two `credential` lines, the second carrying the same value as the `DPoP-Nonce` of the 401 response |
+| 4 | `aud` (the Credential Issuer Identifier including its trailing slash), `iss` (the `client_id`), `iat`, `nonce` |
+| 5 | `FINISHED` / `PASSED` |
+
+- The first `/credential` is rejected at the DPoP layer, so the suite never validates the key proof and the `c_nonce` is not consumed. The retry can therefore send the same key proof unchanged.
+- The suite checks the `aud` of the key proof but not its `iss`. Confirm `iss` in the output of 4.
 - If the wallet stops before sending the Token Request, the reason does not appear in the suite's log. It appears only in the wallet's output (`Failed to obtain an access token`).
+
+---
+
+## OpenID4VP Conformance Test (Independent of OpenID4VCI, Recommended)
+
+This uses `conformance_sdjwt/conformance_sdjwt.go`. It does **not require running the
+OpenID4VCI test first**, so OpenID4VP can be verified on its own.
+
+### Before You Start
+
+`conformance_sdjwt.go` switches behaviour on the scheme of its first argument.
+
+| Argument | Behaviour |
+|---|---|
+| `openid-credential-offer://...` | OpenID4VCI: receive a credential and store it |
+| `openid4vp://...` | OpenID4VP: present a stored credential |
+| anything else | Treated as a path to an SD-JWT VC and loaded into the store |
+
+The credential store persists at `$(os.UserConfigDir())/vcknots/wallet/.local_credstore.db`.
+Load it once and every module of the test plan can use it.
+
+> **Note**: `server_integration_sdjwt` deletes this credential store on startup.
+> Load the credential again after running it.
+
+### Step 1: Create the Test Plan
+
+On the [OIDF Conformance Suite](https://www.certification.openid.net/), create a
+`OpenID for Verifiable Presentations 1.0 Final: Test a wallet` plan with these variants.
+
+| Field | Value | Reason |
+|---|---|---|
+| Credential Format | `sd_jwt_vc` | |
+| Client Id Prefix | `x509_san_dns` | This example verifies the signed Request Object's certificate against the configured CA. |
+| Request Method | `request_uri_signed` | Fetches the signed Request Object from `request_uri`. |
+| VP Profile | `plain_vp` | |
+| Response Mode | `direct_post` | This example accepts a URI and posts the response over HTTP. Digital Credentials API calls use separate entrypoints. |
+
+### Step 2: Configure the Test Plan JSON
+
+```json
+{
+    "alias": "<your plan name>",
+    "description": "vcknots Wallet OID4VP SD-JWT VC conformance test",
+    "server": {
+        "authorization_endpoint": "openid4vp://authorize"
+    },
+    "client": {
+        "dcql": {
+            "credentials": [
+                {
+                    "id": "pid_credential",
+                    "format": "dc+sd-jwt",
+                    "meta": { "vct_values": ["<vct of the credential you present>"] },
+                    "claims": [
+                        { "path": ["given_name"] },
+                        { "path": ["family_name"] },
+                        { "path": ["birthdate"] }
+                    ]
+                }
+            ]
+        },
+        "jwks": { "keys": [ "<JWK with the private d and an x5c, generated below>" ] }
+    }
+}
+```
+
+**Leave `client.client_id` unset.** The suite then derives `x509_san_dns:<hostname>` from
+the response_uri hostname. A value that already carries the prefix makes it appear twice,
+and the wallet rejects it with `invalid client_id: duplicate prefix detected`.
+
+**`client.jwks` is required and must contain a private key.** The suite signs the Request
+Object with it, so a public-only key stops at `ValidateClientJWKsPrivatePart`. With
+`x509_san_dns`, the dNSName SAN of the x5c leaf certificate must also match the client_id.
+
+Create a test CA and a separate signing certificate for the suite's hostname. The wallet rejects a self-signed signing certificate.
+
+```bash
+cat > vp_client.cnf <<'CNF'
+[req]
+distinguished_name = dn
+x509_extensions = v3
+prompt = no
+[dn]
+CN = <suite hostname>
+[v3]
+subjectAltName = DNS:<suite hostname>
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature
+CNF
+
+openssl ecparam -name prime256v1 -genkey -noout -out vp_client_key.pem
+openssl req -new -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+  -keyout vp_ca_key.pem -out vp_ca_cert.pem -days 3650 -subj '/CN=VP Test CA' \
+  -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign'
+openssl req -new -key vp_client_key.pem -out vp_client.csr -config vp_client.cnf
+openssl x509 -req -in vp_client.csr -CA vp_ca_cert.pem -CAkey vp_ca_key.pem \
+  -CAcreateserial -out vp_client_cert.pem -days 365 -extfile vp_client.cnf -extensions v3
+```
+
+Convert it to a JWK for `client.jwks`. Note that `x5c` alone is standard base64, not base64url.
+
+```bash
+b64url() { xxd -r -p | base64 | tr '+/' '-_' | tr -d '=\n'; }
+txt=$(openssl ec -in vp_client_key.pem -text -noout 2>/dev/null)
+hexpriv=$(printf '%s\n' "$txt" | sed -n '/priv:/,/pub:/p' | grep -v 'priv:\|pub:' | tr -d ' :\n')
+hexpub=$(printf '%s\n' "$txt" | sed -n '/pub:/,/ASN1 OID/p' | grep -v 'pub:\|ASN1' | tr -d ' :\n')
+[ ${#hexpriv} -eq 66 ] && hexpriv=${hexpriv:2}
+
+echo "x   = $(printf '%s' "${hexpub:2:64}" | b64url)"
+echo "y   = $(printf '%s' "${hexpub:66:64}" | b64url)"
+echo "d   = $(printf '%s' "$hexpriv" | b64url)"
+echo "x5c = $(openssl x509 -in vp_client_cert.pem -outform DER | base64 | tr -d '\n')"
+```
+
+Combine those with `kty: EC` / `crv: P-256` / `alg: ES256` / `use: sig` / `kid: <any>`
+into a single JWK.
+
+> ⚠️ **Warning**: This key and certificate are for conformance testing only.
+> They contain the private key `d`, so never commit them to the repository.
+
+### Step 3: Load a Credential into the Credential Store
+
+```bash
+cd /path/to/vcknots/wallet
+go run ./examples/conformance_sdjwt ./examples/server_integration_sdjwt/example_sd_jwt.txt
+```
+
+`example_sd_jwt.txt` works as is because its `cnf` holds the public key of
+`common.NewMockKeyEntry()`. **Any other credential needs that same key, or the Key Binding
+JWT fails.**
+
+The wallet selects credentials and disclosures matching DCQL. Match the test plan's `vct` and claims to the imported credential.
+
+### Step 4: Run the Module
+
+Start `oid4vp-1final-wallet-happy-flow` in the test plan. It moves to `WAITING` and shows an
+`openid4vp://authorize?...` URI. Copy it and run:
+
+```bash
+cd /path/to/vcknots/wallet
+VCKNOTS_CONFORMANCE_CA_PATH=/path/to/vp_ca_cert.pem \
+  go run ./examples/conformance_sdjwt "openid4vp://authorize?client_id=...&request_uri=..."
+```
+
+**Always quote the URI** since it contains `?` and `&`.
+
+The run logs the `vct` and the disclosure names of the stored credential. Align the
+test plan's dcql with those values. The list is flat, so a nested claim appears under its
+own name (`18` sits under `age_equal_or_over`, `locality` under `place_of_birth`). Use a
+top-level name in the dcql, or give a nested one its full path, such as
+`["place_of_birth", "locality"]`.
+
+```
+level=INFO msg="Stored credential" id=... vct=urn:eu.europa.ec.eudi:pid:1 disclosures="[family_name given_name birthdate ...]"
+level=INFO msg="=== Credential Presented ==="
+```
+
+### Verification scope
+
+This example verifies signed Request Objects and responds with credentials and disclosures matching DCQL.
+Set `VCKNOTS_CONFORMANCE_CA_PATH` to the test CA and put its separately signed leaf certificate
+in the `x5c` of `client.jwks`. Test certificates without revocation endpoints are accepted;
+their certificate chain is still verified. Check each external suite module's result in its run log.
 
 ---
 
@@ -470,3 +666,10 @@ Conformance test servers may use self-signed or non-standard certificate structu
 
 - **When running local server integration test mode (no arguments)**: Check that the certificate file is correctly placed at `../../../server/samples/certificate-openid-test/certificate_openid.pem`, or specify it via `VCKNOTS_CERT_PATH`.
 - **When running conformance test mode (with URI argument)**: set `VCKNOTS_CONFORMANCE_CA_PATH` to the suite's root certificate so its signed Request Objects are trusted.
+
+### `Couldn't find DPoP Proof header` (Conformance Test Mode)
+
+Running against a `sender_constrain=dpop` test plan without setting `OID4VCI_DPOP=1` makes the token endpoint report `ExtractDpopProofFromHeader: Couldn't find DPoP Proof header`, and the test ends as INTERRUPTED.
+
+- The wallet does not notice that it sent no DPoP and reports no error, so this is visible only in the suite's log.
+- Re-run with `OID4VCI_DPOP=1`. For a `sender_constrain=none` test plan, leave it unset instead.
