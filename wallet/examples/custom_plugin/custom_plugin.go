@@ -22,6 +22,14 @@ import (
 // CustomSerializer implements a custom credential serialization format.
 type CustomSerializer struct{}
 
+var _ types.Serializer = (*CustomSerializer)(nil)
+
+// This demonstration format has no presentation options. The dispatcher permits
+// nil options, and SerializePresentation does not read them.
+func (s *CustomSerializer) GetDefaultOption(flavor credential.SupportedSerializationFlavor) (types.SerializePresentationOptions, error) {
+	return nil, nil
+}
+
 func (s *CustomSerializer) SerializeCredential(
 	flavor credential.SupportedSerializationFlavor,
 	cred *credential.Credential,

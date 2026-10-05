@@ -21,6 +21,7 @@ func NewIDProfileLocalStore() *IDProfileLocalStore {
 	}
 }
 
+// Save stores profile under its ID, replacing any profile with the same ID.
 func (s *IDProfileLocalStore) Save(profile *types.IdentityProfile) error {
 	if profile == nil {
 		return fmt.Errorf("profile cannot be nil")
@@ -36,6 +37,7 @@ func (s *IDProfileLocalStore) Save(profile *types.IdentityProfile) error {
 	return nil
 }
 
+// Get returns the profile stored under id, or an error when there is none.
 func (s *IDProfileLocalStore) Get(id string) (*types.IdentityProfile, error) {
 	if id == "" {
 		return nil, fmt.Errorf("profile ID cannot be empty")
@@ -51,6 +53,8 @@ func (s *IDProfileLocalStore) Get(id string) (*types.IdentityProfile, error) {
 	return profile, nil
 }
 
+// Delete removes the profile stored under id, or returns an error when there
+// is none.
 func (s *IDProfileLocalStore) Delete(id string) error {
 	if id == "" {
 		return fmt.Errorf("profile ID cannot be empty")
@@ -67,6 +71,7 @@ func (s *IDProfileLocalStore) Delete(id string) error {
 	return nil
 }
 
+// List returns every stored profile in no particular order.
 func (s *IDProfileLocalStore) List() ([]*types.IdentityProfile, error) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()

@@ -32,6 +32,7 @@ package main
 // - /.well-known/oauth-authorization-server
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/json"
 	"flag"
@@ -47,12 +48,14 @@ import (
 	"github.com/trustknots/vcknots/wallet"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
-	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/examples/common"
+	"github.com/trustknots/vcknots/wallet/experimental"
 	"github.com/trustknots/vcknots/wallet/idprof"
 	"github.com/trustknots/vcknots/wallet/presenter"
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
 	"github.com/trustknots/vcknots/wallet/receiver"
+	"github.com/trustknots/vcknots/wallet/receiver/plugins/oid4vci"
+	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer"
 	"github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 	"github.com/trustknots/vcknots/wallet/verifier"
@@ -254,53 +257,67 @@ func fetchCredentialOfferFromServer(serverURL string, configurationID string, lo
 	return offerURI
 }
 
-// parseCredentialOffer parses an openid-credential-offer:// URI into a wallet.CredentialOffer.
+// parseCredentialOffer parses a by-value openid-credential-offer:// URI into
+// a wallet.CredentialOffer with wallet.ParseCredentialOfferURL.
 func parseCredentialOffer(offerURI string, logger *slog.Logger) *wallet.CredentialOffer {
-	parsed, err := url.Parse(offerURI)
+	offer, err := wallet.ParseCredentialOfferURL(offerURI)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse offer URI: %v", err))
+		panic(fmt.Sprintf("failed to parse credential offer: %v", err))
 	}
-
-	credentialOfferParam := parsed.Query().Get("credential_offer")
-	if credentialOfferParam == "" {
-		panic("credential_offer parameter is missing from offer URI")
-	}
-
-	var offerJSON struct {
-		CredentialIssuer           string                                  `json:"credential_issuer"`
-		CredentialConfigurationIDs []string                                `json:"credential_configuration_ids"`
-		Grants                     map[string]*wallet.CredentialOfferGrant `json:"grants"`
-	}
-	if err := json.Unmarshal([]byte(credentialOfferParam), &offerJSON); err != nil {
-		panic(fmt.Sprintf("failed to parse credential offer JSON: %v", err))
-	}
-
-	issuerURL, err := url.Parse(offerJSON.CredentialIssuer)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse credential issuer URL: %v", err))
-	}
-
 	logger.Info("Parsed credential offer",
-		"issuer", offerJSON.CredentialIssuer,
-		"configuration_ids", offerJSON.CredentialConfigurationIDs,
+		"issuer", offer.CredentialIssuer.String(),
+		"configuration_ids", offer.CredentialConfigurationIDs,
 	)
-	return &wallet.CredentialOffer{
-		CredentialIssuer:           issuerURL,
-		CredentialConfigurationIDs: offerJSON.CredentialConfigurationIDs,
-		Grants:                     offerJSON.Grants,
+	return offer
+}
+
+// receivePreAuthorized receives one credential from the local server, which
+// speaks OpenID4VCI 1.0: the Pre-Authorized Code Token Request (Section 6),
+// then a Credential Request naming the credential_configuration_id with a key
+// proof for holderKey (Section 8). The wallet's Config.CredentialAcceptance
+// authenticates the issuer before the credential is stored.
+func receivePreAuthorized(w *wallet.Wallet, offer *wallet.CredentialOffer, txCode string, holderKey wallet.IKeyEntry) (*wallet.SavedCredential, error) {
+	ctx := context.Background()
+	grant, err := w.AuthorizePreAuthorizedIssuance(ctx, wallet.PreAuthorizedIssuanceRequest{
+		CredentialOffer: offer,
+		TxCode:          txCode,
+	})
+	if err != nil {
+		return nil, err
 	}
+	result, err := w.RequestCredential(ctx, grant, wallet.CredentialRequest{
+		HolderKeys: []wallet.IKeyEntry{holderKey},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result.Deferred != nil || len(result.Credentials) == 0 {
+		return nil, fmt.Errorf("the issuer deferred the credential; this sample does not poll")
+	}
+	return result.Credentials[0], nil
 }
 
 // buildCertPool creates the appropriate certificate pool based on the mode.
-// For conformance testing, it uses the system root certificate pool.
-// For server integration, it loads the server's specific certificate.
+// For conformance testing, it uses the system root certificate pool plus the
+// PEM file named by VCKNOTS_CONFORMANCE_CA_PATH, if set, so a suite's test CA
+// is trusted explicitly. For server integration, it loads the server's
+// specific certificate.
 func buildCertPool(isConformanceMode bool) *x509.CertPool {
 	if isConformanceMode {
-		systemRoots, err := x509.SystemCertPool()
+		roots, err := x509.SystemCertPool()
 		if err != nil {
 			panic(fmt.Sprintf("failed to load system cert pool: %v", err))
 		}
-		return systemRoots
+		if caPath := os.Getenv("VCKNOTS_CONFORMANCE_CA_PATH"); caPath != "" {
+			pem, err := os.ReadFile(caPath)
+			if err != nil {
+				panic(fmt.Sprintf("failed to read conformance CA: %v", err))
+			}
+			if !roots.AppendCertsFromPEM(pem) {
+				panic("failed to parse conformance CA")
+			}
+		}
+		return roots
 	}
 
 	certPath := os.Getenv("VCKNOTS_CERT_PATH")
@@ -335,9 +352,6 @@ func main() {
 		logger.Info("=== Server Integration Test Mode ===")
 		logger.Info("Make sure the server is running", "url", serverURL)
 
-		http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
-		defer env.SetHTTPAllowed(http_allowed)
-		env.SetHTTPAllowed(true)
 		logger.Info("Enabled HTTP transport for local server integration testing")
 	}
 
@@ -360,15 +374,19 @@ func main() {
 
 	certPool := buildCertPool(isConformanceMode)
 	p := &oid4vp.Oid4vpPresenter{
-		X509TrustChainRoots:    certPool,
-		InsecureSkipX509Verify: isConformanceMode,
+		X509TrustChainRoots: certPool,
+		// The local sample server listens on plain http, which is outside
+		// OpenID4VP and opted into explicitly; the conformance suite does not.
+		Experimental: experimental.Presenter{Transport: experimental.Transport{AllowHTTP: !isConformanceMode}},
 	}
 	presenterDisp, err := presenter.NewPresentationDispatcher(presenter.WithPlugin(presenter.Oid4vp, p))
 	if err != nil {
 		panic(err)
 	}
 
-	receiverDisp, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+	receiverDisp, err := receiver.NewReceivingDispatcher(receiver.WithPlugin(receiverTypes.Oid4vci, &oid4vci.Oid4vciReceiver{
+		Experimental: experimental.Transport{AllowHTTP: !isConformanceMode},
+	}))
 	if err != nil {
 		panic(err)
 	}
@@ -389,13 +407,18 @@ func main() {
 	}
 
 	mockKey := common.NewMockKeyEntry()
+	issuerAcceptance, err := common.SampleIssuerAcceptance(os.Getenv("VCKNOTS_ISSUER_CA_PATH"), !isConformanceMode)
+	if err != nil {
+		panic(err)
+	}
 	walletConfig := wallet.Config{
-		CredStore:  credStore,
-		IDProfiler: idProf,
-		Receiver:   receiverDisp,
-		Serializer: serializerDisp,
-		Verifier:   verifierDisp,
-		Presenter:  presenterDisp,
+		CredentialAcceptance: issuerAcceptance,
+		CredStore:            credStore,
+		IDProfiler:           idProf,
+		Receiver:             receiverDisp,
+		Serializer:           serializerDisp,
+		Verifier:             verifierDisp,
+		Presenter:            presenterDisp,
 	}
 	if !isConformanceMode {
 		clientAuth, err := common.LoadClientAuth()
@@ -470,13 +493,7 @@ func main() {
 		}
 		offer := parseCredentialOffer(offerURI, logger)
 
-		savedCred, err = w.ReceiveCredential(wallet.ReceiveCredentialRequest{
-			CredentialOffer: offer,
-			Type:            receiver.Oid4vci,
-			Key:             mockKey,
-			RequestedFormat: credential.SDJwtVC,
-			TxCode:          runOpts.TxCode,
-		})
+		savedCred, err = receivePreAuthorized(w, offer, runOpts.TxCode, mockKey)
 		if err != nil {
 			logger.Error("Failed to receive SD-JWT credential", "error", err)
 			os.Exit(1)
@@ -492,13 +509,13 @@ func main() {
 		oid4vpURI = fetchOID4VPURIFromServer(serverURL, savedCred, logger)
 
 		options = &sdjwtvc.SdJwtVcPresentationOptions{
-			SelectedClaims:    []string{"given_name"},
-			RequireKeyBinding: false,
+			SelectedClaims: []string{"given_name"},
+			// SubmitPresentation derives the minimum key-binding requirement from DCQL.
 		}
 	}
 
 	logger.Info("Presenting credential...")
-	redirectURI, err := w.PresentCredential(oid4vpURI, mockKey, options)
+	redirectURI, err := common.PresentAll(context.Background(), w, oid4vpURI, mockKey, options)
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
 		os.Exit(1)

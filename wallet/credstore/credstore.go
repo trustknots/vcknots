@@ -6,7 +6,11 @@ import (
 	"github.com/trustknots/vcknots/wallet/credstore/types"
 )
 
-// Re-export some types related to credstore
+// CredentialEntry is types.CredentialEntry.
 type CredentialEntry = types.CredentialEntry
+
+// CredStore is types.CredStore.
 type CredStore = types.CredStore
+
+// SupportedCredStoreTypes is types.SupportedCredStoreTypes.
 type SupportedCredStoreTypes = types.SupportedCredStoreTypes

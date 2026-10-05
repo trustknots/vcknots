@@ -14,6 +14,7 @@ package main
 // - Key Binding Callback: http://localhost:8080/callback-kbjwt
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -25,10 +26,7 @@ import (
 	"strings"
 
 	"github.com/trustknots/vcknots/wallet"
-	"github.com/trustknots/vcknots/wallet/credential"
-	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/examples/common"
-	"github.com/trustknots/vcknots/wallet/receiver"
 	"github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 )
 
@@ -201,7 +199,7 @@ func presentation(w *wallet.Wallet, key *common.MockKeyEntry, receivedCredential
 	}
 	logger.Info("Request URI is valid", "scheme", urlParsed.Scheme)
 
-	redirectURI, err := w.PresentCredential(string(body), key, options)
+	redirectURI, err := common.PresentAll(context.Background(), w, string(body), key, options)
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
 		panic(err)
@@ -237,52 +235,52 @@ func fetchCredentialOfferFromServer(configurationID string, logger *slog.Logger)
 	return offerURI
 }
 
-// parseCredentialOffer parses an openid-credential-offer:// URI into a wallet.CredentialOffer.
+// parseCredentialOffer parses a by-value openid-credential-offer:// URI into
+// a wallet.CredentialOffer with wallet.ParseCredentialOfferURL.
 func parseCredentialOffer(offerURI string, logger *slog.Logger) *wallet.CredentialOffer {
-	parsed, err := url.Parse(offerURI)
+	offer, err := wallet.ParseCredentialOfferURL(offerURI)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse offer URI: %v", err))
+		panic(fmt.Sprintf("failed to parse credential offer: %v", err))
 	}
-
-	credentialOfferParam := parsed.Query().Get("credential_offer")
-	if credentialOfferParam == "" {
-		panic("credential_offer parameter is missing from offer URI")
-	}
-
-	var offerJSON struct {
-		CredentialIssuer           string                                  `json:"credential_issuer"`
-		CredentialConfigurationIDs []string                                `json:"credential_configuration_ids"`
-		Grants                     map[string]*wallet.CredentialOfferGrant `json:"grants"`
-	}
-	if err := json.Unmarshal([]byte(credentialOfferParam), &offerJSON); err != nil {
-		panic(fmt.Sprintf("failed to parse credential offer JSON: %v", err))
-	}
-
-	issuerURL, err := url.Parse(offerJSON.CredentialIssuer)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse credential issuer URL: %v", err))
-	}
-
 	logger.Info("Parsed credential offer",
-		"issuer", offerJSON.CredentialIssuer,
-		"configuration_ids", offerJSON.CredentialConfigurationIDs,
+		"issuer", offer.CredentialIssuer.String(),
+		"configuration_ids", offer.CredentialConfigurationIDs,
 	)
-	return &wallet.CredentialOffer{
-		CredentialIssuer:           issuerURL,
-		CredentialConfigurationIDs: offerJSON.CredentialConfigurationIDs,
-		Grants:                     offerJSON.Grants,
+	return offer
+}
+
+// receivePreAuthorized receives one credential from the local server, which
+// speaks OpenID4VCI 1.0: the Pre-Authorized Code Token Request (Section 6),
+// then a Credential Request naming the credential_configuration_id with a key
+// proof for holderKey (Section 8). The wallet's Config.CredentialAcceptance
+// authenticates the issuer before the credential is stored.
+func receivePreAuthorized(w *wallet.Wallet, offer *wallet.CredentialOffer, txCode string, holderKey wallet.IKeyEntry) (*wallet.SavedCredential, error) {
+	ctx := context.Background()
+	grant, err := w.AuthorizePreAuthorizedIssuance(ctx, wallet.PreAuthorizedIssuanceRequest{
+		CredentialOffer: offer,
+		TxCode:          txCode,
+	})
+	if err != nil {
+		return nil, err
 	}
+	result, err := w.RequestCredential(ctx, grant, wallet.CredentialRequest{
+		HolderKeys: []wallet.IKeyEntry{holderKey},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result.Deferred != nil || len(result.Credentials) == 0 {
+		return nil, fmt.Errorf("the issuer deferred the credential; this sample does not poll")
+	}
+	return result.Credentials[0], nil
 }
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	http_allowed := strings.EqualFold(env.GetEnv(env.HTTP_ALLOWED), "true")
-	defer env.SetHTTPAllowed(http_allowed)
-	env.SetHTTPAllowed(true)
 	logger.Info("Enabled HTTP transport for local server integration testing")
 
-	runtime, err := common.NewOID4VPRuntime(os.Getenv("VCKNOTS_CERT_PATH"))
+	runtime, err := common.NewOID4VPRuntime(os.Getenv("VCKNOTS_CERT_PATH"), true)
 	if err != nil {
 		panic(err)
 	}
@@ -297,12 +295,7 @@ func main() {
 	offerURI := fetchCredentialOfferFromServer("UniversityDegreeCredentialSdJwt", logger)
 	offer := parseCredentialOffer(offerURI, logger)
 
-	savedSdJwtCred, err := w.ReceiveCredential(wallet.ReceiveCredentialRequest{
-		CredentialOffer: offer,
-		Type:            receiver.Oid4vci,
-		Key:             mockKey,
-		RequestedFormat: credential.SDJwtVC,
-	})
+	savedSdJwtCred, err := receivePreAuthorized(w, offer, "", mockKey)
 	if err != nil {
 		logger.Error("Failed to receive SD-JWT credential", "error", err)
 		os.Exit(1)

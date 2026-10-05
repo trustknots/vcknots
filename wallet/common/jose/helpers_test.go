@@ -3,6 +3,7 @@ package jose
 import (
 	"crypto/sha256"
 	"crypto/sha512"
+	"slices"
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
@@ -46,8 +47,50 @@ func TestParseAlgorithm(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name:     "RS384",
+			algStr:   "RS384",
+			expected: jose.RS384,
+			wantErr:  false,
+		},
+		{
+			name:     "RS512",
+			algStr:   "RS512",
+			expected: jose.RS512,
+			wantErr:  false,
+		},
+		{
+			name:     "PS256",
+			algStr:   "PS256",
+			expected: jose.PS256,
+			wantErr:  false,
+		},
+		{
+			name:     "PS384",
+			algStr:   "PS384",
+			expected: jose.PS384,
+			wantErr:  false,
+		},
+		{
+			name:     "PS512",
+			algStr:   "PS512",
+			expected: jose.PS512,
+			wantErr:  false,
+		},
+		{
 			name:     "unsupported algorithm",
 			algStr:   "HS256",
+			expected: "",
+			wantErr:  true,
+		},
+		{
+			name:     "none is never an algorithm",
+			algStr:   "none",
+			expected: "",
+			wantErr:  true,
+		},
+		{
+			name:     "the comparison is case sensitive",
+			algStr:   "es256",
 			expected: "",
 			wantErr:  true,
 		},
@@ -70,6 +113,40 @@ func TestParseAlgorithm(t *testing.T) {
 				t.Errorf("ParseAlgorithm() = %v, expected %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestAcceptedSignatureAlgorithms(t *testing.T) {
+	expected := []jose.SignatureAlgorithm{
+		jose.ES256, jose.ES384, jose.ES512,
+		jose.RS256, jose.RS384, jose.RS512,
+		jose.PS256, jose.PS384, jose.PS512,
+		jose.EdDSA,
+	}
+
+	got := AcceptedSignatureAlgorithms()
+	if len(got) != len(expected) {
+		t.Fatalf("expected %d algorithms, got %d: %v", len(expected), len(got), got)
+	}
+	for _, alg := range expected {
+		if !slices.Contains(got, alg) {
+			t.Errorf("expected %v to be accepted", alg)
+		}
+	}
+
+	for _, rejected := range []jose.SignatureAlgorithm{"none", jose.HS256, jose.HS384, jose.HS512} {
+		if slices.Contains(got, rejected) {
+			t.Errorf("algorithm %v must never be accepted", rejected)
+		}
+		if _, err := ParseAlgorithm(string(rejected)); err == nil {
+			t.Errorf("ParseAlgorithm(%q) unexpectedly succeeded", rejected)
+		}
+	}
+
+	// The returned slice is a copy: mutating it must not affect the canonical list.
+	got[0] = jose.HS256
+	if slices.Contains(AcceptedSignatureAlgorithms(), jose.HS256) {
+		t.Error("mutating the returned slice changed the canonical list")
 	}
 }
 
@@ -97,6 +174,31 @@ func TestNewHashFromAlgorithm(t *testing.T) {
 		{
 			name:         "ES512",
 			alg:          jose.ES512,
+			expectedSize: 64, // SHA-512
+		},
+		{
+			name:         "RS384",
+			alg:          jose.RS384,
+			expectedSize: 48, // SHA-384
+		},
+		{
+			name:         "RS512",
+			alg:          jose.RS512,
+			expectedSize: 64, // SHA-512
+		},
+		{
+			name:         "PS256",
+			alg:          jose.PS256,
+			expectedSize: 32, // SHA-256
+		},
+		{
+			name:         "PS384",
+			alg:          jose.PS384,
+			expectedSize: 48, // SHA-384
+		},
+		{
+			name:         "PS512",
+			alg:          jose.PS512,
 			expectedSize: 64, // SHA-512
 		},
 		{

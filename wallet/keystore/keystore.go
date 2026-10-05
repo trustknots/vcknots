@@ -1,3 +1,5 @@
+// Package keystore defines key pair storage and the key entries that sign
+// with the stored private keys.
 package keystore
 
 import (

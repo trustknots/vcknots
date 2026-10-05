@@ -7,11 +7,11 @@ import (
 
 // Common error types that can be used across all components
 var (
-	ErrNotImplemented = errors.New("not implemented")
-	ErrInvalidInput   = errors.New("invalid input")
-	ErrInternalError  = errors.New("internal error")
-	ErrTimeout        = errors.New("operation timeout")
-	ErrCancelled      = errors.New("operation cancelled")
+	ErrNotImplemented = NewCodedError("not_implemented", "not implemented")
+	ErrInvalidInput   = NewCodedError("invalid_argument", "invalid input")
+	ErrInternalError  = NewCodedError("internal_error", "internal error")
+	ErrTimeout        = NewCodedError("deadline_exceeded", "operation timeout")
+	ErrCancelled      = NewCodedError("canceled", "operation cancelled")
 )
 
 // ComponentError represents a generic error for any component
@@ -21,10 +21,12 @@ type ComponentError struct {
 	Err       error  `json:"error"`
 }
 
+// Error implements error.
 func (e *ComponentError) Error() string {
 	return fmt.Sprintf("%s component operation %s: %v", e.Component, e.Op, e.Err)
 }
 
+// Unwrap returns the wrapped error.
 func (e *ComponentError) Unwrap() error {
 	return e.Err
 }

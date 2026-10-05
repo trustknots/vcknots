@@ -2,25 +2,26 @@
 package types
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/trustknots/vcknots/wallet/credential"
+
+	"github.com/trustknots/vcknots/wallet/common"
 )
 
 // Sentinel errors for verification operations
 var (
-	ErrInvalidProof         = errors.New("invalid proof structure")
-	ErrUnsupportedAlgorithm = errors.New("unsupported verification algorithm")
-	ErrInvalidPublicKey     = errors.New("invalid public key")
-	ErrInvalidSignature     = errors.New("invalid signature")
-	ErrInvalidPayload       = errors.New("invalid payload")
-	ErrVerificationFailed   = errors.New("verification failed")
-	ErrInvalidCredential    = errors.New("invalid credential")
-	ErrExpiredCredential    = errors.New("credential has expired")
-	ErrPluginNotFound       = errors.New("verifier plugin not found")
-	ErrNilPlugin            = errors.New("verifier plugin cannot be nil")
+	ErrInvalidProof         = common.NewCodedError("verifier_invalid_proof", "invalid proof structure")
+	ErrUnsupportedAlgorithm = common.NewCodedError("verifier_unsupported_algorithm", "unsupported verification algorithm")
+	ErrInvalidPublicKey     = common.NewCodedError("verifier_invalid_public_key", "invalid public key")
+	ErrInvalidSignature     = common.NewCodedError("verifier_invalid_signature", "invalid signature")
+	ErrInvalidPayload       = common.NewCodedError("verifier_invalid_payload", "invalid payload")
+	ErrVerificationFailed   = common.NewCodedError("verifier_verification_failed", "verification failed")
+	ErrInvalidCredential    = common.NewCodedError("verifier_invalid_credential", "invalid credential")
+	ErrExpiredCredential    = common.NewCodedError("verifier_expired_credential", "credential has expired")
+	ErrPluginNotFound       = common.NewCodedError("verifier_plugin_not_found", "verifier plugin not found")
+	ErrNilPlugin            = common.NewCodedError("verifier_nil_plugin", "verifier plugin cannot be nil")
 )
 
 // VerificationComponent defines the interface for algorithm-specific verifiers
@@ -40,6 +41,7 @@ type VerificationError struct {
 	Cause     error                   `json:"cause,omitempty"`
 }
 
+// Error implements error.
 func (e *VerificationError) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("verification error (algorithm: %s): %s: %v", e.Algorithm, e.Message, e.Cause)
@@ -47,6 +49,7 @@ func (e *VerificationError) Error() string {
 	return fmt.Sprintf("verification error (algorithm: %s): %s", e.Algorithm, e.Message)
 }
 
+// Unwrap returns the wrapped error.
 func (e *VerificationError) Unwrap() error {
 	return e.Cause
 }

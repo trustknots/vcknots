@@ -5,14 +5,40 @@
 // them to verifiers (OID4VP). It supports multiple credential formats including
 // JWT-VC and SD-JWT-VC.
 //
-// Basic usage:
+// The methods of Wallet run OpenID4VCI 1.0 and OpenID4VP 1.0 in stages, and
+// the draft versions are reached through Wallet.Draft13 and Wallet.Draft24.
+// Receiving a credential under a Pre-Authorized Code offer:
 //
-//	w, err := wallet.NewWallet()
+//	w, err := wallet.NewWalletWithConfig(wallet.Config{CredentialAcceptance: policy})
 //	if err != nil {
 //		log.Fatal(err)
 //	}
 //
-//	credential, err := w.ReceiveCredential(req)
+//	offer, err := w.ResolveCredentialOffer(ctx, offerURL)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	grant, err := w.AuthorizePreAuthorizedIssuance(ctx, wallet.PreAuthorizedIssuanceRequest{CredentialOffer: offer})
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	result, err := w.RequestCredential(ctx, grant, wallet.CredentialRequest{HolderKeys: []wallet.IKeyEntry{holderKey}})
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+// Presenting credentials, with the holder's consent between the selection and
+// the submission:
+//
+//	request, err := w.ParsePresentationRequest(ctx, requestURI)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	selections, err := w.SelectCredentials(ctx, request)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	submitted, err := w.SubmitPresentation(ctx, request, wallet.Presentation{Key: holderKey, Credentials: selections})
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -22,51 +48,50 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
-	"sort"
+	"slices"
 	"strings"
-	"time"
 
 	"github.com/go-jose/go-jose/v4"
-	"github.com/go-jose/go-jose/v4/jwt"
-	"github.com/google/uuid"
+	"github.com/trustknots/vcknots/wallet/acceptance"
+	"github.com/trustknots/vcknots/wallet/attestation"
 	"github.com/trustknots/vcknots/wallet/common"
 	joseutil "github.com/trustknots/vcknots/wallet/common/jose"
-	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
-	"github.com/trustknots/vcknots/wallet/credstore/types"
-	"github.com/trustknots/vcknots/wallet/env"
+	"github.com/trustknots/vcknots/wallet/experimental"
 	"github.com/trustknots/vcknots/wallet/idprof"
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
 	"github.com/trustknots/vcknots/wallet/presenter"
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
-	presenterTypes "github.com/trustknots/vcknots/wallet/presenter/types"
+	"github.com/trustknots/vcknots/wallet/profile"
 	"github.com/trustknots/vcknots/wallet/receiver"
 	receiverOid4vci "github.com/trustknots/vcknots/wallet/receiver/plugins/oid4vci"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer"
-	sdjwtvc "github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
-	serializerTypes "github.com/trustknots/vcknots/wallet/serializer/types"
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
 // Wallet implements high-level wallet operations for verifiable credentials.
 //
-// It coordinates multiple dispatcher components to execute complete workflows:
-//   - ReceivingDispatcher: handles credential issuance protocols (e.g., OID4VCI)
-//   - PresentationDispatcher: handles credential presentation protocols (e.g., OID4VP)
-//   - SerializationDispatcher: handles credential serialization (JWT, SD-JWT)
-//   - CredStoreDispatcher: manages credential storage
-//   - IdentityProfileDispatcher: manages DIDs and identity profiles
-//   - VerificationDispatcher: handles cryptographic signature verification
+// Its methods are the stages of the protocols, and a caller runs them in
+// order, keeping the state each returns (see IssuanceGrant and
+// oid4vp.AdmittedRequest):
+//   - OpenID4VCI 1.0: ResolveCredentialOffer, then BeginIssuance and
+//     AuthorizeIssuance, or AuthorizePreAuthorizedIssuance, then
+//     RequestCredential, RequestDeferredCredential and NotifyIssuer.
+//   - OpenID4VP 1.0: ParsePresentationRequest (or ParseDCAPIRequest), then
+//     SelectCredentials, and SubmitPresentation or DeclinePresentation after
+//     the holder's consent.
+//   - OpenID4VCI Draft 13: the issuance stages under Draft13. OpenID4VP
+//     Draft 24: a request parsed under Draft24, then selected and submitted
+//     as above. Config.Profiles enables each draft.
 //
-// Each workflow method (ReceiveCredential, PresentCredential) orchestrates
-// multiple dispatchers to implement the complete protocol flow.
+// The stages delegate to the dispatchers of Config: the ReceivingDispatcher
+// and the PresentationDispatcher run the protocols, the
+// SerializationDispatcher and the VerificationDispatcher parse and verify
+// credentials, the CredStoreDispatcher stores them and the
+// IdentityProfileDispatcher manages DIDs.
 type Wallet struct {
 	credStore  *credstore.CredStoreDispatcher
 	idProf     *idprof.IdentityProfileDispatcher
@@ -77,6 +102,23 @@ type Wallet struct {
 
 	dpop       DPoPConfig
 	clientAuth ClientAuthConfig
+
+	// profile is the OpenID4VCI 1.0 / OpenID4VP 1.0 profile this wallet
+	// enforces. Every protocol plugin the wallet uses reports the same
+	// profile (see Config.Profiles).
+	profile profile.Profile
+	// draft13 and draft24 record whether Config.Profiles enables
+	// profile.Draft13 and profile.Draft24.
+	draft13 bool
+	draft24 bool
+
+	issuance IssuanceConfig
+	// attestationConfig is a pointer so that Wallet stays comparable.
+	attestationConfig *AttestationConfig
+	// testHooks is nil unless Config.Experimental.Hooks sets a hook.
+	testHooks *experimental.Hooks
+
+	credentialAcceptance *acceptance.Policy
 }
 
 // Config specifies the dispatcher components used by a Wallet.
@@ -86,20 +128,81 @@ type Wallet struct {
 // implementation will be created automatically.
 //
 // This configuration is primarily used for dependency injection in testing
-// or when custom plugin implementations are required.
+// or when custom plugin implementations are required. The wallet never
+// modifies a dispatcher or plugin it is given, and the plugins' fields must
+// not change after they are registered.
 type Config struct {
 	CredStore  *credstore.CredStoreDispatcher
 	IDProfiler *idprof.IdentityProfileDispatcher
 	Receiver   *receiver.ReceivingDispatcher
 	Serializer *serializer.SerializationDispatcher
 	Verifier   *verifier.VerificationDispatcher
-	Presenter  *presenter.PresentationDispatcher
+	// Presenter's OpenID4VP plugin must be an *oid4vp.Oid4vpPresenter,
+	// because the presentation methods take and return its
+	// *oid4vp.AdmittedRequest handles; any other plugin is refused
+	// (ErrInvalidArgument).
+	Presenter *presenter.PresentationDispatcher
 
 	DPoP       DPoPConfig
 	ClientAuth ClientAuthConfig
+
+	// Profiles selects the protocol profiles the wallet runs: exactly one
+	// OpenID4VCI 1.0 / OpenID4VP 1.0 profile (profile.Final, profile.HAIP,
+	// or either strengthened with Profile.With), and any of the draft
+	// profiles profile.Draft13 and profile.Draft24, which enable
+	// Wallet.Draft13 and Wallet.Draft24. Without a draft profile, its entry
+	// points return ErrProfileForbidsDraft. A 1.0 profile with
+	// Options.ForbidDraftProfiles (HAIP 1.0 profiles only the 1.0
+	// specifications) refuses a draft profile beside it
+	// (ErrProfileForbidsDraft); a second 1.0 profile, a repeated draft
+	// profile or no 1.0 profile is ErrInvalidArgument.
+	//
+	// Every plugin of Receiver and Presenter that implements profile.Carrier
+	// must report the 1.0 profile (ErrProfileMismatch). When that profile
+	// carries any option, a plugin that does not implement profile.Carrier
+	// is refused (ErrProfilePluginUnsupported), since it would not apply
+	// them.
+	//
+	// An empty Profiles is DefaultProfiles(): Final with both draft profiles.
+	// That is what the library ran before profiles could be chosen, so a
+	// zero Config keeps every entry point an existing integration calls.
+	Profiles []profile.Profile
+
+	// SupportedTransactionDataTypes lists the OpenID4VP transaction_data
+	// "type" values the wallet can process (OpenID4VP 1.0 Section 5.1). It
+	// configures the presenter the wallet builds when Presenter is nil; with
+	// an injected Presenter, set it on the plugin instead.
+	SupportedTransactionDataTypes []string
+
+	// CredentialAcceptance configures the minimum credential verification rules
+	// applied before a received credential is stored.
+	CredentialAcceptance *acceptance.Policy
+
+	// Storeless builds a wallet with no credential store, for a caller that
+	// keeps credentials elsewhere. Received credentials are returned and not
+	// stored, and a presentation takes its credentials by value. CredStore
+	// must be nil; every operation that needs the store returns
+	// ErrNoCredentialStore.
+	Storeless bool
+
+	// Issuance holds the wallet-level OpenID4VCI settings.
+	Issuance IssuanceConfig
+
+	// Attestation supplies and authenticates client and key attestations.
+	Attestation AttestationConfig
+
+	// Experimental carries the settings that depart from the OpenID4VC
+	// specifications: plain http endpoints and rewrites of draft protocol
+	// messages. Not specification-conforming; for testing only. The zero
+	// value conforms. See package experimental.
+	Experimental experimental.Options
 }
 
-// DPoPConfig holds configuration for DPoP proof generation.
+// DPoPConfig holds configuration for DPoP proof generation. Key is the
+// wallet's DPoP key; OpenID4VCI 1.0 issuances send a DPoP proof whenever it is
+// set, and HAIP requires it. Enabled generates a key when Key is nil and
+// forces DPoP on the Draft 13 token requests, which otherwise send it only to
+// an authorization server that advertises dpop_signing_alg_values_supported.
 type DPoPConfig struct {
 	Enabled bool
 	Key     IKeyEntry
@@ -109,11 +212,14 @@ type DPoPConfig struct {
 // authorization server's token endpoint.
 //
 // Method selects the authentication method. An empty value defaults to None and
-// is never promoted. It must appear in the server's
+// is never promoted. For an OpenID4VCI 1.0 pre-authorized_code token request
+// without a client attestation, it must appear in the server's
 // token_endpoint_auth_methods_supported, which RFC 8414 section 2 makes
-// client_secret_basic when absent, so such a server cannot be used.
+// client_secret_basic when absent. A server that omits the list but declares
+// pre-authorized_grant_anonymous_access_supported true takes an anonymous None
+// request instead (OID4VCI 1.0 6.1 and 12.3).
 //
-// ClientID is optional for None, and is sent unless
+// ClientID is optional for None on that request, and is sent unless
 // pre-authorized_grant_anonymous_access_supported is true (OID4VCI 1.0 12.3).
 //
 // ClientID and Key are required to use PrivateKeyJwt. Key must be the private
@@ -136,6 +242,58 @@ type ClientAuthConfig struct {
 	SigningAlg        jose.SignatureAlgorithm
 }
 
+// IssuanceConfig holds the wallet-level OpenID4VCI settings every issuance
+// shares.
+type IssuanceConfig struct {
+	// RedirectURI is the redirect_uri of the Authorization Code Flow
+	// (OpenID4VCI 1.0 Section 5.1).
+	RedirectURI string
+	// CredentialEncryption is the holder's policy for Credential Request and
+	// Credential Response encryption (Section 10).
+	CredentialEncryption CredentialEncryptionPolicy
+}
+
+// AttestationConfig supplies the attestations an issuance presents and the
+// policy that authenticates them before they are sent. An attestation the
+// wallet cannot authenticate is refused, not forwarded; a remote provider
+// without x5c needs Trust.ResolveKey.
+type AttestationConfig struct {
+	// Client supplies the OAuth 2.0 Client Attestation of this wallet
+	// instance (OpenID4VCI 1.0 Appendix E). It is asked for an attestation
+	// of the Client Instance Key of each flow (attestation.ClientRequest).
+	Client attestation.ClientProvider
+	// ClientKey is the Client Instance Key the Client Attestation binds and
+	// the PoP is signed with, for every authorization server. Using one key
+	// for every server lets the servers correlate the instance
+	// (draft-ietf-oauth-attestation-based-client-auth Section 11.1).
+	//
+	// When ClientKey is nil and ClientKeyFromDPoP is false, the wallet
+	// generates an ephemeral P-256 key for each authorization server flow,
+	// which that section RECOMMENDS: a Pre-Authorized Code token request
+	// uses a key of its own, and an Authorization Code Flow carries the key
+	// of its Pushed Authorization Request to its token request in
+	// IssuanceAuthorization.ClientInstanceKey.
+	ClientKey IKeyEntry
+	// ClientKeyFromDPoP uses Config.DPoP.Key as the Client Instance Key, so
+	// the DPoP key is attested. It is an opt-in: the one key then links the
+	// instance across authorization servers and ties the attestation to the
+	// DPoP key's lifetime. It cannot be combined with ClientKey.
+	ClientKeyFromDPoP bool
+	// Key supplies key attestations (OpenID4VCI 1.0 Appendix D).
+	Key attestation.KeyProvider
+	// Trust authenticates the attestations Client and Key return.
+	Trust attestation.TrustPolicy
+}
+
+// attestationSettings returns Config.Attestation, or its zero value for a
+// Wallet built without NewWalletWithConfig.
+func (w *Wallet) attestationSettings() AttestationConfig {
+	if w.attestationConfig == nil {
+		return AttestationConfig{}
+	}
+	return *w.attestationConfig
+}
+
 // signatureAlgorithm returns the configured client_assertion signing
 // algorithm, defaulting to ES256 when unset.
 func (c ClientAuthConfig) signatureAlgorithm() jose.SignatureAlgorithm {
@@ -143,6 +301,16 @@ func (c ClientAuthConfig) signatureAlgorithm() jose.SignatureAlgorithm {
 		return jose.ES256
 	}
 	return c.SigningAlg
+}
+
+// clientAuthenticationConfigured reports whether an OAuth2 client
+// authentication mechanism is configured. An empty method defaults to none.
+func clientAuthenticationConfigured(c ClientAuthConfig) bool {
+	method := c.Method
+	if method == "" {
+		method = receiverTypes.None
+	}
+	return method != receiverTypes.None
 }
 
 // curveForSignatureAlgorithm returns the elliptic curve that alg requires.
@@ -161,80 +329,64 @@ func curveForSignatureAlgorithm(alg jose.SignatureAlgorithm) (elliptic.Curve, er
 	}
 }
 
-// NewWallet creates a Wallet with default dispatcher configurations.
+// NewWallet creates a Wallet with the default dispatchers, as
+// NewWalletWithConfig does for a zero Config:
+//   - Credential storage using the local file system
+//   - OpenID4VCI for credential receiving
+//   - OpenID4VP for credential presentation
+//   - JWT VC, SD-JWT VC and Data Integrity credential serialization
+//   - Signature verification for every algorithm the verifier package
+//     registers by default
+//   - did:key and did:jwk identity profiles
 //
-// This initializes all dispatcher components with their built-in plugin implementations:
-//   - Credential storage using local file system
-//   - OID4VCI for credential receiving
-//   - OID4VP for credential presentation
-//   - JWT and SD-JWT serialization support
-//   - ES256 signature verification
-//   - DID:key and DID:jwk identity profiles
+// The Config.Profiles of a zero Config apply: OpenID4VCI 1.0 and OpenID4VP
+// 1.0 under profile.Final, with both draft profiles. The wallet has no
+// Config.CredentialAcceptance, so receiving a credential needs an acceptance
+// policy on the request that starts each issuance (IssuanceRequest.Acceptance
+// or PreAuthorizedIssuanceRequest.Acceptance); without one no issuance starts
+// (ErrCredentialAcceptancePolicyRequired). A wallet that receives credentials
+// usually sets Config.CredentialAcceptance through NewWalletWithConfig
+// instead.
 //
 // Returns an error if any dispatcher initialization fails.
 func NewWallet() (*Wallet, error) {
-	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create credential store: %w", err)
-	}
-
-	receiver, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create receiver: %w", err)
-	}
-
-	serializer, err := serializer.NewSerializationDispatcher(serializer.WithDefaultConfig())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create serializer: %w", err)
-	}
-
-	verifier, err := verifier.NewVerificationDispatcher(verifier.WithDefaultConfig())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create verifier: %w", err)
-	}
-
-	presenter, err := presenter.NewPresentationDispatcher(presenter.WithDefaultConfig())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create presenter: %w", err)
-	}
-
-	idProf, err := idprof.NewIdentityProfileDispatcher(idprof.WithDefaultConfig())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create identity profiler: %w", err)
-	}
-
-	config := Config{
-		CredStore:  credStore,
-		IDProfiler: idProf,
-		Receiver:   receiver,
-		Serializer: serializer,
-		Verifier:   verifier,
-		Presenter:  presenter,
-		DPoP:       DPoPConfig{},
-		ClientAuth: ClientAuthConfig{},
-	}
-
-	return NewWalletWithConfig(config)
+	return NewWalletWithConfig(Config{})
 }
 
-// NewWallet creates a Wallet with custom dispatcher configurations.
+// NewWalletWithConfig creates a Wallet from config: its protocol profiles, its
+// credential acceptance policy, its OpenID4VCI client settings and any
+// dispatcher it injects. A dispatcher field left nil is initialized with the
+// default implementation; the default receiver and presenter are built for
+// the OpenID4VCI 1.0 / OpenID4VP 1.0 profile of config.Profiles.
 //
-// This allows injection of custom dispatcher implementations or configurations.
-// Any dispatcher field left nil in the config will be initialized with a default
-// implementation automatically.
-//
-// This constructor is primarily used when:
-//   - Testing with mock dispatchers
-//   - Registering custom protocol plugins
-//   - Using non-default storage backends
-//
-// For typical usage, prefer NewWallet instead.
+// An injected Receiver or Presenter is checked here, once: its plugins must
+// report the wallet's profile (see Config.Profiles), and a refused dispatcher
+// fails the constructor rather than a later method.
 func NewWalletWithConfig(config Config) (*Wallet, error) {
+	w, err := newWallet(config)
+	return w, classify(err)
+}
+
+func newWallet(config Config) (*Wallet, error) {
 	if err := validateClientAuthConfig(config.ClientAuth); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
+	}
+	profiles, err := resolveProfiles(config.Profiles)
+	if err != nil {
 		return nil, err
 	}
+	walletProfile := profiles.final
+	if err := checkExperimental(config, profiles); err != nil {
+		return nil, err
+	}
+	if config.Storeless && config.CredStore != nil {
+		return nil, fmt.Errorf("%w: a storeless wallet cannot be configured with a credential store", ErrInvalidArgument)
+	}
+	if config.Presenter != nil && len(config.SupportedTransactionDataTypes) > 0 {
+		return nil, fmt.Errorf("%w: SupportedTransactionDataTypes configures only the default presenter; set it on the injected presenter plugin", ErrInvalidArgument)
+	}
 
-	if config.CredStore == nil {
+	if config.CredStore == nil && !config.Storeless {
 		credStore, err := credstore.NewCredStoreDispatcher(credstore.WithDefaultConfig())
 		if err != nil {
 			return nil, fmt.Errorf("failed to create default credential store: %w", err)
@@ -251,7 +403,7 @@ func NewWalletWithConfig(config Config) (*Wallet, error) {
 	}
 
 	if config.Receiver == nil {
-		receiver, err := receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+		receiver, err := newDefaultReceiver(walletProfile, config.Experimental.Transport)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create default receiver: %w", err)
 		}
@@ -275,11 +427,25 @@ func NewWalletWithConfig(config Config) (*Wallet, error) {
 	}
 
 	if config.Presenter == nil {
-		presenter, err := presenter.NewPresentationDispatcher(presenter.WithDefaultConfig())
+		presenter, err := presenter.NewPresentationDispatcher(presenter.WithPlugin(presenter.Oid4vp, &oid4vp.Oid4vpPresenter{
+			Profile:                       walletProfile,
+			SupportedTransactionDataTypes: slices.Clone(config.SupportedTransactionDataTypes),
+			Experimental:                  experimental.Presenter{Transport: config.Experimental.Transport},
+		}))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create default presenter: %w", err)
 		}
 		config.Presenter = presenter
+	}
+
+	if err := checkPluginProfiles(config.Receiver.Plugins(), walletProfile); err != nil {
+		return nil, fmt.Errorf("receiver: %w", err)
+	}
+	if err := checkPluginProfiles(config.Presenter.Plugins(), walletProfile); err != nil {
+		return nil, fmt.Errorf("presenter: %w", err)
+	}
+	if err := checkBundledPresenter(config.Presenter); err != nil {
+		return nil, err
 	}
 
 	if config.DPoP.Enabled && config.DPoP.Key == nil {
@@ -288,6 +454,15 @@ func NewWalletWithConfig(config Config) (*Wallet, error) {
 			return nil, fmt.Errorf("failed to generate DPoP key: %w", err)
 		}
 		config.DPoP.Key = key
+	}
+	if config.Attestation.ClientKeyFromDPoP && (config.Attestation.ClientKey != nil || config.DPoP.Key == nil) {
+		return nil, fmt.Errorf("%w: Attestation.ClientKeyFromDPoP needs a DPoP key and no Attestation.ClientKey", ErrInvalidArgument)
+	}
+	attestationConfig := config.Attestation
+	var testHooks *experimental.Hooks
+	if config.Experimental.Hooks.Set() {
+		hooks := config.Experimental.Hooks
+		testHooks = &hooks
 	}
 	return &Wallet{
 		credStore:  config.CredStore,
@@ -298,7 +473,95 @@ func NewWalletWithConfig(config Config) (*Wallet, error) {
 		presenter:  config.Presenter,
 		dpop:       config.DPoP,
 		clientAuth: config.ClientAuth,
+
+		profile: walletProfile,
+		draft13: profiles.draft13,
+		draft24: profiles.draft24,
+
+		issuance:          config.Issuance,
+		attestationConfig: &attestationConfig,
+		testHooks:         testHooks,
+
+		credentialAcceptance: config.CredentialAcceptance,
 	}, nil
+}
+
+// newDefaultReceiver builds the receiver of a wallet whose Config.Receiver is
+// nil: the upstream defaults under plain Final without experimental transport
+// settings, and otherwise only an OpenID4VCI plugin constructed with the
+// wallet's profile and transport.
+func newDefaultReceiver(walletProfile profile.Profile, transport experimental.Transport) (*receiver.ReceivingDispatcher, error) {
+	if walletProfile == profile.Final() && transport == (experimental.Transport{}) {
+		return receiver.NewReceivingDispatcher(receiver.WithDefaultConfig())
+	}
+	return receiver.NewReceivingDispatcher(receiver.WithPlugin(receiverTypes.Oid4vci, &receiverOid4vci.Oid4vciReceiver{
+		Experimental: transport,
+		Profile:      walletProfile,
+	}))
+}
+
+// checkExperimental refuses Config.Experimental settings the wallet could not
+// apply or its profiles forbid: any of them under Options.ForbidExperimental,
+// hooks without a draft profile (they rewrite draft messages only), and a
+// transport escape with an injected plugin, which the wallet does not
+// reconfigure.
+func checkExperimental(config Config, profiles walletProfiles) error {
+	hooks := config.Experimental.Hooks.Set()
+	transport := config.Experimental.Transport != (experimental.Transport{})
+	if !hooks && !transport {
+		return nil
+	}
+	if profiles.final.Options().ForbidExperimental {
+		return fmt.Errorf("%w: %w does not permit Config.Experimental", ErrInvalidArgument, profile.Refused("ForbidExperimental"))
+	}
+	if hooks && !profiles.draft13 && !profiles.draft24 {
+		return fmt.Errorf("%w: Experimental.Hooks rewrite draft messages and no draft profile is enabled", ErrProfileForbidsDraft)
+	}
+	if !transport {
+		return nil
+	}
+	if config.Receiver != nil || config.Presenter != nil {
+		return fmt.Errorf("%w: Experimental.Transport configures only the plugins the wallet builds; set it on the injected plugin", ErrInvalidArgument)
+	}
+	return nil
+}
+
+// profileValidator is implemented by a plugin that can tell whether its own
+// settings satisfy its profile, such as an experimental transport a profile
+// with ForbidExperimental refuses.
+type profileValidator interface {
+	ValidateProfile() error
+}
+
+// checkPluginProfiles refuses a plugin whose profile.Carrier reports another
+// profile than the wallet's and, when the wallet's profile carries options, a
+// plugin that is not a Carrier: an option adds checks a plugin must know to
+// apply. A plugin whose own settings its profile refuses (profileValidator)
+// is refused too, so an injected plugin is held to the rules of one the
+// wallet builds.
+func checkPluginProfiles[P any](plugins []P, walletProfile profile.Profile) error {
+	for _, plugin := range plugins {
+		if validator, ok := any(plugin).(profileValidator); ok {
+			if err := validator.ValidateProfile(); err != nil {
+				return fmt.Errorf("%T: %w", plugin, err)
+			}
+		}
+		carrier, ok := any(plugin).(profile.Carrier)
+		if !ok {
+			if walletProfile.Options() != (profile.Options{}) {
+				return fmt.Errorf("%w: %T does not implement profile.Carrier", ErrProfilePluginUnsupported, plugin)
+			}
+			continue
+		}
+		pluginProfile := carrier.ProtocolProfile()
+		if err := pluginProfile.RequireFinalVersion(); err != nil {
+			return fmt.Errorf("%T: %w", plugin, err)
+		}
+		if pluginProfile != walletProfile {
+			return fmt.Errorf("%w: %T enforces %s, the wallet %s", ErrProfileMismatch, plugin, pluginProfile, walletProfile)
+		}
+	}
+	return nil
 }
 
 func validateClientAuthConfig(config ClientAuthConfig) error {
@@ -347,16 +610,23 @@ func validateClientAuthConfig(config ClientAuthConfig) error {
 	}
 }
 
-// SetReceiver sets the receiver dispatcher.
-func (w *Wallet) SetReceiver(r *receiver.ReceivingDispatcher) {
-	w.receiver = r
+// checkBundledPresenter refuses a presenter plugin other than the bundled
+// *oid4vp.Oid4vpPresenter: the presentation methods answer the
+// *oid4vp.AdmittedRequest handles only that plugin admits.
+func checkBundledPresenter(d *presenter.PresentationDispatcher) error {
+	for _, plugin := range d.Plugins() {
+		if _, ok := plugin.(*oid4vp.Oid4vpPresenter); !ok {
+			return fmt.Errorf("%w: the OpenID4VP presenter plugin must be an *oid4vp.Oid4vpPresenter, got %T", ErrInvalidArgument, plugin)
+		}
+	}
+	return nil
 }
 
 // GenerateDID generates a DID from given options.
 func (w *Wallet) GenerateDID(options DIDCreateOptions) (*idprofTypes.IdentityProfile, error) {
 	parts := strings.SplitN(options.TypeID, ":", 2)
 	if len(parts) != 2 || parts[0] != "did" {
-		return nil, fmt.Errorf("invalid DID type ID format: %s", options.TypeID)
+		return nil, fmt.Errorf("%w: invalid DID type ID format: %s", ErrInvalidArgument, options.TypeID)
 	}
 	method := parts[1]
 
@@ -366,17 +636,16 @@ func (w *Wallet) GenerateDID(options DIDCreateOptions) (*idprofTypes.IdentityPro
 		return nil
 	}
 
-	return w.idProf.Create("did", createOption)
-}
-
-// VerifyCredential verifies a credential with a public key.
-func (w *Wallet) VerifyCredential(credential *credential.Credential, pubKey jose.JSONWebKey) bool {
-	if credential.Proof == nil {
-		return false
+	identity, err := w.idProf.Create("did", createOption)
+	if err != nil {
+		// Creating a did:key or did:jwk is local, so a failure is a
+		// method or key the caller chose that the plugins refuse.
+		if _, coded := common.CodeOf(err); !coded {
+			err = keepMessage(ErrInvalidArgument, err)
+		}
+		return nil, classify(err)
 	}
-
-	result, err := w.verifier.Verify(credential.Proof, &pubKey)
-	return err != nil && result
+	return identity, nil
 }
 
 // DIDCreateOptions holds options for DID creation.
@@ -385,1488 +654,10 @@ type DIDCreateOptions struct {
 	PublicKey jose.JSONWebKey
 }
 
-// ReceiveCredentialRequest holds parameters for receiving a credential.
-type ReceiveCredentialRequest struct {
-	CredentialOffer      *CredentialOffer
-	Type                 receiverTypes.SupportedReceivingTypes
-	Key                  IKeyEntry
-	RequestedFormat      credential.SupportedSerializationFlavor
-	CachedIssuerMetadata *receiverTypes.CredentialIssuerMetadata
-	TxCode               string
-}
-
-// CredentialOffer represents a credential offer from an issuer.
-type CredentialOffer struct {
-	CredentialIssuer           *url.URL                         `json:"credential_issuer"`
-	CredentialConfigurationIDs []string                         `json:"credential_configuration_ids"`
-	Grants                     map[string]*CredentialOfferGrant `json:"grants"`
-}
-
-// CredentialOfferGrant represents a grant in a credential offer.
-type CredentialOfferGrant struct {
-	PreAuthorizedCode string  `json:"pre-authorized_code"`
-	TxCode            *TxCode `json:"tx_code,omitempty"`
-}
-
-type TxCode struct {
-	InputMode   string `json:"input_mode,omitempty"`
-	Length      int    `json:"length,omitempty"`
-	Description string `json:"description,omitempty"`
-}
-
-// GetCredentialEntriesRequest holds parameters for querying credential entries.
-type GetCredentialEntriesRequest struct {
-	Offset int
-	Limit  *int
-	Filter func(*SavedCredential) bool
-}
-
-// SavedCredential represents a credential with its storage entry.
-type SavedCredential struct {
-	Credential *credential.Credential
-	Entry      *types.CredentialEntry
-}
-
-// RedirectHandler is called when the verifier returns a redirect URI.
-type RedirectHandler func(string) error
-
-// PresentCredentialOptions configures presentation serialization and redirect handling.
-type PresentCredentialOptions struct {
-	SerializeOptions serializerTypes.SerializePresentationOptions
-	OnRedirect       RedirectHandler
-}
-
-// IKeyEntry represents a key entry interface for signing operations.
-// Sign signs the input bytes. ECDSA implementations may return either
-// DER-encoded ASN.1 signatures or raw IEEE P1363 (R || S) signatures.
-// Callers that require JWS-compatible ES256 signatures should prefer
-// using JWKSigner, which normalizes DER-encoded signatures to IEEE P1363.
-type IKeyEntry interface {
-	ID() string
-	PublicKey() jose.JSONWebKey
-	Sign(data []byte) ([]byte, error)
-}
-
-type credentialRequestProofBindingMethod string
-
-const (
-	credentialRequestProofBindingMethodKID credentialRequestProofBindingMethod = "kid"
-	credentialRequestProofBindingMethodJWK credentialRequestProofBindingMethod = "jwk"
-)
-
-func resolveCredentialRequestProofBindingMethod(
-	credentialConfiguration *receiverTypes.CredentialConfiguration,
-) credentialRequestProofBindingMethod {
-	if credentialConfiguration == nil {
-		return credentialRequestProofBindingMethodKID
-	}
-
-	format := strings.ToLower(strings.TrimSpace(credentialConfiguration.Format))
-	if format == "jwt_vc_json" || format == "jwt_vc" {
-		return credentialRequestProofBindingMethodKID
-	}
-
-	if credentialConfiguration.CryptographicBindingMethodsSupported == nil {
-		return credentialRequestProofBindingMethodKID
-	}
-
-	for _, method := range *credentialConfiguration.CryptographicBindingMethodsSupported {
-		normalized := strings.ToLower(strings.TrimSpace(method))
-		if strings.HasPrefix(normalized, "did:") {
-			return credentialRequestProofBindingMethodKID
-		}
-
-		if strings.EqualFold(strings.TrimSpace(method), string(credentialRequestProofBindingMethodJWK)) {
-			return credentialRequestProofBindingMethodJWK
-		}
-	}
-
-	return credentialRequestProofBindingMethodKID
-}
-
-type inMemoryECKeyEntry struct {
-	id      string
-	privKey *ecdsa.PrivateKey
-	pubJWK  jose.JSONWebKey
-}
-
-type keyEntryWithoutPublicKeyID struct {
-	IKeyEntry
-}
-
-func (k keyEntryWithoutPublicKeyID) PublicKey() jose.JSONWebKey {
-	jwk := k.IKeyEntry.PublicKey()
-	jwk.KeyID = ""
-	return jwk
-}
-
-func newInMemoryECKeyEntry() (*inMemoryECKeyEntry, error) {
-	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate ECDSA key: %w", err)
-	}
-	id := uuid.NewString()
-	pubJWK := jose.JSONWebKey{
-		Key:       &privKey.PublicKey,
-		KeyID:     id,
-		Algorithm: string(jose.ES256),
-		Use:       "sig",
-	}
-	return &inMemoryECKeyEntry{
-		id:      id,
-		privKey: privKey,
-		pubJWK:  pubJWK,
-	}, nil
-}
-
-func (k *inMemoryECKeyEntry) ID() string {
-	return k.id
-}
-
-func (k *inMemoryECKeyEntry) PublicKey() jose.JSONWebKey {
-	return k.pubJWK
-}
-
-func (k *inMemoryECKeyEntry) Sign(data []byte) ([]byte, error) {
-	digest := sha256.Sum256(data)
-	return ecdsa.SignASN1(rand.Reader, k.privKey, digest[:])
-}
-
-// convertEntryToSavedCredential converts a CredentialEntry to SavedCredential.
-// Returns error if conversion fails (invalid flavor or deserialization error).
-func (w *Wallet) convertEntryToSavedCredential(entry types.CredentialEntry) (*SavedCredential, error) {
-	f, err := entry.SerializationFlavor()
-	if err != nil {
-		return nil, fmt.Errorf("invalid serialization flavor: %w", err)
-	}
-
-	cred, err := w.serializer.DeserializeCredential(f, entry.Raw)
-	if err != nil {
-		return nil, fmt.Errorf("deserialization failed: %w", err)
-	}
-
-	return &SavedCredential{
-		Credential: cred,
-		Entry:      &entry,
-	}, nil
-}
-
-// generateJWTProof generates a JWT proof for credential requests.
-// When clientID is nil, iss is omitted (anonymous pre-authorized flow).
-// When clientID is provided, it must be non-empty.
-func (w *Wallet) generateJWTProof(
-	key IKeyEntry,
-	did *idprofTypes.IdentityProfile,
-	nonce *string,
-	aud string,
-	clientID *string,
-	proofBindingMethod credentialRequestProofBindingMethod,
-) (string, error) {
-	signerOpts := (&jose.SignerOptions{}).WithType("openid4vci-proof+jwt")
-	signingKeyEntry := key
-	if proofBindingMethod == credentialRequestProofBindingMethodJWK {
-		publicJWK := key.PublicKey()
-		signerOpts = signerOpts.WithHeader("jwk", publicJWK.Public())
-		signingKeyEntry = keyEntryWithoutPublicKeyID{IKeyEntry: key}
-	} else {
-		if did == nil {
-			return "", fmt.Errorf("did is required for kid proof binding")
-		}
-		if strings.TrimSpace(did.ID) == "" {
-			return "", fmt.Errorf("did.ID is required for kid proof binding")
-		}
-		signerOpts = signerOpts.WithHeader("kid", did.ID)
-	}
-
-	signerAdapter, err := joseutil.NewJWKSigner(signingKeyEntry, jose.ES256)
-	if err != nil {
-		return "", fmt.Errorf("failed to create JWT proof signer adapter: %w", err)
-	}
-
-	claims := map[string]interface{}{
-		"iat": time.Now().Unix(),
-		"aud": aud,
-	}
-
-	if clientID != nil {
-		if strings.TrimSpace(*clientID) == "" {
-			return "", fmt.Errorf("clientID must be non-empty when provided")
-		}
-		claims["iss"] = *clientID
-	}
-
-	if nonce != nil && *nonce != "" {
-		claims["nonce"] = *nonce
-	}
-
-	signingKey := jose.SigningKey{
-		Algorithm: jose.ES256,
-		Key:       signerAdapter,
-	}
-
-	signer, err := jose.NewSigner(signingKey, signerOpts)
-	if err != nil {
-		return "", fmt.Errorf("failed to create JWT proof signer: %w", err)
-	}
-
-	proof, err := jwt.Signed(signer).Claims(claims).Serialize()
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize JWT proof: %w", err)
-	}
-
-	return proof, nil
-}
-
-func (w *Wallet) generateDPoPProof(key IKeyEntry, method, targetURL, accessToken string, nonce *string) (string, error) {
-	if key == nil {
-		return "", fmt.Errorf("dpop key is required")
-	}
-
-	publicJWK := key.PublicKey()
-
-	var pub *ecdsa.PublicKey
-
-	switch k := publicJWK.Key.(type) {
-	case *ecdsa.PublicKey:
-		pub = k
-	case ecdsa.PublicKey:
-		pub = &k
-	default:
-		return "", fmt.Errorf("dpop key must be ECDSA public key")
-	}
-
-	if pub.Curve != elliptic.P256() {
-		return "", fmt.Errorf("dpop key must use P-256 curve")
-	}
-
-	signerAdapter, err := joseutil.NewJWKSigner(key, jose.ES256)
-	if err != nil {
-		return "", fmt.Errorf("failed to create dpop signer adapter: %w", err)
-	}
-
-	signingKey := jose.SigningKey{
-		Algorithm: jose.ES256,
-		Key:       signerAdapter,
-	}
-
-	signerOpts := (&jose.SignerOptions{}).WithType("dpop+jwt")
-
-	publicOnlyJWK := jose.JSONWebKey{
-		Key:       pub,
-		KeyID:     publicJWK.KeyID,
-		Algorithm: string(jose.ES256),
-		Use:       publicJWK.Use,
-	}
-
-	signerOpts = signerOpts.WithHeader("jwk", publicOnlyJWK)
-
-	signer, err := jose.NewSigner(signingKey, signerOpts)
-	if err != nil {
-		return "", fmt.Errorf("failed to create dpop signer: %w", err)
-	}
-
-	claims := map[string]any{
-		"jti": uuid.NewString(),
-		"htm": strings.ToUpper(method),
-		"htu": targetURL,
-		"iat": time.Now().Unix(),
-	}
-
-	if accessToken != "" {
-		accessTokenHash := sha256.Sum256([]byte(accessToken))
-		claims["ath"] = base64.RawURLEncoding.EncodeToString(accessTokenHash[:])
-	}
-	if nonce != nil && *nonce != "" {
-		claims["nonce"] = *nonce
-	}
-
-	proof, err := jwt.Signed(signer).Claims(claims).Serialize()
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize dpop proof: %w", err)
-	}
-
-	return proof, nil
-}
-
-// generateClientAssertion builds a signed JWT used as the client_assertion
-// parameter for private_key_jwt client authentication (RFC 7523).
-//
-// The resulting JWT contains the following claims: iss, sub (both equal to the
-// client_id), aud (the resolved authorization server audience), iat, nbf, exp,
-// and jti. The header carries the signing key's kid and the given alg.
-func (w *Wallet) generateClientAssertion(key IKeyEntry, clientID, audience string, alg jose.SignatureAlgorithm) (string, error) {
-	if key == nil {
-		return "", fmt.Errorf("client auth key is required")
-	}
-	if strings.TrimSpace(clientID) == "" {
-		return "", fmt.Errorf("clientID is required for client assertion")
-	}
-	if strings.TrimSpace(audience) == "" {
-		return "", fmt.Errorf("audience is required for client assertion aud")
-	}
-	if _, err := curveForSignatureAlgorithm(alg); err != nil {
-		return "", err
-	}
-
-	signerAdapter, err := joseutil.NewJWKSigner(key, alg)
-	if err != nil {
-		return "", fmt.Errorf("failed to create client assertion signer adapter: %w", err)
-	}
-
-	signerOpts := (&jose.SignerOptions{}).WithType("JWT")
-	if kid := key.PublicKey().KeyID; strings.TrimSpace(kid) != "" {
-		signerOpts = signerOpts.WithHeader("kid", kid)
-	}
-
-	signingKey := jose.SigningKey{
-		Algorithm: alg,
-		Key:       signerAdapter,
-	}
-
-	signer, err := jose.NewSigner(signingKey, signerOpts)
-	if err != nil {
-		return "", fmt.Errorf("failed to create client assertion signer: %w", err)
-	}
-
-	now := time.Now()
-	claims := map[string]any{
-		"iss": clientID,
-		"sub": clientID,
-		"aud": audience,
-		"iat": now.Unix(),
-		"nbf": now.Unix(),
-		"exp": now.Add(clientAssertionLifetime).Unix(),
-		"jti": uuid.NewString(),
-	}
-
-	assertion, err := jwt.Signed(signer).Claims(claims).Serialize()
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize client assertion: %w", err)
-	}
-
-	return assertion, nil
-}
-
-// clientAssertionLifetime is the validity window of a generated client_assertion.
-const clientAssertionLifetime = 5 * time.Minute
-
-// errNoUsableClientAuthMethod is wrapped by every negotiation failure below.
-var errNoUsableClientAuthMethod = errors.New(
-	"no usable client authentication method for the authorization server token endpoint")
-
-// tokenEndpointAuth is the negotiation outcome. SendClientID is separate because
-// Method None does not imply an anonymous request; OID4VCI 1.0 12.3 decides that.
-type tokenEndpointAuth struct {
-	Method       receiverTypes.TokenEndpointAuthMethod
-	SendClientID bool
-}
-
-// anonymousTokenRequestPermitted reports whether a token request may omit
-// client_id. OID4VCI 1.0 12.3 defaults the parameter to false, not to unknown.
-func anonymousTokenRequestPermitted(authMetadata *receiverTypes.AuthorizationServerMetadata) bool {
-	return authMetadata != nil &&
-		authMetadata.PreAuthorizedGrantAnonymousAccessSupported != nil &&
-		*authMetadata.PreAuthorizedGrantAnonymousAccessSupported
-}
-
-// resolveClientAuthMethod negotiates how the token request authenticates.
-// token_endpoint_auth_methods_supported filters the configured method and never
-// picks or downgrades one; pre-authorized_grant_anonymous_access_supported only
-// decides whether client_id may be omitted. Do not rearrange the steps below.
-func resolveClientAuthMethod(clientAuth ClientAuthConfig, authMetadata *receiverTypes.AuthorizationServerMetadata) (tokenEndpointAuth, error) {
-	if authMetadata == nil {
-		return tokenEndpointAuth{}, fmt.Errorf(
-			"authorization server metadata is required to select a client authentication method")
-	}
-
-	configured := clientAuth.Method
-	if configured == "" {
-		configured = receiverTypes.None
-	}
-	if configured != receiverTypes.None && configured != receiverTypes.PrivateKeyJwt {
-		return tokenEndpointAuth{}, unimplementedAuthMethodError(configured)
-	}
-
-	switch methods := authMetadata.TokenEndpointAuthMethodsSupported; {
-	case methods == nil:
-		return tokenEndpointAuth{}, fmt.Errorf(
-			"%w: token_endpoint_auth_methods_supported is absent, so RFC 8414 section 2 makes the token "+
-				"endpoint default to client_secret_basic, which this wallet does not implement (supported: %q, %q)",
-			errNoUsableClientAuthMethod, receiverTypes.None, receiverTypes.PrivateKeyJwt)
-	case len(*methods) == 0:
-		return tokenEndpointAuth{}, fmt.Errorf(
-			"%w: token_endpoint_auth_methods_supported is an empty array, so the token endpoint "+
-				"advertises no client authentication method",
-			errNoUsableClientAuthMethod)
-	}
-
-	if err := clientAuthMethodUsable(configured, clientAuth, authMetadata); err != nil {
-		return tokenEndpointAuth{}, err
-	}
-
-	if configured == receiverTypes.PrivateKeyJwt {
-		return tokenEndpointAuth{Method: receiverTypes.PrivateKeyJwt, SendClientID: true}, nil
-	}
-
-	if anonymousTokenRequestPermitted(authMetadata) {
-		return tokenEndpointAuth{Method: receiverTypes.None}, nil
-	}
-
-	if strings.TrimSpace(clientAuth.ClientID) == "" {
-		anonState := "absent"
-		if authMetadata.PreAuthorizedGrantAnonymousAccessSupported != nil {
-			anonState = "false"
-		}
-		return tokenEndpointAuth{}, fmt.Errorf(
-			"%w: the token endpoint accepts %q, but pre-authorized_grant_anonymous_access_supported is %s "+
-				"and OID4VCI 1.0 section 12.3 defines its default as false, so the token request must carry "+
-				"a client_id and none is configured",
-			errNoUsableClientAuthMethod, receiverTypes.None, anonState)
-	}
-	return tokenEndpointAuth{Method: receiverTypes.None, SendClientID: true}, nil
-}
-
-// clientAuthMethodUsable reports whether method can be used against authMetadata.
-// It must never read pre-authorized_grant_anonymous_access_supported: letting
-// that decide usability is what made the previous behaviour disagree with itself.
-func clientAuthMethodUsable(method receiverTypes.TokenEndpointAuthMethod, clientAuth ClientAuthConfig, authMetadata *receiverTypes.AuthorizationServerMetadata) error {
-	switch method {
-	case receiverTypes.None:
-		if !asMetadataSupportsAuthMethod(authMetadata, receiverTypes.None) {
-			return methodNotAdvertisedError(method, authMetadata)
-		}
-		return nil
-
-	case receiverTypes.PrivateKeyJwt:
-		if strings.TrimSpace(clientAuth.ClientID) == "" || clientAuth.Key == nil {
-			return fmt.Errorf(
-				"%w: private_key_jwt requires both a client_id and a client authentication key",
-				errNoUsableClientAuthMethod)
-		}
-		if !asMetadataSupportsAuthMethod(authMetadata, receiverTypes.PrivateKeyJwt) {
-			return methodNotAdvertisedError(method, authMetadata)
-		}
-		if authMetadata.TokenEndpointAuthSigningAlgValuesSupported == nil ||
-			len(*authMetadata.TokenEndpointAuthSigningAlgValuesSupported) == 0 {
-			return fmt.Errorf(
-				"%w: the authorization server advertises private_key_jwt but omits "+
-					"token_endpoint_auth_signing_alg_values_supported, which RFC 8414 section 2 requires when "+
-					"JWT client authentication is supported and for which it defines no default",
-				errNoUsableClientAuthMethod)
-		}
-		if !asMetadataSupportsSigningAlg(authMetadata, clientAuth.signatureAlgorithm()) {
-			return fmt.Errorf(
-				"%w: the authorization server does not advertise %s in "+
-					"token_endpoint_auth_signing_alg_values_supported %v",
-				errNoUsableClientAuthMethod, clientAuth.signatureAlgorithm(),
-				*authMetadata.TokenEndpointAuthSigningAlgValuesSupported)
-		}
-		return nil
-	}
-	return unimplementedAuthMethodError(method)
-}
-
-func unimplementedAuthMethodError(method receiverTypes.TokenEndpointAuthMethod) error {
-	return fmt.Errorf(
-		"%w: token_endpoint_auth_method %q is configured, but this wallet implements only %q and %q",
-		errNoUsableClientAuthMethod, method, receiverTypes.None, receiverTypes.PrivateKeyJwt)
-}
-
-// methodNotAdvertisedError quotes back the list the server does advertise. Only
-// resolveClientAuthMethod reaches this, past its own nil and empty-list guards.
-func methodNotAdvertisedError(method receiverTypes.TokenEndpointAuthMethod, authMetadata *receiverTypes.AuthorizationServerMetadata) error {
-	// Not being advertised is None's only failure mode, so an operator who set
-	// anonymous access needs telling here why it was not enough.
-	anonNote := ""
-	if method == receiverTypes.None && anonymousTokenRequestPermitted(authMetadata) {
-		anonNote = " (pre-authorized_grant_anonymous_access_supported is true, but OID4VCI 1.0 section 12.3" +
-			" lets it decide only whether client_id may be omitted, not whether the token endpoint" +
-			" serves an unauthenticated client)"
-	}
-	return fmt.Errorf(
-		"%w: the wallet is configured for %q, but token_endpoint_auth_methods_supported is %v%s",
-		errNoUsableClientAuthMethod, method, *authMetadata.TokenEndpointAuthMethodsSupported, anonNote)
-}
-
-// validateAuthorizationServerIssuer checks the issuer returned in the metadata
-// against the identifier the metadata was fetched from.
-//
-// RFC 8414 section 3.3 requires the two to be identical, and this is the only
-// thing tying the document to the authorization server that was asked for.
-// Skipping it matters beyond discovery hygiene: the issuer becomes the aud of
-// the client_assertion (see resolveClientAssertionAudience), so an unchecked
-// value redirects a bearer-grade credential at an audience of the responder's
-// choosing.
-//
-// Only a trailing slash is normalized away. RFC 8414 section 2 gives the issuer
-// identifier no query or fragment and leaves everything else significant, so
-// comparing anything more loosely would defeat the check.
-func validateAuthorizationServerIssuer(requested common.URIField, authMetadata *receiverTypes.AuthorizationServerMetadata) error {
-	requestedURL := url.URL(requested)
-	issuerURL := url.URL(authMetadata.Issuer)
-
-	issuer := strings.TrimSpace(issuerURL.String())
-	if issuer == "" {
-		return fmt.Errorf("issuer is missing on authorization server metadata")
-	}
-
-	if strings.TrimSuffix(issuer, "/") != strings.TrimSuffix(strings.TrimSpace(requestedURL.String()), "/") {
-		return fmt.Errorf(
-			"authorization server metadata issuer %q does not match the authorization server identifier %q it was fetched from",
-			issuer, requestedURL.String())
-	}
-	return nil
-}
-
-// validateCredentialIssuer checks the credential_issuer returned in the metadata
-// against the Credential Issuer Identifier the Credential Offer pointed at.
-//
-// OID4VCI 1.0 section 12.2.2 derives the metadata URL from that identifier, so the
-// document has to claim the identifier it was fetched from. Skipping the check
-// matters beyond discovery hygiene: section 8.2 requires the key proof to carry the
-// Credential Issuer Identifier as its audience, and requestCredential takes that
-// audience from this field. An unchecked value therefore points the proof at an
-// audience of the responder's choosing.
-//
-// Section 12.2.4 settles how to compare: the value "MUST be identical" to the
-// identifier the metadata URL was built from, "compared using a simple string
-// comparison with no normalization", and a document that fails that test "MUST NOT
-// be used". So nothing is normalized away here, not even a trailing slash, and the
-// raw field is compared because a value this function rewrote is not the value the
-// proof would carry.
-func validateCredentialIssuer(requested *url.URL, issuerMetadata *receiverTypes.CredentialIssuerMetadata) error {
-	if requested == nil {
-		return fmt.Errorf("credential issuer identifier is required")
-	}
-
-	credentialIssuer := issuerMetadata.CredentialIssuer
-	if strings.TrimSpace(credentialIssuer) == "" {
-		return fmt.Errorf("credential_issuer is missing on credential issuer metadata")
-	}
-
-	if credentialIssuer != requested.String() {
-		return fmt.Errorf(
-			"credential issuer metadata credential_issuer %q does not match the credential issuer identifier %q it was fetched from",
-			credentialIssuer, requested.String())
-	}
-	return nil
-}
-
-func asMetadataSupportsAuthMethod(authMetadata *receiverTypes.AuthorizationServerMetadata, method receiverTypes.TokenEndpointAuthMethod) bool {
-	if authMetadata == nil || authMetadata.TokenEndpointAuthMethodsSupported == nil {
-		return false
-	}
-	for _, m := range *authMetadata.TokenEndpointAuthMethodsSupported {
-		if m == method {
-			return true
-		}
-	}
-	return false
-}
-
-// asMetadataSupportsSigningAlg reports whether alg is explicitly advertised by
-// the authorization server. RFC 8414 requires this metadata when JWT-based
-// client authentication is supported and defines no default signing algorithm.
-func asMetadataSupportsSigningAlg(authMetadata *receiverTypes.AuthorizationServerMetadata, alg jose.SignatureAlgorithm) bool {
-	if authMetadata == nil || authMetadata.TokenEndpointAuthSigningAlgValuesSupported == nil ||
-		len(*authMetadata.TokenEndpointAuthSigningAlgValuesSupported) == 0 {
-		return false
-	}
-	for _, a := range *authMetadata.TokenEndpointAuthSigningAlgValuesSupported {
-		if a == alg {
-			return true
-		}
-	}
-	return false
-}
-
-// resolveClientAssertionAudience returns the authorization server identifier
-// used in the client_assertion aud claim. RFC 7523 requires this value to be
-// agreed between the client and authorization server. Explicit configuration
-// therefore takes precedence, followed by the metadata issuer. The token
-// endpoint URL is a standards-compliant fallback.
-func resolveClientAssertionAudience(clientAuth ClientAuthConfig, authMetadata *receiverTypes.AuthorizationServerMetadata, tokenEndpointURL string) string {
-	if audience := strings.TrimSpace(clientAuth.AssertionAudience); audience != "" {
-		return audience
-	}
-	if authMetadata != nil {
-		issuerURL := url.URL(authMetadata.Issuer)
-		if issuer := strings.TrimSpace(issuerURL.String()); issuer != "" {
-			return issuer
-		}
-	}
-	return tokenEndpointURL
-}
-
-// GetCredentialEntries retrieves credential entries with optional filtering.
-func (w *Wallet) GetCredentialEntries(req GetCredentialEntriesRequest) ([]*SavedCredential, int, error) {
-	if req.Filter != nil {
-		result, err := w.credStore.GetCredentialEntries(0, nil, types.SupportedCredStoreTypes(0))
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to get credential entries: %w", err)
-		}
-
-		var filteredCredentials []*SavedCredential
-		if result.Entries != nil {
-			for _, entry := range *result.Entries {
-				savedCred, err := w.convertEntryToSavedCredential(entry)
-				if err != nil {
-					continue // Skip invalid entries
-				}
-
-				if req.Filter(savedCred) {
-					filteredCredentials = append(filteredCredentials, savedCred)
-				}
-			}
-		}
-
-		start := req.Offset
-		if start > len(filteredCredentials) {
-			start = len(filteredCredentials)
-		}
-
-		end := len(filteredCredentials)
-		if req.Limit != nil && start+*req.Limit < end {
-			end = start + *req.Limit
-		}
-
-		return filteredCredentials[start:end], len(filteredCredentials), nil
-	}
-
-	result, err := w.credStore.GetCredentialEntries(req.Offset, req.Limit, types.SupportedCredStoreTypes(0))
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to get credential entries: %w", err)
-	}
-
-	var savedCredentials []*SavedCredential
-	if result.Entries != nil {
-		for _, entry := range *result.Entries {
-			savedCred, err := w.convertEntryToSavedCredential(entry)
-			if err != nil {
-				continue // Skip invalid entries
-			}
-			savedCredentials = append(savedCredentials, savedCred)
-		}
-	}
-
-	totalCount := 0
-	if result.TotalCount != nil {
-		totalCount = *result.TotalCount
-	}
-
-	return savedCredentials, totalCount, nil
-}
-
-// GetCredentialEntry retrieves a single credential entry by ID.
-func (w *Wallet) GetCredentialEntry(id string) (*SavedCredential, error) {
-	entry, err := w.credStore.GetCredentialEntry(id, types.SupportedCredStoreTypes(0))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get credential entry: %w", err)
-	}
-	if entry == nil {
-		return nil, nil
-	}
-
-	savedCred, err := w.convertEntryToSavedCredential(*entry)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert credential: %w", err)
-	}
-
-	return savedCred, nil
-}
-
-// FetchCredentialIssuerMetadata fetches credential issuer metadata from the given endpoint.
-func (w *Wallet) FetchCredentialIssuerMetadata(endpoint *url.URL, receivingType receiverTypes.SupportedReceivingTypes) (*receiverTypes.CredentialIssuerMetadata, error) {
-	uriField, err := common.ParseURIField(endpoint.String())
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse URI field: %w", err)
-	}
-
-	return w.receiver.FetchIssuerMetadata(*uriField, receivingType)
-}
-
-// ReceiveCredential orchestrates the credential receiving flow.
-func (w *Wallet) ReceiveCredential(req ReceiveCredentialRequest) (*SavedCredential, error) {
-	preAuthCode, err := w.validateCredentialOffer(req.CredentialOffer)
-	if err != nil {
-		return nil, err
-	}
-
-	issuerMetadata, authMetadata, err := w.fetchCredentialMetadata(req)
-	if err != nil {
-		return nil, err
-	}
-
-	credentialConfigurationID, credentialConfiguration, serializationFlavor, err := w.selectCredentialConfiguration(req, issuerMetadata)
-	if err != nil {
-		return nil, err
-	}
-
-	accessToken, tokenAuth, err := w.obtainAccessToken(req.Type, authMetadata, preAuthCode, req.TxCode)
-
-	if err != nil {
-		return nil, err
-	}
-
-	credentialJWT, err := w.requestCredential(req, issuerMetadata, accessToken, tokenAuth, credentialConfigurationID, credentialConfiguration)
-	if err != nil {
-		return nil, err
-	}
-
-	return w.storeAndParseCredential(credentialJWT, serializationFlavor)
-}
-
-// validateCredentialOffer validates the credential offer and extracts pre-authorization code.
-func (w *Wallet) validateCredentialOffer(offer *CredentialOffer) (string, error) {
-	if offer == nil {
-		return "", fmt.Errorf("credential offer is required")
-	}
-
-	if err := validateCredentialIssuerIdentifier(offer.CredentialIssuer); err != nil {
-		return "", err
-	}
-
-	preAuthGrant := offer.Grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"]
-	if preAuthGrant == nil {
-		return "", fmt.Errorf("pre-authorization code is not included in the offer")
-	}
-
-	if len(offer.CredentialConfigurationIDs) == 0 {
-		return "", fmt.Errorf("credential configuration IDs are empty")
-	}
-	seen := make(map[string]struct{}, len(offer.CredentialConfigurationIDs))
-	for _, id := range offer.CredentialConfigurationIDs {
-		if _, dup := seen[id]; dup {
-			return "", fmt.Errorf("credential configuration IDs must be unique: %q is duplicated", id)
-		}
-		seen[id] = struct{}{}
-	}
-
-	preAuthCode := preAuthGrant.PreAuthorizedCode
-	if preAuthCode == "" {
-		return "", fmt.Errorf("pre-authorization code is not included in the offer")
-	}
-
-	return preAuthCode, nil
-}
-
-func (w *Wallet) selectCredentialConfiguration(
-	req ReceiveCredentialRequest,
-	issuerMetadata *receiverTypes.CredentialIssuerMetadata,
-) (string, *receiverTypes.CredentialConfiguration, credential.SupportedSerializationFlavor, error) {
-	if req.CredentialOffer == nil || len(req.CredentialOffer.CredentialConfigurationIDs) == 0 {
-		return "", nil, "", fmt.Errorf("credential configuration IDs are empty")
-	}
-
-	defaultConfigurationID := req.CredentialOffer.CredentialConfigurationIDs[0]
-	defaultFlavor := credential.JwtVc
-
-	if req.RequestedFormat != "" {
-		if req.RequestedFormat != credential.JwtVc && req.RequestedFormat != credential.SDJwtVC {
-			return "", nil, "", fmt.Errorf("unsupported requested serialization format: %s", req.RequestedFormat)
-		}
-
-		if issuerMetadata == nil || issuerMetadata.CredentialConfigurationSupported == nil {
-			return "", nil, "", fmt.Errorf("credential configuration metadata is required when requested format is specified")
-		}
-
-		for _, configID := range req.CredentialOffer.CredentialConfigurationIDs {
-			config, ok := issuerMetadata.CredentialConfigurationSupported[configID]
-			if !ok {
-				continue
-			}
-
-			flavor, err := receiverOid4vci.OID4VCICredentialFormatToSerializationFlavor(config.Format)
-			if err != nil {
-				continue
-			}
-			if flavor == req.RequestedFormat {
-				configCopy := config
-				return configID, &configCopy, flavor, nil
-			}
-		}
-
-		return "", nil, "", fmt.Errorf("no credential configuration matches requested format: %s", req.RequestedFormat)
-	}
-
-	if issuerMetadata == nil || issuerMetadata.CredentialConfigurationSupported == nil {
-		return defaultConfigurationID, nil, defaultFlavor, nil
-	}
-
-	config, ok := issuerMetadata.CredentialConfigurationSupported[defaultConfigurationID]
-	if !ok {
-		return defaultConfigurationID, nil, defaultFlavor, nil
-	}
-
-	configCopy := config
-	flavor, err := receiverOid4vci.OID4VCICredentialFormatToSerializationFlavor(config.Format)
-	if err != nil {
-		return "", nil, "", fmt.Errorf("unsupported credential format for configuration %q: %w", defaultConfigurationID, err)
-	}
-
-	return defaultConfigurationID, &configCopy, flavor, nil
-}
-
-func shouldAttachCredentialRequestProof(req ReceiveCredentialRequest, credentialConfiguration *receiverTypes.CredentialConfiguration) bool {
-	if credentialConfiguration != nil {
-		if credentialConfiguration.ProofTypesSupported != nil {
-			return true
-		}
-		if credentialConfiguration.CryptographicBindingMethodsSupported != nil &&
-			len(*credentialConfiguration.CryptographicBindingMethodsSupported) > 0 {
-			return true
-		}
-	}
-
-	// Keep backward-compatible behavior for existing callers that do not specify format.
-	return req.RequestedFormat == ""
-}
-
-func ensureJWTProofSupported(credentialConfiguration *receiverTypes.CredentialConfiguration) error {
-	if credentialConfiguration == nil || credentialConfiguration.ProofTypesSupported == nil {
-		return nil
-	}
-
-	proofTypes := *credentialConfiguration.ProofTypesSupported
-	if len(proofTypes) == 0 {
-		return fmt.Errorf("proof_types_supported must not be empty")
-	}
-
-	for proofType := range proofTypes {
-		if strings.EqualFold(strings.TrimSpace(proofType), "jwt") {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("unsupported proof type: jwt proof is required")
-}
-
-func (w *Wallet) validateCredentialConfigurationIDs(offer *CredentialOffer, issuerMetadata *receiverTypes.CredentialIssuerMetadata) error {
-	if offer == nil {
-		return fmt.Errorf("credential offer is required")
-	}
-	if issuerMetadata == nil {
-		return fmt.Errorf("issuer metadata is required")
-	}
-	if len(issuerMetadata.CredentialConfigurationSupported) == 0 {
-		return fmt.Errorf("credential configurations supported are missing in issuer metadata")
-	}
-
-	for _, configID := range offer.CredentialConfigurationIDs {
-		if _, exists := issuerMetadata.CredentialConfigurationSupported[configID]; !exists {
-			return fmt.Errorf("credential configuration %q is not supported by issuer metadata", configID)
-		}
-	}
-
-	return nil
-}
-
-func validateCredentialIssuerIdentifier(issuer *url.URL) error {
-	if issuer == nil {
-		return fmt.Errorf("credential issuer is not included in the offer")
-	}
-
-	if issuer.Scheme == "" {
-		return fmt.Errorf("credential issuer must include a scheme")
-	}
-	if !strings.EqualFold(issuer.Scheme, "https") {
-		if !env.IsHTTPAllowed() || !strings.EqualFold(issuer.Scheme, "http") {
-			return fmt.Errorf("credential issuer must use https scheme")
-		}
-	}
-	if issuer.Host == "" {
-		return fmt.Errorf("credential issuer must include a host")
-	}
-	if issuer.RawQuery != "" || issuer.ForceQuery || issuer.Fragment != "" || issuer.RawFragment != "" {
-		return fmt.Errorf("credential issuer must not include query or fragment")
-	}
-
-	return nil
-}
-
-// fetchCredentialMetadata fetches issuer and authorization server metadata.
-func (w *Wallet) fetchCredentialMetadata(req ReceiveCredentialRequest) (*receiverTypes.CredentialIssuerMetadata, *receiverTypes.AuthorizationServerMetadata, error) {
-	var issuerMetadata *receiverTypes.CredentialIssuerMetadata
-	var err error
-
-	if req.CachedIssuerMetadata != nil {
-		issuerMetadata = req.CachedIssuerMetadata
-	} else {
-		issuerMetadata, err = w.FetchCredentialIssuerMetadata(req.CredentialOffer.CredentialIssuer, req.Type)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to fetch issuer metadata: %w", err)
-		}
-	}
-
-	if err := validateCredentialIssuer(req.CredentialOffer.CredentialIssuer, issuerMetadata); err != nil {
-		return nil, nil, err
-	}
-
-	if err := w.validateCredentialConfigurationIDs(req.CredentialOffer, issuerMetadata); err != nil {
-		return nil, nil, err
-	}
-
-	authorizationServers := issuerMetadata.AuthorizationServers
-	if authorizationServers == nil {
-		issuerAuthorizationServer, err := common.ParseURIField(req.CredentialOffer.CredentialIssuer.String())
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to use credential issuer as authorization server: %w", err)
-		}
-		authorizationServers = []common.URIField{*issuerAuthorizationServer}
-	} else if len(authorizationServers) == 0 {
-		return nil, nil, fmt.Errorf("authorization_servers must not be an empty array")
-	}
-
-	authMetadata, err := w.receiver.FetchAuthorizationServerMetadata(authorizationServers[0], req.Type)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to fetch authorization server metadata: %w", err)
-	}
-
-	if authMetadata == nil {
-		return nil, nil, fmt.Errorf("authorization server metadata is nil")
-	}
-
-	if err := validateAuthorizationServerIssuer(authorizationServers[0], authMetadata); err != nil {
-		return nil, nil, err
-	}
-
-	if authMetadata.TokenEndpoint == nil {
-		return nil, nil, fmt.Errorf("token endpoint is missing on authorization server")
-	}
-
-	if _, err := resolveClientAuthMethod(w.clientAuth, authMetadata); err != nil {
-		return nil, nil, err
-	}
-
-	return issuerMetadata, authMetadata, nil
-}
-
-// obtainAccessToken obtains an access token using pre-authorization code.
-// obtainAccessToken also returns how the token request authenticated. The key proof
-// of the following Credential Request needs it: OID4VCI 1.0 section 8.2 requires iss
-// unless the access token was obtained anonymously (see proofIssuer).
-func (w *Wallet) obtainAccessToken(receivingType receiverTypes.SupportedReceivingTypes, authMetadata *receiverTypes.AuthorizationServerMetadata, preAuthCode string, txCode string) (*receiverTypes.CredentialIssuanceAccessToken, tokenEndpointAuth, error) {
-	if authMetadata == nil || authMetadata.TokenEndpoint == nil {
-		return nil, tokenEndpointAuth{}, fmt.Errorf("token endpoint is missing on authorization server")
-	}
-
-	tokenEndpoint := *authMetadata.TokenEndpoint
-	tokenEndpointURL := receiverTypes.ResolveTokenEndpointURL(tokenEndpoint)
-	clientAssertionAudience := resolveClientAssertionAudience(w.clientAuth, authMetadata, tokenEndpointURL)
-
-	auth, err := resolveClientAuthMethod(w.clientAuth, authMetadata)
-	if err != nil {
-		return nil, tokenEndpointAuth{}, err
-	}
-
-	fetchAccessToken := func(dpopNonce *string) (*receiverTypes.CredentialIssuanceAccessToken, error) {
-		var tokenReqOptions []receiverTypes.TokenRequestOption
-		switch auth.Method {
-		case receiverTypes.PrivateKeyJwt:
-			assertion, err := w.generateClientAssertion(
-				w.clientAuth.Key,
-				w.clientAuth.ClientID,
-				clientAssertionAudience,
-				w.clientAuth.signatureAlgorithm(),
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate client assertion: %w", err)
-			}
-			tokenReqOptions = append(tokenReqOptions, receiverTypes.WithClientAssertion(w.clientAuth.ClientID, assertion))
-
-		case receiverTypes.None:
-			// Settled in resolveClientAuthMethod; re-deriving it was the bug.
-			if auth.SendClientID {
-				tokenReqOptions = append(tokenReqOptions, receiverTypes.WithClientID(w.clientAuth.ClientID))
-			}
-		}
-		if w.dpop.Enabled {
-			proof, err := w.generateDPoPProof(
-				w.dpop.Key,
-				http.MethodPost,
-				tokenEndpointURL,
-				"",
-				dpopNonce,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate DPoP proof: %w", err)
-			}
-			tokenReqOptions = append(tokenReqOptions, receiverTypes.WithDPoPProof(proof))
-		}
-
-		return w.receiver.FetchAccessToken(receivingType, tokenEndpoint, preAuthCode, txCode, tokenReqOptions...)
-	}
-
-	accessToken, err := fetchAccessToken(nil)
-	if err != nil && w.dpop.Enabled {
-		if dpopNonce, ok := receiverTypes.DPoPNonceFromError(err); ok && dpopNonce != "" {
-			accessToken, err = fetchAccessToken(&dpopNonce)
-		}
-	}
-	if err != nil {
-		return nil, tokenEndpointAuth{}, fmt.Errorf("failed to fetch access token: %w", err)
-	}
-	return accessToken, auth, nil
-}
-
-func accessTokenNonce(accessToken *receiverTypes.CredentialIssuanceAccessToken) *string {
-	if accessToken == nil || accessToken.CNonce == nil || *accessToken.CNonce == "" {
-		return nil
-	}
-	return accessToken.CNonce
-}
-
-func accessTokenCredentialIdentifier(accessToken *receiverTypes.CredentialIssuanceAccessToken) *string {
-	if accessToken == nil {
-		return nil
-	}
-
-	for _, authorizationDetail := range accessToken.AuthorizationDetails {
-		if authorizationDetail.Type != receiverTypes.AuthorizationDetailTypeOpenIDCredential {
-			continue
-		}
-		for _, identifier := range authorizationDetail.CredentialIdentifiers {
-			if identifier == "" {
-				continue
-			}
-			identifierCopy := identifier
-			return &identifierCopy
-		}
-	}
-
-	return nil
-}
-
-// fetchCredentialNonce retrieves nonce used for proof generation from nonce endpoint,
-// and falls back to c_nonce in the access token when nonce endpoint is not available.
-func (w *Wallet) fetchCredentialNonce(
-	receivingType receiverTypes.SupportedReceivingTypes,
-	issuerMetadata *receiverTypes.CredentialIssuerMetadata,
-	accessToken *receiverTypes.CredentialIssuanceAccessToken,
-) (*string, error) {
-	fallbackNonce := accessTokenNonce(accessToken)
-
-	if issuerMetadata.NonceEndpoint == nil {
-		return fallbackNonce, nil
-	}
-
-	nonce, err := w.receiver.FetchNonce(receivingType, *issuerMetadata.NonceEndpoint)
-	if err != nil {
-		if fallbackNonce != nil {
-			return fallbackNonce, nil
-		}
-		return nil, fmt.Errorf("failed to fetch nonce: %w", err)
-	}
-
-	if nonce != nil && *nonce != "" {
-		return nonce, nil
-	}
-
-	if fallbackNonce != nil {
-		return fallbackNonce, nil
-	}
-
-	return nil, fmt.Errorf("nonce response does not contain c_nonce or nonce")
-}
-
-// proofIssuer reports the iss to put in the key proof of a Credential Request.
-//
-// OID4VCI 1.0 section 8.2 makes iss REQUIRED unless the access token was obtained
-// in a pre-authorized code flow without Client identification, so the signal is
-// whether the token request named this wallet. Do not branch on the authentication
-// method: none still sends client_id unless the Authorization Server advertises
-// pre-authorized_grant_anonymous_access_supported (section 12.3).
-//
-// The configured value is returned unchanged. The token request sends client_id
-// exactly as configured, and the issuer matches iss against what it received, so
-// normalizing here would put an identifier in the proof that was never sent.
-func proofIssuer(tokenAuth tokenEndpointAuth, clientAuth ClientAuthConfig) *string {
-	if !tokenAuth.SendClientID {
-		return nil
-	}
-	if strings.TrimSpace(clientAuth.ClientID) == "" {
-		return nil
-	}
-	return &clientAuth.ClientID
-}
-
-// requestCredential requests the credential from the issuer with JWT proof.
-func (w *Wallet) requestCredential(
-	req ReceiveCredentialRequest,
-	issuerMetadata *receiverTypes.CredentialIssuerMetadata,
-	accessToken *receiverTypes.CredentialIssuanceAccessToken,
-	tokenAuth tokenEndpointAuth,
-	credentialConfigurationID string,
-	credentialConfiguration *receiverTypes.CredentialConfiguration,
-) (*string, error) {
-	credentialIdentifier := accessTokenCredentialIdentifier(accessToken)
-	if credentialIdentifier != nil {
-		credentialConfigurationID = ""
-	}
-
-	var proof *string
-	attachProof := shouldAttachCredentialRequestProof(req, credentialConfiguration)
-	if attachProof {
-		if req.Key == nil {
-			return nil, fmt.Errorf("key entry is required")
-		}
-
-		if err := ensureJWTProofSupported(credentialConfiguration); err != nil {
-			return nil, err
-		}
-
-		proofBindingMethod := resolveCredentialRequestProofBindingMethod(credentialConfiguration)
-
-		var did *idprofTypes.IdentityProfile
-		if proofBindingMethod == credentialRequestProofBindingMethodKID {
-			didGenerated, err := w.GenerateDID(DIDCreateOptions{
-				TypeID:    "did:key",
-				PublicKey: req.Key.PublicKey(),
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate DID: %w", err)
-			}
-			did = didGenerated
-		}
-
-		nonce, err := w.fetchCredentialNonce(req.Type, issuerMetadata, accessToken)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch nonce for credential proof: %w", err)
-		}
-
-		proofValue, err := w.generateJWTProof(
-			req.Key,
-			did,
-			nonce,
-			issuerMetadata.CredentialIssuer,
-			proofIssuer(tokenAuth, w.clientAuth),
-			proofBindingMethod,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate JWT proof: %w", err)
-		}
-
-		proof = &proofValue
-	}
-
-	var credentialDefinition *receiverTypes.CredentialDefinition
-	if credentialConfiguration != nil {
-		credentialDefinition = credentialConfiguration.CredentialDefinition
-	}
-
-	receiveCredential := func(dpopNonce *string) (*string, error) {
-		var options *receiverTypes.CredentialRequestOptions
-		if strings.EqualFold(accessToken.TokenType, "DPoP") {
-			if w.dpop.Key == nil {
-				return nil, fmt.Errorf("dpop key is required for DPoP access token")
-			}
-			dpopProof, err := w.generateDPoPProof(w.dpop.Key, http.MethodPost, issuerMetadata.CredentialEndpoint.String(), accessToken.Token, dpopNonce)
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate DPoP proof: %w", err)
-			}
-			options = &receiverTypes.CredentialRequestOptions{
-				DPoPProofJWT: &dpopProof,
-			}
-		}
-
-		return w.receiver.ReceiveCredential(
-			req.Type,
-			issuerMetadata.CredentialEndpoint,
-			credentialConfigurationID,
-			credentialIdentifier,
-			*accessToken,
-			credentialDefinition,
-			proof,
-			options,
-		)
-	}
-
-	credentialJWT, err := receiveCredential(nil)
-	if err != nil && strings.EqualFold(accessToken.TokenType, "DPoP") && errors.Is(err, receiverTypes.ErrUseDPoPNonce) {
-		// RFC 9449 section 8 supplies the nonce a resource server accepts in the
-		// DPoP-Nonce header of the response that rejected the request, and the
-		// receiver plugin carries it on the error. The OID4VCI Nonce Endpoint is a
-		// different thing: it returns the c_nonce for the key proof.
-		dpopNonce, ok := receiverTypes.DPoPNonceFromError(err)
-		if !ok || dpopNonce == "" {
-			return nil, fmt.Errorf("credential endpoint asked for a DPoP nonce without supplying one: %w", err)
-		}
-		credentialJWT, err = receiveCredential(&dpopNonce)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to receive credential: %w", err)
-	}
-
-	return credentialJWT, nil
-}
-
-// storeAndParseCredential stores the credential and parses it for return.
-func (w *Wallet) storeAndParseCredential(credentialJWT *string, serializationFlavor credential.SupportedSerializationFlavor) (*SavedCredential, error) {
-	if serializationFlavor == "" {
-		serializationFlavor = credential.JwtVc
-	}
-
-	credentialEntry := types.CredentialEntry{
-		Id:         uuid.New().String(),
-		ReceivedAt: time.Now(),
-		Raw:        []byte(*credentialJWT),
-		MimeType:   string(serializationFlavor),
-	}
-
-	if err := w.credStore.SaveCredentialEntry(credentialEntry, types.SupportedCredStoreTypes(0)); err != nil {
-		return nil, fmt.Errorf("failed to save credential entry: %w", err)
-	}
-
-	f, err := credentialEntry.SerializationFlavor()
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse credential: %w", err)
-	}
-
-	credential, err := w.serializer.DeserializeCredential(f, credentialEntry.Raw)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse credential: %w", err)
-	}
-
-	return &SavedCredential{
-		Credential: credential,
-		Entry:      &credentialEntry,
-	}, nil
-}
-
-// PresentCredential orchestrates the credential presentation flow.
-func (w *Wallet) PresentCredential(uriString string, key IKeyEntry, options serializerTypes.SerializePresentationOptions) (string, error) {
-	return w.PresentCredentialWithOptions(uriString, key, &PresentCredentialOptions{SerializeOptions: options})
-}
-
-// PresentCredentialWithOptions orchestrates presentation and invokes redirect handler if provided.
-func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, options *PresentCredentialOptions) (string, error) {
-	var serializeOptions serializerTypes.SerializePresentationOptions
-	var onRedirect RedirectHandler
-	if options != nil {
-		serializeOptions = options.SerializeOptions
-		onRedirect = options.OnRedirect
-	}
-
-	req, endpoint, err := w.parseAuthorizationRequest(uriString)
-	if err != nil {
-		return "", err
-	}
-
-	credentials, flavor, err := w.selectCredentialsForPresentation(req)
-	if err != nil {
-		return "", err
-	}
-
-	if serializeOptions == nil {
-		serializeOptions, err = w.serializer.GetDefaultOption(*flavor)
-		if err != nil {
-			return "", err
-		}
-	}
-	applyOID4VPRequestOptions(req, serializeOptions)
-
-	presentation, err := w.buildPresentation(credentials, key, req)
-	if err != nil {
-		return "", err
-	}
-
-	redirectURI, err := w.submitPresentation(presentation, flavor, endpoint, req, key, serializeOptions)
-	if err != nil {
-		return "", err
-	}
-	if redirectURI != "" && onRedirect != nil {
-		if err := onRedirect(redirectURI); err != nil {
-			return redirectURI, err
-		}
-	}
-
-	return redirectURI, nil
-}
-
-// parseAuthorizationRequest parses the authorization request URI and determines the endpoint.
-func (w *Wallet) parseAuthorizationRequest(uriString string) (*oid4vp.CredentialPresentationRequest, *url.URL, error) {
-	req, err := w.presenter.ParseRequestURI(uriString)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse request URI: %w", err)
-	}
-
-	if req.RedirectURI == "" {
-		return nil, nil, fmt.Errorf("redirect_uri is not specified")
-	}
-
-	var endpoint *url.URL
-	if req.ResponseMode == oid4vp.OAuthAuthzReqResponseModeDirectPost {
-		if req.ResponseURI == "" {
-			return nil, nil, fmt.Errorf("response_uri is not specified for response_mode=direct_post")
-		}
-		endpoint, err = url.Parse(req.ResponseURI)
-		if err != nil {
-			return nil, nil, fmt.Errorf("invalid response_uri: %w", err)
-		}
-	} else {
-		endpoint, err = url.Parse(req.RedirectURI)
-		if err != nil {
-			return nil, nil, fmt.Errorf("invalid redirect_uri: %w", err)
-		}
-	}
-
-	if req.DcqlQuery == nil {
-		return nil, nil, fmt.Errorf("dcql_query is not specified")
-	}
-
-	return req, endpoint, nil
-}
-
-// selectCredentialsForPresentation selects credentials matching the presentation definition.
-func (w *Wallet) selectCredentialsForPresentation(req *oid4vp.CredentialPresentationRequest) ([]*SavedCredential, *credential.SupportedSerializationFlavor, error) {
-	entries, _, err := w.GetCredentialEntries(GetCredentialEntriesRequest{
-		Offset: 0,
-		Limit:  nil,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get credential entries: %w", err)
-	}
-	if len(entries) == 0 {
-		return nil, nil, fmt.Errorf("no credentials available for presentation")
-	}
-
-	selectedCredentials := newestCredentials(entries, 1)
-
-	// Validate that all selected credentials have the same serialization flavor
-	serializationFlavor, err := w.validateSerializationFlavor(selectedCredentials)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return selectedCredentials, serializationFlavor, nil
-}
-
-func newestCredentials(entries []*SavedCredential, limit int) []*SavedCredential {
-	if len(entries) == 0 || limit <= 0 {
-		return nil
-	}
-
-	sorted := append([]*SavedCredential(nil), entries...)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		left := sorted[i]
-		right := sorted[j]
-
-		if left == nil || left.Entry == nil {
-			return false
-		}
-		if right == nil || right.Entry == nil {
-			return true
-		}
-
-		return left.Entry.ReceivedAt.After(right.Entry.ReceivedAt)
-	})
-
-	if limit > len(sorted) {
-		limit = len(sorted)
-	}
-
-	return sorted[:limit]
-}
-
-// validateSerializationFlavor ensures all credentials have the same serialization flavor.
-func (w *Wallet) validateSerializationFlavor(credentials []*SavedCredential) (*credential.SupportedSerializationFlavor, error) {
-	var serializationFlavor *credential.SupportedSerializationFlavor
-
-	for _, cred := range credentials {
-		sf, err := cred.Entry.SerializationFlavor()
-		if err != nil {
-			return nil, fmt.Errorf("credential entry has no serialization flavor information")
-		}
-
-		if serializationFlavor == nil {
-			serializationFlavor = &sf
-		} else if *serializationFlavor != sf {
-			return nil, fmt.Errorf("credentials have different serialization flavors")
-		}
-	}
-
-	if serializationFlavor == nil {
-		return nil, fmt.Errorf("failed to detect serialization flavor")
-	}
-
-	return serializationFlavor, nil
-}
-
-// buildPresentation builds the credential presentation.
-func (w *Wallet) buildPresentation(credentials []*SavedCredential, key IKeyEntry, req *oid4vp.CredentialPresentationRequest) (*credential.CredentialPresentation, error) {
-	did, err := w.GenerateDID(DIDCreateOptions{
-		TypeID:    "did:key",
-		PublicKey: key.PublicKey(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate DID: %w", err)
-	}
-
-	var serializedCredentials [][]byte
-	for _, entry := range credentials {
-		serializedCredentials = append(serializedCredentials, entry.Entry.Raw)
-	}
-
-	presentation := &credential.CredentialPresentation{
-		ID:          "urn:uuid:" + uuid.New().String(),
-		Types:       []string{"VerifiablePresentation"},
-		Credentials: serializedCredentials,
-		Holder:      did.ID,
-		Nonce:       &req.Nonce,
-	}
-
-	return presentation, nil
-}
-
-func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, options serializerTypes.SerializePresentationOptions) {
-	if options == nil || req == nil || req.OAuthAuthzRequest == nil {
-		return
-	}
-	options.SetAudience(req.ClientID)
-	options.SetNonce(req.Nonce)
-}
-
-// submitPresentation serializes and submits the presentation to the verifier.
-func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentation, flavor *credential.SupportedSerializationFlavor, endpoint *url.URL, req *oid4vp.CredentialPresentationRequest, key IKeyEntry, options serializerTypes.SerializePresentationOptions) (string, error) {
-	if len(req.TransactionData) > 0 {
-		if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok && sdOpts != nil {
-			transactionDataHashesAlg := req.TransactionDataHashesAlg
-			if transactionDataHashesAlg == "" {
-				// OID4VP transaction_data_hashes_alg default when omitted.
-				transactionDataHashesAlg = "sha-256"
-			}
-
-			sdOpts.TransactionData = req.TransactionData
-			sdOpts.TransactionDataHashesAlg = transactionDataHashesAlg
-		}
-	}
-
-	bytes, _, err := w.serializer.SerializePresentation(
-		*flavor,
-		presentation,
-		key,
-		options,
-	)
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize presentation: %w", err)
-	}
-
-	// The presentation is fixed to answer the first Credential Query for now
-	// (Issue #606); its id becomes the key of the vp_token JSON object.
-	presentationRequest := &presenterTypes.PresentationRequest{
-		State:             req.State,
-		CredentialQueryID: req.DcqlQuery.Credentials[0].ID,
-		ClientMetadata:    req.ClientMetadata,
-	}
-
-	if req.ClientMetadata != nil {
-		presentationRequest.AuthorizationEncryptedRespAlg = req.ClientMetadata.AuthorizationEncryptedResponseAlg
-		presentationRequest.AuthorizationEncryptedRespEnc = req.ClientMetadata.AuthorizationEncryptedResponseEnc
-	}
-
-	redirectURI, err := w.presenter.Present(presenterTypes.Oid4vp, *endpoint, bytes, presentationRequest)
-	if err != nil {
-		return "", err
-	}
-	return redirectURI, nil
+func randomBase64URL(size int) (string, error) {
+	buffer := make([]byte, size)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(buffer), nil
 }

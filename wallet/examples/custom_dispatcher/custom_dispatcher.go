@@ -23,7 +23,8 @@ import (
 )
 
 func main() {
-	fmt.Println("=== Custom Dispatcher Configuration Example ===\n")
+	fmt.Println("=== Custom Dispatcher Configuration Example ===")
+	fmt.Println()
 
 	// Configure each dispatcher independently
 	serializerDisp, err := serializer.NewSerializationDispatcher(
