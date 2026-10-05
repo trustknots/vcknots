@@ -271,7 +271,7 @@ Conformance Test mode automatically applies the following settings:
 
 - **Certificate Verification**: Uses system root certificate pool
 - **Certificate Chain Verification Skip**: `InsecureSkipX509Verify: true` is automatically set, enabling communication with conformance test servers that use self-signed or non-standard certificates
-- **Selected Claims**: Selects `given_name` and `family_name`
+- **Selected Claims**: Selects `given_name`, `family_name` and `birthdate`
 - **Key Binding**: Required (`RequireKeyBinding: true`)
 - **Audience/Nonce**: Automatically extracted from the request URI
 - **OID4VCI Client Authentication and DPoP**: Not configured; this mode tests the OpenID4VP presentation flow only
@@ -520,11 +520,10 @@ go run ./examples/conformance_sdjwt "openid4vp://authorize?client_id=...&request
 
 **Always quote the URI** since it contains `?` and `&`.
 
-The run logs the `vct` and the disclosure names of the stored credential. Align the
-test plan's dcql with those values. The list is flat, so a nested claim appears under its
-own name (`18` sits under `age_equal_or_over`, `locality` under `place_of_birth`). Use a
-top-level name in the dcql, or give a nested one its full path, such as
-`["place_of_birth", "locality"]`.
+The run logs the `vct` and the disclosure names of the stored credential. The test plan's
+dcql has to name that `vct`, and its `claims` have to be exactly `given_name`, `family_name`
+and `birthdate`, because the wallet does not read the DCQL yet and always discloses those
+three.
 
 ```
 level=INFO msg="Stored credential" id=... vct=urn:eu.europa.ec.eudi:pid:1 disclosures="[family_name given_name birthdate ...]"
@@ -533,9 +532,9 @@ level=INFO msg="=== Credential Presented ==="
 
 ### Known Limitations
 
-- **The wallet discloses every claim it holds.** It does not read the DCQL `claims` yet, so
-  `oid4vp-1final-wallet-happy-flow` ends with a single FAILURE on `CheckOnlyRequestedClaimsDisclosed`
-  (`OID4VP-1FINAL-6.4.1`). Everything up to and including the Key Binding JWT checks succeeds.
+- **The disclosed claims are fixed.** The wallet does not read the DCQL `claims` yet and always
+  discloses `given_name`, `family_name` and `birthdate`. A test plan that requests anything else
+  fails `CheckOnlyRequestedClaimsDisclosed` (`OID4VP-1FINAL-6.4.1`).
 - **`oid4vp-1final-wallet-alternate-happy-flow` cannot run with `direct_post` on suite 5.3.1.**
   The suite stops with `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`
   before it contacts the wallet (conformance-suite issue #1982). The wallet cannot fix this.

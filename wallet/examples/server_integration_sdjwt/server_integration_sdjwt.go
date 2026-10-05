@@ -456,8 +456,9 @@ func main() {
 		oid4vpURI = runOpts.OID4VPURI
 		logger.Info("Using OID4VP URI from command line", "uri", oid4vpURI)
 
+		// Fixed to what the conformance test plan requests; the DCQL claims are not read yet.
 		options = &sdjwtvc.SdJwtVcPresentationOptions{
-			SelectedClaims:    []string{"given_name"},
+			SelectedClaims:    []string{"given_name", "family_name", "birthdate"},
 			RequireKeyBinding: true,
 		}
 	} else {

@@ -271,7 +271,7 @@ go run server_integration_sdjwt.go "openid4vp:?client_id=...&request_uri=..."
 
 - **証明書検証**: システムルート証明書プールを使用
 - **証明書チェーン検証スキップ**: `InsecureSkipX509Verify: true` が自動設定され、自己署名証明書や非標準証明書を使用するコンフォーマンステストサーバーとの通信を可能にします
-- **選択クレーム**: `given_name`と`family_name`を選択
+- **選択クレーム**: `given_name` / `family_name` / `birthdate` を選択
 - **キーバインディング**: 必須（`RequireKeyBinding: true`）
 - **Audience/Nonce**: リクエストURIから自動的に抽出
 - **OID4VCI クライアント認証と DPoP**: 設定しない（このモードでは OpenID4VP の提示フローだけをテスト）
@@ -520,10 +520,9 @@ go run ./examples/conformance_sdjwt "openid4vp://authorize?client_id=...&request
 
 `?` と `&` を含むので、**必ずクォートで囲むこと。**
 
-実行すると、保持している資格情報の `vct` と disclosure 名がログに出る。
-テスト計画の dcql はこの値に合わせる。一覧はフラットなので、入れ子のクレームも自身の名前で出る
-（`18` は `age_equal_or_over` の下、`locality` は `place_of_birth` の下にある）。dcql には最上位の
-名前を使うか、入れ子のものは `["place_of_birth", "locality"]` のように親からのパスで書く。
+実行すると、保持している資格情報の `vct` と disclosure 名がログに出る。テスト計画の dcql には
+その `vct` を書き、`claims` は `given_name` / `family_name` / `birthdate` の 3 つにする。
+Wallet はまだ DCQL を読まず、常にこの 3 つを開示するためである。
 
 ```
 level=INFO msg="Stored credential" id=... vct=urn:eu.europa.ec.eudi:pid:1 disclosures="[family_name given_name birthdate ...]"
@@ -532,9 +531,9 @@ level=INFO msg="=== Credential Presented ==="
 
 ### 既知の制約
 
-- **Wallet は保有するクレームをすべて開示する。** DCQL の `claims` をまだ読まないため、
-  `oid4vp-1final-wallet-happy-flow` は `CheckOnlyRequestedClaimsDisclosed`
-  （`OID4VP-1FINAL-6.4.1`）1 件だけ FAILURE になる。Key Binding JWT の検証までは SUCCESS になる。
+- **開示するクレームは固定である。** Wallet はまだ DCQL の `claims` を読まず、常に
+  `given_name` / `family_name` / `birthdate` を開示する。これ以外を要求するテスト計画では
+  `CheckOnlyRequestedClaimsDisclosed`（`OID4VP-1FINAL-6.4.1`）で FAILURE になる。
 - **suite 5.3.1 では `oid4vp-1final-wallet-alternate-happy-flow` を `direct_post` で実行できない。**
   suite が Wallet に接続する前に `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`
   で停止する（conformance-suite issue #1982）。Wallet 側では直せない。
