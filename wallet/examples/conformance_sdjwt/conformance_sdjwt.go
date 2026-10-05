@@ -431,9 +431,11 @@ func presentStoredCredential(oid4vpURI string, logger *slog.Logger) {
 		)
 	}
 
-	// Which claims are disclosed is left to the library, so no SelectedClaims are set here.
+	// The DCQL claims are not read yet, so the disclosed set is fixed to the three claims the
+	// test plan in examples/README.md requests.
 	redirectURI, err := w.PresentCredential(oid4vpURI, common.NewMockKeyEntry(), &sdjwtvc.SdJwtVcPresentationOptions{
 		RequireKeyBinding: true,
+		SelectedClaims:    []string{"given_name", "family_name", "birthdate"},
 	})
 	if err != nil {
 		logger.Error("Failed to present credential", "error", err)
