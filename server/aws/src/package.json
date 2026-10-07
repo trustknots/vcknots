@@ -23,7 +23,7 @@
 		"@trustknots/server-core": "workspace:*",
 		"@trustknots/vcknots": "workspace:*",
 		"dotenv": "18.0.3",
-		"hono": "4.12.34"
+		"hono": "4.13.7"
 	},
 	"devDependencies": {
 		"@types/aws-lambda": "8.10.162",
