@@ -21,6 +21,10 @@
 			"matchPackageNames": ["*"]
 		},
 		{
+			"matchPackageNames": ["@changesets/cli"],
+			"enabled": false
+		},
+		{
 			"matchManagers": ["nvm"],
 			"enabled": false
 		},
