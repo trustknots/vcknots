@@ -20,6 +20,7 @@ export class DataStores extends Construct {
   public readonly authzOAuthClientsTable: dynamodb.Table;
   public readonly authzOAuthPoliciesTable: dynamodb.Table;
   public readonly allowedCredentialConfigurationsTable: dynamodb.Table;
+  public readonly dpopProofJtisTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string) {
     super(scope, id);
@@ -65,5 +66,12 @@ export class DataStores extends Construct {
         timeToLiveAttribute: 'ttl',
       },
     );
+
+    // Used DPoP proof jti values per proof key (keyed by sha256 of `jwkThumbprint:jti`).
+    this.dpopProofJtisTable = new dynamodb.Table(this, 'DpopProofJtisTable', {
+      ...baseTableProps,
+      // `expires_at` is app-level epoch ms; DynamoDB TTL uses the epoch-seconds `ttl` attribute.
+      timeToLiveAttribute: 'ttl',
+    });
   }
 }
