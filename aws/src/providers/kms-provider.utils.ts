@@ -1,4 +1,10 @@
-import { constants, createHash, createPrivateKey, createPublicKey, publicEncrypt } from 'node:crypto'
+import {
+  constants,
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  publicEncrypt,
+} from 'node:crypto'
 import { KeySpec, SigningAlgorithmSpec } from '@aws-sdk/client-kms'
 
 /**

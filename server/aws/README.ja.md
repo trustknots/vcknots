@@ -17,8 +17,8 @@ Issuer および Verifier の **実際の API 仕様・パラメーター・型�
 src/
 ├── apps/
 │   ├── create-base-app.ts      # 共通 Hono アプリファクトリ
-│   ├── create-issuer-app.ts    # Issuer アプリ（DynamoDB issuer メタデータ / OAuth policy・client ストア、KMS issuer 署名鍵 + Authz 公開鍵ストア）
-│   ├── create-authz-app.ts     # Authorization Server アプリ（DynamoDB authz server メタデータストア）
+│   ├── create-issuer-app.ts    # Issuer アプリ（DynamoDB issuer メタデータ / OAuth policy・client ストア、allowed credential configuration ストア、KMS issuer 署名鍵 + Authz 公開鍵ストア）
+│   ├── create-authz-app.ts     # Authorization Server アプリ（DynamoDB authz server メタデータストア、allowed credential configuration ストア）
 │   └── create-verifier-app.ts  # Verifier アプリ（DynamoDB verifier メタデータストア + KMS 署名鍵ストア）
 ├── handlers/
 │   ├── issuer.ts               # Lambda ハンドラー / ローカル起動エントリーポイント — Issuer（ポート 8081）
@@ -82,6 +82,7 @@ cp .env.example .env
 | `AUTH_SERVERS_TABLE_NAME` | Authz **必須** | DynamoDB テーブル名（スタック出力: `AuthServersTableName`） |
 | `AUTHZ_OAUTH_CLIENTS_TABLE_NAME` | Issuer・Authz **必須** | DynamoDB テーブル名（Issuer/Authz 共通、スタック出力: `AuthzOAuthClientsTableName`） |
 | `AUTHZ_OAUTH_POLICIES_TABLE_NAME` | Issuer・Authz **必須** | DynamoDB テーブル名（Issuer/Authz 共通、スタック出力: `AuthzOAuthPoliciesTableName`） |
+| `ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME` | Issuer・Authz **必須** | DynamoDB テーブル名（Issuer/Authz 共通、スタック出力: `AllowedCredentialConfigurationsTableName`） |
 | `VERIFIERS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `VerifiersTableName`） |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `RequestObjectsTableName`） |
 | `NONCES_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
@@ -94,7 +95,7 @@ cp .env.example .env
 | `VERIFIER_CERTIFICATE_SECRET_PREFIX` | Verifier（任意） | Verifier 証明書を保存する Secrets Manager のシークレット名プレフィックス（デフォルト: `vcknots/verifier-certificates`）。変更する場合は `server/aws/resources` の IAM 許可も合わせて更新が必要 |
 | `PRIVATE_KEY_PATH` / `CERTIFICATE_PATH` | Verifier（`VERIFIER_BASE_URL` が非localの場合は必須） | 初回起動時に登録する秘密鍵（PEM）と X.509 証明書のファイルパス（`VERIFIER_BASE_URL` がlocalの場合のデフォルト: `server/samples/certificate-openid-test/` の同梱サンプル） |
 
-**`ISSUERS_TABLE_NAME`・`PRE_CODES_TABLE_NAME`（Issuer・Authz）・`NONCES_TABLE_NAME`（Issuer と Verifier）・`AUTH_SERVERS_TABLE_NAME`・`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`・`AUTHZ_OAUTH_POLICIES_TABLE_NAME`・`VERIFIERS_TABLE_NAME`・`REQUEST_OBJECTS_TABLE_NAME` は必須**です。必要なテーブル名が未設定の場合、該当サーバーは起動時に終了します。
+**`ISSUERS_TABLE_NAME`・`PRE_CODES_TABLE_NAME`（Issuer・Authz）・`NONCES_TABLE_NAME`（Issuer と Verifier）・`AUTH_SERVERS_TABLE_NAME`・`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`・`AUTHZ_OAUTH_POLICIES_TABLE_NAME`・`ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`（Issuer・Authz）・`VERIFIERS_TABLE_NAME`・`REQUEST_OBJECTS_TABLE_NAME` は必須**です。必要なテーブル名が未設定の場合、該当サーバーは起動時に終了します。
 
 **`TX_CODE_PEPPER` は全サーバーで必須**です。`tx_code` を DynamoDB に保存する前に HMAC-SHA256 でハッシュ化するための秘密値（pepper）です。`@trustknots/aws` は import 時にこの値を評価するため、未設定の場合は Issuer・Authorization Server・Verifier のいずれも起動時に `TX_CODE_PEPPER environment variable is required` でエラーになります。十分に長いランダム文字列を設定し、環境ごとに固定して運用してください（変更すると既存データの `tx_code` 検証に失敗します）。
 

@@ -8,8 +8,7 @@ export type DynamoDbVerifierMetadataStoreOptions = DynamoDbProviderOptions & {
   tableName: string
 }
 
-const md5 = (verifier: VerifierClientId): string =>
-  createHash('md5').update(verifier).digest('hex')
+const md5 = (verifier: VerifierClientId): string => createHash('md5').update(verifier).digest('hex')
 
 export const dynamodbVerifierMetadataStore = (
   options: DynamoDbVerifierMetadataStoreOptions

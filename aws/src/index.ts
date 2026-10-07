@@ -34,6 +34,10 @@ export {
   DynamoDbAuthzOAuthPolicyStoreOptions,
   dynamodbAuthzOAuthPolicyStore,
 } from './providers/dynamodb-authz-oauth-policy-store.provider'
+export {
+  DynamoDbAllowedCredentialConfigurationStoreOptions,
+  dynamodbAllowedCredentialConfigurationStore,
+} from './providers/dynamodb-allowed-credential-configuration-store.provider'
 export { KmsProviderOptions, resolveKmsClient } from './providers/kms'
 export { kmsAuthzSignatureKeyStore } from './providers/kms-authz-signature-key-store.provider'
 export { kmsIssuerSignatureKeyStore } from './providers/kms-issuer-signature-key-store.provider'

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  dynamodbAllowedCredentialConfigurationStore,
   dynamodbAuthzOAuthClientStore,
   dynamodbAuthzOAuthPolicyStore,
   dynamodbIssuerMetadataStore,
@@ -50,6 +51,12 @@ export function createIssuerApp(options?: VcknotsOptions) {
     throw new Error('AUTHZ_OAUTH_POLICIES_TABLE_NAME is required')
   }
 
+  const allowedCredentialConfigurationsTableName =
+    process.env.ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME
+  if (!allowedCredentialConfigurationsTableName) {
+    throw new Error('ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME is required')
+  }
+
   const rawPort = process.env.ISSUER_PORT ?? '8081'
   const port = Number.parseInt(rawPort, 10)
   if (!Number.isFinite(port)) throw new Error(`Invalid ISSUER_PORT: "${rawPort}"`)
@@ -61,6 +68,9 @@ export function createIssuerApp(options?: VcknotsOptions) {
   const authzSignatureKeyStore = kmsAuthzSignatureKeyStore()
   const oauthClientStore = dynamodbAuthzOAuthClientStore({ tableName: authzOAuthClientsTableName })
   const oauthPolicyStore = dynamodbAuthzOAuthPolicyStore({ tableName: authzOAuthPoliciesTableName })
+  const allowedCredentialConfigurationStore = dynamodbAllowedCredentialConfigurationStore({
+    tableName: allowedCredentialConfigurationsTableName,
+  })
   const { app, context } = createBaseApp(
     (context, baseUrl) => createIssueRouter(context, baseUrl, { authzIssuer: authzBaseUrl }),
     { port, baseUrl: process.env.ISSUER_BASE_URL },
@@ -74,6 +84,7 @@ export function createIssuerApp(options?: VcknotsOptions) {
         authzSignatureKeyStore,
         oauthClientStore,
         oauthPolicyStore,
+        allowedCredentialConfigurationStore,
         ...(options?.providers ?? []),
       ],
     }
