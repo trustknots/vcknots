@@ -5,6 +5,7 @@ import {
   dynamodbAllowedCredentialConfigurationStore,
   dynamodbAuthzOAuthClientStore,
   dynamodbAuthzOAuthPolicyStore,
+  dynamodbDpopProofJtiStore,
   dynamodbIssuerMetadataStore,
   dynamodbNonceStore,
   dynamodbPreAuthorizedCodeStore,
@@ -57,6 +58,11 @@ export function createIssuerApp(options?: VcknotsOptions) {
     throw new Error('ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME is required')
   }
 
+  const dpopProofJtisTableName = process.env.DPOP_PROOF_JTIS_TABLE_NAME
+  if (!dpopProofJtisTableName) {
+    throw new Error('DPOP_PROOF_JTIS_TABLE_NAME is required')
+  }
+
   const rawPort = process.env.ISSUER_PORT ?? '8081'
   const port = Number.parseInt(rawPort, 10)
   if (!Number.isFinite(port)) throw new Error(`Invalid ISSUER_PORT: "${rawPort}"`)
@@ -71,6 +77,7 @@ export function createIssuerApp(options?: VcknotsOptions) {
   const allowedCredentialConfigurationStore = dynamodbAllowedCredentialConfigurationStore({
     tableName: allowedCredentialConfigurationsTableName,
   })
+  const dpopProofJtiStore = dynamodbDpopProofJtiStore({ tableName: dpopProofJtisTableName })
   const { app, context } = createBaseApp(
     (context, baseUrl) => createIssueRouter(context, baseUrl, { authzIssuer: authzBaseUrl }),
     { port, baseUrl: process.env.ISSUER_BASE_URL },
@@ -85,6 +92,7 @@ export function createIssuerApp(options?: VcknotsOptions) {
         oauthClientStore,
         oauthPolicyStore,
         allowedCredentialConfigurationStore,
+        dpopProofJtiStore,
         ...(options?.providers ?? []),
       ],
     }
