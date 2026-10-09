@@ -79,6 +79,11 @@ export const verifyVerifiablePresentationDcSdJwt = (
           message: `Algorithm '${sdJwtAlg}' is not in dc+sd-jwt sd-jwt_alg_values. Allowed: ${options.allowedSdJwtAlgs.join(', ')}`,
         })
       }
+      if (sdJwtAlg !== 'ES256') {
+        throw err('verifier_vp_formats_not_supported', {
+          message: `SD-JWT algorithm '${sdJwtAlg}' is not supported. Only ES256 is currently supported.`,
+        })
+      }
       if (!vp.endsWith('~')) {
         const vpParts = vp.split('~')
         const kbJwtStr = vpParts[vpParts.length - 1]
@@ -103,6 +108,11 @@ export const verifyVerifiablePresentationDcSdJwt = (
           if (options.allowedKbJwtAlgs && !options.allowedKbJwtAlgs.includes(kbAlg)) {
             throw err('verifier_vp_formats_not_supported', {
               message: `KB-JWT algorithm '${kbAlg}' is not in dc+sd-jwt kb-jwt_alg_values. Allowed: ${options.allowedKbJwtAlgs.join(', ')}`,
+            })
+          }
+          if (kbAlg !== 'ES256') {
+            throw err('verifier_vp_formats_not_supported', {
+              message: `KB-JWT algorithm '${kbAlg}' is not supported. Only ES256 is currently supported.`,
             })
           }
         }
