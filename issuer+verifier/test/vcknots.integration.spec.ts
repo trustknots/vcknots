@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { before, describe, it, mock } from 'node:test'
-import type { JWK } from 'jose'
+import { type JWK } from 'jose'
 import { SignJWT } from 'jose/jwt/sign'
 import { importJWK } from 'jose/key/import'
 import {
@@ -8,24 +8,35 @@ import {
   AuthorizationServerIssuer,
   AuthorizationServerMetadata,
   ClientId,
-  Nonce,
   ClientIdentifier,
   VerifierMetadata,
 } from '../src'
 import { CredentialConfigurationId, CredentialIssuerMetadata } from '../src/credential-issuer.types'
 import { PreAuthorizedCode } from '../src/pre-authorized-code.types'
+import { inMemoryNonceStore } from '../src/providers/in-memory/in-memory-nonce-store.provider'
 import { GrantType, TokenRequest, TokenResponse } from '../src/token-request.types'
 import { Vcknots, vcknots } from '../src/vcknots'
-import { inMemoryNonceStore } from '../src/providers/in-memory/in-memory-nonce-store.provider'
 
-type JwtHeader = {
-  alg: 'ES256'
-  typ?: 'JWT'
-  kid?: string
+const holderDid = 'did:key:zDnaeYiwHNeMYaj21Wo9jPCowtnBrY8he8UCK8ZZN1mhhx8PM'
+const vcIssuerUrl = 'https://test-vc-issuer.example.com'
+
+const issuerPrivateJwk: JWK = {
+  kty: 'EC',
+  crv: 'P-256',
+  x: 'zKmE5LwiZJODzqTSPldiLdpZR5c6TeD9OZR5v1B0Ric',
+  y: 'kWhtuePk21iIxKrjylm3gUmjkw8M5JiZckWJdh64pu0',
+  d: '3pfYp7OpO3oUkHNUdhsNJl5AtejEUYHopxQC1CQcN1Q',
+  kid: 'test-dc-sd-jwt-issuer-key',
 }
-type JwtPayload = {
-  [key: string]: unknown
+
+const issuerPublicJwk: JWK = {
+  kty: 'EC',
+  crv: 'P-256',
+  x: 'zKmE5LwiZJODzqTSPldiLdpZR5c6TeD9OZR5v1B0Ric',
+  y: 'kWhtuePk21iIxKrjylm3gUmjkw8M5JiZckWJdh64pu0',
+  kid: 'test-dc-sd-jwt-issuer-key',
 }
+
 const holderPrivateJwk: JWK = {
   kty: 'EC',
   crv: 'P-256',
@@ -34,31 +45,46 @@ const holderPrivateJwk: JWK = {
   d: 'jAfOh_53IRxqpEsFojZK8iHP--L8ol3ePEo3DnwiIyM',
 }
 
+async function createVcJwt(): Promise<string> {
+  const privateKey = await importJWK(issuerPrivateJwk, 'ES256')
+  return new SignJWT({
+    vc: {
+      '@context': ['https://www.w3.org/2018/credentials/v1'],
+      type: ['VerifiableCredential'],
+      issuer: vcIssuerUrl,
+      issuanceDate: '2024-01-01T00:00:00Z',
+      credentialSubject: { id: holderDid },
+    },
+    iss: vcIssuerUrl,
+    sub: holderDid,
+  })
+    .setProtectedHeader({ alg: 'ES256', typ: 'JWT' })
+    .sign(privateKey)
+}
+
 async function createJwt(nonce: string, aud: string): Promise<string> {
   const privateKey = await importJWK(holderPrivateJwk, 'ES256')
-
-  const header: JwtHeader = {
-    alg: 'ES256',
-    typ: 'JWT',
-    kid: 'did:key:zDnaeYiwHNeMYaj21Wo9jPCowtnBrY8he8UCK8ZZN1mhhx8PM',
-  }
-
-  const payload: JwtPayload = {
-    iss: 'did:key:zDnaeYiwHNeMYaj21Wo9jPCowtnBrY8he8UCK8ZZN1mhhx8PM',
+  const vcJwt = await createVcJwt()
+  return new SignJWT({
+    iss: holderDid,
     aud,
     vp: {
       type: ['VerifiablePresentation'],
-      verifiableCredential: [
-        'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2YyI6eyJAY29udGV4dCI6WyJodHRwczovL3d3dy53My5vcmcvMjAxOC9jcmVkZW50aWFscy92MSJdLCJpZCI6Imh0dHBzOi8vbWVkYWxib29rLWRldi1hcHAtaXNzdWVyLndlYi5hcHAvY3JlZGVudGlhbHMvS2M0MFpmWnR0VUpWZFFrNFNIbnYiLCJ0eXBlIjpbIlZlcmlmaWFibGVDcmVkZW50aWFsIiwiTWVkYWxCb29rTWVkYWwiLCJNREI0MDQyYzNlMjViOTQ0NWE0ODhmMDlhODM4YTM0ODU4NyJdLCJpc3N1ZXIiOiJodHRwczovL21lZGFsYm9vay1kZXYtYXBwLWlzc3Vlci53ZWIuYXBwL2lzc3VlcnMvWW9leTlIRmpUWVB5Y21kcXdaVVMiLCJpc3N1YW5jZURhdGUiOiIyMDI0LTEyLTI0VDAxOjM4OjQzLjYzMloiLCJjcmVkZW50aWFsU3ViamVjdCI6eyJpZCI6ImRpZDprZXk6ekRuYWVZaXdITmVNWWFqMjFXbzlqUENvd3RuQnJZOGhlOFVDSzhaWk4xbWhoeDhQTSIsIm1lZGFsaXN0T2YiOnsibmFtZSI6W3sidmFsdWUiOiJ3b25kZXJsYW5kIiwibG9jYWxlIjoiamEtSlAifV0sImRlc2NyaXB0aW9uIjpbeyJ2YWx1ZSI6IndvbmRlcmxhbmQiLCJsb2NhbGUiOiJqYS1KUCJ9XSwibG9nbyI6W3sidmFsdWUiOnsidXJpIjoiaHR0cHM6Ly9zdG9yYWdlLmdvb2dsZWFwaXMuY29tL21lZGFsYm9vay1kZXYuYXBwc3BvdC5jb20vaXNzdWVyJTJGdjElMkZpc3N1ZXJzJTJGWW9leTlIRmpUWVB5Y21kcXdaVVMlMkZjcmVkZW50aWFscyUyRkJwdGtXdW1HQUQyMXpTNnVSbTJhLnBuZyJ9LCJsb2NhbGUiOiJqYS1KUCJ9XX19fSwiaXNzIjoiaHR0cHM6Ly9tZWRhbGJvb2stZGV2LWFwcC1pc3N1ZXIud2ViLmFwcC9pc3N1ZXJzL1lvZXk5SEZqVFlQeWNtZHF3WlVTIiwibmJmIjoxNzM1MDA0MzIzNjMyLCJzdWIiOiJkaWQ6a2V5OnpEbmFlWWl3SE5lTVlhajIxV285alBDb3d0bkJyWThoZThVQ0s4WlpOMW1oaHg4UE0ifQ._We9A2jRgGukc892zWTZq-ASrpP3wYxxW8S8_7pOvjBWYm5PkU9RXhQf6JisLlOOSa5QZ_rA4lf4E7t6nloEhw',
-      ],
-      holder: 'did:key:zDnaeYiwHNeMYaj21Wo9jPCowtnBrY8he8UCK8ZZN1mhhx8PM',
+      verifiableCredential: [vcJwt],
+      holder: holderDid,
     },
-    nonce: nonce,
-  }
+    nonce,
+  })
+    .setProtectedHeader({ alg: 'ES256', typ: 'JWT', kid: holderDid })
+    .sign(privateKey)
+}
 
-  const jwt = await new SignJWT(payload).setProtectedHeader(header).sign(privateKey)
-
-  return jwt
+async function createDcSdJwt(iss: string): Promise<string> {
+  const privateKey = await importJWK(issuerPrivateJwk, 'ES256')
+  const jwt = await new SignJWT({ iss, vct: 'TestCredential' })
+    .setProtectedHeader({ alg: 'ES256', typ: 'dc+sd-jwt', kid: issuerPrivateJwk.kid })
+    .sign(privateKey)
+  return `${jwt}~`
 }
 
 async function createSdJwtVpWithNewKbJwt(
@@ -72,7 +98,7 @@ async function createSdJwtVpWithNewKbJwt(
   // SD-JWT VP: <issuer-signed-jwt>~<disc1>~...~<discN>~<kb-jwt>
   // presentation to hash = everything except the last segment (the kb-jwt), ending with ~
   const parts = sdJwtVp.split('~')
-  const presentation = parts.slice(0, -1).join('~') + '~'
+  const presentation = `${parts.slice(0, -1).join('~')}~`
   const sdHash = createHash('sha256').update(presentation).digest('base64url')
 
   const kbJwt = await new SignJWT({
@@ -436,25 +462,6 @@ describe('Vcknots', () => {
         },
       },
     })
-    const presentationDefinition = {
-      id: 'test-pd-id',
-      input_descriptors: [
-        {
-          id: 'test_credential',
-          constraints: {
-            fields: [
-              {
-                path: ['$.type[*]'],
-                filter: {
-                  type: 'string',
-                  const: 'TestCredential',
-                },
-              },
-            ],
-          },
-        },
-      ],
-    }
     const dcqlQuery = {
       credentials: [
         {
@@ -577,26 +584,14 @@ describe('Vcknots', () => {
         vp_token: { my_vp: [vpJwt] },
       })
 
-      mock.method(globalThis, 'fetch', async () => {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            issuer: 'https://medalbook-dev-app-issuer.web.app/issuers/Yoey9HFjTYPycmdqwZUS',
-            jwks: {
-              keys: [
-                {
-                  kid: 'https://medalbook-dev-app-issuer.web.app/issuers/Yoey9HFjTYPycmdqwZUS',
-                  kty: 'EC',
-                  x: 'eo0GxuF-PxTAx1xO8VFQ1R8e04Tx7wqFHFP_700KkAY',
-                  y: 'wp_SksU1y_2lNlaSn04L4UN5tu3zdI1fQL-IfV2gjfs',
-                  crv: 'P-256',
-                },
-              ],
-            },
-          }),
-        }
-      })
+      mock.method(globalThis, 'fetch', async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: vcIssuerUrl,
+          jwks: { keys: [issuerPublicJwk] },
+        }),
+      }))
 
       await vk.verifier.verifyPresentations(response, authzRequest.transactionId)
 
@@ -622,35 +617,21 @@ describe('Vcknots', () => {
       if (typeof authzRequest.request.nonce !== 'string') {
         assert.fail('nonce must be a string')
       }
-      const sampleDcSdJwtVp =
-        'eyJhbGciOiJFUzI1NiIsImtpZCI6Ik9GWV9kbVpuQnIxMUYxSkg5dzdNMUVPNEEweGU4VmpQQUl6YS02QzdfVUUiLCJ0eXBlIjoiZGMrc2Qtand0In0.eyJpc3MiOiJodHRwczovL3Zja25vdHMtYXBwLXNkLWp3dC0tdmNrbm90cy5hc2lhLWVhc3QxLmhvc3RlZC5hcHAiLCJpYXQiOjE3NjU1MjI1MDQsInZjdCI6InVybjpldWRpOnBpZDoxIiwiZXhwIjoxODgzMDAwMDAwLCJfc2QiOlsiMVBJdkhhVnM1SmN5V1h0QWNTakNFVUF3T1Radi1WZll3NV9vaUNBTHpkSSIsIkRNa2ZkWVIwOHVrX2kxSkx5Qzd4MmtaM2ZqXzNUdVdNM2huQ0tmQURiT0UiLCJGUlJWU3FnMXlLM1JObjhmS1VjaU1vV3ZQb25TdnhnMGV4MFhRcTRVa1VrIiwiWlhTTS1VRkRRVzZ1T00xalhFdkwyYld4RkxaenJyMlBHdHhkeWg4SVZNcyIsIm1HVWFxdWNaQlB5QzZBV0twS3NreDJTNXNWSzJpSTE5eS1kWHo3ODNnaFUiLCJ3c1JLY2RqanJ3ZnRtenU4R1V6THREdUtkZzNsSElZTmc5SnIwVEdiMENzIl0sIl9zZF9hbGciOiJzaGEtMjU2In0.HkshPJyBeptaVKSyoWl6-n1SeZ2-ZaHn_H4LUbj33pXCY-4aWwv2otXlUfOBp93QH8rXbNW_ZaJ1e1oij1pN1g~WyIzTHJnYjRMWmtzTjlwYVBQNGhfYWJRIiwiZ2l2ZW5fbmFtZSIsIkpvaG4iXQ~WyJyQ0NYZjRNSW5rakVTUGhqaEZ0alFRIiwiZmFtaWx5X25hbWUiLCJEb2UiXQ~WyJab1k2ZGdIUXVlRmFheE85REFDenpnIiwiZW1haWwiLCJqb2huZG9lQGV4YW1wbGUuY29tIl0~WyJsZjVYaEVObzZHNlZHdkZnSEdLNlJnIiwicGhvbmVfbnVtYmVyIiwiKzEtMjAyLTU1NS0wMTAxIl0~WyJGNjJoVlZnSEFQMXVOZ2pCVlNPd2RnIiwiYWRkcmVzcyIsIntcInN0cmVldF9hZGRyZXNzXCI6IFwiMTIzIE1haW4gU3RcIiwgXCJsb2NhbGl0eVwiOiBcIkFueXRvd25cIiwgXCJyZWdpb25cIjogXCJBbnlzdGF0ZVwiLCBcImNvdW50cnlcIjogXCJVU1wifSJd~WyJTc0VMNC1zTlFDQkprSXI0UXBqaFVRIiwiYmlydGhkYXRlIiwiMTk0MC0wMS0wMSJd~'
+      const issuerUrl = 'https://dc-sd-jwt-issuer.example.com'
+      const dcSdJwtVp = await createDcSdJwt(issuerUrl)
 
       const response: AuthorizationResponse = AuthorizationResponse({
-        vp_token: { my_credential: [sampleDcSdJwtVp] },
+        vp_token: { my_credential: [dcSdJwtVp] },
       })
 
-      mock.method(globalThis, 'fetch', async () => {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            issuer: 'https://vcknots-app-sd-jwt--vcknots.asia-east1.hosted.app',
-            jwks: {
-              keys: [
-                {
-                  kty: 'EC',
-                  x: 'Mt6vOk6YLHXBNAyJSWOqmZry956UMpHHQayIY4VCEVA',
-                  y: 'T7Hg-uiS5g0_J3UpC4An7IOF1IxwaVH3DD3Z5VeEVHw',
-                  crv: 'P-256',
-                  kid: 'OFY_dmZnBr11F1JH9w7M1EO4A0xe8VjPAIza-6C7_UE',
-                  use: 'sig',
-                  alg: 'ES256',
-                },
-              ],
-            },
-          }),
-        }
-      })
+      mock.method(globalThis, 'fetch', async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: issuerUrl,
+          jwks: { keys: [issuerPublicJwk] },
+        }),
+      }))
       await vk.verifier.verifyPresentations(response, authzRequest.transactionId)
 
       mock.reset()
