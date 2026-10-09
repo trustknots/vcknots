@@ -24,6 +24,8 @@ const fixtureSdJwtWithX5cForKb =
 const fixtureKbJwtForSdJwtVp =
   'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJyZWRpcmVjdF91cmk6aHR0cHM6Ly92ZXJpZmllci5leGFtcGxlLmNvbSIsImlhdCI6MTc3MjAxNTQ4OCwibm9uY2UiOiJiY2IyMDFiN2UxODZlZDM4MDEyN2I5MTU4YTlkNTdhNiIsInNkX2hhc2giOiJHaTZJMWUxanVYMlNvUFZsMEd6V2pmU2RwZGlFcThaMHNhSl9weGN6aFVZIn0.6ZaTRQ46jE5jPXI4Vebu81hNcJHOij_qhPyQBypjXM1HPDOjEV7DAp6n1-ob5yMUnPbUm-YRZwczNaUMvln4aA'
 const fixtureDcSdJwtVpWithKb = fixtureSdJwtWithX5cForKb + fixtureKbJwtForSdJwtVp
+/** `iat` embedded in `fixtureKbJwtForSdJwtVp` — used to freeze `Date.now()` in KB-JWT time tests. */
+const fixtureKbJwtIat = 1772015488
 
 describe('sd-jwt provider', () => {
   // let provider: VerifyVerifiablePresentationProvider
@@ -42,7 +44,7 @@ describe('sd-jwt provider', () => {
     })
 
     return instance.issue({ iss, sub: 'user-123', name: 'Alice', vct: 'vcknots-test' }, undefined, {
-      header: { kid, ...headerOverrides },
+      header: { kid, typ: 'dc+sd-jwt', ...headerOverrides },
     })
   }
 
@@ -280,6 +282,7 @@ describe('sd-jwt provider', () => {
   })
 
   it('verifies successfully when Key-Binding JWT is expected and present', async () => {
+    mock.method(Date, 'now', () => (fixtureKbJwtIat + 30) * 1000)
     const result = await provider.verify(fixtureDcSdJwtVpWithKb, {
       kind: 'dc+sd-jwt',
       isKbJwt: true,
@@ -318,6 +321,174 @@ describe('sd-jwt provider', () => {
       (e: VcknotsError) => {
         assert.equal(e.name, 'verifier_vp_formats_not_supported')
         assert.match(e.message, /kb-jwt_alg_values/)
+        return true
+      }
+    )
+  })
+
+  it('fails when SD-JWT typ is not dc+sd-jwt', async () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'JWT', kid })).toString(
+      'base64url'
+    )
+    const payload = Buffer.from(JSON.stringify({ iss: issuer, vct: 'test' })).toString('base64url')
+    const fakeSdJwt = `${header}.${payload}.fakesig~`
+
+    await assert.rejects(
+      provider.verify(fakeSdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /SD-JWT typ must be 'dc\+sd-jwt'/)
+        return true
+      }
+    )
+  })
+
+  it('fails when SD-JWT typ is missing', async () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid })).toString('base64url')
+    const payload = Buffer.from(JSON.stringify({ iss: issuer, vct: 'test' })).toString('base64url')
+    const fakeSdJwt = `${header}.${payload}.fakesig~`
+
+    await assert.rejects(
+      provider.verify(fakeSdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /missing/)
+        return true
+      }
+    )
+  })
+
+  it('fails when SD-JWT alg is none', async () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'dc+sd-jwt', kid })).toString(
+      'base64url'
+    )
+    const payload = Buffer.from(JSON.stringify({ iss: issuer, vct: 'test' })).toString('base64url')
+    const fakeSdJwt = `${header}.${payload}.fakesig~`
+
+    await assert.rejects(
+      provider.verify(fakeSdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'verifier_vp_formats_not_supported')
+        assert.match(e.message, /SD-JWT algorithm .* not acceptable/)
+        return true
+      }
+    )
+  })
+
+  it('fails when SD-JWT alg is HS256', async () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'dc+sd-jwt', kid })).toString(
+      'base64url'
+    )
+    const payload = Buffer.from(JSON.stringify({ iss: issuer, vct: 'test' })).toString('base64url')
+    const fakeSdJwt = `${header}.${payload}.fakesig~`
+
+    await assert.rejects(
+      provider.verify(fakeSdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'verifier_vp_formats_not_supported')
+        assert.match(e.message, /SD-JWT algorithm .* not acceptable/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT typ is not kb+jwt', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'JWT' })).toString('base64url')
+    const kbPayload = Buffer.from(
+      JSON.stringify({
+        aud: String(dcExpectedAud),
+        iat: fixtureKbJwtIat,
+        nonce: 'test',
+        sd_hash: 'test',
+      })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /KB-JWT typ must be 'kb\+jwt'/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT alg is none', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'none', typ: 'kb+jwt' })).toString(
+      'base64url'
+    )
+    const kbPayload = Buffer.from(
+      JSON.stringify({
+        aud: String(dcExpectedAud),
+        iat: fixtureKbJwtIat,
+        nonce: 'test',
+        sd_hash: 'test',
+      })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /KB-JWT algorithm .* not acceptable/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT alg is HS256', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'kb+jwt' })).toString(
+      'base64url'
+    )
+    const kbPayload = Buffer.from(
+      JSON.stringify({
+        aud: String(dcExpectedAud),
+        iat: fixtureKbJwtIat,
+        nonce: 'test',
+        sd_hash: 'test',
+      })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /KB-JWT algorithm .* not acceptable/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT iat is outside the allowed issuance time window', async () => {
+    await assert.rejects(
+      provider.verify(fixtureDcSdJwtVpWithKb, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /KB-JWT iat is outside the allowed issuance time window/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT iat is in the future', async () => {
+    mock.method(Date, 'now', () => (fixtureKbJwtIat - 120) * 1000)
+
+    await assert.rejects(
+      provider.verify(fixtureDcSdJwtVpWithKb, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /KB-JWT iat is in the future/)
         return true
       }
     )

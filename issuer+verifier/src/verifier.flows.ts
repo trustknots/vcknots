@@ -2,26 +2,26 @@ import base64url from 'base64url'
 import { importJWK, importSPKI } from 'jose'
 import { AuthorizationRequest } from './authorization-request.types'
 import { AuthorizationResponse } from './authorization-response.types'
-import { ClientIdentifier } from './client-id-prefix.types'
 import { ClientId } from './client-id.types'
+import { ClientIdentifier } from './client-id-prefix.types'
 import { Dcql } from './dcql.type'
 import { err, raise } from './errors/vcknots.error'
 import { Jwk } from './jwk.type'
+import { Nonce } from './nonce.types'
 import { VpTokenPayload } from './presentation.types'
 import { VerifyVerifiablePresentationVerifyOptions } from './providers'
 import { selectProvider } from './providers/provider.utils'
-import { RequestObjectId } from './request-object-id.types'
 import { RequestObject } from './request-object.types'
+import { RequestObjectId } from './request-object-id.types'
 import { Certificate } from './signature-key.types'
 import { TransactionId, TransactionRecord } from './transaction-id.types'
 import { DeepPartialUnknown } from './type.utils'
 import { VcknotsContext } from './vcknots.context'
 import {
-  createVerifierMetadataInputSchema,
   CreateVerifierMetadataInput,
+  createVerifierMetadataInputSchema,
   VerifierMetadata,
 } from './verifier-metadata.types'
-import { Nonce } from './nonce.types'
 
 const assertAsymmetricPublicJwk = (publicKey: Jwk) => {
   if (publicKey.kty === 'oct') {
@@ -616,15 +616,13 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
         }
       }
 
-      if (expectedNonce) {
-        const nonceValid = await nonceStore$.validate(Nonce({ nonce: expectedNonce }))
-        if (!nonceValid) {
-          throw err('invalid_nonce', {
-            message: 'nonce is not valid.',
-          })
-        }
-        await nonceStore$.revoke(Nonce({ nonce: expectedNonce }))
+      const nonceValid = await nonceStore$.validate(Nonce({ nonce: expectedNonce }))
+      if (!nonceValid) {
+        throw err('invalid_nonce', {
+          message: 'nonce is not valid.',
+        })
       }
+      await nonceStore$.revoke(Nonce({ nonce: expectedNonce }))
 
       await transactionDataStore$.delete(TransactionId(transactionId))
 
@@ -633,10 +631,12 @@ export const initializeVerifierFlow = (context: VcknotsContext): VerifierFlow =>
   }
 }
 
-export { VerifierMetadata } from './verifier-metadata.types'
-export { ClientId as VerifierClientId } from './client-id.types'
 export { AuthorizationResponse as VerifierAuthorizationResponse } from './authorization-response.types'
-export { ClientIdPrefix as VerifierClientIdPrefix } from './client-id-prefix.types'
-export { RequestObjectId as VerifierRequestObjectId } from './request-object-id.types'
+export { ClientId as VerifierClientId } from './client-id.types'
+export {
+  ClientIdentifier,
+  ClientIdPrefix as VerifierClientIdPrefix,
+} from './client-id-prefix.types'
 export { Dcql } from './dcql.type'
-export { ClientIdentifier } from './client-id-prefix.types'
+export { RequestObjectId as VerifierRequestObjectId } from './request-object-id.types'
+export { VerifierMetadata } from './verifier-metadata.types'
