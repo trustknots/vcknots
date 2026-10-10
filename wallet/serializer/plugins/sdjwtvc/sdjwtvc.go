@@ -30,7 +30,11 @@ func NewSdJwtVcSerializer() (*SdJwtVcSerializer, error) {
 
 // SdJwtVcPresentationOptions contains options for SD-JWT VC presentation serialization
 type SdJwtVcPresentationOptions struct {
-	// SelectedClaims specifies which claims to disclose in the presentation
+	// ClaimsQuery, when set, decides the disclosures from the Verifier's DCQL claims.
+	ClaimsQuery *types.ClaimsQuery
+	// SelectedClaims specifies which claims to disclose in the presentation. With a
+	// ClaimsQuery it caps the disclosures instead: a query needing any other claim fails
+	// with types.ErrClaimsNotSatisfiable.
 	SelectedClaims []string
 	// RequireKeyBinding indicates whether a Key Binding JWT is required
 	RequireKeyBinding bool
@@ -58,6 +62,15 @@ func (o *SdJwtVcPresentationOptions) SetAudience(audience string) {
 func (o *SdJwtVcPresentationOptions) SetNonce(nonce string) {
 	if o != nil {
 		o.Nonce = nonce
+	}
+}
+
+// SetClaimsQuery records the claims the Verifier asked for. SerializePresentation
+// then derives the disclosures from them instead of from SelectedClaims, which
+// becomes an upper bound (OID4VP 1.0 Section 6.4.1).
+func (o *SdJwtVcPresentationOptions) SetClaimsQuery(query *types.ClaimsQuery) {
+	if o != nil {
+		o.ClaimsQuery = query
 	}
 }
 
@@ -559,7 +572,12 @@ func (s *SdJwtVcSerializer) SerializePresentation(
 
 	// Filter disclosures based on selected claims
 	var selectedDisclosures []string
-	if sdOpts != nil {
+	if sdOpts != nil && sdOpts.ClaimsQuery != nil {
+		selectedDisclosures, err = selectDisclosures(payloadMap, cf.Disclosures, sdAlg, sdOpts.ClaimsQuery, sdOpts.SelectedClaims)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else if sdOpts != nil {
 		if len(sdOpts.SelectedClaims) > 0 {
 			// Parse all disclosures
 			for _, discStr := range cf.Disclosures {

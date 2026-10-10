@@ -46,7 +46,7 @@ The following tables are organized based on [OpenID for Verifiable Credential Is
 | [5.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.5) | Credential Query | Authorization Request using `scope` | ❌ | ❌ | |
 | [5.9.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.9.3) | Client Identification | Client Identifier Prefix | Since `v0.7.0`<br />✅ `redirect_uri`, `x509_san_dns` | ⏳ `redirect_uri`, `x509_san_dns` |  |
 | [5.10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.10) | Request URI | Request URI Method | Since `v0.7.0`<br />✅ GET | ⏳ GET, POST |  |
-| [6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l) | Credential Query | DCQL | Since `v0.7.0`<br />✅ | ⏳ | Uses `dcql_query` parameter. |
+| [6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l) | Credential Query | DCQL | Since `v0.7.0`<br />✅ | ⏳ | Uses `dcql_query` parameter. The Wallet discloses only the requested `claims`. |
 | [8.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1) | Authorization Response | Authorization Response | Since `v0.7.0`<br />✅ | ⏳ |  |
 | [8.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2) | Response Mode | Response Mode | Since `v0.7.0`<br />✅ `direct_post` | ⏳ `direct_post` |  |
 | [8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3) | Authorization Response | Encrypted Authorization Response | ❌ | ⏳ |  |

@@ -63,6 +63,7 @@ func (o *MockSerializerOption) SetAudience(audience string) {
 func (o *MockSerializerOption) SetNonce(nonce string) {
 	o.Nonce = nonce
 }
+func (o *MockSerializerOption) SetClaimsQuery(*types.ClaimsQuery) {}
 
 
 type MockKeyEntry struct {

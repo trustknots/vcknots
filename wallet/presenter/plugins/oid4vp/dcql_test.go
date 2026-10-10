@@ -2,6 +2,7 @@ package oid4vp
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -169,6 +170,13 @@ func TestParseDcqlQuery_InvalidRequest(t *testing.T) {
 		{name: "credential_sets not an array", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":{}}`},
 		{name: "credential_sets empty array", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":[]}`},
 		{name: "credential_sets element not an object", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":["x"]}`},
+		{name: "claims empty array", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claims":[]}]}`},
+		{name: "claim without path", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claims":[{"id":"a"}]}]}`},
+		{name: "claim path with negative index", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claims":[{"path":["a",-1]}]}]}`},
+		{name: "claim path with a boolean", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claims":[{"path":[true]}]}]}`},
+		{name: "claim_sets without claims", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claim_sets":[["a"]]}]}`},
+		{name: "claim_sets with a claim lacking an id", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claims":[{"path":["a"]}],"claim_sets":[["a"]]}]}`},
+		{name: "claim_sets with unknown claim id", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claims":[{"id":"a","path":["a"]}],"claim_sets":[["b"]]}]}`},
 	}
 
 	for _, tt := range tests {
@@ -199,5 +207,33 @@ func TestParseDcqlQuery_UnsupportedFormat(t *testing.T) {
 			_, err := parseDcqlQuery(tt.raw)
 			assertAuthzErrorCode(t, err, VPFormatsNotSupportedError)
 		})
+	}
+}
+
+func TestParseDcqlQuery_Claims(t *testing.T) {
+	query, err := parseDcqlQuery(`{"credentials":[{
+		"id":"pid","format":"dc+sd-jwt","meta":{},
+		"claims":[{"id":"given","path":["given_name"]},{"id":"street","path":["address",null,0]}],
+		"claim_sets":[["street"],["given"]]
+	}]}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := query.Credentials[0]
+	wantClaims := []ClaimQuery{{ID: "given", Path: []any{"given_name"}}, {ID: "street", Path: []any{"address", nil, float64(0)}}}
+	if !reflect.DeepEqual(got.Claims, wantClaims) {
+		t.Fatalf("claims = %#v, want %#v", got.Claims, wantClaims)
+	}
+	if want := [][]string{{"street"}, {"given"}}; !reflect.DeepEqual(got.ClaimSets, want) {
+		t.Fatalf("claim_sets = %#v, want %#v", got.ClaimSets, want)
+	}
+
+	// Section 6.4.1: an absent claims member must stay distinguishable from a present one.
+	query, err = parseDcqlQuery(sampleSdJwtDcqlQuery)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if query.Credentials[0].Claims != nil {
+		t.Fatalf("claims = %#v, want nil when absent", query.Credentials[0].Claims)
 	}
 }

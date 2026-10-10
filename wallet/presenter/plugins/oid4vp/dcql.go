@@ -3,6 +3,7 @@ package oid4vp
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 
 	"github.com/trustknots/vcknots/wallet/credential"
@@ -24,6 +25,18 @@ type CredentialQuery struct {
 	// Multiple indicates whether multiple Credentials can be returned for this
 	// Credential Query. Defaults to false when omitted.
 	Multiple bool `json:"multiple,omitempty"`
+	// Claims lists the claims requested from the Credential. It is nil when the
+	// Verifier requests no selectively disclosable claims (Section 6.4.1).
+	Claims []ClaimQuery `json:"claims,omitempty"`
+	// ClaimSets lists alternative combinations of Claims ids.
+	ClaimSets [][]string `json:"claim_sets,omitempty"`
+}
+
+// ClaimQuery is one entry of a Credential Query's claims (OID4VP 1.0 Section 6.3).
+type ClaimQuery struct {
+	ID string `json:"id,omitempty"`
+	// Path is a claims path pointer (Section 7): strings, nulls and non-negative integers.
+	Path []any `json:"path"`
 }
 
 // CredentialSetQuery represents a request for one or more Credential Queries
@@ -196,5 +209,90 @@ func validateCredentialQuery(index int, credentialQuery map[string]any, seenIDs 
 		}
 	}
 
+	return validateClaims(index, credentialQuery)
+}
+
+// validateClaims validates the claims and claim_sets of a Credential Query as per
+// OID4VP 1.0 Sections 6.1, 6.3 and 7.
+func validateClaims(index int, credentialQuery map[string]any) error {
+	rawClaims, hasClaims := credentialQuery["claims"]
+	claimIDs := make(map[string]bool)
+	claimCount := 0
+	if hasClaims {
+		claims, ok := rawClaims.([]any)
+		if !ok || len(claims) == 0 {
+			return newAuthorizationRequestError(InvalidRequestError, "dcql_query.credentials[%d].claims must be a non-empty array", index)
+		}
+		claimCount = len(claims)
+		for j, rawClaim := range claims {
+			claim, ok := rawClaim.(map[string]any)
+			if !ok {
+				return newAuthorizationRequestError(InvalidRequestError, "dcql_query.credentials[%d].claims[%d] must be a JSON object", index, j)
+			}
+			if !isClaimsPathPointer(claim["path"]) {
+				return newAuthorizationRequestError(InvalidRequestError, "dcql_query.credentials[%d].claims[%d].path must be a non-empty array of strings, nulls and non-negative integers", index, j)
+			}
+			if rawID, exists := claim["id"]; exists {
+				id, ok := rawID.(string)
+				if !ok || !credentialQueryIDPattern.MatchString(id) || claimIDs[id] {
+					return newAuthorizationRequestError(InvalidRequestError, "dcql_query.credentials[%d].claims[%d].id must be a unique non-empty string of alphanumeric, underscore or hyphen characters", index, j)
+				}
+				claimIDs[id] = true
+			}
+		}
+	}
+
+	rawClaimSets, exists := credentialQuery["claim_sets"]
+	if !exists {
+		return nil
+	}
+	// claim_sets refers to claims by id, so every claim needs one (Section 6.3).
+	if !hasClaims || len(claimIDs) != claimCount {
+		return newAuthorizationRequestError(InvalidRequestError, "dcql_query.credentials[%d].claim_sets requires claims that all have an id", index)
+	}
+	if !isIDArrays(rawClaimSets, claimIDs) {
+		return newAuthorizationRequestError(InvalidRequestError, "dcql_query.credentials[%d].claim_sets must be a non-empty array of non-empty arrays of claim ids", index)
+	}
 	return nil
+}
+
+// isClaimsPathPointer reports whether raw is a claims path pointer (Section 7).
+func isClaimsPathPointer(raw any) bool {
+	path, ok := raw.([]any)
+	if !ok || len(path) == 0 {
+		return false
+	}
+	for _, component := range path {
+		switch c := component.(type) {
+		case string, nil:
+		case float64:
+			if c < 0 || c != math.Trunc(c) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// isIDArrays reports whether raw is a non-empty array of non-empty arrays of ids
+// that are all in known.
+func isIDArrays(raw any, known map[string]bool) bool {
+	arrays, ok := raw.([]any)
+	if !ok || len(arrays) == 0 {
+		return false
+	}
+	for _, rawArray := range arrays {
+		ids, ok := rawArray.([]any)
+		if !ok || len(ids) == 0 {
+			return false
+		}
+		for _, rawID := range ids {
+			if id, ok := rawID.(string); !ok || !known[id] {
+				return false
+			}
+		}
+	}
+	return true
 }
