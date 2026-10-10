@@ -17,8 +17,8 @@ The endpoint list in this README is an overview of the paths used in this server
 src/
 ├── apps/
 │   ├── create-base-app.ts      # Shared Hono app factory
-│   ├── create-issuer-app.ts    # Issuer app (DynamoDB issuer metadata, OAuth policy/client stores, KMS issuer + Authz public-key stores)
-│   ├── create-authz-app.ts     # Authorization Server app (DynamoDB authz server metadata store)
+│   ├── create-issuer-app.ts    # Issuer app (DynamoDB issuer metadata, OAuth policy/client stores, allowed credential configuration store, KMS issuer + Authz public-key stores)
+│   ├── create-authz-app.ts     # Authorization Server app (DynamoDB authz server metadata store, allowed credential configuration store)
 │   └── create-verifier-app.ts  # Verifier app (DynamoDB verifier metadata store + KMS signature key store)
 ├── handlers/
 │   ├── issuer.ts               # Lambda handler / local entrypoint — Issuer (port 8081)
@@ -82,6 +82,7 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `AUTH_SERVERS_TABLE_NAME` | Authz **required** | DynamoDB table name (stack output: `AuthServersTableName`) |
 | `AUTHZ_OAUTH_CLIENTS_TABLE_NAME` | Issuer & Authz **required** | DynamoDB table name, shared by both servers (stack output: `AuthzOAuthClientsTableName`) |
 | `AUTHZ_OAUTH_POLICIES_TABLE_NAME` | Issuer & Authz **required** | DynamoDB table name, shared by both servers (stack output: `AuthzOAuthPoliciesTableName`) |
+| `ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME` | Issuer & Authz **required** | DynamoDB table name, shared by both servers (stack output: `AllowedCredentialConfigurationsTableName`) |
 | `VERIFIERS_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `VerifiersTableName`) |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `RequestObjectsTableName`) |
 | `NONCES_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `NoncesTableName`) |
@@ -94,7 +95,7 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `VERIFIER_CERTIFICATE_SECRET_PREFIX` | Verifier (optional) | Secrets Manager name prefix for verifier certificates (default: `vcknots/verifier-certificates`). Changing it requires updating the IAM grant in `server/aws/resources` to match |
 | `PRIVATE_KEY_PATH` / `CERTIFICATE_PATH` | Verifier (optional unless `VERIFIER_BASE_URL` is non-local) | Paths to the PEM private key and X.509 certificate registered on first startup (default when `VERIFIER_BASE_URL` is local: the sample chain in `server/samples/certificate-openid-test/`) |
 
-**`ISSUERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME` (Issuer & Authz), `NONCES_TABLE_NAME` (Issuer & Verifier), `AUTH_SERVERS_TABLE_NAME`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `VERIFIERS_TABLE_NAME`, and `REQUEST_OBJECTS_TABLE_NAME` are required** — each server exits at startup if a table name it needs is missing.
+**`ISSUERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME` (Issuer & Authz), `NONCES_TABLE_NAME` (Issuer & Verifier), `AUTH_SERVERS_TABLE_NAME`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME` (Issuer & Authz), `VERIFIERS_TABLE_NAME`, and `REQUEST_OBJECTS_TABLE_NAME` are required** — each server exits at startup if a table name it needs is missing.
 
 **`TX_CODE_PEPPER` is required by every server.** It is a secret pepper used to HMAC-hash `tx_code` values before storing them in DynamoDB. Because `@trustknots/aws` evaluates it at import time, the Issuer, Authorization Server, and Verifier all fail at startup with `TX_CODE_PEPPER environment variable is required` when it is missing. Use a sufficiently long random secret and keep it stable per environment — rotating it invalidates previously stored `tx_code` hashes.
 

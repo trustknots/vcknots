@@ -22,10 +22,10 @@
 		"issuer+verifier/"
 	],
 	"engines": {
-		"pnpm": "11.10.0",
+		"pnpm": "12.6.0",
 		"npm": "please_use_pnpm_instead"
 	},
-	"packageManager": "pnpm@11.10.0",
+	"packageManager": "pnpm@12.6.0",
 	"devDependencies": {
 		"@biomejs/biome": "2.5.14",
 		"@commitlint/cli": "21.2.3",
@@ -34,6 +34,6 @@
 		"@types/node": "24.13.6",
 		"husky": "9.1.7",
 		"tsx": "4.23.15",
-		"typescript": "6.0.3"
+		"typescript": "7.0.2"
 	}
 }

@@ -59,5 +59,9 @@ export class ResourcesStack extends cdk.Stack {
       value: dataStores.authzOAuthPoliciesTable.tableName,
       description: 'Authz OAuth policies DynamoDB table name',
     });
+    new cdk.CfnOutput(this, 'AllowedCredentialConfigurationsTableName', {
+      value: dataStores.allowedCredentialConfigurationsTable.tableName,
+      description: 'Allowed credential configurations DynamoDB table name',
+    });
   }
 }

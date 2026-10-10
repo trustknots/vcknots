@@ -35,6 +35,8 @@ export class IssuerApi extends Construct {
         PRE_CODES_TABLE_NAME: dataStores.preCodesTable.tableName,
         AUTHZ_OAUTH_CLIENTS_TABLE_NAME: dataStores.authzOAuthClientsTable.tableName,
         AUTHZ_OAUTH_POLICIES_TABLE_NAME: dataStores.authzOAuthPoliciesTable.tableName,
+        ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME:
+          dataStores.allowedCredentialConfigurationsTable.tableName,
         TX_CODE_PEPPER: requiredEnv('TX_CODE_PEPPER'),
       },
     });
@@ -43,6 +45,11 @@ export class IssuerApi extends Construct {
     // tables Authz writes. Issuer only needs to read them.
     dataStores.authzOAuthClientsTable.grantReadData(this.lambdaApi.role);
     dataStores.authzOAuthPoliciesTable.grantReadData(this.lambdaApi.role);
+
+    // Credential endpoint checks the credential configuration ids Authz saved for the access
+    // token. Issuer only reads them, plus DeleteItem to drop entries found expired on fetch.
+    dataStores.allowedCredentialConfigurationsTable.grantReadData(this.lambdaApi.role);
+    dataStores.allowedCredentialConfigurationsTable.grant(this.lambdaApi.role, 'dynamodb:DeleteItem');
 
     // The issuer creates and uses signing keys at runtime (kmsIssuerSignatureKeyStore).
     grantSignatureKeyStoreAccess(this, this.lambdaApi.role, {
