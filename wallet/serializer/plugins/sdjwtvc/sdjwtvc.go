@@ -65,6 +65,9 @@ func (o *SdJwtVcPresentationOptions) SetNonce(nonce string) {
 	}
 }
 
+// SetClaimsQuery records the claims the Verifier asked for. SerializePresentation
+// then derives the disclosures from them instead of from SelectedClaims, which
+// becomes an upper bound (OID4VP 1.0 Section 6.4.1).
 func (o *SdJwtVcPresentationOptions) SetClaimsQuery(query *types.ClaimsQuery) {
 	if o != nil {
 		o.ClaimsQuery = query

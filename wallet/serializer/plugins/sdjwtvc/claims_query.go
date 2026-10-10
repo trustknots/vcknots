@@ -135,6 +135,10 @@ type selectedClaim struct {
 	disclosures []string
 }
 
+// child descends to value, recording digest as one more disclosure needed to reach
+// it. The prefix is copied rather than shared, so a sibling that the rest of the
+// path drops takes its own ancestors with it: keeping one slice would disclose the
+// ancestors of branches that reveal nothing, which Section 6.4 forbids.
 func (s selectedClaim) child(value any, digest string) selectedClaim {
 	disclosures := append([]string(nil), s.disclosures...) // siblings share the prefix
 	if digest != "" {

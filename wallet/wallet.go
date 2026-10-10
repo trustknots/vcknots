@@ -1820,6 +1820,9 @@ func (w *Wallet) buildPresentation(credentials []*SavedCredential, key IKeyEntry
 	return presentation, nil
 }
 
+// applyOID4VPRequestOptions copies what the Authorization Request decides into the
+// serialization options: the claims of the Credential Query being answered, and the
+// audience and nonce the Key Binding JWT has to carry.
 func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, query *oid4vp.CredentialQuery, options serializerTypes.SerializePresentationOptions) {
 	if options == nil {
 		return

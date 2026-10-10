@@ -4486,20 +4486,16 @@ func TestController_PresentCredential_DetailedErrorPaths_Integration(t *testing.
 // presentation. newMockKeyEntry generates a fresh key and cannot stand in for it.
 func newPIDBoundKeyEntry(t *testing.T) IKeyEntry {
 	t.Helper()
-	bigInt := func(b64 string) *big.Int {
-		raw, err := base64.RawURLEncoding.DecodeString(b64)
-		require.NoError(t, err)
-		return new(big.Int).SetBytes(raw)
-	}
+	// Only the private scalar is needed: the public key is derived from it, which also
+	// keeps the two from drifting apart. The credential's cnf.jwk holds the matching
+	// public key, so the presentation fails if this ever stops lining up.
+	d, err := base64.RawURLEncoding.DecodeString("jAfOh_53IRxqpEsFojZK8iHP--L8ol3ePEo3DnwiIyM")
+	require.NoError(t, err)
+	privateKey, err := ecdsa.ParseRawPrivateKey(elliptic.P256(), d)
+	require.NoError(t, err)
+
 	key, err := keystore.NewKeyEntryFromJWK(jose.JSONWebKey{
-		Key: &ecdsa.PrivateKey{
-			PublicKey: ecdsa.PublicKey{
-				Curve: elliptic.P256(),
-				X:     bigInt("ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ"),
-				Y:     bigInt("Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo"),
-			},
-			D: bigInt("jAfOh_53IRxqpEsFojZK8iHP--L8ol3ePEo3DnwiIyM"),
-		},
+		Key:       privateKey,
 		KeyID:     "pid-bound-key",
 		Algorithm: "ES256",
 		Use:       "sig",
