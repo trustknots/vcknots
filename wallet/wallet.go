@@ -1663,7 +1663,9 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 			return "", err
 		}
 	}
-	applyOID4VPRequestOptions(req, serializeOptions)
+	// The presentation answers the first Credential Query (see submitPresentation), so
+	// its claims decide what is disclosed.
+	applyOID4VPRequestOptions(req, &req.DcqlQuery.Credentials[0], serializeOptions)
 
 	presentation, err := w.buildPresentation(credentials, key, req)
 	if err != nil {
@@ -1818,12 +1820,27 @@ func (w *Wallet) buildPresentation(credentials []*SavedCredential, key IKeyEntry
 	return presentation, nil
 }
 
-func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, options serializerTypes.SerializePresentationOptions) {
-	if options == nil || req == nil || req.OAuthAuthzRequest == nil {
+func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, query *oid4vp.CredentialQuery, options serializerTypes.SerializePresentationOptions) {
+	if options == nil {
+		return
+	}
+	if query != nil {
+		options.SetClaimsQuery(claimsQuery(query))
+	}
+	if req == nil || req.OAuthAuthzRequest == nil {
 		return
 	}
 	options.SetAudience(req.ClientID)
 	options.SetNonce(req.Nonce)
+}
+
+// claimsQuery carries the claims of a Credential Query over to the serializer.
+func claimsQuery(q *oid4vp.CredentialQuery) *serializerTypes.ClaimsQuery {
+	query := &serializerTypes.ClaimsQuery{ClaimSets: q.ClaimSets}
+	for _, c := range q.Claims {
+		query.Claims = append(query.Claims, serializerTypes.ClaimQuery{ID: c.ID, Path: c.Path})
+	}
+	return query
 }
 
 // submitPresentation serializes and submits the presentation to the verifier.

@@ -106,7 +106,8 @@ func buildRequestObjectJSON(vct string) string {
 					{
 						"id": "credential-request",
 						"format": "dc+sd-jwt",
-						"meta": ` + metaJSON + `
+						"meta": ` + metaJSON + `,
+						"claims": [{"path": ["given_name"]}]
 					}
 				]
 			}

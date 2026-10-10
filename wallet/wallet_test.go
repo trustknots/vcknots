@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +26,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/common"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
+	"github.com/trustknots/vcknots/wallet/credstore/plugins/local"
 	credstoreTypes "github.com/trustknots/vcknots/wallet/credstore/types"
 	"github.com/trustknots/vcknots/wallet/env"
 	idprofTypes "github.com/trustknots/vcknots/wallet/idprof/types"
@@ -35,6 +38,7 @@ import (
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer/plugins/jwtvc"
 	"github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
+	serializerTypes "github.com/trustknots/vcknots/wallet/serializer/types"
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
@@ -4477,6 +4481,152 @@ func TestController_PresentCredential_DetailedErrorPaths_Integration(t *testing.
 	})
 }
 
+// newPIDBoundKeyEntry returns the key example_sd_jwt.txt is bound to: its cnf.jwk holds
+// this public key, so the Key Binding JWT only verifies when this key signs the
+// presentation. newMockKeyEntry generates a fresh key and cannot stand in for it.
+func newPIDBoundKeyEntry(t *testing.T) IKeyEntry {
+	t.Helper()
+	bigInt := func(b64 string) *big.Int {
+		raw, err := base64.RawURLEncoding.DecodeString(b64)
+		require.NoError(t, err)
+		return new(big.Int).SetBytes(raw)
+	}
+	key, err := keystore.NewKeyEntryFromJWK(jose.JSONWebKey{
+		Key: &ecdsa.PrivateKey{
+			PublicKey: ecdsa.PublicKey{
+				Curve: elliptic.P256(),
+				X:     bigInt("ezZgKwMueAyZLHUgSpzNkbOWDgjJXTAOJn8MftOnayQ"),
+				Y:     bigInt("Fy_U4KyZQf-9jKpFJtH6OFFRXmwAcveyfuoDp1hSOFo"),
+			},
+			D: bigInt("jAfOh_53IRxqpEsFojZK8iHP--L8ol3ePEo3DnwiIyM"),
+		},
+		KeyID:     "pid-bound-key",
+		Algorithm: "ES256",
+		Use:       "sig",
+	})
+	require.NoError(t, err)
+	return key
+}
+
+// TestController_PresentCredential_DCQL_Integration presents the PID used for the OIDF
+// OpenID4VP conformance runs against the DCQL shapes the suite's modules send, and checks
+// what reaches the Verifier's response_uri.
+func TestController_PresentCredential_DCQL_Integration(t *testing.T) {
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+	raw, err := os.ReadFile(filepath.Join("examples", "server_integration_sdjwt", "example_sd_jwt.txt"))
+	require.NoError(t, err)
+
+	// A throwaway store: the default one is the store the conformance runner uses.
+	store, err := local.NewLocalCredentialStorage(filepath.Join(t.TempDir(), "credstore.db"))
+	require.NoError(t, err)
+	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithPlugin(credstore.SupportedCredStoreTypes(0), store))
+	require.NoError(t, err)
+	require.NoError(t, credStore.SaveCredentialEntry(credstore.CredentialEntry{
+		Id:         "pid",
+		ReceivedAt: time.Now(),
+		Raw:        []byte(strings.TrimSpace(string(raw))),
+		MimeType:   string(credential.SDJwtVC),
+	}, credstore.SupportedCredStoreTypes(0)))
+
+	w, err := NewWalletWithConfig(Config{CredStore: credStore})
+	require.NoError(t, err)
+
+	presentWith := func(t *testing.T, dcql string, options *sdjwtvc.SdJwtVcPresentationOptions) (url.Values, error) {
+		t.Helper()
+		var received url.Values
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			assert.NoError(t, r.ParseForm())
+			received = r.PostForm
+			rw.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		responseURI := server.URL + "/response"
+		params := url.Values{
+			"client_id":     {"redirect_uri:" + responseURI},
+			"response_type": {"vp_token"},
+			"response_mode": {"direct_post"},
+			"response_uri":  {responseURI},
+			"nonce":         {"nonce-1"},
+			"state":         {"state-1"},
+			"dcql_query":    {dcql},
+		}
+		_, err := w.PresentCredential("openid4vp://authorize?"+params.Encode(), newPIDBoundKeyEntry(t), options)
+		return received, err
+	}
+	present := func(t *testing.T, dcql string) (url.Values, error) {
+		t.Helper()
+		return presentWith(t, dcql, &sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: true})
+	}
+
+	// disclosed returns the vp_token key and the names of the disclosures presented.
+	disclosed := func(t *testing.T, received url.Values) (string, []string) {
+		t.Helper()
+		var vpToken map[string][]string
+		require.NoError(t, json.Unmarshal([]byte(received.Get("vp_token")), &vpToken))
+		require.Len(t, vpToken, 1)
+		for id, presentations := range vpToken {
+			require.Len(t, presentations, 1)
+			parts := strings.Split(presentations[0], "~")
+			require.GreaterOrEqual(t, len(parts), 2)
+			require.NotEmpty(t, parts[len(parts)-1], "the Key Binding JWT must be present")
+			names := []string{}
+			for _, d := range parts[1 : len(parts)-1] {
+				decoded, err := base64.RawURLEncoding.DecodeString(d)
+				require.NoError(t, err)
+				var disclosure []any
+				require.NoError(t, json.Unmarshal(decoded, &disclosure))
+				require.Len(t, disclosure, 3)
+				names = append(names, disclosure[1].(string))
+			}
+			return id, names
+		}
+		return "", nil
+	}
+
+	const pidMeta = `"format":"dc+sd-jwt","meta":{"vct_values":["urn:eu.europa.ec.eudi:pid:1"]}`
+
+	t.Run("discloses only the requested claims (HappyFlow)", func(t *testing.T) {
+		received, err := present(t, `{"credentials":[{"id":"pid_credential",`+pidMeta+`,
+			"claims":[{"path":["given_name"]},{"path":["family_name"]},{"path":["birthdate"]}]}]}`)
+		require.NoError(t, err)
+		id, names := disclosed(t, received)
+		assert.Equal(t, "pid_credential", id)
+		assert.ElementsMatch(t, []string{"given_name", "family_name", "birthdate"}, names)
+	})
+
+	t.Run("discloses nothing when claims is absent (NoClaimsInDcqlQuery)", func(t *testing.T) {
+		received, err := present(t, `{"credentials":[{"id":"pid_credential",`+pidMeta+`}]}`)
+		require.NoError(t, err)
+		_, names := disclosed(t, received)
+		assert.Empty(t, names)
+	})
+
+	t.Run("a nested claim brings its parent", func(t *testing.T) {
+		received, err := present(t, `{"credentials":[{"id":"pid_credential",`+pidMeta+`,"claims":[{"path":["place_of_birth","locality"]}]}]}`)
+		require.NoError(t, err)
+		_, names := disclosed(t, received)
+		assert.ElementsMatch(t, []string{"place_of_birth", "locality"}, names)
+	})
+
+	// The Credential must not be returned when it cannot deliver every requested claim
+	// (OID4VP 1.0 Section 6.4.1). Telling the Verifier with an error response is not
+	// part of this change, so nothing reaches it.
+	t.Run("returns nothing when the credential lacks a requested claim", func(t *testing.T) {
+		received, err := present(t, `{"credentials":[{"id":"pid_credential",`+pidMeta+`,"claims":[{"path":["given_name"]},{"path":["age_over_18"]}]}]}`)
+		require.ErrorIs(t, err, serializerTypes.ErrClaimsNotSatisfiable)
+		assert.Empty(t, received, "nothing may be sent to the Verifier")
+	})
+
+	t.Run("SelectedClaims caps what the DCQL may disclose", func(t *testing.T) {
+		received, err := presentWith(t, `{"credentials":[{"id":"pid_credential",`+pidMeta+`,"claims":[{"path":["given_name"]},{"path":["family_name"]}]}]}`,
+			&sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: true, SelectedClaims: []string{"given_name"}})
+		require.ErrorIs(t, err, serializerTypes.ErrClaimsNotSatisfiable)
+		assert.Empty(t, received, "nothing may be sent to the Verifier")
+	})
+}
+
 func TestApplyOID4VPRequestOptions(t *testing.T) {
 	req := &oid4vp.CredentialPresentationRequest{
 		OAuthAuthzRequest: &oid4vp.OAuthAuthzRequest{
@@ -4491,7 +4641,7 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 			Nonce:    "old-nonce",
 		}
 
-		applyOID4VPRequestOptions(req, opts)
+		applyOID4VPRequestOptions(req, nil, opts)
 
 		if opts.Audience != req.ClientID {
 			t.Fatalf("expected audience %q, got %q", req.ClientID, opts.Audience)
@@ -4507,8 +4657,13 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 			Audience:          "old-audience",
 			Nonce:             "old-nonce",
 		}
+		query := &oid4vp.CredentialQuery{
+			ID:        "pid",
+			Claims:    []oid4vp.ClaimQuery{{ID: "given", Path: []any{"given_name"}}},
+			ClaimSets: [][]string{{"given"}},
+		}
 
-		applyOID4VPRequestOptions(req, opts)
+		applyOID4VPRequestOptions(req, query, opts)
 
 		if opts.Audience != req.ClientID {
 			t.Fatalf("expected audience %q, got %q", req.ClientID, opts.Audience)
@@ -4516,6 +4671,19 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 		if opts.Nonce != req.Nonce {
 			t.Fatalf("expected nonce %q, got %q", req.Nonce, opts.Nonce)
 		}
+		assert.Equal(t, &serializerTypes.ClaimsQuery{
+			Claims:    []serializerTypes.ClaimQuery{{ID: "given", Path: []any{"given_name"}}},
+			ClaimSets: [][]string{{"given"}},
+		}, opts.ClaimsQuery)
+	})
+
+	t.Run("a Credential Query without claims asks for no selectively disclosable claims", func(t *testing.T) {
+		opts := &sdjwtvc.SdJwtVcPresentationOptions{SelectedClaims: []string{"given_name"}}
+
+		applyOID4VPRequestOptions(req, &oid4vp.CredentialQuery{ID: "pid"}, opts)
+
+		require.NotNil(t, opts.ClaimsQuery, "the DCQL must take over from SelectedClaims")
+		assert.Nil(t, opts.ClaimsQuery.Claims)
 	})
 }
 

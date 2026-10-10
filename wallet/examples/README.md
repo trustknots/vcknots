@@ -271,7 +271,7 @@ Conformance Test mode automatically applies the following settings:
 
 - **Certificate Verification**: Uses system root certificate pool
 - **Certificate Chain Verification Skip**: `InsecureSkipX509Verify: true` is automatically set, enabling communication with conformance test servers that use self-signed or non-standard certificates
-- **Selected Claims**: Selects `given_name`, `family_name` and `birthdate`
+- **Disclosed Claims**: Only the claims the Verifier's DCQL `claims` request (OID4VP 1.0 Section 6.4.1)
 - **Key Binding**: Required (`RequireKeyBinding: true`)
 - **Audience/Nonce**: Automatically extracted from the request URI
 - **OID4VCI Client Authentication and DPoP**: Not configured; this mode tests the OpenID4VP presentation flow only
@@ -521,9 +521,10 @@ go run ./examples/conformance_sdjwt "openid4vp://authorize?client_id=...&request
 **Always quote the URI** since it contains `?` and `&`.
 
 The run logs the `vct` and the disclosure names of the stored credential. The test plan's
-dcql has to name that `vct`, and its `claims` have to be exactly `given_name`, `family_name`
-and `birthdate`, because nothing reads the DCQL `claims` yet and this example discloses those
-three whatever the query asks for.
+dcql has to name that `vct`, and its `claims` are exactly what gets disclosed. Each entry is
+a claims path pointer, so a top-level claim is `["given_name"]` and a nested one is
+`["place_of_birth", "locality"]`. A claim the credential cannot deliver stops the run instead
+of presenting a partial set.
 
 ```
 level=INFO msg="Stored credential" id=... vct=urn:eu.europa.ec.eudi:pid:1 disclosures="[family_name given_name birthdate ...]"
@@ -532,10 +533,6 @@ level=INFO msg="=== Credential Presented ==="
 
 ### Known Limitations
 
-- **The disclosed claims are fixed.** Nothing reads the DCQL `claims` yet, so this example
-  hardcodes `given_name`, `family_name` and `birthdate` instead of deriving them from the query.
-  A test plan that requests anything else fails `CheckOnlyRequestedClaimsDisclosed`
-  (`OID4VP-1FINAL-6.4.1`).
 - **`oid4vp-1final-wallet-alternate-happy-flow` cannot run with `direct_post` on suite 5.3.1.**
   The suite stops with `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`
   before it contacts the wallet (conformance-suite issue #1982). The wallet cannot fix this.
