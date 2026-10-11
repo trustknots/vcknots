@@ -404,7 +404,7 @@ func validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURI
 	return nil
 }
 
-// setParamsWithInterfaceMap sets the CredentialPresentationRequest fields from a map of any parameters,
+// setParamsWithAnyMap sets the CredentialPresentationRequest fields from a map of any parameters,
 // tracking any missing required parameters.
 // Missing required parameters are recorded in b.errValidation and set as empty strings.
 func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
