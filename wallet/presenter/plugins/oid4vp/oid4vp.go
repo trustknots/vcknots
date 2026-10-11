@@ -335,7 +335,6 @@ func (p *Oid4vpPresenter) createJARMResponse(vpTokenJSON []byte, request *types.
 	return serialized, nil
 }
 
-
 type requestBuilder struct {
 	req                    *CredentialPresentationRequest
 	x509TrustChainRoots    *x509.CertPool
@@ -455,6 +454,10 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 			case OID4VPClientIDPrefixRedirectURI, OID4VPClientIDPrefixX509SanDNS:
 				redirectURIFromClientID = parsedCID.original
 			default: // unimplemented: other client_id prefixes
+				// Plain error on purpose, not an *AuthorizationRequestError: this also
+				// runs on the query parameter path, where errorResponseAllowed is set,
+				// so giving it a code would start POSTing an error response to a
+				// response_uri nothing has authenticated. That delivery is Section 8.5.
 				b.errValidation = fmt.Errorf("unsupported client_id prefix: %s", parsedCID.prefix)
 			}
 		} else {
@@ -727,6 +730,16 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 			return b
 		}
 
+		// The request object's own lifetime still has to hold (RFC 9101). Checking it
+		// only after the signature is verified keeps a forged exp from being trusted.
+		// Absent exp, nbf and iat are accepted: none of them is required.
+		if err := claims.Validate(jwt.Expected{
+			Time: time.Now(), // validates exp, iat, nbf claims
+		}); err != nil {
+			b.errValidation = fmt.Errorf("JWT standard claims validation failed: %w", err)
+			return b
+		}
+
 		// ClientID should contain DNS name which is same as the SAN of the leaf certificate in the x5c array (OID4VP x509_san_dns). #106
 		matched := false
 		for _, n := range (*certificates)[0].DNSNames {
@@ -763,49 +776,26 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 		return b
 	}
 
-	// JWT signature verification is mandatory for JWT request objects as per RFC9101
-	if b.req.ClientMetadata == nil {
-		b.errValidation = fmt.Errorf("client_metadata is required for JWT request object verification")
-		return b
-	}
-
-	// fetch the public key for signature verification
-	k, err := b.req.ClientMetadata.FetchKeyWithKID(parsedJWT.Headers[0].KeyID)
-	if err != nil {
-		b.errValidation = fmt.Errorf("failed to fetch public key for JWT verification: %w", err)
-		return b
-	}
-
-	// verify the JWT signature and extract standard claims for validation
-	standardClaims := jwt.Claims{}
-	if err := parsedJWT.Claims(&k, &standardClaims); err != nil {
-		b.errValidation = fmt.Errorf("failed to verify JWT signature: %w", err)
-		return b
-	}
-
-	// validate standard JWT claims as per RFC9101 and OID4VP requirements
-	if err := standardClaims.Validate(jwt.Expected{
-		Time: time.Now(), // validates exp, iat, nbf claims
-	}); err != nil {
-		b.errValidation = fmt.Errorf("JWT standard claims validation failed: %w", err)
-		return b
-	}
-
-	// extract all verified claims for parameter processing
-	verifiedClaims := make(map[string]any)
-	if err := parsedJWT.Claims(&k, &verifiedClaims); err != nil {
-		b.errValidation = fmt.Errorf("failed to extract verified claims: %w", err)
-		return b
-	}
-
-	// re-set parameters from verified claims to ensure integrity
-	b.setParamsWithAnyMap(verifiedClaims)
-
-	if err := b.validate(); err != nil {
-		b.errValidation = err
-		return b
-	}
-
+	// redirect_uri is the only prefix that reaches here: x509_san_dns returned above,
+	// and the switch in setParamsWithAnyMap already refused the other four. It names
+	// no key this request object could be verified with, and OID4VP 1.0 Section 5.9.3
+	// rules it out explicitly:
+	//
+	//	Requests using the redirect_uri Client Identifier Prefix cannot be signed
+	//	because there is no method for the Wallet to obtain a trusted key for
+	//	verification.
+	//
+	// The signature used to be verified with a key from the request's own
+	// client_metadata instead, which Section 5.1 forbids:
+	//
+	//	Public keys included in this parameter MUST NOT be used to verify the
+	//	signature of signed Authorization Requests.
+	//
+	// decentralized_identifier, x509_hash, verifier_attestation and openid_federation
+	// each do name a key. Accepting one means adding it to that switch as well, not
+	// only giving it a branch next to x509_san_dns: a branch alone is unreachable.
+	b.errValidation = newAuthorizationRequestError(InvalidRequestError,
+		"a signed request object needs a client_id prefix that names its verification key, got %q", b.req.ClientID)
 	return b
 }
 

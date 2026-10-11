@@ -1,8 +1,6 @@
 package oid4vp
 
 import (
-	"fmt"
-
 	"github.com/go-jose/go-jose/v4"
 )
 
@@ -90,6 +88,11 @@ const (
 
 // VerifierMetadata represents the Verifier Metadata (Client Metadata) in OID4VP.
 // These fields are defined in RFC7591 and the OID4VP specification, and stated as optional.
+//
+// Jwks holds the Verifier's keys for encrypting the Authorization Response (Section 8.3)
+// and nothing else: Section 5.1 forbids verifying a signed Authorization Request with a
+// key from this parameter, so it is deliberately not reachable by kid. The encryption key
+// is picked in createJARMResponse.
 type VerifierMetadata struct {
 	RedirectURIs                      []string           `json:"redirect_uris,omitempty"`
 	TokenEndpointAuthMethod           string             `json:"token_endpoint_auth_method,omitempty"`
@@ -108,15 +111,6 @@ type VerifierMetadata struct {
 	SoftwareVersion                   string             `json:"software_version,omitempty"`
 	AuthorizationEncryptedResponseAlg string             `json:"authorization_encrypted_response_alg,omitempty"`
 	AuthorizationEncryptedResponseEnc string             `json:"authorization_encrypted_response_enc,omitempty"`
-}
-
-func (v *VerifierMetadata) FetchKeyWithKID(kid string) (jose.JSONWebKey, error) {
-	for _, key := range v.Jwks.Keys {
-		if key.KeyID == kid {
-			return key, nil
-		}
-	}
-	return jose.JSONWebKey{}, fmt.Errorf("key with kid %s not found", kid)
 }
 
 // GrantTypes supported by the OID4VP plugin
