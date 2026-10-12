@@ -210,6 +210,33 @@ func TestChooseClaims_ClaimSetsOrder(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, []string{family}, got)
 	})
+
+	// An option SelectedClaims blocks is not one the Wallet can satisfy, so the next
+	// one is tried. Section 7.3 pulls place_of_birth's sub-claims in with it, and
+	// locality is outside the cap, so the first option cannot be disclosed.
+	locality, localityDigest := testDisclosure(t, "s3", "locality", "Berlin")
+	place, placeDigest := testDisclosure(t, "s4", "place_of_birth", map[string]any{"_sd": []any{localityDigest}})
+	nested := map[string]any{"_sd": []any{givenDigest, placeDigest}}
+	capped := &types.ClaimsQuery{
+		Claims: []types.ClaimQuery{
+			{ID: "p", Path: []any{"place_of_birth"}},
+			{ID: "g", Path: []any{"given_name"}},
+		},
+		ClaimSets: [][]string{{"p"}, {"g"}},
+	}
+
+	t.Run("an option the cap blocks is skipped for the next one", func(t *testing.T) {
+		got, err := selectDisclosures(nested, []string{given, locality, place}, "sha-256", capped,
+			[]string{"place_of_birth", "given_name"})
+		require.NoError(t, err)
+		assert.Equal(t, []string{given}, got)
+	})
+
+	t.Run("no option left within the cap still fails", func(t *testing.T) {
+		_, err := selectDisclosures(nested, []string{given, locality, place}, "sha-256", capped,
+			[]string{"place_of_birth"})
+		assert.ErrorIs(t, err, types.ErrClaimsNotSatisfiable)
+	})
 }
 
 // TestSelectDisclosures_SelectedClaimsCapsArrayElements pins that the cap also

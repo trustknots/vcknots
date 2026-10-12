@@ -34,7 +34,8 @@ type SdJwtVcPresentationOptions struct {
 	ClaimsQuery *types.ClaimsQuery
 	// SelectedClaims specifies which claims to disclose in the presentation. With a
 	// ClaimsQuery it caps the disclosures instead: a query needing any other claim fails
-	// with types.ErrClaimsNotSatisfiable.
+	// with types.ErrClaimsNotSatisfiable. With claim_sets, an option needing another
+	// claim is skipped for the next one, and only a query with no usable option fails.
 	SelectedClaims []string
 	// RequireKeyBinding indicates whether a Key Binding JWT is required
 	RequireKeyBinding bool

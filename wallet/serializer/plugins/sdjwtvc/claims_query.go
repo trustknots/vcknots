@@ -32,20 +32,29 @@ func selectDisclosures(payload map[string]any, encoded []string, sdAlg string, q
 		digests[i] = disc.Digest
 	}
 
+	// usable[i] is nil when claim i can be disclosed, and otherwise the reason it
+	// cannot: the Credential does not reveal it, or SelectedClaims does not allow
+	// every disclosure it would carry. Both have to be known before an option is
+	// picked, because an option the Wallet may not disclose is not one it can satisfy.
 	revealing := make([][]string, len(query.Claims))
-	found := make([]bool, len(query.Claims))
+	usable := make([]error, len(query.Claims))
 	for i, claim := range query.Claims {
-		revealing[i], found[i] = resolveClaim(payload, byDigest, claim.Path)
+		var found bool
+		if revealing[i], found = resolveClaim(payload, byDigest, claim.Path); !found {
+			usable[i] = fmt.Errorf("%w: no claim at path %v", types.ErrClaimsNotSatisfiable, claim.Path)
+			continue
+		}
+		usable[i] = withinAllowedClaims(claim.Path, revealing[i], byDigest, allowed)
 	}
 
-	chosen, err := chooseClaims(query, found)
+	chosen, err := chooseClaims(query, usable)
 	if err != nil {
 		return nil, err
 	}
-	if err := withinAllowedClaims(query, chosen, allowed); err != nil {
-		return nil, err
-	}
 
+	// Everything emitted below comes from revealing[chosen], which withinAllowedClaims
+	// has already held against the cap. A digest reaching keep from anywhere else would
+	// escape it.
 	keep := make(map[string]bool)
 	for _, i := range chosen {
 		for _, digest := range revealing[i] {
@@ -54,50 +63,47 @@ func selectDisclosures(payload map[string]any, encoded []string, sdAlg string, q
 	}
 	var selected []string
 	for i, e := range encoded {
-		if digests[i] == "" || !keep[digests[i]] {
-			continue
+		if digests[i] != "" && keep[digests[i]] {
+			selected = append(selected, e)
 		}
-		// SelectedClaims caps what the query may reveal. An array element's disclosure
-		// carries no claim name of its own, so withinAllowedClaims covers those by the
-		// root of the path that selected them.
-		disc := byDigest[digests[i]]
-		if len(allowed) > 0 && !disc.IsArrayElement && !slices.Contains(allowed, disc.Name) {
-			return nil, fmt.Errorf("%w: %q is not among SelectedClaims", types.ErrClaimsNotSatisfiable, disc.Name)
-		}
-		selected = append(selected, e)
 	}
 	return selected, nil
 }
 
-// withinAllowedClaims refuses a query that names a claim the caller did not allow.
-// It checks the root of each chosen path, because an array element's disclosure
-// carries no claim name of its own and so cannot be checked by name as the
-// selected disclosures are collected.
-func withinAllowedClaims(query *types.ClaimsQuery, chosen []int, allowed []string) error {
+// withinAllowedClaims reports why allowed does not permit the claim at path, or nil
+// when it does. The path has to start at an allowed name, and every disclosure the
+// claim would carry has to name an allowed claim: Section 7.3 pulls the sub-claims of
+// a selected claim in with it, so a path inside the cap can still reach a name outside
+// it. An array element's disclosure carries no claim name of its own, so it is covered
+// by the root of the path that selected it.
+func withinAllowedClaims(path []any, revealing []string, byDigest map[string]credential.SDJwtDisclosure, allowed []string) error {
 	if len(allowed) == 0 {
 		return nil
 	}
-	for _, i := range chosen {
-		path := query.Claims[i].Path
-		root, ok := "", false
-		if len(path) > 0 {
-			root, ok = path[0].(string)
-		}
-		if !ok || !slices.Contains(allowed, root) {
-			return fmt.Errorf("%w: path %v is not among SelectedClaims", types.ErrClaimsNotSatisfiable, path)
+	root, ok := "", false
+	if len(path) > 0 {
+		root, ok = path[0].(string)
+	}
+	if !ok || !slices.Contains(allowed, root) {
+		return fmt.Errorf("%w: path %v is not among SelectedClaims", types.ErrClaimsNotSatisfiable, path)
+	}
+	for _, digest := range revealing {
+		if disc := byDigest[digest]; !disc.IsArrayElement && !slices.Contains(allowed, disc.Name) {
+			return fmt.Errorf("%w: %q is not among SelectedClaims", types.ErrClaimsNotSatisfiable, disc.Name)
 		}
 	}
 	return nil
 }
 
 // chooseClaims returns the indexes of the claims to disclose: all of them, or the
-// first claim_sets option whose claims are all present (OID4VP 1.0 Section 6.4.1).
-func chooseClaims(query *types.ClaimsQuery, found []bool) ([]int, error) {
+// first claim_sets option whose every claim is usable (OID4VP 1.0 Section 6.4.1).
+// An option needing a claim the Wallet cannot disclose is skipped for the next one.
+func chooseClaims(query *types.ClaimsQuery, usable []error) ([]int, error) {
 	if len(query.ClaimSets) == 0 {
 		chosen := make([]int, 0, len(query.Claims))
-		for i, claim := range query.Claims {
-			if !found[i] {
-				return nil, fmt.Errorf("%w: no claim at path %v", types.ErrClaimsNotSatisfiable, claim.Path)
+		for i := range query.Claims {
+			if usable[i] != nil {
+				return nil, usable[i]
 			}
 			chosen = append(chosen, i)
 		}
@@ -115,7 +121,7 @@ func chooseClaims(query *types.ClaimsQuery, found []bool) ([]int, error) {
 		chosen := make([]int, 0, len(option))
 		for _, id := range option {
 			i, ok := byID[id]
-			if !ok || !found[i] {
+			if !ok || usable[i] != nil {
 				chosen = nil
 				break
 			}
