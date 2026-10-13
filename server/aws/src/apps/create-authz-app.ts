@@ -7,6 +7,7 @@ import {
   dynamodbAuthzOAuthPolicyStore,
   dynamodbAuthzServerMetadataStore,
   dynamodbDpopProofJtiStore,
+  dynamodbNonceStore,
   dynamodbPreAuthorizedCodeStore,
   kmsAuthzSignatureKeyStore,
 } from '@trustknots/aws'
@@ -48,6 +49,11 @@ export function createAuthzApp(options?: VcknotsOptions) {
     throw new Error('ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME is required')
   }
 
+  const noncesTableName = process.env.NONCES_TABLE_NAME
+  if (!noncesTableName) {
+    throw new Error('NONCES_TABLE_NAME is required')
+  }
+
   const dpopProofJtisTableName = process.env.DPOP_PROOF_JTIS_TABLE_NAME
   if (!dpopProofJtisTableName) {
     throw new Error('DPOP_PROOF_JTIS_TABLE_NAME is required')
@@ -64,6 +70,7 @@ export function createAuthzApp(options?: VcknotsOptions) {
   const allowedCredentialConfigurationStore = dynamodbAllowedCredentialConfigurationStore({
     tableName: allowedCredentialConfigurationsTableName,
   })
+  const nonceStore = dynamodbNonceStore({ tableName: noncesTableName })
   const dpopProofJtiStore = dynamodbDpopProofJtiStore({ tableName: dpopProofJtisTableName })
   const signatureKeyStore = kmsAuthzSignatureKeyStore()
   const { app, context } = createBaseApp(
@@ -77,6 +84,7 @@ export function createAuthzApp(options?: VcknotsOptions) {
         oauthClientStore,
         oauthPolicyStore,
         allowedCredentialConfigurationStore,
+        nonceStore,
         dpopProofJtiStore,
         signatureKeyStore,
         ...(options?.providers ?? []),
