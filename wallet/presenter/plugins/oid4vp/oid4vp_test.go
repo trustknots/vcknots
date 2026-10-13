@@ -217,42 +217,93 @@ func mustParseURL(t *testing.T, rawURL string) *url.URL {
 	return u
 }
 
+// signedRequestObjectHost is the dNSName the helper below puts in the certificate and
+// in the client_id, so a request object it signs authenticates as x509_san_dns:<host>.
+const signedRequestObjectHost = "verifier.example.org"
+
+// newSignedRequestObject builds a request object the wallet can authenticate: signed
+// with a self-signed certificate whose dNSName SAN matches the x509_san_dns client_id.
+// This is the only shape a signed request object can take, because every other Client
+// Identifier Prefix leaves the wallet without a trusted key (OID4VP 1.0 Section 5.9.3).
+// Callers override or add claims through extra.
+//
+// The returned pool trusts the signing certificate, for the tests that exercise real
+// chain verification. Tests that skip verification discard it.
+func newSignedRequestObject(t *testing.T, extra map[string]any) (string, *x509.CertPool) {
+	t.Helper()
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		DNSNames:              []string{signedRequestObjectHost},
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	require.NoError(t, err)
+	cert, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	trustPool := x509.NewCertPool()
+	trustPool.AddCert(cert)
+
+	signerOpts := (&jose.SignerOptions{}).
+		WithType("oauth-authz-req+jwt").
+		WithHeader("x5c", []string{base64.StdEncoding.EncodeToString(der)})
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: priv}, signerOpts)
+	require.NoError(t, err)
+
+	claims := map[string]any{
+		"client_id":     "x509_san_dns:" + signedRequestObjectHost,
+		"response_type": "vp_token",
+		"response_mode": "direct_post",
+		"response_uri":  "https://" + signedRequestObjectHost + "/response",
+		"nonce":         "test-nonce",
+		"dcql_query": map[string]any{
+			"credentials": []any{
+				map[string]any{
+					"id":     "pid_credential",
+					"format": "dc+sd-jwt",
+					"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+				},
+			},
+		},
+	}
+	for k, v := range extra {
+		claims[k] = v
+	}
+
+	obj, err := jwt.Signed(signer).Claims(claims).Serialize()
+	require.NoError(t, err)
+	return obj, trustPool
+}
+
+// newSignedRequestObjectPresenter returns a presenter wired the way the conformance
+// runner is: the certificate has no public trust anchor, so the chain is parsed
+// rather than verified.
+func newSignedRequestObjectPresenter() *Oid4vpPresenter {
+	return &Oid4vpPresenter{InsecureSkipX509Verify: true}
+}
+
+// buildSignedRequestObject runs a request object through the builder with the same
+// wiring as newSignedRequestObjectPresenter, for the tests that drive the builder
+// directly instead of going through ParsePresentationRequest.
+func buildSignedRequestObject(requestObject string) (*CredentialPresentationRequest, error) {
+	builder := NewRequestBuilder()
+	builder.insecureSkipX509Verify = true
+	return builder.WithRequestObject(requestObject).Build()
+}
+
 func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
 	// mockserver / httptest.NewServer use http; allow it for these tests.
 	t.Setenv(env.HTTP_ALLOWED.String(), "true")
 
-	// Setup mock verifier server with proper JWT signing
-	verifierServer := mockserver.NewOID4VPVerifierServer(nil)
-	defer verifierServer.Close()
-
-	// Create client_metadata with JWKS for JWT verification
-	keyPair := verifierServer.GetKeyPair()
-	clientMetadata := map[string]any{
-		"client_name": "Test Client",
-		"jwks":        keyPair.CreateJWKS(),
-	}
-
-	// Create properly signed JWT with the mock verifier's issuer
-	testClaims := map[string]any{
-		"aud":           "test-client",
-		"nonce":         "test-nonce",
-		"client_id":     "redirect_uri:http://example.com/callback",
-		"response_type": "vp_token",
-		"response_mode": "direct_post",
-		"state":         "test-state",
-		"dcql_query": map[string]any{
-			"credentials": []any{
-				map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
-			},
-		},
-		"response_uri":    "https://example.com/response",
-		"client_metadata": clientMetadata,
-	}
-
-	mockJWT, err := verifierServer.CreateSignedJWT(testClaims)
-	if err != nil {
-		t.Fatalf("Failed to create signed JWT: %v", err)
-	}
+	// The request_uri cases serve a request object the wallet can authenticate, which
+	// means x509_san_dns: no other prefix gives it a trusted verification key.
+	mockJWT, _ := newSignedRequestObject(t, map[string]any{"state": "test-state"})
 
 	setupMockJWTServer := func(expectedMethod string) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -321,19 +372,20 @@ func TestOid4vpPresenter_ParsePresentationRequest(t *testing.T) {
 				uri = tt.uri
 			} else {
 				// Build URI with request_uri
+				signedClientID := "x509_san_dns:" + signedRequestObjectHost
 				switch tt.name {
 				case "request_uri with default GET method":
-					uri = "openid4vp://present?client_id=redirect_uri:http://example.com/callback&request_uri=" + server.URL
+					uri = "openid4vp://present?client_id=" + signedClientID + "&request_uri=" + server.URL
 				case "request_uri with explicit GET method":
-					uri = "openid4vp://present?client_id=redirect_uri:http://example.com/callback&request_uri=" + server.URL + "&request_uri_method=GET"
+					uri = "openid4vp://present?client_id=" + signedClientID + "&request_uri=" + server.URL + "&request_uri_method=GET"
 				case "request_uri with POST method":
-					uri = "openid4vp://present?client_id=redirect_uri:http://example.com/callback&request_uri=" + server.URL + "&request_uri_method=POST"
+					uri = "openid4vp://present?client_id=" + signedClientID + "&request_uri=" + server.URL + "&request_uri_method=POST"
 				case "request_uri server error":
-					uri = "openid4vp://present?client_id=redirect_uri:http://example.com/callback&request_uri=" + server.URL
+					uri = "openid4vp://present?client_id=" + signedClientID + "&request_uri=" + server.URL
 				}
 			}
 
-			p := &Oid4vpPresenter{}
+			p := newSignedRequestObjectPresenter()
 			req, err := p.ParsePresentationRequest(uri)
 
 			if (err != nil) != tt.wantErr {
@@ -363,12 +415,9 @@ func TestOid4vpPresenter_WithRequestObject_TypHeader(t *testing.T) {
 	verifierServer := mockserver.NewOID4VPVerifierServer(nil)
 	defer verifierServer.Close()
 
-	// Create client_metadata with JWKS for JWT verification
+	// Only the signing key is taken from the mock server: the two failing subtests are
+	// rejected on the typ header, before any claim or key in client_metadata is read.
 	keyPair := verifierServer.GetKeyPair()
-	clientMetadata := map[string]any{
-		"client_name": "Test Client",
-		"jwks":        keyPair.CreateJWKS(),
-	}
 
 	// Create test claims
 	testClaims := map[string]any{
@@ -383,21 +432,14 @@ func TestOid4vpPresenter_WithRequestObject_TypHeader(t *testing.T) {
 				map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
 			},
 		},
-		"response_uri":    "https://example.com/response",
-		"client_metadata": clientMetadata,
+		"response_uri": "https://example.com/response",
 	}
 
 	t.Run("Valid 'typ' header should succeed", func(t *testing.T) {
-		// Create JWT with correct 'typ' header (done by mockserver by default)
-		mockJWT, err := verifierServer.CreateSignedJWT(testClaims)
-		if err != nil {
-			t.Fatalf("Failed to create signed JWT: %v", err)
-		}
-
-		builder := NewRequestBuilder()
-		builder = builder.WithRequestObject(mockJWT)
-
-		req, err := builder.Build()
+		// The helper sets the typ header, and signs the way a request object has to be
+		// signed to be authenticated at all (x509_san_dns with an x5c chain).
+		requestObject, _ := newSignedRequestObject(t, nil)
+		req, err := buildSignedRequestObject(requestObject)
 		if err != nil {
 			t.Errorf("Expected no error with valid 'typ' header, got: %v", err)
 		}
@@ -464,46 +506,15 @@ func TestOid4vpPresenter_WithRequestObject_TypHeader(t *testing.T) {
 
 // TestOid4vpPresenter_WithRequestObject_IssClaimIgnored tests 'iss' claim handling
 func TestOid4vpPresenter_WithRequestObject_IssClaimIgnored(t *testing.T) {
-	// Setup mock verifier server with proper JWT signing
-	verifierServer := mockserver.NewOID4VPVerifierServer(nil)
-	defer verifierServer.Close()
-
-	// Create client_metadata with JWKS for JWT verification
-	keyPair := verifierServer.GetKeyPair()
-	clientMetadata := map[string]any{
-		"client_name": "Test Client",
-		"jwks":        keyPair.CreateJWKS(),
-	}
-
-	// Create test claims including 'iss' claim
-	testClaims := map[string]any{
-		"iss":           "should-be-ignored", // This should be ignored per OID4VP spec
-		"aud":           "test-client",
-		"nonce":         "test-nonce",
-		"client_id":     "redirect_uri:http://example.com/callback",
-		"response_type": "vp_token",
-		"response_mode": "direct_post",
-		"state":         "test-state",
-		"dcql_query": map[string]any{
-			"credentials": []any{
-				map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
-			},
-		},
-		"response_uri":    "https://example.com/response",
-		"client_metadata": clientMetadata,
-	}
-
 	t.Run("JWT with 'iss' claim should be processed correctly", func(t *testing.T) {
-		// Create JWT with 'iss' claim
-		mockJWT, err := verifierServer.CreateSignedJWT(testClaims)
-		if err != nil {
-			t.Fatalf("Failed to create signed JWT: %v", err)
-		}
+		// 'iss' must be ignored even when it disagrees with client_id (OID4VP 1.0
+		// Section 5).
+		requestObject, _ := newSignedRequestObject(t, map[string]any{
+			"iss":   "should-be-ignored",
+			"state": "test-state",
+		})
 
-		builder := NewRequestBuilder()
-		builder = builder.WithRequestObject(mockJWT)
-
-		req, err := builder.Build()
+		req, err := buildSignedRequestObject(requestObject)
 		if err != nil {
 			t.Fatalf("Expected no error when 'iss' claim is present, got: %v", err)
 		}
@@ -512,8 +523,8 @@ func TestOid4vpPresenter_WithRequestObject_IssClaimIgnored(t *testing.T) {
 		}
 
 		// Verify that other claims were processed correctly
-		if req.ClientID != "redirect_uri:http://example.com/callback" {
-			t.Fatalf("Expected ClientID 'redirect_uri:http://example.com/callback', got: %s", req.ClientID)
+		if want := "x509_san_dns:" + signedRequestObjectHost; req.ClientID != want {
+			t.Fatalf("Expected ClientID %q, got: %s", want, req.ClientID)
 		}
 		if req.ResponseType != "vp_token" {
 			t.Fatalf("Expected ResponseType 'vp_token', got: %s", req.ResponseType)
@@ -523,62 +534,20 @@ func TestOid4vpPresenter_WithRequestObject_IssClaimIgnored(t *testing.T) {
 
 // TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation tests standard JWT claims validation
 func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T) {
-	// Setup mock verifier server with proper JWT signing
-	verifierServer := mockserver.NewOID4VPVerifierServer(nil)
-	defer verifierServer.Close()
-
-	// Create client_metadata with JWKS for JWT verification
-	keyPair := verifierServer.GetKeyPair()
-	clientMetadata := map[string]any{
-		"client_name": "Test Client",
-		"jwks":        keyPair.CreateJWKS(),
-	}
-
-	// Helper function to create JWT with custom time claims
-	createJWTWithTimeClaims := func(iat, exp int64) (string, error) {
-		testClaims := map[string]any{
-			"iat":           iat,
-			"exp":           exp,
-			"aud":           "test-client",
-			"nonce":         "test-nonce",
-			"client_id":     "redirect_uri:http://example.com/callback",
-			"response_type": "vp_token",
-			"response_mode": "direct_post",
-			"state":         "test-state",
-			"dcql_query": map[string]any{
-				"credentials": []any{
-					map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
-				},
-			},
-			"response_uri":    "https://example.com/response",
-			"client_metadata": clientMetadata,
-		}
-
-		// Create JWT with custom claims (bypassing mockserver's default time claims)
-		joseKey := keyPair.CreateJWK()
-		signerOptions := &jose.SignerOptions{}
-		signerOptions.WithType("oauth-authz-req+jwt")
-
-		signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: joseKey}, signerOptions)
-		if err != nil {
-			return "", err
-		}
-
-		token, err := jwt.Signed(signer).Claims(testClaims).Serialize()
-		return token, err
+	// Signed request objects are only authenticated through x509_san_dns, so the time
+	// claims are exercised on that path.
+	newWithTimeClaims := func(iat, exp int64) string {
+		requestObject, _ := newSignedRequestObject(t, map[string]any{
+			"iat":   iat,
+			"exp":   exp,
+			"state": "test-state",
+		})
+		return requestObject
 	}
 
 	t.Run("Valid time claims should succeed", func(t *testing.T) {
 		now := time.Now()
-		validJWT, err := createJWTWithTimeClaims(now.Unix(), now.Add(time.Hour).Unix())
-		if err != nil {
-			t.Fatalf("Failed to create JWT with valid time claims: %v", err)
-		}
-
-		builder := NewRequestBuilder()
-		builder = builder.WithRequestObject(validJWT)
-
-		req, err := builder.Build()
+		req, err := buildSignedRequestObject(newWithTimeClaims(now.Unix(), now.Add(time.Hour).Unix()))
 		if err != nil {
 			t.Errorf("Expected no error with valid time claims, got: %v", err)
 		}
@@ -589,18 +558,12 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 
 	t.Run("Expired JWT should fail", func(t *testing.T) {
 		now := time.Now()
-		expiredJWT, err := createJWTWithTimeClaims(
+		expiredJWT := newWithTimeClaims(
 			now.Add(-2*time.Hour).Unix(), // issued 2 hours ago
 			now.Add(-time.Hour).Unix(),   // expired 1 hour ago
 		)
-		if err != nil {
-			t.Fatalf("Failed to create expired JWT: %v", err)
-		}
 
-		builder := NewRequestBuilder()
-		builder = builder.WithRequestObject(expiredJWT)
-
-		_, err = builder.Build()
+		_, err := buildSignedRequestObject(expiredJWT)
 		if err == nil {
 			t.Error("Expected error for expired JWT, got nil")
 		}
@@ -611,18 +574,12 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 
 	t.Run("Future iat claim should fail", func(t *testing.T) {
 		now := time.Now()
-		futureIatJWT, err := createJWTWithTimeClaims(
+		futureIatJWT := newWithTimeClaims(
 			now.Add(time.Hour).Unix(),   // issued in the future
 			now.Add(2*time.Hour).Unix(), // expires 2 hours from now
 		)
-		if err != nil {
-			t.Fatalf("Failed to create JWT with future iat: %v", err)
-		}
 
-		builder := NewRequestBuilder()
-		builder = builder.WithRequestObject(futureIatJWT)
-
-		_, err = builder.Build()
+		_, err := buildSignedRequestObject(futureIatJWT)
 		if err == nil {
 			t.Error("Expected error for future iat claim, got nil")
 		}
@@ -632,32 +589,9 @@ func TestOid4vpPresenter_WithRequestObject_StandardClaimsValidation(t *testing.T
 	})
 
 	t.Run("JWT without exp claim should succeed with leeway", func(t *testing.T) {
-		// Test JWT without exp claim - should be allowed
-		testClaims := map[string]any{
-			"aud":           "test-client",
-			"nonce":         "test-nonce",
-			"client_id":     "redirect_uri:http://example.com/callback",
-			"response_type": "vp_token",
-			"response_mode": "direct_post",
-			"state":         "test-state",
-			"dcql_query": map[string]any{
-				"credentials": []any{
-					map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
-				},
-			},
-			"response_uri":    "https://example.com/response",
-			"client_metadata": clientMetadata,
-		}
+		noExpJWT, _ := newSignedRequestObject(t, map[string]any{"state": "test-state"})
 
-		noExpJWT, err := verifierServer.CreateSignedJWT(testClaims)
-		if err != nil {
-			t.Fatalf("Failed to create JWT without exp claim: %v", err)
-		}
-
-		builder := NewRequestBuilder()
-		builder = builder.WithRequestObject(noExpJWT)
-
-		req, err := builder.Build()
+		req, err := buildSignedRequestObject(noExpJWT)
 		if err != nil {
 			t.Errorf("Expected no error for JWT without exp claim, got: %v", err)
 		}
@@ -857,30 +791,16 @@ func TestOid4vpPresenter_SendsErrorAuthorizationResponse(t *testing.T) {
 		server, captured := newErrorCapturingServer(t)
 		defer server.Close()
 
-		verifierServer := mockserver.NewOID4VPVerifierServer(nil)
-		defer verifierServer.Close()
-		keyPair := verifierServer.GetKeyPair()
+		// A redirect_uri client_id leaves a signed request object unauthenticated, so
+		// it is rejected with a code that would be deliverable on the query parameter
+		// path. The response_uri it names must still not receive it.
+		requestObject, _ := newSignedRequestObject(t, map[string]any{
+			"client_id":    "redirect_uri:http://example.com/cb",
+			"response_uri": server.URL,
+			"state":        "err-state",
+		})
 
-		claims := map[string]any{
-			"aud":           "test-client",
-			"nonce":         "n",
-			"client_id":     "redirect_uri:http://example.com/cb",
-			"response_type": "vp_token",
-			"response_mode": "direct_post",
-			"state":         "err-state",
-			"dcql_query":    map[string]any{"credentials": []any{}},
-			"response_uri":  server.URL,
-			"client_metadata": map[string]any{
-				"client_name": "Test Client",
-				"jwks":        keyPair.CreateJWKS(),
-			},
-		}
-		jwtStr, err := verifierServer.CreateSignedJWT(claims)
-		if err != nil {
-			t.Fatalf("failed to create signed JWT: %v", err)
-		}
-
-		_, err = p.ParsePresentationRequest("openid4vp://present?request=" + url.QueryEscape(jwtStr))
+		_, err := p.ParsePresentationRequest("openid4vp://present?request=" + url.QueryEscape(requestObject))
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -1029,42 +949,13 @@ func TestOid4vpPresenter_ClientMetadataParsing_And_ResponseModeConstraint(t *tes
 }
 
 func TestOid4vpPresenter_RequestParameterJWT_Success(t *testing.T) {
-	// Setup mock verifier server with proper JWT signing
-	verifierServer := mockserver.NewOID4VPVerifierServer(nil)
-	defer verifierServer.Close()
-
-	// Create client_metadata with JWKS for JWT verification
-	keyPair := verifierServer.GetKeyPair()
-	clientMetadata := map[string]any{
-		"client_name": "Test Client",
-		"jwks":        keyPair.CreateJWKS(),
-	}
-
-	// claims inside request parameter
-	claims := map[string]any{
-		"aud":           "test-client",
-		"nonce":         "test-nonce",
-		"client_id":     "redirect_uri:http://example.com/callback",
-		"response_type": "vp_token",
-		"response_mode": "direct_post",
-		"state":         "test-state",
-		"dcql_query": map[string]any{
-			"credentials": []any{
-				map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
-			},
-		},
-		"response_uri":    "https://example.com/response",
-		"client_metadata": clientMetadata,
-	}
-
-	jwtStr, err := verifierServer.CreateSignedJWT(claims)
-	if err != nil {
-		t.Fatalf("failed to create signed JWT: %v", err)
-	}
+	// A request object passed inline still has to be authenticated, so it carries the
+	// same x509_san_dns shape as one fetched from a request_uri.
+	jwtStr, _ := newSignedRequestObject(t, map[string]any{"state": "test-state"})
 
 	uri := "openid4vp://present?request=" + url.QueryEscape(jwtStr)
 
-	p := &Oid4vpPresenter{}
+	p := newSignedRequestObjectPresenter()
 	req, err := p.ParsePresentationRequest(uri)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1074,97 +965,81 @@ func TestOid4vpPresenter_RequestParameterJWT_Success(t *testing.T) {
 	}
 }
 
-// x509_san_dns branch tests
-func TestOid4vpPresenter_RequestObject_WithX5C_X509SanDNS_SuccessAndFailures(t *testing.T) {
-	// Generate a self-signed certificate with SAN DNS name
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
-	tmpl := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(24 * time.Hour),
-		DNSNames:              []string{"verifier.example.org"},
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
-	if err != nil {
-		t.Fatalf("failed to create certificate: %v", err)
-	}
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		t.Fatalf("failed to parse certificate: %v", err)
-	}
+// TestOid4vpPresenter_RequestObject_RejectsSelfAssertedKey pins that a signed request
+// object is refused when the Client Identifier Prefix gives the wallet no trusted key.
+// It used to be accepted, verified with a key the request itself published in
+// client_metadata.jwks, which OID4VP 1.0 Section 5.1 forbids and which authenticated
+// nothing: signing with an attacker's key and publishing its public half passed.
+func TestOid4vpPresenter_RequestObject_RejectsSelfAssertedKey(t *testing.T) {
+	attacker, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
 
-	// Trust pool containing our self-signed cert
-	pool := x509.NewCertPool()
-	pool.AddCert(cert)
+	published := jose.JSONWebKey{Key: attacker.Public(), KeyID: "attacker", Algorithm: "ES256", Use: "sig"}
+	signerOpts := (&jose.SignerOptions{}).WithType("oauth-authz-req+jwt").WithHeader("kid", "attacker")
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: attacker}, signerOpts)
+	require.NoError(t, err)
 
-	// Build JWT with x5c header and claims for x509_san_dns
-	claims := map[string]any{
-		"aud":           "test-client",
-		"nonce":         "n",
-		"client_id":     "x509_san_dns:verifier.example.org",
+	requestObject, err := jwt.Signed(signer).Claims(map[string]any{
+		"client_id":     "redirect_uri:https://attacker.example/collect",
 		"response_type": "vp_token",
 		"response_mode": "direct_post",
-		"state":         "s",
+		"response_uri":  "https://attacker.example/collect",
+		"nonce":         "attacker-nonce",
 		"dcql_query": map[string]any{
 			"credentials": []any{
-				map[string]any{"id": "cred1", "format": "jwt_vc_json", "meta": map[string]any{}},
+				map[string]any{
+					"id":     "credential-request",
+					"format": "dc+sd-jwt",
+					"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+				},
 			},
 		},
-		"response_uri": "https://verifier.example.org/response",
+		"client_metadata": map[string]any{
+			"jwks": jose.JSONWebKeySet{Keys: []jose.JSONWebKey{published}},
+		},
+	}).Serialize()
+	require.NoError(t, err)
+
+	_, err = buildSignedRequestObject(requestObject)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "client_id prefix that names its verification key")
+}
+
+// TestOid4vpPresenter_RequestObject_WithX5C_X509SanDNS_SuccessAndFailures is the only
+// test that verifies the x5c chain for real instead of skipping it, so it trusts the
+// certificate the request object was signed with.
+func TestOid4vpPresenter_RequestObject_WithX5C_X509SanDNS_SuccessAndFailures(t *testing.T) {
+	build := func(extra map[string]any) error {
+		requestObject, trustPool := newSignedRequestObject(t, extra)
+		builder := NewRequestBuilder()
+		builder.x509TrustChainRoots = trustPool
+		_, err := builder.WithRequestObject(requestObject).Build()
+		return err
 	}
 
-	signerOpts := &jose.SignerOptions{}
-	signerOpts = signerOpts.WithType("oauth-authz-req+jwt").WithHeader("x5c", []string{base64.StdEncoding.EncodeToString(der)})
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: priv}, signerOpts)
-	if err != nil {
-		t.Fatalf("failed to create signer: %v", err)
-	}
+	// The SAN matches both the client_id and the response_uri host.
+	require.NoError(t, build(nil))
 
-	jwtStr, err := jwt.Signed(signer).Claims(claims).Serialize()
-	if err != nil {
-		t.Fatalf("failed to sign jwt: %v", err)
-	}
+	// The client_id must name a dNSName the leaf certificate carries.
+	err := build(map[string]any{"client_id": "x509_san_dns:other.example.org"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "SAN")
 
-	// Success: SAN matches client_id and response_uri host
-	builder := NewRequestBuilder()
-	builder.x509TrustChainRoots = pool
-	builder = builder.WithRequestObject(jwtStr)
-	if _, err := builder.Build(); err != nil {
-		t.Fatalf("expected success, got error: %v", err)
-	}
+	// direct_post delivers the response to response_uri, so its host is bound too.
+	err = build(map[string]any{"response_uri": "https://another.example.org/resp"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "client_id (origin) must be same")
 
-	// Failure: SAN mismatch with client_id
-	claims["client_id"] = "x509_san_dns:other.example.org"
-	signerOpts2 := &jose.SignerOptions{}
-	signerOpts2 = signerOpts2.WithType("oauth-authz-req+jwt").WithHeader("x5c", []string{base64.StdEncoding.EncodeToString(der)})
-	signer2, _ := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: priv}, signerOpts2)
-	badJWT1, _ := jwt.Signed(signer2).Claims(claims).Serialize()
-	b := NewRequestBuilder()
-	b.x509TrustChainRoots = pool
-	b = b.WithRequestObject(badJWT1)
-	if _, err := b.Build(); err == nil || !strings.Contains(err.Error(), "SAN") {
-		t.Fatalf("expected SAN mismatch error, got: %v", err)
-	}
-
-	// Failure: response_uri hostname mismatch
-	claims["client_id"] = "x509_san_dns:verifier.example.org"
-	claims["response_uri"] = "https://another.example.org/resp"
-	signerOpts3 := &jose.SignerOptions{}
-	signerOpts3 = signerOpts3.WithType("oauth-authz-req+jwt").WithHeader("x5c", []string{base64.StdEncoding.EncodeToString(der)})
-	signer3, _ := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: priv}, signerOpts3)
-	badJWT2, _ := jwt.Signed(signer3).Claims(claims).Serialize()
-	b2 := NewRequestBuilder()
-	b2.x509TrustChainRoots = pool
-	b2 = b2.WithRequestObject(badJWT2)
-	if _, err := b2.Build(); err == nil || !strings.Contains(err.Error(), "client_id (origin) must be same") {
-		t.Fatalf("expected hostname mismatch error, got: %v", err)
-	}
+	// The same request object has to be accepted through the presenter, which is the
+	// only way a caller reaches this path. The cases above set the builder field
+	// directly, so they stay green even if the presenter stops handing its trust roots
+	// over; with x509_san_dns now the only prefix a signed request object can use,
+	// losing that one assignment would reject every signed request in production.
+	requestObject, trustPool := newSignedRequestObject(t, nil)
+	presented, err := (&Oid4vpPresenter{X509TrustChainRoots: trustPool}).
+		ParsePresentationRequest("openid4vp://present?request=" + url.QueryEscape(requestObject))
+	require.NoError(t, err)
+	assert.Equal(t, "x509_san_dns:"+signedRequestObjectHost, presented.ClientID)
 }
 
 func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
@@ -1291,45 +1166,11 @@ func Test_requestBuilder_WithRequestObjectURI(t *testing.T) {
 func TestConformanceShapeRequestURISignedDirectPost(t *testing.T) {
 	t.Setenv(env.HTTP_ALLOWED.String(), "true")
 
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	require.NoError(t, err)
-
-	tmpl := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(24 * time.Hour),
-		DNSNames:              []string{"verifier.example.org"},
-		KeyUsage:              x509.KeyUsageDigitalSignature,
-		BasicConstraintsValid: true,
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
-	require.NoError(t, err)
-
-	signerOpts := (&jose.SignerOptions{}).
-		WithType("oauth-authz-req+jwt").
-		WithHeader("x5c", []string{base64.StdEncoding.EncodeToString(der)})
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: priv}, signerOpts)
-	require.NoError(t, err)
-
-	requestObject, err := jwt.Signed(signer).Claims(map[string]any{
-		"aud":           "https://self-issued.me/v2",
-		"nonce":         "conformance-nonce",
-		"client_id":     "x509_san_dns:verifier.example.org",
-		"response_type": "vp_token",
-		"response_mode": "direct_post",
-		"state":         "conformance-state",
-		"response_uri":  "https://verifier.example.org/response",
-		"dcql_query": map[string]any{
-			"credentials": []any{
-				map[string]any{
-					"id":     "pid_credential",
-					"format": "dc+sd-jwt",
-					"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
-				},
-			},
-		},
-	}).Serialize()
-	require.NoError(t, err)
+	requestObject, _ := newSignedRequestObject(t, map[string]any{
+		"aud":   "https://self-issued.me/v2",
+		"nonce": "conformance-nonce",
+		"state": "conformance-state",
+	})
 
 	requestURIServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
@@ -1339,15 +1180,15 @@ func TestConformanceShapeRequestURISignedDirectPost(t *testing.T) {
 	defer requestURIServer.Close()
 
 	// Same wiring as examples/conformance_sdjwt.
-	p := &Oid4vpPresenter{InsecureSkipX509Verify: true}
+	p := newSignedRequestObjectPresenter()
 	req, err := p.ParsePresentationRequest(
-		"openid4vp://authorize?client_id=x509_san_dns:verifier.example.org&request_uri=" +
-			url.QueryEscape(requestURIServer.URL),
+		"openid4vp://authorize?client_id=x509_san_dns:" + signedRequestObjectHost +
+			"&request_uri=" + url.QueryEscape(requestURIServer.URL),
 	)
 	require.NoError(t, err)
 
 	assert.Equal(t, OAuthAuthzReqResponseModeDirectPost, req.ResponseMode)
-	assert.Equal(t, "https://verifier.example.org/response", req.ResponseURI)
+	assert.Equal(t, "https://"+signedRequestObjectHost+"/response", req.ResponseURI)
 	assert.Equal(t, "conformance-nonce", req.Nonce)
 	assert.Equal(t, "conformance-state", req.State)
 	require.NotNil(t, req.DcqlQuery)
