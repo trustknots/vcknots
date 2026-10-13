@@ -21,7 +21,29 @@ var (
 	ErrUnsupportedAlgorithm = errors.New("unsupported cryptographic algorithm")
 	ErrPluginNotFound       = errors.New("serialization plugin not found")
 	ErrNilPlugin            = errors.New("serialization plugin cannot be nil")
+	// ErrClaimsNotSatisfiable reports that a Credential cannot deliver the claims a
+	// ClaimsQuery asks for. OID4VP 1.0 Section 6.4.1 then forbids returning it at all.
+	ErrClaimsNotSatisfiable = errors.New("credential cannot satisfy the requested claims")
 )
+
+// ClaimsQuery is the format-neutral part of a DCQL Credential Query that decides
+// which claims a presentation discloses (OID4VP 1.0 Sections 6.3 and 6.4.1).
+type ClaimsQuery struct {
+	// Claims is nil when the Credential Query has no claims. Only the claims that
+	// are mandatory to present may then be disclosed.
+	Claims []ClaimQuery
+	// ClaimSets lists alternative combinations of Claims ids; the first one the
+	// Credential can satisfy is disclosed.
+	ClaimSets [][]string
+}
+
+// ClaimQuery is one entry of a DCQL claims array.
+type ClaimQuery struct {
+	ID string
+	// Path is a claims path pointer (OID4VP 1.0 Section 7): strings, nulls and
+	// non-negative integers.
+	Path []any
+}
 
 // SerializePresentationOptions is a marker interface for presentation serialization options
 // Each plugin can define its own options struct that implements this interface
@@ -29,6 +51,10 @@ type SerializePresentationOptions interface {
 	IsSerializePresentationOptions()
 	SetAudience(audience string)
 	SetNonce(nonce string)
+	// SetClaimsQuery sets the claims the Verifier asked for. A plugin whose format
+	// supports selective disclosure must disclose only those claims and fail with
+	// ErrClaimsNotSatisfiable when it cannot deliver them.
+	SetClaimsQuery(query *ClaimsQuery)
 }
 
 // Serializer defines the interface that all serialization plugins must implement

@@ -48,6 +48,10 @@ func (o *JwtVcPresentationOptions) SetNonce(nonce string) {
 	}
 }
 
+// SetClaimsQuery is a no-op: a JWT VC has no selectively disclosable claims, so
+// the whole credential is presented (OID4VP 1.0 Section 6.4.1).
+func (o *JwtVcPresentationOptions) SetClaimsQuery(*types.ClaimsQuery) {}
+
 // SerializeCredential serializes a credential to JWT VC format
 func (s *JwtVcSerializer) SerializeCredential(flavor credential.SupportedSerializationFlavor, cred *credential.Credential) ([]byte, error) {
 	if flavor != credential.JwtVc {
