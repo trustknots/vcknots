@@ -227,8 +227,8 @@ describe('sd-jwt provider', () => {
 
     await assert.rejects(
       provider.verify(sdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
-      (err: Error) => {
-        assert.equal(err.name, 'SDJWTException')
+      (err: VcknotsError) => {
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /Invalid JWT Signature/)
         return true
       }
@@ -333,8 +333,8 @@ describe('sd-jwt provider', () => {
         specifiedDisclosures: [],
         expectedAud: dcExpectedAud,
       }),
-      (err: Error) => {
-        assert.equal(err.name, 'SDJWTException')
+      (err: VcknotsError) => {
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /Invalid JWT Signature/)
         return true
       }

@@ -1,7 +1,7 @@
 import { createPublicKey } from 'node:crypto'
 import type { JsonWebKey as NodeJsonWebKey } from 'node:crypto'
 import * as jwt from 'jsonwebtoken'
-import { err } from '../errors/vcknots.error'
+import { VcknotsError, err } from '../errors/vcknots.error'
 import { VerifyCredentialProvider } from './provider.types'
 import * as jose from 'jose'
 import { parseVerifiableCredentialBase } from '../credential.types'
@@ -35,7 +35,14 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
       let iss: string | undefined
       const parts = vc.split('.')
       const payload = parts[1]
-      const decoded = JSON.parse(base64url.decode(payload))
+      let decoded: Record<string, unknown>
+      try {
+        decoded = JSON.parse(base64url.decode(payload ?? ''))
+      } catch {
+        throw err('invalid_credential', {
+          message: 'VC JWT payload is not valid base64url or JSON.',
+        })
+      }
       const credential = decoded.vc ? decoded.vc : decoded
       if (parseVerifiableCredentialBase(credential)) {
         iss = credential.issuer
@@ -105,10 +112,18 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
           format: 'jwk',
         })
 
-        const decode = jwt.verify(vc, publicKey, {
-          complete: true,
-          ignoreNotBefore: true,
-        })
+        let decode: jwt.Jwt
+        try {
+          decode = jwt.verify(vc, publicKey, {
+            complete: true,
+            ignoreNotBefore: true,
+          })
+        } catch (e) {
+          if (e instanceof VcknotsError) throw e
+          throw err('invalid_credential', {
+            message: e instanceof Error ? e.message : 'VC JWT signature verification failed',
+          })
+        }
         console.log('Verified claims:', decode.payload)
       } else {
         throw err('invalid_credential')
