@@ -6,7 +6,7 @@ import { decodeSdJwt, splitSdJwt } from '@sd-jwt/decode'
 import * as jose from 'jose'
 import { X509Certificate } from 'node:crypto'
 import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
-import { KbJwtJsonPayload } from '../keyBindingJwt.types'
+import { kbJwtJsonPayloadSchema } from '../keyBindingJwt.types'
 import { sdJwtPayloadSchema, VpTokenPayload } from '../presentation.types'
 
 const DEFAULT_KB_JWT_MAX_TOKEN_AGE_SECONDS = 300
@@ -244,7 +244,14 @@ export const verifyVerifiablePresentationDcSdJwt = (
             message: 'Key binding JWT is missing in SD-JWT VP',
           })
         }
-        const kbSdJwtDecoded = KbJwtJsonPayload(await jose.decodeJwt(kbJwt))
+        const rawKbPayload = await jose.decodeJwt(kbJwt)
+        const kbPayloadParseResult = kbJwtJsonPayloadSchema.safeParse(rawKbPayload)
+        if (!kbPayloadParseResult.success) {
+          throw err('invalid_sd_jwt', {
+            message: `KB-JWT payload is invalid: ${kbPayloadParseResult.error.message}`,
+          })
+        }
+        const kbSdJwtDecoded = kbPayloadParseResult.data
         const nowSeconds = Math.floor(Date.now() / 1000)
         if (kbSdJwtDecoded.iat > nowSeconds + clockTolerance) {
           throw err('invalid_sd_jwt', {

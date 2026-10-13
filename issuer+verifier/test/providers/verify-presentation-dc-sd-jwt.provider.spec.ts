@@ -6,10 +6,10 @@ import { ES256, digest, generateSalt } from '@sd-jwt/crypto-nodejs'
 import { ClientIdentifier } from '../../src/client-id-prefix.types'
 import { VcknotsError } from '../../src/errors/vcknots.error'
 import { Jwk } from '../../src/jwk.type'
-// import { VerifyVerifiablePresentationProvider } from '../../src/providers/provider.types'
-import { verifyVerifiablePresentationDcSdJwt } from '../../src/providers/verify-presentation-dc-sd-jwt.provider'
 import type { Nonce } from '../../src/nonce.types'
+// import { VerifyVerifiablePresentationProvider } from '../../src/providers/provider.types'
 import { NonceStoreProvider } from '../../src/providers/provider.types'
+import { verifyVerifiablePresentationDcSdJwt } from '../../src/providers/verify-presentation-dc-sd-jwt.provider'
 
 const issuer = 'https://issuer.example.com'
 const kid = 'test-kid'
@@ -489,6 +489,109 @@ describe('sd-jwt provider', () => {
       (e: VcknotsError) => {
         assert.equal(e.name, 'invalid_sd_jwt')
         assert.match(e.message, /KB-JWT iat is in the future/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT iat is missing', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'kb+jwt' })).toString(
+      'base64url'
+    )
+    const kbPayload = Buffer.from(
+      JSON.stringify({ aud: String(dcKbJwtExpectedAud), nonce: 'test', sd_hash: 'test' })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT iat is a string', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'kb+jwt' })).toString(
+      'base64url'
+    )
+    const kbPayload = Buffer.from(
+      JSON.stringify({
+        aud: String(dcKbJwtExpectedAud),
+        iat: String(fixtureKbJwtIat),
+        nonce: 'test',
+        sd_hash: 'test',
+      })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT iat is a boolean', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'kb+jwt' })).toString(
+      'base64url'
+    )
+    const kbPayload = Buffer.from(
+      JSON.stringify({
+        aud: String(dcKbJwtExpectedAud),
+        iat: true,
+        nonce: 'test',
+        sd_hash: 'test',
+      })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT iat is an extremely large number', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'kb+jwt' })).toString(
+      'base64url'
+    )
+    const kbPayload = Buffer.from(
+      JSON.stringify({
+        aud: String(dcKbJwtExpectedAud),
+        iat: 1e308,
+        nonce: 'test',
+        sd_hash: 'test',
+      })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
         return true
       }
     )
