@@ -570,17 +570,14 @@ describe('sd-jwt provider', () => {
     )
   })
 
-  it('fails when KB-JWT iat is an extremely large number', async () => {
+  it('fails when KB-JWT iat is Infinity (1e400 parses to Infinity under JSON.parse)', async () => {
     const kbHeader = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'kb+jwt' })).toString(
       'base64url'
     )
+    // JSON.stringify converts Infinity to null, so we craft the payload manually.
+    // JSON.parse converts 1e400 to Infinity because it exceeds Number.MAX_VALUE.
     const kbPayload = Buffer.from(
-      JSON.stringify({
-        aud: String(dcKbJwtExpectedAud),
-        iat: 1e308,
-        nonce: 'test',
-        sd_hash: 'test',
-      })
+      `{"aud":"${String(dcKbJwtExpectedAud)}","iat":1e400,"nonce":"test","sd_hash":"test"}`
     ).toString('base64url')
     const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
 
