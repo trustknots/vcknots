@@ -44,8 +44,15 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
       const payload = parts[1]
       let decoded: Record<string, unknown>
       try {
-        decoded = JSON.parse(base64url.decode(payload ?? ''))
-      } catch {
+        const raw: unknown = JSON.parse(base64url.decode(payload ?? ''))
+        if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+          throw err('invalid_credential', {
+            message: 'VC JWT payload is not valid base64url or JSON.',
+          })
+        }
+        decoded = raw as Record<string, unknown>
+      } catch (e) {
+        if (e instanceof VcknotsError) throw e
         throw err('invalid_credential', {
           message: 'VC JWT payload is not valid base64url or JSON.',
         })
@@ -114,13 +121,12 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
             message: `Empty JWKS keys in jwt-vc-issuer for: ${issUri}`,
           })
         }
-        const publicKey = createPublicKey({
-          key: publicJwk as NodeJsonWebKey,
-          format: 'jwk',
-        })
-
         let decode: jwt.Jwt
         try {
+          const publicKey = createPublicKey({
+            key: publicJwk as NodeJsonWebKey,
+            format: 'jwk',
+          })
           decode = jwt.verify(vc, publicKey, {
             complete: true,
             ignoreNotBefore: true,

@@ -236,6 +236,27 @@ describe('verifyCredentialJwt provider', () => {
     })
   })
 
+  it('should throw invalid_credential when VC JWT payload is not an object (null)', async () => {
+    const [header, , signature] = vcJwt.split('.')
+    const nullPayload = Buffer.from('null').toString('base64url')
+    const nullJwt = `${header}.${nullPayload}.${signature}`
+
+    await assert.rejects(provider.verify(nullJwt), (err: VcknotsError) => {
+      assert.strictEqual(err.name, 'invalid_credential')
+      assert.match(err.message, /not valid base64url or JSON/)
+      return true
+    })
+  })
+
+  it('should throw invalid_credential when JWKS contains an invalid JWK', async () => {
+    mockFetch(200, { issuer, jwks: { keys: [{ kty: 'RSA', alg: 'RS256', use: 'sig' }] } })
+
+    await assert.rejects(provider.verify(vcJwt), (err: VcknotsError) => {
+      assert.strictEqual(err.name, 'invalid_credential')
+      return true
+    })
+  })
+
   it("canHandle should return true for 'jwt_vc_json'", () => {
     assert.strictEqual(provider.canHandle('jwt_vc_json'), true)
   })
