@@ -6,10 +6,10 @@ import { ES256, digest, generateSalt } from '@sd-jwt/crypto-nodejs'
 import { ClientIdentifier } from '../../src/client-id-prefix.types'
 import { VcknotsError } from '../../src/errors/vcknots.error'
 import { Jwk } from '../../src/jwk.type'
-// import { VerifyVerifiablePresentationProvider } from '../../src/providers/provider.types'
-import { verifyVerifiablePresentationDcSdJwt } from '../../src/providers/verify-presentation-dc-sd-jwt.provider'
 import type { Nonce } from '../../src/nonce.types'
 import { NonceStoreProvider } from '../../src/providers/provider.types'
+// import { VerifyVerifiablePresentationProvider } from '../../src/providers/provider.types'
+import { verifyVerifiablePresentationDcSdJwt } from '../../src/providers/verify-presentation-dc-sd-jwt.provider'
 
 const issuer = 'https://issuer.example.com'
 const kid = 'test-kid'
@@ -24,6 +24,14 @@ const fixtureSdJwtWithX5cForKb =
 const fixtureKbJwtForSdJwtVp =
   'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJyZWRpcmVjdF91cmk6aHR0cHM6Ly92ZXJpZmllci5leGFtcGxlLmNvbSIsImlhdCI6MTc3MjAxNTQ4OCwibm9uY2UiOiJiY2IyMDFiN2UxODZlZDM4MDEyN2I5MTU4YTlkNTdhNiIsInNkX2hhc2giOiJHaTZJMWUxanVYMlNvUFZsMEd6V2pmU2RwZGlFcThaMHNhSl9weGN6aFVZIn0.6ZaTRQ46jE5jPXI4Vebu81hNcJHOij_qhPyQBypjXM1HPDOjEV7DAp6n1-ob5yMUnPbUm-YRZwczNaUMvln4aA'
 const fixtureDcSdJwtVpWithKb = fixtureSdJwtWithX5cForKb + fixtureKbJwtForSdJwtVp
+/** KB-JWT signed with a key that does not match cnf.jwk in the SD-JWT. */
+const fixtureWrongKeyKbJwt =
+  'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJyZWRpcmVjdF91cmk6aHR0cHM6Ly92ZXJpZmllci5leGFtcGxlLmNvbSIsImlhdCI6MTc2NzIyNTYwMCwibm9uY2UiOiJiY2IyMDFiN2UxODZlZDM4MDEyN2I5MTU4YTlkNTdhNiIsInNkX2hhc2giOiJHaTZJMWUxanVYMlNvUFZsMEd6V2pmU2RwZGlFcThaMHNhSl9weGN6aFVZIn0.qc-dL2EXpevwshlLfwLPdpzbNzL1hxrxZA_CaRCxtc5TfEusZZ_ziwGUsX-_t0x9-U8FQh9P4IHC3QF9wskwsA'
+const fixtureDcSdJwtVpWithWrongKeyKb = `${fixtureSdJwtWithX5cForKb}${fixtureWrongKeyKbJwt}`
+/** KB-JWT with valid signature but wrong sd_hash (for invalid-sd-hash test). */
+const fixtureWrongSdHashKbJwt =
+  'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJyZWRpcmVjdF91cmk6aHR0cHM6Ly92ZXJpZmllci5leGFtcGxlLmNvbSIsImlhdCI6MTc2NzIyNTYwMCwibm9uY2UiOiJiY2IyMDFiN2UxODZlZDM4MDEyN2I5MTU4YTlkNTdhNiIsInNkX2hhc2giOiJnSTZJMWUxanVYMlNvUFZsMEd6V2pmU2RwZGlFcThaMHNhSl9weGN6aHV5In0.0_u-V3FU32Qizb25BiNpHgvRF77CNbpKx-fmvr273nuOj_OhWBRSMQVBkpPqgQNSHfldyhA96nFNShS-GvqwdA'
+const fixtureDcSdJwtVpWithWrongSdHash = `${fixtureSdJwtWithX5cForKb}${fixtureWrongSdHashKbJwt}`
 
 describe('sd-jwt provider', () => {
   // let provider: VerifyVerifiablePresentationProvider
@@ -318,6 +326,34 @@ describe('sd-jwt provider', () => {
       (e: VcknotsError) => {
         assert.equal(e.name, 'verifier_vp_formats_not_supported')
         assert.match(e.message, /kb-jwt_alg_values/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT is signed with wrong key', async () => {
+    await assert.rejects(
+      provider.verify(fixtureDcSdJwtVpWithWrongKeyKb, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT sd_hash does not match SD-JWT', async () => {
+    await assert.rejects(
+      provider.verify(fixtureDcSdJwtVpWithWrongSdHash, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
         return true
       }
     )

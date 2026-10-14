@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import { generateKeyPairSync } from 'node:crypto'
 import { afterEach, before, describe, it, mock } from 'node:test'
+import base64url from 'base64url'
 import * as jwt from 'jsonwebtoken'
 import { VerifiableCredential } from '../../src'
 import { VcknotsError } from '../../src/errors/vcknots.error'
 import { Jwk } from '../../src/jwk.type'
 import { VerifyCredentialProvider } from '../../src/providers/provider.types'
 import { verifyCredentialJwt } from '../../src/providers/verify-credential-jwt-vc-json.provider'
-import base64url from 'base64url'
 
 describe('verifyCredentialJwt provider', () => {
   const { publicKey, privateKey } = generateKeyPairSync('rsa', {
@@ -210,6 +210,30 @@ describe('verifyCredentialJwt provider', () => {
       return true
     })
     assert.strictEqual(fetchMock.mock.calls.length, 0)
+  })
+
+  it('should throw invalid_credential when VC JWT signature verification fails', async () => {
+    const { publicKey: wrongPublicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+    const wrongJwk = wrongPublicKey.export({ format: 'jwk' }) as Jwk
+    wrongJwk.use = 'sig'
+    wrongJwk.alg = 'RS256'
+    mockFetch(200, { issuer, jwks: { keys: [wrongJwk] } })
+
+    await assert.rejects(provider.verify(vcJwt), (err: VcknotsError) => {
+      assert.strictEqual(err.name, 'invalid_credential')
+      return true
+    })
+  })
+
+  it('should throw invalid_credential when VC JWT payload is malformed', async () => {
+    const [header, , signature] = vcJwt.split('.')
+    const nonJsonPayload = Buffer.from('not-valid-json').toString('base64url')
+    const malformedJwt = `${header}.${nonJsonPayload}.${signature}`
+
+    await assert.rejects(provider.verify(malformedJwt), (err: VcknotsError) => {
+      assert.strictEqual(err.name, 'invalid_credential')
+      return true
+    })
   })
 
   it("canHandle should return true for 'jwt_vc_json'", () => {
