@@ -19,7 +19,14 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
           message: 'VC represented as object is not supported.',
         })
       }
-      const decodedJwtVc = jwt.decode(vc, { complete: true })
+      let decodedJwtVc: jwt.Jwt | null
+      try {
+        decodedJwtVc = jwt.decode(vc, { complete: true }) as jwt.Jwt | null
+      } catch (e) {
+        throw err('invalid_credential', {
+          message: e instanceof Error ? e.message : 'VC JWT is not a valid JWT.',
+        })
+      }
       if (!decodedJwtVc) {
         throw err('invalid_credential')
       }
