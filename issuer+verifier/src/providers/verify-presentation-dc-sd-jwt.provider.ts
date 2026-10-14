@@ -260,7 +260,7 @@ export const verifyVerifiablePresentationDcSdJwt = (
         }
         if (nowSeconds - kbSdJwtDecoded.iat > maxTokenAge + clockTolerance) {
           throw err('invalid_sd_jwt', {
-            message: 'KB-JWT iat is outside the allowed issuance time window.',
+            message: 'KB-JWT iat exceeds max token age.',
           })
         }
         nonce = kbSdJwtDecoded.nonce

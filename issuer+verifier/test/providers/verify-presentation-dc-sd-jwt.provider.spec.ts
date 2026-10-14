@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { afterEach, before, describe, it, mock } from 'node:test'
 
 import { SDJwtInstance } from '@sd-jwt/core'
-import { ES256, digest, generateSalt } from '@sd-jwt/crypto-nodejs'
+import { digest, ES256, generateSalt } from '@sd-jwt/crypto-nodejs'
 import { ClientIdentifier } from '../../src/client-id-prefix.types'
 import { VcknotsError } from '../../src/errors/vcknots.error'
 import { Jwk } from '../../src/jwk.type'
@@ -22,10 +22,13 @@ const dcKbJwtExpectedAud = ClientIdentifier('redirect_uri:https://verifier.examp
 const fixtureSdJwtWithX5cForKb =
   'eyJhbGciOiJFUzI1NiIsInR5cCI6ImRjK3NkLWp3dCIsIng1YyI6WyJNSUlDSGpDQ0FjT2dBd0lCQWdJVVpYOUJTNUNET0pSVzJ0MUZLMVVETXQvUXdNRXdDZ1lJS29aSXpqMEVBd0l3SVRFTE1Ba0dBMVVFQmhNQ1IwSXhFakFRQmdOVkJBTU1DVTlKUkVZZ1ZHVnpkREFlRncweU5ERXhNalV3T0RNMk1EUmFGdzB6TkRFeE1qTXdPRE0yTURSYU1DRXhDekFKQmdOVkJBWVRBa2RDTVJJd0VBWURWUVFEREFsUFNVUkdJRlJsYzNRd1dUQVRCZ2NxaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUVC9kTHNkNTFMTEJyR1Y2UjIzbzZ2eW1SeEhYZUZCb0k4eXEzMXk1a0ZWMlZWMGdpOXg1WnpFRmlxOERNaUFIdWNMQUNGbmR4THRab3JDaGE5enpuUW80SFlNSUhWTUIwR0ExVWREZ1FXQkJTNWNiZGdBZU1CaTV3eHBicHdJU0doU2hBV0VUQWZCZ05WSFNNRUdEQVdnQlM1Y2JkZ0FlTUJpNXd4cGJwd0lTR2hTaEFXRVRBUEJnTlZIUk1CQWY4RUJUQURBUUgvTUlHQkJnTlZIUkVFZWpCNGdoQjNkM2N1YUdWbGJtRnVMbTFsTG5WcmdoMWtaVzF2TG1ObGNuUnBabWxqWVhScGIyNHViM0JsYm1sa0xtNWxkSUlKYkc5allXeG9iM04wZ2hac2IyTmhiR2h2YzNRdVpXMXZZbWw0TG1OdkxuVnJnaUprWlcxdkxuQnBaQzFwYzNOMVpYSXVZblZ1WkdWelpISjFZMnRsY21WcExtUmxNQW9HQ0NxR1NNNDlCQU1DQTBrQU1FWUNJUUNQYm5MeENJK1dSMXZoT1crQThLem5BV3YxTUpvK1lFYjFNSTQ1TktXL1ZRSWhBTHpzcW94OFZ1QlJ3TjJkbDVMa3BueFA0b0g5cDZIMEFPWm1LUCtZN25YUyJdfQ.eyJfc2QiOlsiMDRVY1lqOEV1T1ExWWZHNzdWUDZQdWdPVWF1dnRNQ0tSU1RvdUR4aldidyIsIkgwdElaUGhWVFVqTnhCd1VzelFrMW95VlVQNU5zZGRLNWo2ZGcyb0NPemMiLCJXelV0Nkd2ZnJyVHlLWmFIRFhTcERYWHJGLUxURm1UME9WTFhvYmFpZnVNIiwiWGVuek44TVl1LU5fMXpGV3g1dVVYb0FWLWhwdG1MV2d5ekczbUVkR0tDZyIsImVMbVlqTGVLY0ZQS2dVN1YwQWlVOVVMeXZ3cWVKLWJ4ZWdDUGlMTWlTMFkiLCJsdmtZMVh3OFE5M1BUOERQRHhHSlhCMzlobHJTNFpOUVZCbkhmcFZOUVZBIiwibXY3T0tCMnRoUWpOV2lxU3ZBTDAxY2VOUG5wTDlDVmhlNGRmNHRSYUxGTSIsIm52Mm9rMjFXejVkN2lsenNkczE1Vk5tRXI1U0VPYlBzVWNxNmpjemxXaEUiXSwiaXNzIjoiaHR0cHM6Ly9pc3N1ZXIuZXVkaXcuZGV2IiwidmN0IjoidXJuOmV1LmV1cm9wYS5lYy5ldWRpOnBpZDoxIiwiX3NkX2FsZyI6InNoYS0yNTYiLCJjbmYiOnsiandrIjp7Imt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJ4IjoiZXpaZ0t3TXVlQXlaTEhVZ1Nwek5rYk9XRGdqSlhUQU9KbjhNZnRPbmF5USIsInkiOiJGeV9VNEt5WlFmLTlqS3BGSnRINk9GRlJYbXdBY3ZleWZ1b0RwMWhTT0ZvIn19LCJpYXQiOjE3NzIwMTU0NjV9.gseVu9AStknO-locvvCKcnj8PnUWSZtMF4wE-SqqXteI4xMOfUaA0zFpZR6hGfNBPUSZL3ROw4RYDLQIOQjsMQ~WyJkMTQ2V0NwTVg1MDZpZzY3UHoxVGtBIiwgImZhbWlseV9uYW1lIiwgIlRFU1QiXQ~WyJzQnE1aUY1dTFibVRfU2dYblF1UmtBIiwgImdpdmVuX25hbWUiLCAiVEFSTyJd~WyJRNG80UjFxdDhacENFSkhIWFRZRmpRIiwgImJpcnRoZGF0ZSIsICIyMDAwLTAzLTAzIl0~WyJHUDRwcXpKaVJ4RGN0TEVlcEZ5VzJBIiwgIm5hdGlvbmFsaXRpZXMiLCBbIkpQIl1d~WyJKX2pYUkZxT0poR18yRmFmOHl4bFBBIiwgImlzc3VpbmdfYXV0aG9yaXR5IiwgIlRlc3QgUElEIGlzc3VlciJd~WyJiNDk2UGotUDdXS05iWkFKMDJ3NVhnIiwgImlzc3VpbmdfY291bnRyeSIsICJGQyJd~WyJ4bGlVZlExX050Y3IyYnBJcGJCN1lnIiwgIjE4IiwgdHJ1ZV0~WyJ3dDJCRVFYVDBfUDNIQ0N4VVVoSmZBIiwgImFnZV9lcXVhbF9vcl9vdmVyIiwgeyJfc2QiOiBbInNDczNOZlNLYVRoR3pRbERVRTd5WnR4VmVBSm5lRGY2dS1nNFk1NVdRekUiXX1d~WyJxcm1aeGpLNUtPZXRGUHFOSGpWN0h3IiwgImxvY2FsaXR5IiwgIkpBUEFOIl0~WyJpc0ZDcF8xREhnUUpZLVBtZWYwRHV3IiwgInBsYWNlX29mX2JpcnRoIiwgeyJfc2QiOiBbIjF1LWszbEFKMHlPV2x4OUJLLWFSVEVaUUZyLXVPUFRrTGdEN3U5aTFlMEUiXX1d~'
 const fixtureKbJwtForSdJwtVp =
-  'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJyZWRpcmVjdF91cmk6aHR0cHM6Ly92ZXJpZmllci5leGFtcGxlLmNvbSIsImlhdCI6MTc3MjAxNTQ4OCwibm9uY2UiOiJiY2IyMDFiN2UxODZlZDM4MDEyN2I5MTU4YTlkNTdhNiIsInNkX2hhc2giOiJHaTZJMWUxanVYMlNvUFZsMEd6V2pmU2RwZGlFcThaMHNhSl9weGN6aFVZIn0.6ZaTRQ46jE5jPXI4Vebu81hNcJHOij_qhPyQBypjXM1HPDOjEV7DAp6n1-ob5yMUnPbUm-YRZwczNaUMvln4aA'
+  'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJyZWRpcmVjdF91cmk6aHR0cHM6Ly92ZXJpZmllci5leGFtcGxlLmNvbSIsImlhdCI6MTc2NzIyNTYwMCwibm9uY2UiOiJiY2IyMDFiN2UxODZlZDM4MDEyN2I5MTU4YTlkNTdhNiIsInNkX2hhc2giOiJHaTZJMWUxanVYMlNvUFZsMEd6V2pmU2RwZGlFcThaMHNhSl9weGN6aFVZIn0.BAVvtVJ-Bu7-SqMf5_CPKIKnRXBSukpm6Y3GNc9pD1WAWRjOZhK7mVXKTaum_MppOTJez5p5ctVJo8RuUkRsUA'
 const fixtureDcSdJwtVpWithKb = fixtureSdJwtWithX5cForKb + fixtureKbJwtForSdJwtVp
-/** `iat` embedded in `fixtureKbJwtForSdJwtVp` — used to freeze `Date.now()` in KB-JWT time tests. */
-const fixtureKbJwtIat = 1772015488
+/**
+ * `iat` embedded in `fixtureKbJwtForSdJwtVp` — used to freeze `Date.now()` in KB-JWT time tests.
+ * Must match the baked-in `iat` of the fixture token; regenerate the token when changing this.
+ */
+const fixtureKbJwtIat = Math.floor(new Date('2026-01-01T00:00:00Z').getTime() / 1000)
 
 describe('sd-jwt provider', () => {
   // let provider: VerifyVerifiablePresentationProvider
@@ -282,8 +285,14 @@ describe('sd-jwt provider', () => {
   })
 
   it('verifies successfully when Key-Binding JWT is expected and present', async () => {
-    mock.method(Date, 'now', () => (fixtureKbJwtIat + 30) * 1000)
-    const result = await provider.verify(fixtureDcSdJwtVpWithKb, {
+    const maxTokenAge = 120
+    const clockTol = 30
+    const localProvider = verifyVerifiablePresentationDcSdJwt({
+      maxTokenAgeSeconds: maxTokenAge,
+      clockToleranceSeconds: clockTol,
+    })
+    mock.method(Date, 'now', () => (fixtureKbJwtIat + maxTokenAge) * 1000)
+    const result = await localProvider.verify(fixtureDcSdJwtVpWithKb, {
       kind: 'dc+sd-jwt',
       isKbJwt: true,
       expectedAud: dcKbJwtExpectedAud,
@@ -462,26 +471,35 @@ describe('sd-jwt provider', () => {
     )
   })
 
-  it('fails when KB-JWT iat is outside the allowed issuance time window', async () => {
+  it('fails when KB-JWT iat exceeds max token age', async () => {
+    const maxTokenAge = 120
+    const clockTol = 30
+    const localProvider = verifyVerifiablePresentationDcSdJwt({
+      maxTokenAgeSeconds: maxTokenAge,
+      clockToleranceSeconds: clockTol,
+    })
+    mock.method(Date, 'now', () => (fixtureKbJwtIat + maxTokenAge + clockTol + 1) * 1000)
     await assert.rejects(
-      provider.verify(fixtureDcSdJwtVpWithKb, {
+      localProvider.verify(fixtureDcSdJwtVpWithKb, {
         kind: 'dc+sd-jwt',
         isKbJwt: true,
         expectedAud: dcKbJwtExpectedAud,
       }),
       (e: VcknotsError) => {
         assert.equal(e.name, 'invalid_sd_jwt')
-        assert.match(e.message, /KB-JWT iat is outside the allowed issuance time window/)
+        assert.match(e.message, /KB-JWT iat exceeds max token age/)
         return true
       }
     )
   })
 
   it('fails when KB-JWT iat is in the future', async () => {
-    mock.method(Date, 'now', () => (fixtureKbJwtIat - 120) * 1000)
+    const clockTol = 30
+    const localProvider = verifyVerifiablePresentationDcSdJwt({ clockToleranceSeconds: clockTol })
+    mock.method(Date, 'now', () => (fixtureKbJwtIat - clockTol - 1) * 1000)
 
     await assert.rejects(
-      provider.verify(fixtureDcSdJwtVpWithKb, {
+      localProvider.verify(fixtureDcSdJwtVpWithKb, {
         kind: 'dc+sd-jwt',
         isKbJwt: true,
         expectedAud: dcKbJwtExpectedAud,
