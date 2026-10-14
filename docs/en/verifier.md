@@ -461,8 +461,8 @@ Metadata file (external JSON):
 			"alg_values": ["ES256"]
 		},
 		"dc+sd-jwt": {
-			"sd-jwt_alg_values": ["ES256", "ES384"],
-			"kb-jwt_alg_values": ["ES256", "ES384"]
+			"sd-jwt_alg_values": ["ES256"],
+			"kb-jwt_alg_values": ["ES256"]
 		}
 	}
 }
@@ -735,8 +735,10 @@ Options passed from your verifier application into VP / credential-format–spec
 
 | Field | Required | Description |
 | ----- | -------- | ----------- |
-| `isKbJwt` | No | For `dc+sd-jwt`: if `true`, validate the Key Binding JWT (nonce, `aud`, `sd_hash`, etc.). If omitted, KB-JWT validation is skipped. |
+| `isKbJwt` | No | For `dc+sd-jwt`: if `true`, validate the Key Binding JWT (`typ`, `alg`, nonce, `aud`, `sd_hash`, `iat`, etc.). If omitted, KB-JWT validation is skipped. |
 | `expectedTransactionDataHashes` | No | For `transaction_data` usage. Expected hash list contained in the KB-JWT. |
+
+> **KB-JWT `iat` validation**: When `isKbJwt: true`, the library verifies that the KB-JWT `iat` is not too far in the future (within the clock tolerance) and has not exceeded the maximum token age (default 300 seconds). Requests may fail if the Wallet's clock is significantly skewed or the response is delayed.
 
 **Return value**:
 - Returns `Record<string, VpTokenPayload[]>`: a map from DCQL credential query ID to an array of verified VP token payloads.
@@ -811,15 +813,17 @@ Note:
 
 ## 8. Notes
 
-1. **Certificate management**: When configuring the Verifier metadata, you must provide appropriate certificates and private keys.
+1. **Algorithm constraint for dc+sd-jwt**: Currently only **ES256** is supported for both SD-JWT and KB-JWT in the `dc+sd-jwt` format. Even if `ES384` or other values are listed in `sd-jwt_alg_values` / `kb-jwt_alg_values`, any VP signed with an algorithm other than ES256 will be rejected with `verifier_vp_formats_not_supported`. Additionally, `none`, empty strings, and HMAC-family algorithms (`HS*`) are explicitly prohibited.
+
+2. **Certificate management**: When configuring the Verifier metadata, you must provide appropriate certificates and private keys.
    - The order of the certificate chain is important (leaf certificate → intermediate certificate → root certificate).
    - In production environments, use valid certificates.
 
-2. **Security**: In production environments, be sure to implement proper authentication and authorization mechanisms.
+3. **Security**: In production environments, be sure to implement proper authentication and authorization mechanisms.
    - Pay particular attention to the management of private keys.
    - Use HTTPS to encrypt communications.
 
-3. **URL encoding**: If the verifier ID contains characters that require URL encoding (for example, `:` or `/`), make sure they are properly encoded.
+4. **URL encoding**: If the verifier ID contains characters that require URL encoding (for example, `:` or `/`), make sure they are properly encoded.
 
 ## 9. Troubleshooting
 

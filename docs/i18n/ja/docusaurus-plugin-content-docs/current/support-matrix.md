@@ -58,5 +58,5 @@ sidebar_position: 21
 | [Appendix A](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-A) | Digital Credentials API | Digital Credential API／DC API | ❌ | ❌ | |
 | [Appendix B.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.1) | Credential Format | `jwt_vc_json`形式 | `v0.7.0` 以降<br />✅ | ⏳ |  |
 | [Appendix B.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.2) | Credential Format | `mso_mdoc`（Mobile Documents／mdocs） | ❌ | ❌ | |
-| [Appendix B.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3) | Credential Format | SD-JWT-VC形式（`dc+sd-jwt`） | `v0.7.0` 以降<br />✅ | ⏳ |  |
-| [Appendix B.3.6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.6) | Holder Binding | SD-JWT VC Key Binding／KB-JWT | `v0.7.0` 以降<br />✅ | ⏳ |  |
+| [Appendix B.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3) | Credential Format | SD-JWT-VC形式（`dc+sd-jwt`） | `v0.7.0` 以降<br />✅ | ⏳ | 署名アルゴリズムは ES256 のみ対応。 |
+| [Appendix B.3.6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.6) | Holder Binding | SD-JWT VC Key Binding／KB-JWT | `v0.7.0` 以降<br />✅ | ⏳ | 署名アルゴリズムは ES256 のみ対応。 |

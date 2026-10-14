@@ -58,5 +58,5 @@ The following tables are organized based on [OpenID for Verifiable Credential Is
 | [Appendix A](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-A) | Digital Credentials API | Digital Credentials API / DC API | ❌ | ❌ | |
 | [Appendix B.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.1) | Credential Format | `jwt_vc_json` format | Since `v0.7.0`<br />✅ | ⏳ |  |
 | [Appendix B.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.2) | Credential Format | `mso_mdoc` (Mobile Documents / mdocs) | ❌ | ❌ | |
-| [Appendix B.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3) | Credential Format | SD-JWT VC format (`dc+sd-jwt`) | Since `v0.7.0`<br />✅ | ⏳ |  |
-| [Appendix B.3.6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.6) | Holder Binding | SD-JWT VC Key Binding / KB-JWT | Since `v0.7.0`<br />✅ | ⏳ |  |
+| [Appendix B.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3) | Credential Format | SD-JWT VC format (`dc+sd-jwt`) | Since `v0.7.0`<br />✅ | ⏳ | Only ES256 is supported as the signing algorithm. |
+| [Appendix B.3.6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.6) | Holder Binding | SD-JWT VC Key Binding / KB-JWT | Since `v0.7.0`<br />✅ | ⏳ | Only ES256 is supported as the signing algorithm. |
