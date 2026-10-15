@@ -1871,8 +1871,9 @@ func (w *Wallet) buildPresentation(credentials []*SavedCredential, key IKeyEntry
 }
 
 // applyOID4VPRequestOptions copies what the Authorization Request decides into the
-// serialization options: the claims of the Credential Query being answered, and the
-// audience and nonce the Key Binding JWT has to carry.
+// serialization options: the claims of the Credential Query being answered, the
+// transaction data to confirm, and the audience and nonce the Key Binding JWT has
+// to carry.
 func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, query *oid4vp.CredentialQuery, options serializerTypes.SerializePresentationOptions) {
 	if options == nil {
 		return
@@ -1880,11 +1881,35 @@ func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, query 
 	if query != nil {
 		options.SetClaimsQuery(claimsQuery(query))
 	}
-	if req == nil || req.OAuthAuthzRequest == nil {
+	if req == nil {
+		return
+	}
+	applyTransactionData(req, options)
+	if req.OAuthAuthzRequest == nil {
 		return
 	}
 	options.SetAudience(req.ClientID)
 	options.SetNonce(req.Nonce)
+}
+
+// applyTransactionData hands the transaction data to the SD-JWT VC serializer.
+// RequireKeyBinding is forced on: the hashes ride in the Key Binding JWT and nowhere
+// else (OID4VP 1.0 Section 8.4, Appendix B.3.3), so the request decides that one is
+// produced. A caller's false would only reach the serializer's refusal to drop the
+// data silently, by which point the wallet has accepted the transaction data and can
+// no longer answer the Verifier at all.
+func applyTransactionData(req *oid4vp.CredentialPresentationRequest, options serializerTypes.SerializePresentationOptions) {
+	sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions)
+	if len(req.TransactionData) == 0 || !ok || sdOpts == nil {
+		return
+	}
+	sdOpts.TransactionData = req.TransactionData
+	sdOpts.TransactionDataHashesAlg = req.TransactionDataHashesAlg
+	if sdOpts.TransactionDataHashesAlg == "" {
+		// OID4VP transaction_data_hashes_alg default when omitted.
+		sdOpts.TransactionDataHashesAlg = "sha-256"
+	}
+	sdOpts.RequireKeyBinding = true
 }
 
 // claimsQuery carries the claims of a Credential Query over to the serializer.
@@ -1898,19 +1923,6 @@ func claimsQuery(q *oid4vp.CredentialQuery) *serializerTypes.ClaimsQuery {
 
 // submitPresentation serializes and submits the presentation to the verifier.
 func (w *Wallet) submitPresentation(presentation *credential.CredentialPresentation, flavor *credential.SupportedSerializationFlavor, endpoint *url.URL, req *oid4vp.CredentialPresentationRequest, query *oid4vp.CredentialQuery, key IKeyEntry, options serializerTypes.SerializePresentationOptions) (string, error) {
-	if len(req.TransactionData) > 0 {
-		if sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions); ok && sdOpts != nil {
-			transactionDataHashesAlg := req.TransactionDataHashesAlg
-			if transactionDataHashesAlg == "" {
-				// OID4VP transaction_data_hashes_alg default when omitted.
-				transactionDataHashesAlg = "sha-256"
-			}
-
-			sdOpts.TransactionData = req.TransactionData
-			sdOpts.TransactionDataHashesAlg = transactionDataHashesAlg
-		}
-	}
-
 	bytes, _, err := w.serializer.SerializePresentation(
 		*flavor,
 		presentation,

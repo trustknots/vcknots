@@ -4685,6 +4685,29 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 		require.NotNil(t, opts.ClaimsQuery, "the DCQL must take over from SelectedClaims")
 		assert.Nil(t, opts.ClaimsQuery.Claims)
 	})
+
+	t.Run("transaction data forces a Key Binding JWT", func(t *testing.T) {
+		opts := &sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: false}
+		withTransactionData := &oid4vp.CredentialPresentationRequest{
+			OAuthAuthzRequest: req.OAuthAuthzRequest,
+			TransactionData:   []string{"eyJ0eXBlIjoic2FtcGxlX3R5cGUifQ"},
+		}
+
+		applyOID4VPRequestOptions(withTransactionData, nil, opts)
+
+		assert.Equal(t, withTransactionData.TransactionData, opts.TransactionData)
+		assert.Equal(t, "sha-256", opts.TransactionDataHashesAlg, "the OID4VP default when the request omits it")
+		assert.True(t, opts.RequireKeyBinding, "the hashes are returned in the Key Binding JWT and nowhere else")
+	})
+
+	t.Run("a request without transaction data leaves key binding to the caller", func(t *testing.T) {
+		opts := &sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: false}
+
+		applyOID4VPRequestOptions(req, nil, opts)
+
+		assert.False(t, opts.RequireKeyBinding)
+		assert.Empty(t, opts.TransactionData)
+	})
 }
 
 func TestNewestCredentials_SelectsMostRecentEntries(t *testing.T) {
