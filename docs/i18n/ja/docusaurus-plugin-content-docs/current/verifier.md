@@ -811,7 +811,7 @@ Verifierが保持する証明書チェーンを表す型です（PEM形式の文
 
 ## 8. 注意事項
 
-1. **dc+sd-jwt のアルゴリズム制約**: 現在 `dc+sd-jwt` フォーマットでは SD-JWT・KB-JWT ともに **ES256 のみ** がサポートされています。`ES384` などを `sd-jwt_alg_values` / `kb-jwt_alg_values` に列挙しても、ES256 以外のアルゴリズムで署名された VP は `verifier_vp_formats_not_supported` エラーで拒否されます。また、`none`・空文字・HMAC 系アルゴリズム（`HS*`）は明示的に禁止されています。
+1. **dc+sd-jwt のアルゴリズム制約**: 現在 `dc+sd-jwt` フォーマットでは SD-JWT・KB-JWT ともに **ES256 のみ** がサポートされています。OpenID4VPでは許容されている `ES384` などを `sd-jwt_alg_values` / `kb-jwt_alg_values` に列挙しても、ES256 以外のアルゴリズムで署名された VP は `verifier_vp_formats_not_supported` エラーで拒否されます。また、`none`・空文字・HMAC 系アルゴリズム（`HS*`）は使用できません。
 
 2. **証明書の管理**: Verifierのメタデータを設定する際は、適切な証明書と秘密鍵を提供する必要があります。
    - 証明書チェーンの順序は重要です（リーフ証明書 → 中間証明書 → ルート証明書）
