@@ -813,7 +813,7 @@ Note:
 
 ## 8. Notes
 
-1. **Algorithm constraint for dc+sd-jwt**: Currently only **ES256** is supported for both SD-JWT and KB-JWT in the `dc+sd-jwt` format. Even if `ES384` or other values are listed in `sd-jwt_alg_values` / `kb-jwt_alg_values`, any VP signed with an algorithm other than ES256 will be rejected with `verifier_vp_formats_not_supported`. Additionally, `none`, empty strings, and HMAC-family algorithms (`HS*`) are explicitly prohibited.
+1. **Algorithm constraints for dc+sd-jwt**: The current implementation supports only **ES256** for both SD-JWT and KB-JWT in the `dc+sd-jwt` format. Even if `ES384` or other algorithms allowed by OpenID4VP are listed in `sd-jwt_alg_values` / `kb-jwt_alg_values`, any VP signed with an algorithm other than ES256 will be rejected with `verifier_vp_formats_not_supported`. Additionally, `none`, empty strings, and HMAC-family algorithms (`HS*`) are rejected.
 
 2. **Certificate management**: When configuring the Verifier metadata, you must provide appropriate certificates and private keys.
    - The order of the certificate chain is important (leaf certificate → intermediate certificate → root certificate).
