@@ -8,8 +8,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/credential"
 )
 
-// sample dcql_query values follow the examples in OID4VP 1.0 Section 6 and
-// trustknots/vcknots-internal#35.
+// sample dcql_query values follow the examples in OID4VP 1.0 Section 6.
 const sampleSdJwtDcqlQuery = `{
 	"credentials": [
 		{

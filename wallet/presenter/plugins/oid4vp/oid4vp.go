@@ -568,7 +568,7 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 	// as an error authorization response when response_mode=direct_post.
 
 	// Presentation Exchange based parameters were removed in OID4VP 1.0 in
-	// favor of dcql_query; this wallet does not accept them (Issue #606).
+	// favor of dcql_query; this wallet does not accept them.
 	for _, unsupported := range []string{"presentation_definition", "presentation_definition_uri", "presentation_submission"} {
 		if _, exists := params[unsupported]; exists {
 			b.errValidation = newAuthorizationRequestError(InvalidRequestError, "%s is not supported; use dcql_query instead", unsupported)
@@ -831,7 +831,7 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 			return b
 		}
 
-		// ClientID should contain DNS name which is same as the SAN of the leaf certificate in the x5c array (OID4VP x509_san_dns). #106
+		// ClientID should contain DNS name which is same as the SAN of the leaf certificate in the x5c array (OID4VP x509_san_dns).
 		matched := false
 		for _, n := range (*certificates)[0].DNSNames {
 			if clientID.original == n {
@@ -844,7 +844,7 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 			return b
 		}
 
-		// response_uri / redirect_uri check #107
+		// response_uri / redirect_uri check
 		var uri *url.URL
 		if b.req.ResponseMode == "direct_post" {
 			uri, err = url.Parse(b.req.ResponseURI)
@@ -898,7 +898,7 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 // https scheme, set Content-Type: application/x-www-form-urlencoded and
 // Accept: application/oauth-authz-req+jwt. The https requirement is also
 // applied to the GET method for project-wide consistency with the same
-// guard in wallet/receiver/plugins/oid4vci/oid4vci.go (Issue #29).
+// guard in wallet/receiver/plugins/oid4vci/oid4vci.go.
 // It can be relaxed by setting the VCKNOTS_WALLET_HTTP_ALLOWED environment
 // variable for testing.
 func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMethod) *requestBuilder {

@@ -141,8 +141,8 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		assert.Empty(t, redirectURI)
 	})
 
-	// AC (Issue #606): vp_token must be a JSON object keyed by the DCQL
-	// Credential Query id, and presentation_submission must not be sent.
+	// vp_token must be a JSON object keyed by the DCQL Credential Query id, and
+	// presentation_submission must not be sent.
 	t.Run("Sends vp_token as DCQL JSON object", func(t *testing.T) {
 		var gotVPToken, gotSubmission, gotState string
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -693,9 +693,9 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 	}
 }
 
-// AC (Issue #606): when an Authorization Request is rejected with an OAuth
-// error code and response_mode=direct_post, the wallet posts the error
-// authorization response (error, error_description, state) to response_uri.
+// When an Authorization Request is rejected with an OAuth error code and
+// response_mode=direct_post, the wallet posts the error authorization response
+// (error, error_description, state) to response_uri.
 func TestOid4vpPresenter_SendsErrorAuthorizationResponse(t *testing.T) {
 	t.Setenv(env.HTTP_ALLOWED.String(), "true")
 

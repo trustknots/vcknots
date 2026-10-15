@@ -535,7 +535,8 @@ level=INFO msg="=== Credential Presented ==="
 
 - **`oid4vp-1final-wallet-alternate-happy-flow` cannot run with `direct_post` on suite 5.3.1.**
   The suite stops with `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`
-  before it contacts the wallet (conformance-suite issue #1982). The wallet cannot fix this.
+  before it contacts the wallet: the step that adds those parameters is applied even for
+  response modes that have none. The wallet cannot fix this.
 - **Some negative modules end in REVIEW, not PASSED.** An invalid Request Object signature and
   a mismatched or invalid `client_id` cannot be authenticated, so rejecting them without
   answering the Verifier is correct and REVIEW is the final result. `missing-nonce` and
