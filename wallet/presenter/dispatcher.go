@@ -74,6 +74,24 @@ func (d *PresentationDispatcher) Present(protocol SupportedPresentationProtocol,
 	return redirectURI, nil
 }
 
+// SendAuthorizationErrorResponse tells the Verifier why a parsed request gets no
+// presentation by posting an OAuth error authorization response.
+func (d *PresentationDispatcher) SendAuthorizationErrorResponse(req *oid4vp.CredentialPresentationRequest, authzErr *oid4vp.AuthorizationRequestError) error {
+	protocol := types.Oid4vp
+	plugin, err := d.getPlugin(protocol)
+	if err != nil {
+		return err
+	}
+	oid4vpPlugin, ok := plugin.(*oid4vp.Oid4vpPresenter)
+	if !ok {
+		return types.NewPresenterError(protocol, "", "send_error", types.ErrUnsupportedProtocol)
+	}
+	if err := oid4vpPlugin.SendAuthorizationErrorResponse(req, authzErr); err != nil {
+		return types.NewPresenterError(protocol, req.ResponseURI, "send_error", err)
+	}
+	return nil
+}
+
 func (d *PresentationDispatcher) ParseRequestURI(uriString string) (*oid4vp.CredentialPresentationRequest, error) {
 	// Determine protocol from URI (currently only OID4VP is supported)
 	protocol := types.Oid4vp

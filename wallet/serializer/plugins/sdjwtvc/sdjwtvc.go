@@ -529,6 +529,12 @@ func (s *SdJwtVcSerializer) SerializePresentation(
 		}
 	}
 
+	// Transaction data is returned in the Key Binding JWT, so it cannot be dropped
+	// silently (OID4VP 1.0 Section 8.4, Appendix B.3.3).
+	if sdOpts != nil && len(sdOpts.TransactionData) > 0 && !sdOpts.RequireKeyBinding {
+		return nil, nil, types.NewInvalidCredentialError("transaction data requires a Key Binding JWT", nil)
+	}
+
 	// Validate key binding requirements
 	if sdOpts != nil && sdOpts.RequireKeyBinding {
 		if key == nil {

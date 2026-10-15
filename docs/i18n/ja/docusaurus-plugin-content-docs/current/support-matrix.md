@@ -46,12 +46,12 @@ sidebar_position: 21
 | [5.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.5) | Credential Query | スコープを使用した Authorization Request | ❌ | ❌ | |
 | [5.9.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.9.3) | Client Identification | Client Identifier Prefix | `v0.7.0` 以降<br />✅ `redirect_uri`、`x509_san_dns` | ⏳ `redirect_uri`、`x509_san_dns` |  |
 | [5.10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.10) | Request URI | Request URI Method | `v0.7.0` 以降<br />✅ GET | ⏳ GET、POST |  |
-| [6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l) | Credential Query | DCQL | `v0.7.0` 以降<br />✅ | ⏳ | `dcql_query` パラメータを使用。Wallet は要求された `claims` だけを開示する。 |
+| [6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l) | Credential Query | DCQL | `v0.7.0` 以降<br />✅ | ⏳ | `dcql_query` パラメータを使用。Wallet は 1 応答で 1 つの Credential Query に答え、要求された `claims` だけを開示し、`dc+sd-jwt` では `meta.vct_values` を照合する。 |
 | [8.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1) | Authorization Response | Authorization Response | `v0.7.0` 以降<br />✅ | ⏳ |  |
 | [8.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2) | Response Mode | Response Mode | `v0.7.0` 以降<br />✅ `direct_post` | ⏳ `direct_post` |  |
 | [8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3) | Authorization Response | 暗号化された Authorization Response | ❌ | ⏳ |  |
-| [8.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.4) | Transaction Data | Transaction Data | `v0.7.0` 以降<br />✅ | ⏳ | `dc+sd-jwt` のみ対応。 |
-| [8.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5) | Authorization Response | Authorization Error Response | ❌ | ❌ | |
+| [8.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.4) | Transaction Data | Transaction Data | `v0.7.0` 以降<br />✅ | ⏳ | `dc+sd-jwt` のみ対応。`Oid4vpPresenter.SupportedTransactionDataTypes` に無い type は Wallet が拒否する。 |
+| [8.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5) | Authorization Response | Authorization Error Response | ⏳ | ❌ | `direct_post` では Wallet がエラー応答を `response_uri` に POST する。 |
 | [10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-10) | Metadata | Wallet Metadata | ❌ | ❌ | |
 | [11](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-11) | Metadata | Verifier Metadata — `client_metadata` | `v0.7.0` 以降<br />✅ | ⏳ 解析 |  |
 | [12](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-12) | Client Authentication | Verifier Attestation JWT | ❌ | ❌ | |

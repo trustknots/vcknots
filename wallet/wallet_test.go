@@ -4607,19 +4607,23 @@ func TestController_PresentCredential_DCQL_Integration(t *testing.T) {
 	})
 
 	// The Credential must not be returned when it cannot deliver every requested claim
-	// (OID4VP 1.0 Section 6.4.1). Telling the Verifier with an error response is not
-	// part of this change, so nothing reaches it.
-	t.Run("returns nothing when the credential lacks a requested claim", func(t *testing.T) {
+	// (OID4VP 1.0 Section 6.4.1), and the Verifier is told why with access_denied
+	// (Section 8.5). The reason is withheld, because it would reveal which Credentials
+	// the user holds (Section 15.9).
+	t.Run("refuses with access_denied when the credential lacks a requested claim", func(t *testing.T) {
 		received, err := present(t, `{"credentials":[{"id":"pid_credential",`+pidMeta+`,"claims":[{"path":["given_name"]},{"path":["age_over_18"]}]}]}`)
 		require.ErrorIs(t, err, serializerTypes.ErrClaimsNotSatisfiable)
-		assert.Empty(t, received, "nothing may be sent to the Verifier")
+		assert.Equal(t, []string{"access_denied"}, received["error"])
+		assert.Empty(t, received["vp_token"], "no Credential may be returned")
+		assert.Empty(t, received["error_description"], "the reason would reveal what the user holds")
 	})
 
 	t.Run("SelectedClaims caps what the DCQL may disclose", func(t *testing.T) {
 		received, err := presentWith(t, `{"credentials":[{"id":"pid_credential",`+pidMeta+`,"claims":[{"path":["given_name"]},{"path":["family_name"]}]}]}`,
 			&sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: true, SelectedClaims: []string{"given_name"}})
 		require.ErrorIs(t, err, serializerTypes.ErrClaimsNotSatisfiable)
-		assert.Empty(t, received, "nothing may be sent to the Verifier")
+		assert.Equal(t, []string{"access_denied"}, received["error"])
+		assert.Empty(t, received["vp_token"], "no Credential may be returned")
 	})
 }
 
