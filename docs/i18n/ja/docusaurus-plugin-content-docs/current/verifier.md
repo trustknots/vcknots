@@ -736,7 +736,7 @@ Verifier アプリから VP／クレデンシャル形式ごとの検査に渡�
 | `isKbJwt` | いいえ | `dc+sd-jwt` 用。`true` のとき Key Binding JWT を検証（`typ`、`alg`、`nonce`、`aud`、`sd_hash`、`iat` など）。省略時は KB-JWT 検証なし。 |
 | `expectedTransactionDataHashes` | いいえ | `transaction_data` 利用時。KB-JWT に含まれるハッシュ列の期待値。 |
 
-> **KB-JWT の `iat` 検証について**: `isKbJwt: true` のとき、KB-JWT の `iat` が未来すぎないこと（クロック許容範囲内）および最大トークン年齢（デフォルト 300 秒）を超えていないことを検証します。Wallet 側の時計ずれが大きい場合やレスポンス遅延が長い場合はエラーになることがあります。
+> **KB-JWT の `iat` 検証について**: `isKbJwt: true` の場合、KB-JWT の `iat` が未来ではないこと（時刻のずれの範囲を除く）および最大トークン有効期間（デフォルト 300 秒）を超えていないことを検証します。Wallet 側の時刻のずれが大きい場合やレスポンスが遅延した場合はリクエストが失敗することがあります。
 
 **戻り値**:
 - `Record<string, VpTokenPayload[]>` を返します。キーは DCQL のクレデンシャルクエリ ID、値は検証済み VP トークンペイロードの配列です。
