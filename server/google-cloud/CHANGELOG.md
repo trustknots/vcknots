@@ -1,5 +1,14 @@
 # @trustknots/server-google-cloud
 
+## 0.1.5
+
+### Patch Changes
+
+- Updated dependencies
+  - @trustknots/vcknots@0.8.0
+  - @trustknots/google-cloud@0.6.0
+  - @trustknots/server-core@0.1.5
+
 ## 0.1.4
 
 ### Patch Changes

@@ -340,9 +340,9 @@ import (
 )
 
 func presentCredential(w *wallet.Wallet, key wallet.IKeyEntry, oid4vpURI string) error {
-    // Options for SD-JWT VC presentations: selective disclosure and Key Binding JWT
+    // Options for SD-JWT VC presentations: attach a Key Binding JWT.
+    // The disclosed claims are the ones the request's DCQL query names.
     options := &sdjwtvc.SdJwtVcPresentationOptions{
-        SelectedClaims:    []string{"given_name", "family_name"},
         RequireKeyBinding: true,
     }
 
@@ -357,9 +357,9 @@ func presentCredential(w *wallet.Wallet, key wallet.IKeyEntry, oid4vpURI string)
 }
 ```
 
-`PresentCredential` parses the OID4VP request (including JAR request objects referenced by `request_uri`, whose signatures are verified against `X509TrustChainRoots`), selects the most recently received credential from the store (matching against the presentation definition is not performed yet), serializes and signs the Verifiable Presentation with `key`, and posts it to the verifier's `response_uri` (`response_mode=direct_post`). The wallet does not send anything to `redirect_uri`; when the verifier's response contains a `redirect_uri`, it is returned to the caller as the return value, or empty when there is none.
+`PresentCredential` parses the OID4VP request (including JAR request objects referenced by `request_uri`, whose signatures are verified against `X509TrustChainRoots`), selects the most recently received credential from the store (it is not matched against the DCQL query yet), serializes and signs the Verifiable Presentation with `key`, and posts it to the verifier's `response_uri` (`response_mode=direct_post`). The wallet does not send anything to `redirect_uri`; when the verifier's response contains a `redirect_uri`, it is returned to the caller as the return value, or empty when there is none.
 
-* **Presentation options:** The third argument accepts a format-specific options value. For SD-JWT VC, `sdjwtvc.SdJwtVcPresentationOptions` controls which claims are disclosed (`SelectedClaims`) and whether a Key Binding JWT is attached (`RequireKeyBinding`). The KB-JWT audience and nonce are filled automatically from the OID4VP request (`client_id` and `nonce`), as are `transaction_data` hashes when the request contains transaction data. Pass `nil` to use the default options for the credential's format (for JWT-VC presentations, `nil` is typical).
+* **Presentation options:** The third argument accepts a format-specific options value. For SD-JWT VC, `sdjwtvc.SdJwtVcPresentationOptions` controls whether a Key Binding JWT is attached (`RequireKeyBinding`). The disclosed claims are the ones the DCQL query's `claims` names (with `claim_sets`, the first option the credential satisfies), and none when it has no `claims` (OID4VP 1.0 Section 6.4.1). When the credential lacks a requested claim, or `SelectedClaims` is set and the request needs a claim outside it, `PresentCredential` fails with `serializerTypes.ErrClaimsNotSatisfiable` and sends nothing to the verifier. The KB-JWT audience and nonce are filled automatically from the OID4VP request (`client_id` and `nonce`), as are `transaction_data` hashes when the request contains transaction data. Pass `nil` to use the default options for the credential's format (for JWT-VC presentations, `nil` is typical).
 * **Redirect handling:** Use `PresentCredentialWithOptions` with `&wallet.PresentCredentialOptions{OnRedirect: func(uri string) error {...}}` when you want a callback invoked with the verifier's redirect URI.
 
 ### 3-4. Referencing Saved Credentials
@@ -465,7 +465,7 @@ For the definition, see [wallet/wallet.go](https://github.com/trustknots/vcknots
 
 ### SdJwtVcPresentationOptions {#SdJwtVcPresentationOptions}
 
-Options for SD-JWT VC presentations: `SelectedClaims`, `RequireKeyBinding`, `Audience`, `Nonce`, and `TransactionData`. Audience and nonce are filled from the OID4VP request automatically.
+Options for SD-JWT VC presentations: `ClaimsQuery`, `SelectedClaims`, `RequireKeyBinding`, `Audience`, `Nonce`, and `TransactionData`. Audience, nonce and `ClaimsQuery` are filled from the OID4VP request automatically, and `SelectedClaims` then caps what `ClaimsQuery` may disclose.
 
 For the definition, see [wallet/serializer/plugins/sdjwtvc/sdjwtvc.go](https://github.com/trustknots/vcknots/blob/main/wallet/serializer/plugins/sdjwtvc/sdjwtvc.go).
 

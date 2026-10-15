@@ -167,6 +167,8 @@ func fetchOID4VPURIFromServer(serverURL string, receivedCredential *wallet.Saved
 						"meta": map[string]interface{}{
 							"vct_values": []string{specificType},
 						},
+						// The wallet discloses only the claims the query names (OID4VP 1.0 Section 6.4.1).
+						"claims": []map[string]interface{}{{"path": []string{"given_name"}}},
 					},
 				},
 			},
@@ -456,9 +458,8 @@ func main() {
 		oid4vpURI = runOpts.OID4VPURI
 		logger.Info("Using OID4VP URI from command line", "uri", oid4vpURI)
 
-		// Fixed to what the conformance test plan requests; the DCQL claims are not read yet.
+		// The Verifier's DCQL claims decide what is disclosed (OID4VP 1.0 Section 6.4.1).
 		options = &sdjwtvc.SdJwtVcPresentationOptions{
-			SelectedClaims:    []string{"given_name", "family_name", "birthdate"},
 			RequireKeyBinding: true,
 		}
 	} else {

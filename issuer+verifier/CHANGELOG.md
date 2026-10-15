@@ -1,5 +1,11 @@
 # @trustknots/vcknots
 
+## 0.8.0
+
+### Minor Changes
+
+- generated at 20261009022645
+
 ## 0.7.0
 
 ### Minor Changes

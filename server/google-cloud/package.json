@@ -1,6 +1,6 @@
 {
 	"name": "@trustknots/server-google-cloud",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"description": "",
 	"type": "module",
 	"main": "lib/example.js",
@@ -16,7 +16,7 @@
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@12.6.0",
+	"packageManager": "pnpm@12.11.2",
 	"dependencies": {
 		"@trustknots/google-cloud": "workspace:*",
 		"@trustknots/server-core": "workspace:*",

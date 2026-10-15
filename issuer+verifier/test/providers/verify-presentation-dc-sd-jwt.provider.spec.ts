@@ -29,6 +29,14 @@ const fixtureDcSdJwtVpWithKb = fixtureSdJwtWithX5cForKb + fixtureKbJwtForSdJwtVp
  * Must match the baked-in `iat` of the fixture token; regenerate the token when changing this.
  */
 const fixtureKbJwtIat = Math.floor(new Date('2026-01-01T00:00:00Z').getTime() / 1000)
+/** KB-JWT signed with a key that does not match cnf.jwk in the SD-JWT. */
+const fixtureWrongKeyKbJwt =
+  'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJyZWRpcmVjdF91cmk6aHR0cHM6Ly92ZXJpZmllci5leGFtcGxlLmNvbSIsImlhdCI6MTc2NzIyNTYwMCwibm9uY2UiOiJiY2IyMDFiN2UxODZlZDM4MDEyN2I5MTU4YTlkNTdhNiIsInNkX2hhc2giOiJHaTZJMWUxanVYMlNvUFZsMEd6V2pmU2RwZGlFcThaMHNhSl9weGN6aFVZIn0.qc-dL2EXpevwshlLfwLPdpzbNzL1hxrxZA_CaRCxtc5TfEusZZ_ziwGUsX-_t0x9-U8FQh9P4IHC3QF9wskwsA'
+const fixtureDcSdJwtVpWithWrongKeyKb = `${fixtureSdJwtWithX5cForKb}${fixtureWrongKeyKbJwt}`
+/** KB-JWT with valid signature but wrong sd_hash (for invalid-sd-hash test). */
+const fixtureWrongSdHashKbJwt =
+  'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJyZWRpcmVjdF91cmk6aHR0cHM6Ly92ZXJpZmllci5leGFtcGxlLmNvbSIsImlhdCI6MTc2NzIyNTYwMCwibm9uY2UiOiJiY2IyMDFiN2UxODZlZDM4MDEyN2I5MTU4YTlkNTdhNiIsInNkX2hhc2giOiJnSTZJMWUxanVYMlNvUFZsMEd6V2pmU2RwZGlFcThaMHNhSl9weGN6aHV5In0.0_u-V3FU32Qizb25BiNpHgvRF77CNbpKx-fmvr273nuOj_OhWBRSMQVBkpPqgQNSHfldyhA96nFNShS-GvqwdA'
+const fixtureDcSdJwtVpWithWrongSdHash = `${fixtureSdJwtWithX5cForKb}${fixtureWrongSdHashKbJwt}`
 
 describe('sd-jwt provider', () => {
   // let provider: VerifyVerifiablePresentationProvider
@@ -232,8 +240,8 @@ describe('sd-jwt provider', () => {
 
     await assert.rejects(
       provider.verify(sdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
-      (err: Error) => {
-        assert.equal(err.name, 'SDJWTException')
+      (err: VcknotsError) => {
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /Invalid JWT Signature/)
         return true
       }
@@ -534,6 +542,20 @@ describe('sd-jwt provider', () => {
     )
   })
 
+  it('fails when KB-JWT is signed with wrong key', async () => {
+    await assert.rejects(
+      provider.verify(fixtureDcSdJwtVpWithWrongKeyKb, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        return true
+      }
+    )
+  })
+
   it('fails when KB-JWT iat is a string', async () => {
     const kbHeader = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'kb+jwt' })).toString(
       'base64url'
@@ -612,6 +634,20 @@ describe('sd-jwt provider', () => {
     )
   })
 
+  it('fails when KB-JWT sd_hash does not match SD-JWT', async () => {
+    await assert.rejects(
+      provider.verify(fixtureDcSdJwtVpWithWrongSdHash, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        return true
+      }
+    )
+  })
+
   it('fails when signature does not match x5c key', async () => {
     const certificate =
       'MIICHjCCAcOgAwIBAgIUZX9BS5CDOJRW2t1FK1UDMt/QwMEwCgYIKoZIzj0EAwIwITELMAkGA1UEBhMCR0IxEjAQBgNVBAMMCU9JREYgVGVzdDAeFw0yNDExMjUwODM2MDRaFw0zNDExMjMwODM2MDRaMCExCzAJBgNVBAYTAkdCMRIwEAYDVQQDDAlPSURGIFRlc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATT/dLsd51LLBrGV6R23o6vymRxHXeFBoI8yq31y5kFV2VV0gi9x5ZzEFiq8DMiAHucLACFndxLtZorCha9zznQo4HYMIHVMB0GA1UdDgQWBBS5cbdgAeMBi5wxpbpwISGhShAWETAfBgNVHSMEGDAWgBS5cbdgAeMBi5wxpbpwISGhShAWETAPBgNVHRMBAf8EBTADAQH/MIGBBgNVHREEejB4ghB3d3cuaGVlbmFuLm1lLnVrgh1kZW1vLmNlcnRpZmljYXRpb24ub3BlbmlkLm5ldIIJbG9jYWxob3N0ghZsb2NhbGhvc3QuZW1vYml4LmNvLnVrgiJkZW1vLnBpZC1pc3N1ZXIuYnVuZGVzZHJ1Y2tlcmVpLmRlMAoGCCqGSM49BAMCA0kAMEYCIQCPbnLxCI+WR1vhOW+A8KznAWv1MJo+YEb1MI45NKW/VQIhALzsqox8VuBRwN2dl5LkpnxP4oH9p6H0AOZmKP+Y7nXS'
@@ -622,8 +658,8 @@ describe('sd-jwt provider', () => {
         specifiedDisclosures: [],
         expectedAud: dcExpectedAud,
       }),
-      (err: Error) => {
-        assert.equal(err.name, 'SDJWTException')
+      (err: VcknotsError) => {
+        assert.equal(err.name, 'invalid_sd_jwt')
         assert.match(err.message, /Invalid JWT Signature/)
         return true
       }

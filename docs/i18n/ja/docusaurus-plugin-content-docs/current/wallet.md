@@ -356,9 +356,9 @@ import (
 )
 
 func presentCredential(w *wallet.Wallet, key wallet.IKeyEntry, oid4vpURI string) error {
-    // SD-JWT VC提示のオプション: 選択的開示とKey Binding JWT
+    // SD-JWT VC提示のオプション: Key Binding JWT を付与する。
+    // 開示するクレームはリクエストの DCQL クエリが指定したものになる。
     options := &sdjwtvc.SdJwtVcPresentationOptions{
-        SelectedClaims:    []string{"given_name", "family_name"},
         RequireKeyBinding: true,
     }
 
@@ -373,12 +373,13 @@ func presentCredential(w *wallet.Wallet, key wallet.IKeyEntry, oid4vpURI string)
 }
 ```
 
-`PresentCredential` は、OID4VP リクエストをパースし（`request_uri` で参照される JAR Request Object も含み、その署名は `X509TrustChainRoots` に対して検証されます）、保存済みの Credential のうち最も新しく受領した 1 件を選択し（presentation definition との照合は現時点では行いません）、`key` で Verifiable Presentation をシリアライズして署名し、Verifier の `response_uri`（`response_mode=direct_post`）に POST します。
+`PresentCredential` は、OID4VP リクエストをパースし（`request_uri` で参照される JAR Request Object も含み、その署名は `X509TrustChainRoots` に対して検証されます）、保存済みの Credential のうち最も新しく受領した 1 件を選択し（DCQL クエリとの照合は現時点では行いません）、`key` で Verifiable Presentation をシリアライズして署名し、Verifier の `response_uri`（`response_mode=direct_post`）に POST します。
 Wallet が `redirect_uri` に送信することはありません。
 Verifier の応答に `redirect_uri` が含まれる場合、その値が戻り値として呼び出し側に返されます（含まれない場合は空文字列です）。
 
 * **提示オプション:** 第 3 引数にはフォーマット固有のオプションを渡します。
-SD-JWT VC では `sdjwtvc.SdJwtVcPresentationOptions` により、開示するクレーム（`SelectedClaims`）と Key Binding JWT の付与（`RequireKeyBinding`）を制御します。
+SD-JWT VC では `sdjwtvc.SdJwtVcPresentationOptions` により、Key Binding JWT の付与（`RequireKeyBinding`）を制御します。
+開示するクレームは DCQL クエリの `claims` が指定したもの（`claim_sets` がある場合は満たせる最初の選択肢）になり、`claims` が無い場合は 1 件も開示しません（OID4VP 1.0 Section 6.4.1）。Credential が要求されたクレームを持っていない場合、または `SelectedClaims` を指定していてその範囲外のクレームが要求された場合、`PresentCredential` は `serializerTypes.ErrClaimsNotSatisfiable` で失敗し、Verifier には何も送りません。
 KB-JWT の audience と nonce は OID4VP リクエスト（`client_id` と `nonce`）から自動的に設定されます。リクエストに transaction data が含まれる場合の `transaction_data` ハッシュも同様です。
 `nil` を渡すと、その Credential のフォーマットに応じたデフォルトのオプションが使われます（JWT-VC の提示では `nil` が典型的です）。
 * **リダイレクト処理:** Verifier のリダイレクト URI をコールバックで受け取りたい場合は、`PresentCredentialWithOptions` に `&wallet.PresentCredentialOptions{OnRedirect: func(uri string) error {...}}` を渡します。
@@ -489,7 +490,7 @@ Credential ストアに保存された Credential。`*credential.Credential`（�
 
 ### SdJwtVcPresentationOptions {#SdJwtVcPresentationOptions}
 
-SD-JWT VC 提示のオプション: `SelectedClaims`, `RequireKeyBinding`, `Audience`, `Nonce`, `TransactionData`。audience と nonce は OID4VP リクエストから自動的に設定されます。
+SD-JWT VC 提示のオプション: `ClaimsQuery`, `SelectedClaims`, `RequireKeyBinding`, `Audience`, `Nonce`, `TransactionData`。audience、nonce、`ClaimsQuery` は OID4VP リクエストから自動的に設定され、`SelectedClaims` は `ClaimsQuery` が開示できる範囲の上限になります。
 
 定義は [wallet/serializer/plugins/sdjwtvc/sdjwtvc.go](https://github.com/trustknots/vcknots/blob/main/wallet/serializer/plugins/sdjwtvc/sdjwtvc.go) を参照してください。
 

@@ -1,4 +1,4 @@
-import { err } from '../errors/vcknots.error'
+import { VcknotsError, err } from '../errors/vcknots.error'
 import { VerifyVerifiablePresentationProvider } from './provider.types'
 const { SDJwtInstance } = require('@sd-jwt/core')
 import { ES256, digest } from '@sd-jwt/crypto-nodejs'
@@ -235,7 +235,14 @@ export const verifyVerifiablePresentationDcSdJwt = (
         hasher: digest,
         kbVerifier: kbVerifier,
       })
-      await sdJwtInst.validate(vp)
+      try {
+        await sdJwtInst.validate(vp)
+      } catch (e) {
+        if (e instanceof VcknotsError) throw e
+        throw err('invalid_sd_jwt', {
+          message: e instanceof Error ? e.message : 'SD-JWT validation failed',
+        })
+      }
       let nonce: string | undefined
       if (isKbJwt) {
         const { kbJwt } = splitSdJwt(vp)
@@ -276,10 +283,19 @@ export const verifyVerifiablePresentationDcSdJwt = (
           message: 'nonce does not match.',
         })
       }
-      const { payload: claims } = await sdJwtInst.verify(vp, {
-        requiredClaimKeys: specifiedDisclosures,
-        keyBindingNonce: nonce,
-      })
+      let claims: unknown
+      try {
+        const result = await sdJwtInst.verify(vp, {
+          requiredClaimKeys: specifiedDisclosures,
+          keyBindingNonce: nonce,
+        })
+        claims = result.payload
+      } catch (e) {
+        if (e instanceof VcknotsError) throw e
+        throw err('invalid_sd_jwt', {
+          message: e instanceof Error ? e.message : 'SD-JWT verification failed',
+        })
+      }
       const parseResult = sdJwtPayloadSchema().safeParse(claims)
       if (!parseResult.success) {
         throw err('invalid_sd_jwt', {

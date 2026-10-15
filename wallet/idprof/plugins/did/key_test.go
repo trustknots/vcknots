@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcutil/base58"
+	"github.com/btcsuite/btcd/address/v2/base58"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/trustknots/vcknots/wallet/idprof/types"
 )
