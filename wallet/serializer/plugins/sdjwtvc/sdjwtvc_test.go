@@ -1395,9 +1395,7 @@ func TestSdJwtVcPresentationOptions_SetNonce(t *testing.T) {
 // 8.4, Appendix B.3.3), so a presentation without one cannot carry it.
 func TestSerializePresentation_TransactionDataNeedsKeyBinding(t *testing.T) {
 	serializer, err := NewSdJwtVcSerializer()
-	if err != nil {
-		t.Fatalf("failed to initialize sd-jwt serializer")
-	}
+	require.NoError(t, err)
 	presentation := &credential.CredentialPresentation{
 		Types:       []string{"VerifiablePresentation"},
 		Credentials: [][]byte{[]byte(createTestSDJWT())},
@@ -1407,7 +1405,5 @@ func TestSerializePresentation_TransactionDataNeedsKeyBinding(t *testing.T) {
 		RequireKeyBinding: false,
 		TransactionData:   []string{"eyJ0eXBlIjoic2FtcGxlX3R5cGUifQ"},
 	})
-	if err == nil {
-		t.Fatal("expected an error when transaction data is present without a Key Binding JWT")
-	}
+	require.Error(t, err, "transaction data is present without a Key Binding JWT")
 }
