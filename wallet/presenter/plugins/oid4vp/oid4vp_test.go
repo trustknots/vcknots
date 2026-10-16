@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -140,8 +141,8 @@ func TestOid4vpPresenter_Present(t *testing.T) {
 		assert.Empty(t, redirectURI)
 	})
 
-	// AC (Issue #606): vp_token must be a JSON object keyed by the DCQL
-	// Credential Query id, and presentation_submission must not be sent.
+	// vp_token must be a JSON object keyed by the DCQL Credential Query id, and
+	// presentation_submission must not be sent.
 	t.Run("Sends vp_token as DCQL JSON object", func(t *testing.T) {
 		var gotVPToken, gotSubmission, gotState string
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -692,9 +693,9 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 	}
 }
 
-// AC (Issue #606): when an Authorization Request is rejected with an OAuth
-// error code and response_mode=direct_post, the wallet posts the error
-// authorization response (error, error_description, state) to response_uri.
+// When an Authorization Request is rejected with an OAuth error code and
+// response_mode=direct_post, the wallet posts the error authorization response
+// (error, error_description, state) to response_uri.
 func TestOid4vpPresenter_SendsErrorAuthorizationResponse(t *testing.T) {
 	t.Setenv(env.HTTP_ALLOWED.String(), "true")
 
@@ -1194,4 +1195,88 @@ func TestConformanceShapeRequestURISignedDirectPost(t *testing.T) {
 	require.NotNil(t, req.DcqlQuery)
 	require.Len(t, req.DcqlQuery.Credentials, 1)
 	assert.Equal(t, "pid_credential", req.DcqlQuery.Credentials[0].ID)
+}
+
+// transactionDataEntry encodes a transaction data object the way a request carries it.
+func transactionDataEntry(t *testing.T, object map[string]any) string {
+	t.Helper()
+	raw, err := json.Marshal(object)
+	require.NoError(t, err)
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+// TestValidateTransactionData pins OID4VP 1.0 Section 5.1: a request carrying even one
+// transaction data type the wallet does not support is refused, with the
+// invalid_transaction_data code Section 8.5 defines. Nothing is presented.
+func TestValidateTransactionData(t *testing.T) {
+	req := func(entries ...string) *CredentialPresentationRequest {
+		return &CredentialPresentationRequest{
+			DcqlQuery:       &DcqlQuery{Credentials: []CredentialQuery{{ID: "pid_credential", Format: "dc+sd-jwt"}}},
+			TransactionData: entries,
+		}
+	}
+	supported := []string{"sample_type"}
+	entry := func(object map[string]any) string { return transactionDataEntry(t, object) }
+	referencingPID := map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}}
+
+	t.Run("no transaction_data is nothing to check", func(t *testing.T) {
+		assert.Nil(t, validateTransactionData(req(), nil))
+	})
+
+	t.Run("an unsupported type is refused", func(t *testing.T) {
+		err := validateTransactionData(req(entry(map[string]any{"type": "unknown_type", "credential_ids": []string{"pid_credential"}})), supported)
+		require.NotNil(t, err)
+		assert.Equal(t, InvalidTransactionDataError, err.Code)
+	})
+
+	// The default configuration supports no type, so transaction_data is refused
+	// outright until SupportedTransactionDataTypes names one.
+	t.Run("every type is refused while none is supported", func(t *testing.T) {
+		err := validateTransactionData(req(entry(referencingPID)), nil)
+		require.NotNil(t, err)
+		assert.Equal(t, InvalidTransactionDataError, err.Code)
+	})
+
+	t.Run("a supported type referencing the request is accepted", func(t *testing.T) {
+		assert.Nil(t, validateTransactionData(req(entry(referencingPID)), supported))
+	})
+
+	t.Run("credential_ids must name a dc+sd-jwt Credential Query of the request", func(t *testing.T) {
+		err := validateTransactionData(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"other"}})), supported)
+		require.NotNil(t, err)
+		assert.Equal(t, InvalidTransactionDataError, err.Code)
+	})
+
+	t.Run("credential_ids is required", func(t *testing.T) {
+		err := validateTransactionData(req(entry(map[string]any{"type": "sample_type"})), supported)
+		require.NotNil(t, err)
+		assert.Equal(t, InvalidTransactionDataError, err.Code)
+	})
+
+	t.Run("an entry that is not base64url is refused", func(t *testing.T) {
+		err := validateTransactionData(req("not base64!"), supported)
+		require.NotNil(t, err)
+		assert.Equal(t, InvalidTransactionDataError, err.Code)
+	})
+
+	t.Run("an entry that is not a JSON object is refused", func(t *testing.T) {
+		err := validateTransactionData(req(base64.RawURLEncoding.EncodeToString([]byte(`"a string"`))), supported)
+		require.NotNil(t, err)
+		assert.Equal(t, InvalidTransactionDataError, err.Code)
+	})
+}
+
+// TestCheckTransactionDataFor pins that transaction data has to reference the
+// Credential the wallet actually presents: the Wallet must use one of the referenced
+// Credentials for transaction authorization (Sections 5.1 and 8.5).
+func TestCheckTransactionDataFor(t *testing.T) {
+	req := &CredentialPresentationRequest{TransactionData: []string{
+		transactionDataEntry(t, map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}}),
+	}}
+
+	assert.Nil(t, req.CheckTransactionDataFor("pid_credential"))
+
+	err := req.CheckTransactionDataFor("other_credential")
+	require.NotNil(t, err)
+	assert.Equal(t, InvalidTransactionDataError, err.Code)
 }

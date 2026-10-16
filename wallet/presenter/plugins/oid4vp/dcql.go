@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 
 	"github.com/trustknots/vcknots/wallet/credential"
 )
@@ -44,6 +45,124 @@ type ClaimQuery struct {
 type CredentialSetQuery struct {
 	Options  [][]string `json:"options,omitempty"`
 	Required *bool      `json:"required,omitempty"`
+}
+
+// Matches reports whether a held Credential with the given Credential Format
+// Identifier satisfies the format and meta constraints of the Credential Query
+// (Section 6.1, Appendix B). Its claims are checked when the presentation is
+// serialized.
+func (q *CredentialQuery) Matches(format string, cred *credential.Credential) bool {
+	if q.Format != format || cred == nil {
+		return false
+	}
+	// Only the dc+sd-jwt meta (vct_values, Appendix B.3.5) is applied; other formats
+	// match on format alone. Add type_values when jwt_vc_json needs it.
+	if format == "dc+sd-jwt" {
+		return matchVctValues(q.Meta, cred.Types)
+	}
+	return true
+}
+
+// matchVctValues requires the SD-JWT VC type (vct) to be one of vct_values. Type
+// inheritance is not resolved. Without vct_values nothing is constrained.
+func matchVctValues(meta map[string]any, credentialTypes []string) bool {
+	raw, present := meta["vct_values"]
+	if !present {
+		return true
+	}
+	values, ok := raw.([]any)
+	if !ok {
+		return false
+	}
+	for _, v := range values {
+		if vct, ok := v.(string); ok && slices.Contains(credentialTypes, vct) {
+			return true
+		}
+	}
+	return false
+}
+
+// SelectCredentialQuery returns the Credential Query the wallet answers (OID4VP 1.0
+// Section 6.4.2). held reports whether the wallet holds a Credential matching a
+// Credential Query. It fails with access_denied when a required Credential is not
+// held. Optional Credential Set Queries are answered only when nothing is required.
+func (d *DcqlQuery) SelectCredentialQuery(held func(*CredentialQuery) bool) (*CredentialQuery, error) {
+	byID := make(map[string]*CredentialQuery, len(d.Credentials))
+	for i := range d.Credentials {
+		byID[d.Credentials[i].ID] = &d.Credentials[i]
+	}
+	satisfiable := func(ids []string) bool {
+		for _, id := range ids {
+			q, ok := byID[id]
+			if !ok || !held(q) {
+				return false
+			}
+		}
+		return true
+	}
+	// firstSatisfiable returns the first option the wallet can satisfy, preferring one
+	// that keeps the answer at a single Credential; Section 6.4.3 leaves the choice
+	// among options to the Wallet.
+	firstSatisfiable := func(options [][]string, required []string) []string {
+		var first []string
+		for _, option := range options {
+			if !satisfiable(option) {
+				continue
+			}
+			if first == nil {
+				first = option
+			}
+			ids := map[string]bool{}
+			for _, id := range append(slices.Clone(required), option...) {
+				ids[id] = true
+			}
+			if len(ids) == 1 {
+				return option
+			}
+		}
+		return first
+	}
+
+	var required []string
+	if len(d.CredentialSets) == 0 {
+		for _, q := range d.Credentials {
+			required = append(required, q.ID)
+		}
+		if !satisfiable(required) {
+			return nil, newAuthorizationRequestError(AccessDeniedError, "the wallet does not hold every requested Credential")
+		}
+	} else {
+		for i, set := range d.CredentialSets {
+			if set.Required != nil && !*set.Required {
+				continue
+			}
+			option := firstSatisfiable(set.Options, required)
+			if option == nil {
+				return nil, newAuthorizationRequestError(AccessDeniedError, "the wallet cannot satisfy dcql_query.credential_sets[%d]", i)
+			}
+			required = append(required, option...)
+		}
+		if len(required) == 0 {
+			for _, set := range d.CredentialSets {
+				if option := firstSatisfiable(set.Options, nil); option != nil {
+					required = option
+					break
+				}
+			}
+			if required == nil {
+				return nil, newAuthorizationRequestError(AccessDeniedError, "the wallet cannot satisfy any dcql_query.credential_sets entry")
+			}
+		}
+	}
+
+	slices.Sort(required)
+	required = slices.Compact(required)
+	// One Credential per response for now: a request that needs more is refused
+	// rather than half answered, since Section 6.4.2 forbids partial answers.
+	if len(required) != 1 {
+		return nil, fmt.Errorf("presenting %d Credentials in one response is not supported", len(required))
+	}
+	return byID[required[0]], nil
 }
 
 // AuthorizationRequestError is a validation failure of an OID4VP Authorization

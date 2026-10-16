@@ -373,14 +373,16 @@ func presentCredential(w *wallet.Wallet, key wallet.IKeyEntry, oid4vpURI string)
 }
 ```
 
-`PresentCredential` は、OID4VP リクエストをパースし（`request_uri` で参照される JAR Request Object も含み、その署名は `X509TrustChainRoots` に対して検証されます）、保存済みの Credential のうち最も新しく受領した 1 件を選択し（DCQL クエリとの照合は現時点では行いません）、`key` で Verifiable Presentation をシリアライズして署名し、Verifier の `response_uri`（`response_mode=direct_post`）に POST します。
+`PresentCredential` は、OID4VP リクエストをパースし（`request_uri` で参照される JAR Request Object も含み、その署名は `X509TrustChainRoots` に対して検証されます）、リクエストの DCQL クエリに合致する保存済みの Credential のうち最も新しい 1 件を選択し（`format`、SD-JWT VC では `meta.vct_values`、および `credential_sets` を照合します）、`key` で Verifiable Presentation をシリアライズして署名し、Verifier の `response_uri`（`response_mode=direct_post`）に POST します。
 Wallet が `redirect_uri` に送信することはありません。
 Verifier の応答に `redirect_uri` が含まれる場合、その値が戻り値として呼び出し側に返されます（含まれない場合は空文字列です）。
+クエリを満たす Credential を保有していない場合は、提示の代わりに `access_denied` のエラー応答を POST します。理由は添えません。どの Credential を保有しているかを Verifier に知らせてしまうためです（OID4VP 1.0 Section 15.9）。
 
 * **提示オプション:** 第 3 引数にはフォーマット固有のオプションを渡します。
 SD-JWT VC では `sdjwtvc.SdJwtVcPresentationOptions` により、Key Binding JWT の付与（`RequireKeyBinding`）を制御します。
-開示するクレームは DCQL クエリの `claims` が指定したもの（`claim_sets` がある場合は満たせる最初の選択肢）になり、`claims` が無い場合は 1 件も開示しません（OID4VP 1.0 Section 6.4.1）。Credential が要求されたクレームを持っていない場合、または `SelectedClaims` を指定していてその範囲外のクレームが要求された場合、`PresentCredential` は `serializerTypes.ErrClaimsNotSatisfiable` で失敗し、Verifier には何も送りません。
+開示するクレームは DCQL クエリの `claims` が指定したもの（`claim_sets` がある場合は満たせる最初の選択肢）になり、`claims` が無い場合は 1 件も開示しません（OID4VP 1.0 Section 6.4.1）。Credential が要求されたクレームを持っていない場合、または `SelectedClaims` を指定していてその範囲外のクレームが要求された場合、`PresentCredential` は `serializerTypes.ErrClaimsNotSatisfiable` で失敗し、提示は送らずに `access_denied` のエラー応答を Verifier に POST します。
 KB-JWT の audience と nonce は OID4VP リクエスト（`client_id` と `nonce`）から自動的に設定されます。リクエストに transaction data が含まれる場合の `transaction_data` ハッシュも同様です。
+`transaction_data` を含むリクエストは、その type がすべて `oid4vp.Oid4vpPresenter.SupportedTransactionDataTypes` に列挙されていない限り `invalid_transaction_data` で拒否します。既定値は空です。
 `nil` を渡すと、その Credential のフォーマットに応じたデフォルトのオプションが使われます（JWT-VC の提示では `nil` が典型的です）。
 * **リダイレクト処理:** Verifier のリダイレクト URI をコールバックで受け取りたい場合は、`PresentCredentialWithOptions` に `&wallet.PresentCredentialOptions{OnRedirect: func(uri string) error {...}}` を渡します。
 

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,6 +26,11 @@ type Oid4vpPresenter struct {
 	// WARNING: This should NEVER be set to true in production environments.
 	// This is only for conformance testing with self-signed or non-standard certificates.
 	InsecureSkipX509Verify bool
+	// SupportedTransactionDataTypes lists the transaction data types the wallet can
+	// process. A request carrying any other type is rejected with
+	// invalid_transaction_data (OID4VP 1.0 Section 5.1), so while this is empty every
+	// request that carries transaction_data is rejected.
+	SupportedTransactionDataTypes []string
 }
 
 // ParsePresentationRequest parses the presentation request URI and returns a CredentialPresentationRequest,
@@ -85,21 +91,91 @@ func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*Credentia
 		// trustworthy (see requestBuilder.errorResponseAllowed).
 		var authzErr *AuthorizationRequestError
 		if errors.As(err, &authzErr) && builder.errorResponseAllowed {
-			if sendErr := p.sendAuthorizationErrorResponse(builder.req, authzErr); sendErr != nil {
+			if sendErr := p.SendAuthorizationErrorResponse(builder.req, authzErr); sendErr != nil {
 				return nil, fmt.Errorf("failed to build CredentialPresentationRequest: %w (also failed to send error authorization response: %v)", err, sendErr)
 			}
 		}
 		return nil, fmt.Errorf("failed to build CredentialPresentationRequest: %w", err)
 	}
 
+	// The request is validated by this point. A Request Object is accepted only
+	// through x509_san_dns with a verified certificate chain (see WithRequestObject),
+	// so the Verifier is authenticated and its response_uri may receive the error.
+	if authzErr := validateTransactionData(req, p.SupportedTransactionDataTypes); authzErr != nil {
+		if sendErr := p.SendAuthorizationErrorResponse(req, authzErr); sendErr != nil {
+			return nil, fmt.Errorf("rejected transaction_data: %w (also failed to send error authorization response: %v)", authzErr, sendErr)
+		}
+		return nil, fmt.Errorf("rejected transaction_data: %w", authzErr)
+	}
+
 	return req, nil
 }
 
-// sendAuthorizationErrorResponse posts the OAuth 2.0 error authorization
+// transactionData is the part of a transaction data object every type shares
+// (OID4VP 1.0 Section 5.1).
+type transactionData struct {
+	Type          string   `json:"type"`
+	CredentialIDs []string `json:"credential_ids"`
+}
+
+func decodeTransactionData(i int, encoded string) (*transactionData, *AuthorizationRequestError) {
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(encoded, "="))
+	if err != nil {
+		return nil, newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] is not base64url: %v", i, err)
+	}
+	var data transactionData
+	if err := json.Unmarshal(decoded, &data); err != nil {
+		return nil, newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] is not a transaction data object: %v", i, err)
+	}
+	return &data, nil
+}
+
+// validateTransactionData checks every transaction_data entry against OID4VP 1.0
+// Section 5.1: a base64url-encoded JSON object with a supported type and
+// credential_ids that name Credential Queries of the request. Only dc+sd-jwt can
+// carry transaction data, in its Key Binding JWT (Appendix B.3.3).
+func validateTransactionData(req *CredentialPresentationRequest, supportedTypes []string) *AuthorizationRequestError {
+	for i, encoded := range req.TransactionData {
+		data, authzErr := decodeTransactionData(i, encoded)
+		if authzErr != nil {
+			return authzErr
+		}
+		if !slices.Contains(supportedTypes, data.Type) {
+			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] has unsupported type %q", i, data.Type)
+		}
+		if len(data.CredentialIDs) == 0 {
+			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d].credential_ids is required", i)
+		}
+		for _, id := range data.CredentialIDs {
+			if req.DcqlQuery == nil || !slices.ContainsFunc(req.DcqlQuery.Credentials, func(q CredentialQuery) bool { return q.ID == id && q.Format == "dc+sd-jwt" }) {
+				return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d].credential_ids %q is not a dc+sd-jwt Credential Query of the request", i, id)
+			}
+		}
+	}
+	return nil
+}
+
+// CheckTransactionDataFor rejects transaction data that does not reference the
+// Credential Query the wallet answers: the Wallet must use one of the referenced
+// Credentials for transaction authorization (OID4VP 1.0 Sections 5.1 and 8.5).
+func (r *CredentialPresentationRequest) CheckTransactionDataFor(queryID string) *AuthorizationRequestError {
+	for i, encoded := range r.TransactionData {
+		data, authzErr := decodeTransactionData(i, encoded)
+		if authzErr != nil {
+			return authzErr
+		}
+		if !slices.Contains(data.CredentialIDs, queryID) {
+			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] does not reference the Credential the wallet presents", i)
+		}
+	}
+	return nil
+}
+
+// SendAuthorizationErrorResponse posts the OAuth 2.0 error authorization
 // response (error, error_description and state) to the Verifier's
 // response_uri when response_mode=direct_post. It is a no-op when the
 // partially parsed request has no usable direct_post response_uri.
-func (p *Oid4vpPresenter) sendAuthorizationErrorResponse(req *CredentialPresentationRequest, authzErr *AuthorizationRequestError) error {
+func (p *Oid4vpPresenter) SendAuthorizationErrorResponse(req *CredentialPresentationRequest, authzErr *AuthorizationRequestError) error {
 	if req == nil || req.ResponseMode != OAuthAuthzReqResponseModeDirectPost || req.ResponseURI == "" {
 		return nil
 	}
@@ -492,7 +568,7 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 	// as an error authorization response when response_mode=direct_post.
 
 	// Presentation Exchange based parameters were removed in OID4VP 1.0 in
-	// favor of dcql_query; this wallet does not accept them (Issue #606).
+	// favor of dcql_query; this wallet does not accept them.
 	for _, unsupported := range []string{"presentation_definition", "presentation_definition_uri", "presentation_submission"} {
 		if _, exists := params[unsupported]; exists {
 			b.errValidation = newAuthorizationRequestError(InvalidRequestError, "%s is not supported; use dcql_query instead", unsupported)
@@ -550,15 +626,30 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 	}
 
 	if td, exists := params["transaction_data"]; exists && td != nil {
+		// Assigned rather than appended: the Request Object path runs this twice.
+		b.req.TransactionData = nil
 		switch v := td.(type) {
 		case []interface{}:
-			for _, item := range v {
-				if str, ok := item.(string); ok {
-					b.req.TransactionData = append(b.req.TransactionData, str)
+			for i, item := range v {
+				str, ok := item.(string)
+				if !ok {
+					b.errValidation = newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] must be a string", i)
+					return
 				}
+				b.req.TransactionData = append(b.req.TransactionData, str)
 			}
 		case []string:
 			b.req.TransactionData = v
+		case string:
+			// A query parameter carries the array as JSON.
+			if err := json.Unmarshal([]byte(v), &b.req.TransactionData); err != nil {
+				b.errValidation = newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data must be a JSON array of strings: %v", err)
+				return
+			}
+		}
+		if len(b.req.TransactionData) == 0 {
+			b.errValidation = newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data must be a non-empty array of strings")
+			return
 		}
 	}
 
@@ -740,7 +831,7 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 			return b
 		}
 
-		// ClientID should contain DNS name which is same as the SAN of the leaf certificate in the x5c array (OID4VP x509_san_dns). #106
+		// ClientID should contain DNS name which is same as the SAN of the leaf certificate in the x5c array (OID4VP x509_san_dns).
 		matched := false
 		for _, n := range (*certificates)[0].DNSNames {
 			if clientID.original == n {
@@ -753,7 +844,7 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 			return b
 		}
 
-		// response_uri / redirect_uri check #107
+		// response_uri / redirect_uri check
 		var uri *url.URL
 		if b.req.ResponseMode == "direct_post" {
 			uri, err = url.Parse(b.req.ResponseURI)
@@ -807,7 +898,7 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 // https scheme, set Content-Type: application/x-www-form-urlencoded and
 // Accept: application/oauth-authz-req+jwt. The https requirement is also
 // applied to the GET method for project-wide consistency with the same
-// guard in wallet/receiver/plugins/oid4vci/oid4vci.go (Issue #29).
+// guard in wallet/receiver/plugins/oid4vci/oid4vci.go.
 // It can be relaxed by setting the VCKNOTS_WALLET_HTTP_ALLOWED environment
 // variable for testing.
 func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMethod) *requestBuilder {

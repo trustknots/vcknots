@@ -46,12 +46,12 @@ The following tables are organized based on [OpenID for Verifiable Credential Is
 | [5.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.5) | Credential Query | Authorization Request using `scope` | ❌ | ❌ | |
 | [5.9.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.9.3) | Client Identification | Client Identifier Prefix | Since `v0.7.0`<br />✅ `redirect_uri`, `x509_san_dns` | ⏳ `redirect_uri`, `x509_san_dns` |  |
 | [5.10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.10) | Request URI | Request URI Method | Since `v0.7.0`<br />✅ GET | ⏳ GET, POST |  |
-| [6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l) | Credential Query | DCQL | Since `v0.7.0`<br />✅ | ⏳ | Uses `dcql_query` parameter. The Wallet discloses only the requested `claims`. |
+| [6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l) | Credential Query | DCQL | Since `v0.7.0`<br />✅ | ⏳ | Uses `dcql_query` parameter. The Wallet answers one Credential Query per response, discloses only the requested `claims`, and matches `meta.vct_values` for `dc+sd-jwt`. |
 | [8.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1) | Authorization Response | Authorization Response | Since `v0.7.0`<br />✅ | ⏳ |  |
 | [8.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2) | Response Mode | Response Mode | Since `v0.7.0`<br />✅ `direct_post` | ⏳ `direct_post` |  |
 | [8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3) | Authorization Response | Encrypted Authorization Response | ❌ | ⏳ |  |
-| [8.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.4) | Transaction Data | Transaction Data | Since `v0.7.0`<br />✅ | ⏳ | Supported for `dc+sd-jwt` only. |
-| [8.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5) | Authorization Response | Authorization Error Response | ❌ | ❌ | |
+| [8.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.4) | Transaction Data | Transaction Data | Since `v0.7.0`<br />✅ | ⏳ | Supported for `dc+sd-jwt` only. The Wallet rejects types not listed in `Oid4vpPresenter.SupportedTransactionDataTypes`. |
+| [8.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5) | Authorization Response | Authorization Error Response | ❌ | ⏳ | The Wallet posts the error response to `response_uri` for `direct_post`. |
 | [10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-10) | Metadata | Wallet Metadata | ❌ | ❌ | |
 | [11](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-11) | Metadata | Verifier Metadata — `client_metadata` | Since `v0.7.0`<br />✅ | ⏳ Parse |  |
 | [12](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-12) | Client Authentication | Verifier Attestation JWT | ❌ | ❌ | |

@@ -4,10 +4,13 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/trustknots/vcknots/wallet/credential"
 )
 
-// sample dcql_query values follow the examples in OID4VP 1.0 Section 6 and
-// trustknots/vcknots-internal#35.
+// sample dcql_query values follow the examples in OID4VP 1.0 Section 6.
 const sampleSdJwtDcqlQuery = `{
 	"credentials": [
 		{
@@ -236,4 +239,96 @@ func TestParseDcqlQuery_Claims(t *testing.T) {
 	if query.Credentials[0].Claims != nil {
 		t.Fatalf("claims = %#v, want nil when absent", query.Credentials[0].Claims)
 	}
+}
+
+func TestCredentialQuery_Matches(t *testing.T) {
+	pid := &credential.Credential{Types: []string{"urn:eu.europa.ec.eudi:pid:1"}}
+	tests := []struct {
+		name   string
+		query  CredentialQuery
+		format string
+		want   bool
+	}{
+		{"vct among vct_values", CredentialQuery{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{"urn:other", "urn:eu.europa.ec.eudi:pid:1"}}}, "dc+sd-jwt", true},
+		{"vct not among vct_values", CredentialQuery{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{"urn:conformance-suite:nonexistent:credential:1"}}}, "dc+sd-jwt", false},
+		{"empty meta constrains nothing", CredentialQuery{Format: "dc+sd-jwt", Meta: map[string]any{}}, "dc+sd-jwt", true},
+		{"malformed vct_values matches nothing", CredentialQuery{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": "urn:eu.europa.ec.eudi:pid:1"}}, "dc+sd-jwt", false},
+		{"different format", CredentialQuery{Format: "jwt_vc_json", Meta: map[string]any{}}, "dc+sd-jwt", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.query.Matches(tt.format, pid))
+		})
+	}
+}
+
+// TestDcqlQuery_SelectCredentialQuery pins OID4VP 1.0 Section 6.4.2 with the queries
+// the conformance suite sends: its modules append a query for a credential no wallet
+// holds, in an optional or a required credential set.
+func TestDcqlQuery_SelectCredentialQuery(t *testing.T) {
+	held := func(q *CredentialQuery) bool { return q.ID == "pid" }
+	optional, required := false, true
+	pid := CredentialQuery{ID: "pid", Format: "dc+sd-jwt"}
+	missing := CredentialQuery{ID: "nonexistent_credential", Format: "dc+sd-jwt"}
+
+	t.Run("without credential_sets every query is required", func(t *testing.T) {
+		got, err := (&DcqlQuery{Credentials: []CredentialQuery{pid}}).SelectCredentialQuery(held)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, "pid", got.ID)
+		_, err = (&DcqlQuery{Credentials: []CredentialQuery{pid, missing}}).SelectCredentialQuery(held)
+		assertAuthzErrorCode(t, err, AccessDeniedError)
+	})
+
+	t.Run("an optional set that cannot be satisfied is skipped", func(t *testing.T) {
+		got, err := (&DcqlQuery{
+			Credentials: []CredentialQuery{pid, missing},
+			CredentialSets: []CredentialSetQuery{
+				{Options: [][]string{{"pid"}}, Required: &required},
+				{Options: [][]string{{"nonexistent_credential"}}, Required: &optional},
+			},
+		}).SelectCredentialQuery(held)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, "pid", got.ID)
+	})
+
+	t.Run("a required set that cannot be satisfied is access_denied", func(t *testing.T) {
+		_, err := (&DcqlQuery{
+			Credentials: []CredentialQuery{pid, missing},
+			CredentialSets: []CredentialSetQuery{
+				{Options: [][]string{{"pid"}}, Required: &required},
+				{Options: [][]string{{"nonexistent_credential"}}}, // required defaults to true
+			},
+		}).SelectCredentialQuery(held)
+		assertAuthzErrorCode(t, err, AccessDeniedError)
+	})
+
+	t.Run("the first satisfiable option is taken", func(t *testing.T) {
+		got, err := (&DcqlQuery{
+			Credentials:    []CredentialQuery{pid, missing},
+			CredentialSets: []CredentialSetQuery{{Options: [][]string{{"nonexistent_credential"}, {"pid"}}}},
+		}).SelectCredentialQuery(held)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, "pid", got.ID)
+	})
+
+	t.Run("an option answerable with one Credential wins over an earlier one needing two", func(t *testing.T) {
+		both := func(*CredentialQuery) bool { return true }
+		got, err := (&DcqlQuery{
+			Credentials:    []CredentialQuery{pid, missing},
+			CredentialSets: []CredentialSetQuery{{Options: [][]string{{"pid", "nonexistent_credential"}, {"pid"}}}},
+		}).SelectCredentialQuery(both)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, "pid", got.ID)
+	})
+
+	t.Run("two required credentials are refused, not half answered", func(t *testing.T) {
+		both := func(*CredentialQuery) bool { return true }
+		_, err := (&DcqlQuery{Credentials: []CredentialQuery{pid, missing}}).SelectCredentialQuery(both)
+		require.Error(t, err)
+		assert.NotErrorAs(t, err, new(*AuthorizationRequestError), "a plain error, not an OAuth error response")
+	})
 }
