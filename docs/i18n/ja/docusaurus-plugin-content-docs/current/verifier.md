@@ -459,8 +459,8 @@ curl --location 'http://localhost:8080/callback' \
 			"alg_values": ["ES256"]
 		},
 		"dc+sd-jwt": {
-			"sd-jwt_alg_values": ["ES256", "ES384"],
-			"kb-jwt_alg_values": ["ES256", "ES384"]
+			"sd-jwt_alg_values": ["ES256"],
+			"kb-jwt_alg_values": ["ES256"]
 		}
 	}
 }
@@ -733,8 +733,10 @@ Verifier アプリから VP／クレデンシャル形式ごとの検査に渡�
 
 | フィールド | 必須 | 説明 |
 | ---------- | ---- | ---- |
-| `isKbJwt` | いいえ | `dc+sd-jwt` 用。`true` のとき Key Binding JWT を検証（`nonce`、`aud`、`sd_hash` など）。省略時は KB-JWT 検証なし。 |
+| `isKbJwt` | いいえ | `dc+sd-jwt` 用。`true` のとき Key Binding JWT を検証（`typ`、`alg`、`nonce`、`aud`、`sd_hash`、`iat` など）。省略時は KB-JWT 検証なし。 |
 | `expectedTransactionDataHashes` | いいえ | `transaction_data` 利用時。KB-JWT に含まれるハッシュ列の期待値。 |
+
+> **KB-JWT の `iat` 検証について**: `isKbJwt: true` の場合、KB-JWT の `iat` が未来ではないこと（時刻のずれの範囲を除く）および最大トークン有効期間（デフォルト 300 秒）を超えていないことを検証します。Wallet 側の時刻のずれが大きい場合やレスポンスが遅延した場合はリクエストが失敗することがあります。
 
 **戻り値**:
 - `Record<string, VpTokenPayload[]>` を返します。キーは DCQL のクレデンシャルクエリ ID、値は検証済み VP トークンペイロードの配列です。
@@ -809,15 +811,17 @@ Verifierが保持する証明書チェーンを表す型です（PEM形式の文
 
 ## 8. 注意事項
 
-1. **証明書の管理**: Verifierのメタデータを設定する際は、適切な証明書と秘密鍵を提供する必要があります。
+1. **dc+sd-jwt のアルゴリズム制約**: 現在 `dc+sd-jwt` フォーマットでは SD-JWT・KB-JWT ともに **ES256 のみ** がサポートされています。OpenID4VPでは許容されている `ES384` などを `sd-jwt_alg_values` / `kb-jwt_alg_values` に列挙しても、ES256 以外のアルゴリズムで署名された VP は `verifier_vp_formats_not_supported` エラーで拒否されます。また、`none`・空文字・HMAC 系アルゴリズム（`HS*`）は使用できません。
+
+2. **証明書の管理**: Verifierのメタデータを設定する際は、適切な証明書と秘密鍵を提供する必要があります。
    - 証明書チェーンの順序は重要です（リーフ証明書 → 中間証明書 → ルート証明書）
    - 本番環境では有効な証明書を使用してください
 
-2. **セキュリティ**: 本番環境では、適切な認証・認可の仕組みを実装してください。
+3. **セキュリティ**: 本番環境では、適切な認証・認可の仕組みを実装してください。
    - 秘密鍵の管理には特に注意を払ってください
    - HTTPSを使用して通信を暗号化してください
 
-3. **URLエンコード**: verifier IDにURLエンコードが必要な文字（例：`:`、`/`）が含まれる場合は、適切にエンコードしてください。
+4. **URLエンコード**: verifier IDにURLエンコードが必要な文字（例：`:`、`/`）が含まれる場合は、適切にエンコードしてください。
 
 ## 9. トラブルシューティング
 

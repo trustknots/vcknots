@@ -6,11 +6,31 @@ import { decodeSdJwt, splitSdJwt } from '@sd-jwt/decode'
 import * as jose from 'jose'
 import { X509Certificate } from 'node:crypto'
 import { WithProviderRegistry, withProviderRegistry } from './provider.registry'
-import { KbJwtJsonPayload } from '../keyBindingJwt.types'
+import { kbJwtJsonPayloadSchema } from '../keyBindingJwt.types'
 import { sdJwtPayloadSchema, VpTokenPayload } from '../presentation.types'
 
-export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentationProvider &
-  WithProviderRegistry => {
+const DEFAULT_KB_JWT_MAX_TOKEN_AGE_SECONDS = 300
+const DEFAULT_KB_JWT_CLOCK_TOLERANCE_SECONDS = 60
+
+function isProhibitedAlg(alg: string): boolean {
+  const trimmed = alg.trim()
+  if (trimmed.length === 0) return true
+  if (trimmed.toLowerCase() === 'none') return true
+  return /^hs/i.test(trimmed)
+}
+
+export type VerifyVerifiablePresentationDcSdJwtFactoryOptions = {
+  maxTokenAgeSeconds?: number
+  clockToleranceSeconds?: number
+}
+
+export const verifyVerifiablePresentationDcSdJwt = (
+  factoryOptions?: VerifyVerifiablePresentationDcSdJwtFactoryOptions
+): VerifyVerifiablePresentationProvider & WithProviderRegistry => {
+  const maxTokenAge = factoryOptions?.maxTokenAgeSeconds ?? DEFAULT_KB_JWT_MAX_TOKEN_AGE_SECONDS
+  const clockTolerance =
+    factoryOptions?.clockToleranceSeconds ?? DEFAULT_KB_JWT_CLOCK_TOLERANCE_SECONDS
+
   return {
     kind: 'verify-verifiable-presentation-provider',
     name: 'verify-verifiable-presentation-dc-sd-jwt-provider',
@@ -42,15 +62,29 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
       const decodedSdJwt = await decodeSdJwt(vp, digest)
       const sdJwtHeader = decodedSdJwt.jwt.header
 
-      const sdJwtAlg = typeof sdJwtHeader.alg === 'string' ? sdJwtHeader.alg : undefined
-      if (options.allowedSdJwtAlgs) {
-        if (!sdJwtAlg || !options.allowedSdJwtAlgs.includes(sdJwtAlg)) {
-          throw err('verifier_vp_formats_not_supported', {
-            message: `Algorithm '${sdJwtAlg ?? 'missing'}' is not in dc+sd-jwt sd-jwt_alg_values. Allowed: ${options.allowedSdJwtAlgs.join(', ')}`,
-          })
-        }
+      const sdJwtTyp = typeof sdJwtHeader.typ === 'string' ? sdJwtHeader.typ : undefined
+      if (sdJwtTyp !== 'dc+sd-jwt') {
+        throw err('invalid_sd_jwt', {
+          message: `SD-JWT typ must be 'dc+sd-jwt', got: ${sdJwtTyp ?? 'missing'}`,
+        })
       }
-      if (options.allowedKbJwtAlgs && !vp.endsWith('~')) {
+      const sdJwtAlg = typeof sdJwtHeader.alg === 'string' ? sdJwtHeader.alg : undefined
+      if (!sdJwtAlg || isProhibitedAlg(sdJwtAlg)) {
+        throw err('verifier_vp_formats_not_supported', {
+          message: `SD-JWT algorithm '${sdJwtAlg ?? 'missing'}' is not acceptable.`,
+        })
+      }
+      if (options.allowedSdJwtAlgs && !options.allowedSdJwtAlgs.includes(sdJwtAlg)) {
+        throw err('verifier_vp_formats_not_supported', {
+          message: `Algorithm '${sdJwtAlg}' is not in dc+sd-jwt sd-jwt_alg_values. Allowed: ${options.allowedSdJwtAlgs.join(', ')}`,
+        })
+      }
+      if (sdJwtAlg !== 'ES256') {
+        throw err('verifier_vp_formats_not_supported', {
+          message: `SD-JWT algorithm '${sdJwtAlg}' is not supported. Only ES256 is currently supported.`,
+        })
+      }
+      if (!vp.endsWith('~')) {
         const vpParts = vp.split('~')
         const kbJwtStr = vpParts[vpParts.length - 1]
         if (kbJwtStr) {
@@ -60,10 +94,25 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
           } catch {
             throw err('invalid_sd_jwt', { message: 'KB-JWT header is malformed' })
           }
+          if (kbHeader.typ !== 'kb+jwt') {
+            throw err('invalid_sd_jwt', {
+              message: `KB-JWT typ must be 'kb+jwt', got: ${kbHeader.typ ?? 'missing'}`,
+            })
+          }
           const kbAlg = typeof kbHeader.alg === 'string' ? kbHeader.alg : undefined
-          if (!kbAlg || !options.allowedKbJwtAlgs.includes(kbAlg)) {
+          if (!kbAlg || isProhibitedAlg(kbAlg)) {
+            throw err('invalid_sd_jwt', {
+              message: `KB-JWT algorithm '${kbAlg ?? 'missing'}' is not acceptable.`,
+            })
+          }
+          if (options.allowedKbJwtAlgs && !options.allowedKbJwtAlgs.includes(kbAlg)) {
             throw err('verifier_vp_formats_not_supported', {
-              message: `KB-JWT algorithm '${kbAlg ?? 'missing'}' is not in dc+sd-jwt kb-jwt_alg_values. Allowed: ${options.allowedKbJwtAlgs.join(', ')}`,
+              message: `KB-JWT algorithm '${kbAlg}' is not in dc+sd-jwt kb-jwt_alg_values. Allowed: ${options.allowedKbJwtAlgs.join(', ')}`,
+            })
+          }
+          if (kbAlg !== 'ES256') {
+            throw err('verifier_vp_formats_not_supported', {
+              message: `KB-JWT algorithm '${kbAlg}' is not supported. Only ES256 is currently supported.`,
             })
           }
         }
@@ -202,7 +251,25 @@ export const verifyVerifiablePresentationDcSdJwt = (): VerifyVerifiablePresentat
             message: 'Key binding JWT is missing in SD-JWT VP',
           })
         }
-        const kbSdJwtDecoded = KbJwtJsonPayload(await jose.decodeJwt(kbJwt))
+        const rawKbPayload = await jose.decodeJwt(kbJwt)
+        const kbPayloadParseResult = kbJwtJsonPayloadSchema.safeParse(rawKbPayload)
+        if (!kbPayloadParseResult.success) {
+          throw err('invalid_sd_jwt', {
+            message: `KB-JWT payload is invalid: ${kbPayloadParseResult.error.message}`,
+          })
+        }
+        const kbSdJwtDecoded = kbPayloadParseResult.data
+        const nowSeconds = Math.floor(Date.now() / 1000)
+        if (kbSdJwtDecoded.iat > nowSeconds + clockTolerance) {
+          throw err('invalid_sd_jwt', {
+            message: 'KB-JWT iat is in the future.',
+          })
+        }
+        if (nowSeconds - kbSdJwtDecoded.iat > maxTokenAge + clockTolerance) {
+          throw err('invalid_sd_jwt', {
+            message: 'KB-JWT iat exceeds max token age.',
+          })
+        }
         nonce = kbSdJwtDecoded.nonce
         const { expectedAud } = options
         if (kbSdJwtDecoded.aud !== expectedAud) {

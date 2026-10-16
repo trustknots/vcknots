@@ -2,13 +2,13 @@ import assert from 'node:assert/strict'
 import { afterEach, before, describe, it, mock } from 'node:test'
 
 import { SDJwtInstance } from '@sd-jwt/core'
-import { ES256, digest, generateSalt } from '@sd-jwt/crypto-nodejs'
+import { digest, ES256, generateSalt } from '@sd-jwt/crypto-nodejs'
 import { ClientIdentifier } from '../../src/client-id-prefix.types'
 import { VcknotsError } from '../../src/errors/vcknots.error'
 import { Jwk } from '../../src/jwk.type'
 import type { Nonce } from '../../src/nonce.types'
-import { NonceStoreProvider } from '../../src/providers/provider.types'
 // import { VerifyVerifiablePresentationProvider } from '../../src/providers/provider.types'
+import { NonceStoreProvider } from '../../src/providers/provider.types'
 import { verifyVerifiablePresentationDcSdJwt } from '../../src/providers/verify-presentation-dc-sd-jwt.provider'
 
 const issuer = 'https://issuer.example.com'
@@ -22,8 +22,13 @@ const dcKbJwtExpectedAud = ClientIdentifier('redirect_uri:https://verifier.examp
 const fixtureSdJwtWithX5cForKb =
   'eyJhbGciOiJFUzI1NiIsInR5cCI6ImRjK3NkLWp3dCIsIng1YyI6WyJNSUlDSGpDQ0FjT2dBd0lCQWdJVVpYOUJTNUNET0pSVzJ0MUZLMVVETXQvUXdNRXdDZ1lJS29aSXpqMEVBd0l3SVRFTE1Ba0dBMVVFQmhNQ1IwSXhFakFRQmdOVkJBTU1DVTlKUkVZZ1ZHVnpkREFlRncweU5ERXhNalV3T0RNMk1EUmFGdzB6TkRFeE1qTXdPRE0yTURSYU1DRXhDekFKQmdOVkJBWVRBa2RDTVJJd0VBWURWUVFEREFsUFNVUkdJRlJsYzNRd1dUQVRCZ2NxaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUVC9kTHNkNTFMTEJyR1Y2UjIzbzZ2eW1SeEhYZUZCb0k4eXEzMXk1a0ZWMlZWMGdpOXg1WnpFRmlxOERNaUFIdWNMQUNGbmR4THRab3JDaGE5enpuUW80SFlNSUhWTUIwR0ExVWREZ1FXQkJTNWNiZGdBZU1CaTV3eHBicHdJU0doU2hBV0VUQWZCZ05WSFNNRUdEQVdnQlM1Y2JkZ0FlTUJpNXd4cGJwd0lTR2hTaEFXRVRBUEJnTlZIUk1CQWY4RUJUQURBUUgvTUlHQkJnTlZIUkVFZWpCNGdoQjNkM2N1YUdWbGJtRnVMbTFsTG5WcmdoMWtaVzF2TG1ObGNuUnBabWxqWVhScGIyNHViM0JsYm1sa0xtNWxkSUlKYkc5allXeG9iM04wZ2hac2IyTmhiR2h2YzNRdVpXMXZZbWw0TG1OdkxuVnJnaUprWlcxdkxuQnBaQzFwYzNOMVpYSXVZblZ1WkdWelpISjFZMnRsY21WcExtUmxNQW9HQ0NxR1NNNDlCQU1DQTBrQU1FWUNJUUNQYm5MeENJK1dSMXZoT1crQThLem5BV3YxTUpvK1lFYjFNSTQ1TktXL1ZRSWhBTHpzcW94OFZ1QlJ3TjJkbDVMa3BueFA0b0g5cDZIMEFPWm1LUCtZN25YUyJdfQ.eyJfc2QiOlsiMDRVY1lqOEV1T1ExWWZHNzdWUDZQdWdPVWF1dnRNQ0tSU1RvdUR4aldidyIsIkgwdElaUGhWVFVqTnhCd1VzelFrMW95VlVQNU5zZGRLNWo2ZGcyb0NPemMiLCJXelV0Nkd2ZnJyVHlLWmFIRFhTcERYWHJGLUxURm1UME9WTFhvYmFpZnVNIiwiWGVuek44TVl1LU5fMXpGV3g1dVVYb0FWLWhwdG1MV2d5ekczbUVkR0tDZyIsImVMbVlqTGVLY0ZQS2dVN1YwQWlVOVVMeXZ3cWVKLWJ4ZWdDUGlMTWlTMFkiLCJsdmtZMVh3OFE5M1BUOERQRHhHSlhCMzlobHJTNFpOUVZCbkhmcFZOUVZBIiwibXY3T0tCMnRoUWpOV2lxU3ZBTDAxY2VOUG5wTDlDVmhlNGRmNHRSYUxGTSIsIm52Mm9rMjFXejVkN2lsenNkczE1Vk5tRXI1U0VPYlBzVWNxNmpjemxXaEUiXSwiaXNzIjoiaHR0cHM6Ly9pc3N1ZXIuZXVkaXcuZGV2IiwidmN0IjoidXJuOmV1LmV1cm9wYS5lYy5ldWRpOnBpZDoxIiwiX3NkX2FsZyI6InNoYS0yNTYiLCJjbmYiOnsiandrIjp7Imt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJ4IjoiZXpaZ0t3TXVlQXlaTEhVZ1Nwek5rYk9XRGdqSlhUQU9KbjhNZnRPbmF5USIsInkiOiJGeV9VNEt5WlFmLTlqS3BGSnRINk9GRlJYbXdBY3ZleWZ1b0RwMWhTT0ZvIn19LCJpYXQiOjE3NzIwMTU0NjV9.gseVu9AStknO-locvvCKcnj8PnUWSZtMF4wE-SqqXteI4xMOfUaA0zFpZR6hGfNBPUSZL3ROw4RYDLQIOQjsMQ~WyJkMTQ2V0NwTVg1MDZpZzY3UHoxVGtBIiwgImZhbWlseV9uYW1lIiwgIlRFU1QiXQ~WyJzQnE1aUY1dTFibVRfU2dYblF1UmtBIiwgImdpdmVuX25hbWUiLCAiVEFSTyJd~WyJRNG80UjFxdDhacENFSkhIWFRZRmpRIiwgImJpcnRoZGF0ZSIsICIyMDAwLTAzLTAzIl0~WyJHUDRwcXpKaVJ4RGN0TEVlcEZ5VzJBIiwgIm5hdGlvbmFsaXRpZXMiLCBbIkpQIl1d~WyJKX2pYUkZxT0poR18yRmFmOHl4bFBBIiwgImlzc3VpbmdfYXV0aG9yaXR5IiwgIlRlc3QgUElEIGlzc3VlciJd~WyJiNDk2UGotUDdXS05iWkFKMDJ3NVhnIiwgImlzc3VpbmdfY291bnRyeSIsICJGQyJd~WyJ4bGlVZlExX050Y3IyYnBJcGJCN1lnIiwgIjE4IiwgdHJ1ZV0~WyJ3dDJCRVFYVDBfUDNIQ0N4VVVoSmZBIiwgImFnZV9lcXVhbF9vcl9vdmVyIiwgeyJfc2QiOiBbInNDczNOZlNLYVRoR3pRbERVRTd5WnR4VmVBSm5lRGY2dS1nNFk1NVdRekUiXX1d~WyJxcm1aeGpLNUtPZXRGUHFOSGpWN0h3IiwgImxvY2FsaXR5IiwgIkpBUEFOIl0~WyJpc0ZDcF8xREhnUUpZLVBtZWYwRHV3IiwgInBsYWNlX29mX2JpcnRoIiwgeyJfc2QiOiBbIjF1LWszbEFKMHlPV2x4OUJLLWFSVEVaUUZyLXVPUFRrTGdEN3U5aTFlMEUiXX1d~'
 const fixtureKbJwtForSdJwtVp =
-  'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJyZWRpcmVjdF91cmk6aHR0cHM6Ly92ZXJpZmllci5leGFtcGxlLmNvbSIsImlhdCI6MTc3MjAxNTQ4OCwibm9uY2UiOiJiY2IyMDFiN2UxODZlZDM4MDEyN2I5MTU4YTlkNTdhNiIsInNkX2hhc2giOiJHaTZJMWUxanVYMlNvUFZsMEd6V2pmU2RwZGlFcThaMHNhSl9weGN6aFVZIn0.6ZaTRQ46jE5jPXI4Vebu81hNcJHOij_qhPyQBypjXM1HPDOjEV7DAp6n1-ob5yMUnPbUm-YRZwczNaUMvln4aA'
+  'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJyZWRpcmVjdF91cmk6aHR0cHM6Ly92ZXJpZmllci5leGFtcGxlLmNvbSIsImlhdCI6MTc2NzIyNTYwMCwibm9uY2UiOiJiY2IyMDFiN2UxODZlZDM4MDEyN2I5MTU4YTlkNTdhNiIsInNkX2hhc2giOiJHaTZJMWUxanVYMlNvUFZsMEd6V2pmU2RwZGlFcThaMHNhSl9weGN6aFVZIn0.BAVvtVJ-Bu7-SqMf5_CPKIKnRXBSukpm6Y3GNc9pD1WAWRjOZhK7mVXKTaum_MppOTJez5p5ctVJo8RuUkRsUA'
 const fixtureDcSdJwtVpWithKb = fixtureSdJwtWithX5cForKb + fixtureKbJwtForSdJwtVp
+/**
+ * `iat` embedded in `fixtureKbJwtForSdJwtVp` — used to freeze `Date.now()` in KB-JWT time tests.
+ * Must match the baked-in `iat` of the fixture token; regenerate the token when changing this.
+ */
+const fixtureKbJwtIat = Math.floor(new Date('2026-01-01T00:00:00Z').getTime() / 1000)
 /** KB-JWT signed with a key that does not match cnf.jwk in the SD-JWT. */
 const fixtureWrongKeyKbJwt =
   'eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJhdWQiOiJyZWRpcmVjdF91cmk6aHR0cHM6Ly92ZXJpZmllci5leGFtcGxlLmNvbSIsImlhdCI6MTc2NzIyNTYwMCwibm9uY2UiOiJiY2IyMDFiN2UxODZlZDM4MDEyN2I5MTU4YTlkNTdhNiIsInNkX2hhc2giOiJHaTZJMWUxanVYMlNvUFZsMEd6V2pmU2RwZGlFcThaMHNhSl9weGN6aFVZIn0.qc-dL2EXpevwshlLfwLPdpzbNzL1hxrxZA_CaRCxtc5TfEusZZ_ziwGUsX-_t0x9-U8FQh9P4IHC3QF9wskwsA'
@@ -50,7 +55,7 @@ describe('sd-jwt provider', () => {
     })
 
     return instance.issue({ iss, sub: 'user-123', name: 'Alice', vct: 'vcknots-test' }, undefined, {
-      header: { kid, ...headerOverrides },
+      header: { kid, typ: 'dc+sd-jwt', ...headerOverrides },
     })
   }
 
@@ -288,7 +293,14 @@ describe('sd-jwt provider', () => {
   })
 
   it('verifies successfully when Key-Binding JWT is expected and present', async () => {
-    const result = await provider.verify(fixtureDcSdJwtVpWithKb, {
+    const maxTokenAge = 120
+    const clockTol = 30
+    const localProvider = verifyVerifiablePresentationDcSdJwt({
+      maxTokenAgeSeconds: maxTokenAge,
+      clockToleranceSeconds: clockTol,
+    })
+    mock.method(Date, 'now', () => (fixtureKbJwtIat + maxTokenAge) * 1000)
+    const result = await localProvider.verify(fixtureDcSdJwtVpWithKb, {
       kind: 'dc+sd-jwt',
       isKbJwt: true,
       expectedAud: dcKbJwtExpectedAud,
@@ -331,9 +343,286 @@ describe('sd-jwt provider', () => {
     )
   })
 
+  it('fails when SD-JWT typ is not dc+sd-jwt', async () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'JWT', kid })).toString(
+      'base64url'
+    )
+    const payload = Buffer.from(JSON.stringify({ iss: issuer, vct: 'test' })).toString('base64url')
+    const fakeSdJwt = `${header}.${payload}.fakesig~`
+
+    await assert.rejects(
+      provider.verify(fakeSdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /SD-JWT typ must be 'dc\+sd-jwt'/)
+        return true
+      }
+    )
+  })
+
+  it('fails when SD-JWT typ is missing', async () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid })).toString('base64url')
+    const payload = Buffer.from(JSON.stringify({ iss: issuer, vct: 'test' })).toString('base64url')
+    const fakeSdJwt = `${header}.${payload}.fakesig~`
+
+    await assert.rejects(
+      provider.verify(fakeSdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /missing/)
+        return true
+      }
+    )
+  })
+
+  it('fails when SD-JWT alg is none', async () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'dc+sd-jwt', kid })).toString(
+      'base64url'
+    )
+    const payload = Buffer.from(JSON.stringify({ iss: issuer, vct: 'test' })).toString('base64url')
+    const fakeSdJwt = `${header}.${payload}.fakesig~`
+
+    await assert.rejects(
+      provider.verify(fakeSdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'verifier_vp_formats_not_supported')
+        assert.match(e.message, /SD-JWT algorithm .* not acceptable/)
+        return true
+      }
+    )
+  })
+
+  it('fails when SD-JWT alg is HS256', async () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'dc+sd-jwt', kid })).toString(
+      'base64url'
+    )
+    const payload = Buffer.from(JSON.stringify({ iss: issuer, vct: 'test' })).toString('base64url')
+    const fakeSdJwt = `${header}.${payload}.fakesig~`
+
+    await assert.rejects(
+      provider.verify(fakeSdJwt, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'verifier_vp_formats_not_supported')
+        assert.match(e.message, /SD-JWT algorithm .* not acceptable/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT typ is not kb+jwt', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'JWT' })).toString('base64url')
+    const kbPayload = Buffer.from(
+      JSON.stringify({
+        aud: String(dcExpectedAud),
+        iat: fixtureKbJwtIat,
+        nonce: 'test',
+        sd_hash: 'test',
+      })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /KB-JWT typ must be 'kb\+jwt'/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT alg is none', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'none', typ: 'kb+jwt' })).toString(
+      'base64url'
+    )
+    const kbPayload = Buffer.from(
+      JSON.stringify({
+        aud: String(dcExpectedAud),
+        iat: fixtureKbJwtIat,
+        nonce: 'test',
+        sd_hash: 'test',
+      })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /KB-JWT algorithm .* not acceptable/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT alg is HS256', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'kb+jwt' })).toString(
+      'base64url'
+    )
+    const kbPayload = Buffer.from(
+      JSON.stringify({
+        aud: String(dcExpectedAud),
+        iat: fixtureKbJwtIat,
+        nonce: 'test',
+        sd_hash: 'test',
+      })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, { kind: 'dc+sd-jwt', expectedAud: dcExpectedAud }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /KB-JWT algorithm .* not acceptable/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT iat exceeds max token age', async () => {
+    const maxTokenAge = 120
+    const clockTol = 30
+    const localProvider = verifyVerifiablePresentationDcSdJwt({
+      maxTokenAgeSeconds: maxTokenAge,
+      clockToleranceSeconds: clockTol,
+    })
+    mock.method(Date, 'now', () => (fixtureKbJwtIat + maxTokenAge + clockTol + 1) * 1000)
+    await assert.rejects(
+      localProvider.verify(fixtureDcSdJwtVpWithKb, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /KB-JWT iat exceeds max token age/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT iat is in the future', async () => {
+    const clockTol = 30
+    const localProvider = verifyVerifiablePresentationDcSdJwt({ clockToleranceSeconds: clockTol })
+    mock.method(Date, 'now', () => (fixtureKbJwtIat - clockTol - 1) * 1000)
+
+    await assert.rejects(
+      localProvider.verify(fixtureDcSdJwtVpWithKb, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        assert.match(e.message, /KB-JWT iat is in the future/)
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT iat is missing', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'kb+jwt' })).toString(
+      'base64url'
+    )
+    const kbPayload = Buffer.from(
+      JSON.stringify({ aud: String(dcKbJwtExpectedAud), nonce: 'test', sd_hash: 'test' })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        return true
+      }
+    )
+  })
+
   it('fails when KB-JWT is signed with wrong key', async () => {
     await assert.rejects(
       provider.verify(fixtureDcSdJwtVpWithWrongKeyKb, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT iat is a string', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'kb+jwt' })).toString(
+      'base64url'
+    )
+    const kbPayload = Buffer.from(
+      JSON.stringify({
+        aud: String(dcKbJwtExpectedAud),
+        iat: String(fixtureKbJwtIat),
+        nonce: 'test',
+        sd_hash: 'test',
+      })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT iat is a boolean', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'kb+jwt' })).toString(
+      'base64url'
+    )
+    const kbPayload = Buffer.from(
+      JSON.stringify({
+        aud: String(dcKbJwtExpectedAud),
+        iat: true,
+        nonce: 'test',
+        sd_hash: 'test',
+      })
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, {
+        kind: 'dc+sd-jwt',
+        isKbJwt: true,
+        expectedAud: dcKbJwtExpectedAud,
+      }),
+      (e: VcknotsError) => {
+        assert.equal(e.name, 'invalid_sd_jwt')
+        return true
+      }
+    )
+  })
+
+  it('fails when KB-JWT iat is Infinity (1e400 parses to Infinity under JSON.parse)', async () => {
+    const kbHeader = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'kb+jwt' })).toString(
+      'base64url'
+    )
+    // JSON.stringify converts Infinity to null, so we craft the payload manually.
+    // JSON.parse converts 1e400 to Infinity because it exceeds Number.MAX_VALUE.
+    const kbPayload = Buffer.from(
+      `{"aud":"${String(dcKbJwtExpectedAud)}","iat":1e400,"nonce":"test","sd_hash":"test"}`
+    ).toString('base64url')
+    const fakeVp = `${fixtureSdJwtWithX5cForKb}${kbHeader}.${kbPayload}.fakesig`
+
+    await assert.rejects(
+      provider.verify(fakeVp, {
         kind: 'dc+sd-jwt',
         isKbJwt: true,
         expectedAud: dcKbJwtExpectedAud,
