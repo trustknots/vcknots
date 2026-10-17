@@ -27,7 +27,7 @@
 	},
 	"packageManager": "pnpm@12.11.2",
 	"devDependencies": {
-		"@biomejs/biome": "2.5.14",
+		"@biomejs/biome": "2.5.15",
 		"@commitlint/cli": "21.2.3",
 		"@commitlint/config-conventional": "21.2.3",
 		"@changesets/cli": "2.31.1",
