@@ -67,5 +67,9 @@ export class ResourcesStack extends cdk.Stack {
       value: dataStores.dpopProofJtisTable.tableName,
       description: 'DPoP proof jtis DynamoDB table name',
     });
+    new cdk.CfnOutput(this, 'OAuthClientAssertionJtisTableName', {
+      value: dataStores.oauthClientAssertionJtisTable.tableName,
+      description: 'OAuth client assertion jtis DynamoDB table name',
+    });
   }
 }

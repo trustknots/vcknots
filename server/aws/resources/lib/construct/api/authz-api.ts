@@ -36,12 +36,16 @@ export class AuthzApi extends Construct {
         ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME:
           dataStores.allowedCredentialConfigurationsTable.tableName,
         DPOP_PROOF_JTIS_TABLE_NAME: dataStores.dpopProofJtisTable.tableName,
+        OAUTH_CLIENT_ASSERTION_JTIS_TABLE_NAME: dataStores.oauthClientAssertionJtisTable.tableName,
         TX_CODE_PEPPER: requiredEnv('TX_CODE_PEPPER'),
       },
     });
 
     // Token endpoint rejects replayed DPoP proofs with a conditional put; no read is needed.
     dataStores.dpopProofJtisTable.grant(this.lambdaApi.role, 'dynamodb:PutItem');
+
+    // Token endpoint rejects replayed client assertions with a conditional put; no read is needed.
+    dataStores.oauthClientAssertionJtisTable.grant(this.lambdaApi.role, 'dynamodb:PutItem');
 
     // The authz server creates and uses its access-token signing key at runtime
     // (kmsAuthzSignatureKeyStore).
