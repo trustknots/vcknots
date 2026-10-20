@@ -165,7 +165,7 @@ The Verifier role also has a scoped Secrets Manager policy for `secretsManagerVe
 | [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | v2 recommended | Used by `deploy-resources.sh` for identity/region lookup |
 | POSIX `sh` | — | Deploy script (`scripts/deploy-resources.sh`; `/bin/sh` on macOS/Linux) |
 
-`aws-cdk`, `ts-node`, and `esbuild` are installed as `server/aws/resources` devDependencies.  
+`aws-cdk`, `tsx`, and `esbuild` are installed as `server/aws/resources` devDependencies.  
 You do **not** need a global `cdk` install; use `pnpm cdk` or `pnpm run deploy` from `server/aws/resources`.
 
 ### AWS account access
@@ -210,7 +210,7 @@ pnpm build
 
 ## Deploy
 
-Use the deploy script (runs `cdk bootstrap` then `cdk deploy`). CDK runs via `ts-node` (`cdk.json`); `pnpm build` is not required.
+Use the deploy script (runs `cdk bootstrap` then `cdk deploy`). CDK runs via `tsx` (`cdk.json`), which does not type-check, so the script runs `tsc --noEmit` first; `pnpm build` is not required.
 
 ```bash
 # from project root

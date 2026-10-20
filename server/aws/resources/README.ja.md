@@ -165,7 +165,7 @@ Verifier ロールには `secretsManagerVerifierCertificateStore` 用にスコ�
 | [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | v2 推奨 | `deploy-resources.sh` がアイデンティティ/リージョン取得に使用 |
 | POSIX `sh` | — | デプロイスクリプト（`scripts/deploy-resources.sh`；macOS/Linux では `/bin/sh`） |
 
-`aws-cdk`、`ts-node`、`esbuild` は `server/aws/resources` の devDependencies としてインストールされます。  
+`aws-cdk`、`tsx`、`esbuild` は `server/aws/resources` の devDependencies としてインストールされます。  
 グローバルな `cdk` インストールは不要です。`server/aws/resources` から `pnpm cdk` または `pnpm run deploy` を使用してください。
 
 ### AWS アカウントアクセス
@@ -210,7 +210,7 @@ pnpm build
 
 ## デプロイ
 
-デプロイスクリプトを使用します（`cdk bootstrap` の後に `cdk deploy` を実行）。CDK は `ts-node` 経由で実行されます（`cdk.json`）。`pnpm build` は不要です。
+デプロイスクリプトを使用します（`cdk bootstrap` の後に `cdk deploy` を実行）。CDK は `tsx` 経由で実行されます（`cdk.json`）。`tsx` は型チェックを行わないため、スクリプトは先に `tsc --noEmit` を実行します。`pnpm build` は不要です。
 
 ```bash
 # プロジェクトルートから
