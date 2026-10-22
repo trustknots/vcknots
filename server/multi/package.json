@@ -16,7 +16,7 @@
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@12.11.2",
+	"packageManager": "pnpm@12.14.0",
 	"dependencies": {
 		"@hono/node-server": "2.1.1",
 		"@trustknots/server-core": "workspace:*",
