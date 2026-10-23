@@ -20,6 +20,6 @@
 	"dependencies": {
 		"@trustknots/server-core": "workspace:*",
 		"@trustknots/vcknots": "workspace:*",
-		"dotenv": "18.0.3"
+		"dotenv": "18.0.8"
 	}
 }
