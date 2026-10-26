@@ -1,12 +1,16 @@
 import 'dotenv/config'
 import { serve } from '@hono/node-server'
 import { handle } from 'hono/aws-lambda'
+import type { LambdaEvent, LambdaContext, APIGatewayProxyResult } from 'hono/aws-lambda'
 import { createAuthzApp } from '../apps/create-authz-app.js'
 
 const { app, initialize } = createAuthzApp()
 
 export { app }
-export const handler = handle(app)
+export const handler = (
+  event: LambdaEvent,
+  lambdaContext?: LambdaContext
+): Promise<APIGatewayProxyResult> => handle(app)(event, lambdaContext)
 
 if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
   const rawPort = process.env.AUTHZ_PORT ?? '8082'
