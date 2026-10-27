@@ -6,6 +6,8 @@ import {
   dynamodbAuthzOAuthClientStore,
   dynamodbAuthzOAuthPolicyStore,
   dynamodbAuthzServerMetadataStore,
+  dynamodbDpopProofJtiStore,
+  dynamodbNonceStore,
   dynamodbPreAuthorizedCodeStore,
   kmsAuthzSignatureKeyStore,
 } from '@trustknots/aws'
@@ -47,6 +49,16 @@ export function createAuthzApp(options?: VcknotsOptions) {
     throw new Error('ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME is required')
   }
 
+  const noncesTableName = process.env.NONCES_TABLE_NAME
+  if (!noncesTableName) {
+    throw new Error('NONCES_TABLE_NAME is required')
+  }
+
+  const dpopProofJtisTableName = process.env.DPOP_PROOF_JTIS_TABLE_NAME
+  if (!dpopProofJtisTableName) {
+    throw new Error('DPOP_PROOF_JTIS_TABLE_NAME is required')
+  }
+
   const rawPort = process.env.AUTHZ_PORT ?? '8082'
   const port = Number.parseInt(rawPort, 10)
   if (!Number.isFinite(port)) throw new Error(`Invalid AUTHZ_PORT: "${rawPort}"`)
@@ -58,6 +70,8 @@ export function createAuthzApp(options?: VcknotsOptions) {
   const allowedCredentialConfigurationStore = dynamodbAllowedCredentialConfigurationStore({
     tableName: allowedCredentialConfigurationsTableName,
   })
+  const nonceStore = dynamodbNonceStore({ tableName: noncesTableName })
+  const dpopProofJtiStore = dynamodbDpopProofJtiStore({ tableName: dpopProofJtisTableName })
   const signatureKeyStore = kmsAuthzSignatureKeyStore()
   const { app, context } = createBaseApp(
     createAuthzRouter,
@@ -70,6 +84,8 @@ export function createAuthzApp(options?: VcknotsOptions) {
         oauthClientStore,
         oauthPolicyStore,
         allowedCredentialConfigurationStore,
+        nonceStore,
+        dpopProofJtiStore,
         signatureKeyStore,
         ...(options?.providers ?? []),
       ],

@@ -21,6 +21,8 @@ export class AuthzApi extends Construct {
       readWriteTables: [
         dataStores.authServersTable,
         dataStores.preCodesTable,
+        // DPoP nonces issued by /token (use_dpop_nonce) must be visible to every Lambda instance.
+        dataStores.noncesTable,
         dataStores.authzOAuthClientsTable,
         dataStores.authzOAuthPoliciesTable,
         dataStores.allowedCredentialConfigurationsTable,
@@ -28,13 +30,18 @@ export class AuthzApi extends Construct {
       environment: {
         AUTH_SERVERS_TABLE_NAME: dataStores.authServersTable.tableName,
         PRE_CODES_TABLE_NAME: dataStores.preCodesTable.tableName,
+        NONCES_TABLE_NAME: dataStores.noncesTable.tableName,
         AUTHZ_OAUTH_CLIENTS_TABLE_NAME: dataStores.authzOAuthClientsTable.tableName,
         AUTHZ_OAUTH_POLICIES_TABLE_NAME: dataStores.authzOAuthPoliciesTable.tableName,
         ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME:
           dataStores.allowedCredentialConfigurationsTable.tableName,
+        DPOP_PROOF_JTIS_TABLE_NAME: dataStores.dpopProofJtisTable.tableName,
         TX_CODE_PEPPER: requiredEnv('TX_CODE_PEPPER'),
       },
     });
+
+    // Token endpoint rejects replayed DPoP proofs with a conditional put; no read is needed.
+    dataStores.dpopProofJtisTable.grant(this.lambdaApi.role, 'dynamodb:PutItem');
 
     // The authz server creates and uses its access-token signing key at runtime
     // (kmsAuthzSignatureKeyStore).

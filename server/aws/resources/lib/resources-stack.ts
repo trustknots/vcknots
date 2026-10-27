@@ -63,5 +63,9 @@ export class ResourcesStack extends cdk.Stack {
       value: dataStores.allowedCredentialConfigurationsTable.tableName,
       description: 'Allowed credential configurations DynamoDB table name',
     });
+    new cdk.CfnOutput(this, 'DpopProofJtisTableName', {
+      value: dataStores.dpopProofJtisTable.tableName,
+      description: 'DPoP proof jtis DynamoDB table name',
+    });
   }
 }
