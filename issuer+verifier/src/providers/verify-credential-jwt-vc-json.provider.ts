@@ -1,5 +1,4 @@
 import { createPublicKey } from 'node:crypto'
-import type { JsonWebKey as NodeJsonWebKey } from 'node:crypto'
 import * as jwt from 'jsonwebtoken'
 import { VcknotsError, err } from '../errors/vcknots.error'
 import { VerifyCredentialProvider } from './provider.types'
@@ -124,7 +123,7 @@ export const verifyCredentialJwt = (): VerifyCredentialProvider => {
         let decode: jwt.Jwt
         try {
           const publicKey = createPublicKey({
-            key: publicJwk as NodeJsonWebKey,
+            key: publicJwk as JsonWebKey,
             format: 'jwk',
           })
           decode = jwt.verify(vc, publicKey, {
