@@ -53,7 +53,7 @@
 		"base64url": "3.0.1",
 		"dcql": "^4.0.0",
 		"did-resolver": "6.0.0",
-		"jose": "6.2.12",
+		"jose": "6.2.13",
 		"jsonwebtoken": "9.0.3",
 		"key-did-resolver": "4.0.0",
 		"zod": "4.6.7"
