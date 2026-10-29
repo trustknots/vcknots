@@ -90,7 +90,7 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore`、`kmsIssuerSigna
 | Lambda | ロググループ（`{stage}` = `API_STAGE`） | REST API 名 | 環境変数 |
 |---|---|---|---|
 | Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`、`NONCES_TABLE_NAME`、`PRE_CODES_TABLE_NAME`、`AUTHZ_BASE_URL`、`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`、`AUTHZ_OAUTH_POLICIES_TABLE_NAME`、`ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`、`DPOP_PROOF_JTIS_TABLE_NAME`、`TX_CODE_PEPPER` |
-| Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`、`PRE_CODES_TABLE_NAME`、`NONCES_TABLE_NAME`、`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`、`AUTHZ_OAUTH_POLICIES_TABLE_NAME`、`ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`、`DPOP_PROOF_JTIS_TABLE_NAME`、`TX_CODE_PEPPER` |
+| Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`、`PRE_CODES_TABLE_NAME`、`NONCES_TABLE_NAME`、`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`、`AUTHZ_OAUTH_POLICIES_TABLE_NAME`、`ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`、`DPOP_PROOF_JTIS_TABLE_NAME`、`OAUTH_CLIENT_ASSERTION_JTIS_TABLE_NAME`、`TX_CODE_PEPPER` |
 | Verifier | `/vcknots/{stage}/verifier` | `vcknots-verifier-{stage}` | `VERIFIERS_TABLE_NAME`、`REQUEST_OBJECTS_TABLE_NAME`、`NONCES_TABLE_NAME`、`VERIFIER_CERTIFICATE_SECRET_PREFIX` |
 
 `TX_CODE_PEPPER` はデプロイ時の環境変数から読み込まれ（[デプロイ](#デプロイ)参照）、Issuer/Authz Lambda の環境変数に注入されます。未設定の場合、CDK synth はすぐに失敗します。
@@ -115,15 +115,16 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore`、`kmsIssuerSigna
 | RequestObjectsTable | Request Object ID | あり（`ttl`） | VP リクエスト用 Request Object |
 | AllowedCredentialConfigurationsTable | access token のハッシュ（SHA-256、base64url） | あり（`ttl`） | access token ごとに発行を許可する `credential_configuration_ids` |
 | DpopProofJtisTable | `jwkThumbprint:jti`のSHA-256（hex） | あり（`ttl`） | リプレイ防止用に、proof鍵ごとの使用済みDPoP proofの`jti` |
+| OAuthClientAssertionJtisTable | `[client_id, jti]` のハッシュ（SHA-256、hex） | あり（`ttl`） | 使用済みの `private_key_jwt` `client_assertion` の jti（リプレイ防止） |
 
-`id` 以外の属性（メタデータ本体、`expires_at`、`ttl` など）はアプリケーションが書き込みます。TTL を使うテーブル（PreCodesTable / NoncesTable / RequestObjectsTable / AllowedCredentialConfigurationsTable / DpopProofJtisTable）では、`expires_at` はアプリケーションレベルの有効期限で **epoch ミリ秒**（Firestore / in-memory プロバイダと揃えた期限判定に使用）、`ttl` は DynamoDB TTL 専用の **epoch 秒**属性です。
+`id` 以外の属性（メタデータ本体、`expires_at`、`ttl` など）はアプリケーションが書き込みます。TTL を使うテーブル（PreCodesTable / NoncesTable / RequestObjectsTable / AllowedCredentialConfigurationsTable / DpopProofJtisTable / OAuthClientAssertionJtisTable）では、`expires_at` はアプリケーションレベルの有効期限で **epoch ミリ秒**（Firestore / in-memory プロバイダと揃えた期限判定に使用）、`ttl` は DynamoDB TTL 専用の **epoch 秒**属性です。
 
 ### IAM
 
 | Lambda | DynamoDB アクセス |
 |---|---|
 | Issuer | IssuersTable、NoncesTable（読み書き）；PreCodesTable（書き込みのみ）；AuthzOAuthClientsTable、AuthzOAuthPoliciesTable（読み取りのみ）；AllowedCredentialConfigurationsTable（読み取り＋期限切れ削除用の `DeleteItem`）；DpopProofJtisTable（`PutItem`のみ） |
-| Authz | AuthServersTable、PreCodesTable、NoncesTable、AuthzOAuthClientsTable、AuthzOAuthPoliciesTable、AllowedCredentialConfigurationsTable（読み書き）；DpopProofJtisTable（`PutItem`のみ） |
+| Authz | AuthServersTable、PreCodesTable、NoncesTable、AuthzOAuthClientsTable、AuthzOAuthPoliciesTable、AllowedCredentialConfigurationsTable（読み書き）；DpopProofJtisTable、OAuthClientAssertionJtisTable（`PutItem`のみ） |
 | Verifier | VerifiersTable、RequestObjectsTable、NoncesTable（読み書き） |
 
 Issuer ロール・Authz ロール・Verifier ロールには署名鍵ストア用にスコープを絞った KMS ポリシーも付与されています（`grantSignatureKeyStoreAccess()`、`lib/construct/security/signature-key-policy.ts` 参照）。鍵は実行時に作成されるため ARN で指定できず、各ステートメントは条件でスコープを絞っています:
@@ -152,7 +153,7 @@ Verifier ロールには `secretsManagerVerifierCertificateStore` 用にスコ�
 ### スタック出力
 
 - `IssuerApiUrl`、`AuthzApiUrl`、`VerifierApiUrl`
-- `IssuersTableName`、`AuthServersTableName`、`PreCodesTableName`、`NoncesTableName`、`VerifiersTableName`、`RequestObjectsTableName`、`AuthzOAuthClientsTableName`、`AuthzOAuthPoliciesTableName`、`AllowedCredentialConfigurationsTableName`、`DpopProofJtisTableName`
+- `IssuersTableName`、`AuthServersTableName`、`PreCodesTableName`、`NoncesTableName`、`VerifiersTableName`、`RequestObjectsTableName`、`AuthzOAuthClientsTableName`、`AuthzOAuthPoliciesTableName`、`AllowedCredentialConfigurationsTableName`、`DpopProofJtisTableName`、`OAuthClientAssertionJtisTableName`
 
 ## 前提条件
 
@@ -165,7 +166,7 @@ Verifier ロールには `secretsManagerVerifierCertificateStore` 用にスコ�
 | [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | v2 推奨 | `deploy-resources.sh` がアイデンティティ/リージョン取得に使用 |
 | POSIX `sh` | — | デプロイスクリプト（`scripts/deploy-resources.sh`；macOS/Linux では `/bin/sh`） |
 
-`aws-cdk`、`ts-node`、`esbuild` は `server/aws/resources` の devDependencies としてインストールされます。  
+`aws-cdk`、`tsx`、`esbuild` は `server/aws/resources` の devDependencies としてインストールされます。  
 グローバルな `cdk` インストールは不要です。`server/aws/resources` から `pnpm cdk` または `pnpm run deploy` を使用してください。
 
 ### AWS アカウントアクセス
@@ -210,7 +211,7 @@ pnpm build
 
 ## デプロイ
 
-デプロイスクリプトを使用します（`cdk bootstrap` の後に `cdk deploy` を実行）。CDK は `ts-node` 経由で実行されます（`cdk.json`）。`pnpm build` は不要です。
+デプロイスクリプトを使用します（`cdk bootstrap` の後に `cdk deploy` を実行）。CDK は `tsx` 経由で実行されます（`cdk.json`）。`tsx` は型チェックを行わないため、スクリプトは先に `tsc --noEmit` を実行します。`pnpm build` は不要です。
 
 ```bash
 # プロジェクトルートから

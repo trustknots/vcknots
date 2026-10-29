@@ -90,7 +90,7 @@ Physical names (log groups, REST API names) include the deployment stage from `A
 | Lambda | Log group (`{stage}` = `API_STAGE`) | REST API name | Environment variables |
 |---|---|---|---|
 | Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`, `NONCES_TABLE_NAME`, `PRE_CODES_TABLE_NAME`, `AUTHZ_BASE_URL`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`, `DPOP_PROOF_JTIS_TABLE_NAME`, `TX_CODE_PEPPER` |
-| Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME`, `NONCES_TABLE_NAME`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`, `DPOP_PROOF_JTIS_TABLE_NAME`, `TX_CODE_PEPPER` |
+| Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME`, `NONCES_TABLE_NAME`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`, `DPOP_PROOF_JTIS_TABLE_NAME`, `OAUTH_CLIENT_ASSERTION_JTIS_TABLE_NAME`, `TX_CODE_PEPPER` |
 | Verifier | `/vcknots/{stage}/verifier` | `vcknots-verifier-{stage}` | `VERIFIERS_TABLE_NAME`, `REQUEST_OBJECTS_TABLE_NAME`, `NONCES_TABLE_NAME`, `VERIFIER_CERTIFICATE_SECRET_PREFIX` |
 
 `TX_CODE_PEPPER` is read from the deploy-time environment (see [Deploy](#deploy)) and injected into the Issuer/Authz Lambda environment; CDK synth fails fast if it is unset.
@@ -115,15 +115,16 @@ Billing is on-demand (`PAY_PER_REQUEST`). Tables use `RETAIN` on stack deletion 
 | RequestObjectsTable | Request Object ID | yes (`ttl`) | VP request Request Object |
 | AllowedCredentialConfigurationsTable | Access token hash (SHA-256, base64url) | yes (`ttl`) | `credential_configuration_ids` allowed for the access token |
 | DpopProofJtisTable | SHA-256 (hex) of `jwkThumbprint:jti` | yes (`ttl`) | Used DPoP proof `jti` per proof key, for replay protection |
+| OAuthClientAssertionJtisTable | Hash of `[client_id, jti]` (SHA-256, hex) | yes (`ttl`) | Used `private_key_jwt` `client_assertion` jti values (replay protection) |
 
-Attributes other than `id` (metadata body, `expires_at`, `ttl`, and so on) are written by the application. For the TTL-enabled tables (PreCodesTable / NoncesTable / RequestObjectsTable / AllowedCredentialConfigurationsTable / DpopProofJtisTable), `expires_at` is the application-level expiry in **epoch milliseconds** (used for expiry checks, matching the Firestore / in-memory providers) and `ttl` is a separate **epoch-seconds** attribute used only by DynamoDB TTL.
+Attributes other than `id` (metadata body, `expires_at`, `ttl`, and so on) are written by the application. For the TTL-enabled tables (PreCodesTable / NoncesTable / RequestObjectsTable / AllowedCredentialConfigurationsTable / DpopProofJtisTable / OAuthClientAssertionJtisTable), `expires_at` is the application-level expiry in **epoch milliseconds** (used for expiry checks, matching the Firestore / in-memory providers) and `ttl` is a separate **epoch-seconds** attribute used only by DynamoDB TTL.
 
 ### IAM
 
 | Lambda | DynamoDB access |
 |---|---|
 | Issuer | IssuersTable, NoncesTable (read/write); PreCodesTable (write only); AuthzOAuthClientsTable, AuthzOAuthPoliciesTable (read only); AllowedCredentialConfigurationsTable (read + `DeleteItem` for expired entries); DpopProofJtisTable (`PutItem` only) |
-| Authz | AuthServersTable, PreCodesTable, NoncesTable, AuthzOAuthClientsTable, AuthzOAuthPoliciesTable, AllowedCredentialConfigurationsTable (read/write); DpopProofJtisTable (`PutItem` only) |
+| Authz | AuthServersTable, PreCodesTable, NoncesTable, AuthzOAuthClientsTable, AuthzOAuthPoliciesTable, AllowedCredentialConfigurationsTable (read/write); DpopProofJtisTable, OAuthClientAssertionJtisTable (`PutItem` only) |
 | Verifier | VerifiersTable, RequestObjectsTable, NoncesTable (read/write) |
 
 The Issuer, Authz, and Verifier roles also have a scoped KMS policy for their signature key store, granted by `grantSignatureKeyStoreAccess()` (`lib/construct/security/signature-key-policy.ts`). Keys are created at runtime, so none of them can be referenced by ARN here; each statement is scoped by a condition instead:
@@ -152,7 +153,7 @@ The Verifier role also has a scoped Secrets Manager policy for `secretsManagerVe
 ### Stack Outputs
 
 - `IssuerApiUrl`, `AuthzApiUrl`, `VerifierApiUrl`
-- `IssuersTableName`, `AuthServersTableName`, `PreCodesTableName`, `NoncesTableName`, `VerifiersTableName`, `RequestObjectsTableName`, `AuthzOAuthClientsTableName`, `AuthzOAuthPoliciesTableName`, `AllowedCredentialConfigurationsTableName`, `DpopProofJtisTableName`
+- `IssuersTableName`, `AuthServersTableName`, `PreCodesTableName`, `NoncesTableName`, `VerifiersTableName`, `RequestObjectsTableName`, `AuthzOAuthClientsTableName`, `AuthzOAuthPoliciesTableName`, `AllowedCredentialConfigurationsTableName`, `DpopProofJtisTableName`, `OAuthClientAssertionJtisTableName`
 
 ## Prerequisites
 
@@ -165,7 +166,7 @@ The Verifier role also has a scoped Secrets Manager policy for `secretsManagerVe
 | [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | v2 recommended | Used by `deploy-resources.sh` for identity/region lookup |
 | POSIX `sh` | — | Deploy script (`scripts/deploy-resources.sh`; `/bin/sh` on macOS/Linux) |
 
-`aws-cdk`, `ts-node`, and `esbuild` are installed as `server/aws/resources` devDependencies.  
+`aws-cdk`, `tsx`, and `esbuild` are installed as `server/aws/resources` devDependencies.  
 You do **not** need a global `cdk` install; use `pnpm cdk` or `pnpm run deploy` from `server/aws/resources`.
 
 ### AWS account access
@@ -210,7 +211,7 @@ pnpm build
 
 ## Deploy
 
-Use the deploy script (runs `cdk bootstrap` then `cdk deploy`). CDK runs via `ts-node` (`cdk.json`); `pnpm build` is not required.
+Use the deploy script (runs `cdk bootstrap` then `cdk deploy`). CDK runs via `tsx` (`cdk.json`), which does not type-check, so the script runs `tsc --noEmit` first; `pnpm build` is not required.
 
 ```bash
 # from project root
