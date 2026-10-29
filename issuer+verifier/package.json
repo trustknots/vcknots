@@ -1,6 +1,6 @@
 {
 	"name": "@trustknots/vcknots",
-	"version": "0.8.0",
+	"version": "0.9.0",
 	"description": "A flexible and extensible library for implementing OpenID for Verifiable Credential Issuance (OID4VCI) and OpenID for Verifiable Presentations (OID4VP).",
 	"main": "lib/index.js",
 	"types": "lib/index.d.ts",
@@ -45,15 +45,15 @@
 	],
 	"author": "Trust Knots Project Team",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@12.11.2",
+	"packageManager": "pnpm@12.15.0",
 	"dependencies": {
-		"@sd-jwt/core": "0.22.0",
+		"@sd-jwt/core": "0.23.0",
 		"@sd-jwt/crypto-nodejs": "0.19.0",
 		"@sd-jwt/decode": "0.19.0",
 		"base64url": "3.0.1",
 		"dcql": "^4.0.0",
 		"did-resolver": "6.0.0",
-		"jose": "6.2.12",
+		"jose": "6.2.13",
 		"jsonwebtoken": "9.0.3",
 		"key-did-resolver": "4.0.0",
 		"zod": "4.6.7"
