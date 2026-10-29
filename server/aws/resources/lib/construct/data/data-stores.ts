@@ -22,6 +22,7 @@ export class DataStores extends Construct {
   public readonly allowedCredentialConfigurationsTable: dynamodb.Table;
   public readonly dpopProofJtisTable: dynamodb.Table;
   public readonly oauthClientAssertionJtisTable: dynamodb.Table;
+  public readonly verifierTransactionsTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string) {
     super(scope, id);
@@ -77,6 +78,13 @@ export class DataStores extends Construct {
 
     // Used OAuth client assertion jti values per client (keyed by sha256 of `[clientId, jti]`).
     this.oauthClientAssertionJtisTable = new dynamodb.Table(this, 'OAuthClientAssertionJtisTable', {
+      ...baseTableProps,
+      // `expires_at` is app-level epoch ms; DynamoDB TTL uses the epoch-seconds `ttl` attribute.
+      timeToLiveAttribute: 'ttl',
+    });
+
+    // VP request transactions (DCQL query, nonce, state) awaiting the wallet's response, keyed by transaction id.
+    this.verifierTransactionsTable = new dynamodb.Table(this, 'VerifierTransactionsTable', {
       ...baseTableProps,
       // `expires_at` is app-level epoch ms; DynamoDB TTL uses the epoch-seconds `ttl` attribute.
       timeToLiveAttribute: 'ttl',

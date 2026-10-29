@@ -5,6 +5,7 @@ import {
   dynamodbNonceStore,
   dynamodbRequestObjectStore,
   dynamodbVerifierMetadataStore,
+  dynamodbVerifierTransactionDataStore,
   kmsVerifierSignatureKeyStore,
   secretsManagerVerifierCertificateStore,
 } from '@trustknots/aws'
@@ -33,6 +34,11 @@ export function createVerifierApp(options?: VcknotsOptions) {
     throw new Error('NONCES_TABLE_NAME is required')
   }
 
+  const verifierTransactionsTableName = process.env.VERIFIER_TRANSACTIONS_TABLE_NAME
+  if (!verifierTransactionsTableName) {
+    throw new Error('VERIFIER_TRANSACTIONS_TABLE_NAME is required')
+  }
+
   const rawPort = process.env.VERIFIER_PORT ?? '8083'
   const port = Number.parseInt(rawPort, 10)
   if (!Number.isFinite(port)) throw new Error(`Invalid VERIFIER_PORT: "${rawPort}"`)
@@ -40,6 +46,9 @@ export function createVerifierApp(options?: VcknotsOptions) {
   const verifierMetadataStore = dynamodbVerifierMetadataStore({ tableName: verifiersTableName })
   const requestObjectStore = dynamodbRequestObjectStore({ tableName: requestObjectsTableName })
   const nonceStore = dynamodbNonceStore({ tableName: noncesTableName })
+  const transactionStore = dynamodbVerifierTransactionDataStore({
+    tableName: verifierTransactionsTableName,
+  })
   const signatureKeyStore = kmsVerifierSignatureKeyStore()
   const certificateStore = secretsManagerVerifierCertificateStore({
     secretPrefix: process.env.VERIFIER_CERTIFICATE_SECRET_PREFIX,
@@ -53,6 +62,7 @@ export function createVerifierApp(options?: VcknotsOptions) {
         verifierMetadataStore,
         requestObjectStore,
         nonceStore,
+        transactionStore,
         signatureKeyStore,
         certificateStore,
         ...(options?.providers ?? []),
