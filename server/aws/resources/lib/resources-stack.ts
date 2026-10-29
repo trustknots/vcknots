@@ -71,5 +71,9 @@ export class ResourcesStack extends cdk.Stack {
       value: dataStores.oauthClientAssertionJtisTable.tableName,
       description: 'OAuth client assertion jtis DynamoDB table name',
     });
+    new cdk.CfnOutput(this, 'VerifierTransactionsTableName', {
+      value: dataStores.verifierTransactionsTable.tableName,
+      description: 'Verifier transactions DynamoDB table name',
+    });
   }
 }
