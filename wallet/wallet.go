@@ -1675,9 +1675,8 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 	// the Verifier asked for.
 	callerOptions := serializeOptions != nil
 	setAside := map[string]bool{}
-	// refusal is why the queries tried so far were set aside, kept for the moment none
-	// is left. The first reason is the one reported: it belongs to the query the Wallet
-	// would rather have answered, and a later one may be the milder complaint.
+	// Reported once no query is left. The first reason wins: it belongs to the query the
+	// Wallet would rather have answered, and a later one may be the milder complaint.
 	var refusal error
 	putAside := func(id string, reason error) {
 		refusal = cmp.Or(refusal, reason)
@@ -1706,8 +1705,7 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 			continue
 		}
 
-		// Remade for each query the wallet owns the options of, since another query can
-		// have another format. Options the caller passed are left as they are.
+		// Remade per query, since another query can have another format.
 		if !callerOptions {
 			serializeOptions, err = w.serializer.GetDefaultOption(*flavor)
 			if err != nil {
@@ -1750,8 +1748,7 @@ func (w *Wallet) presentFirstDisclosable(candidates []*SavedCredential, flavor *
 		}
 		redirectURI, err := w.submitPresentation(presentation, flavor, endpoint, req, query, key, options)
 		if errors.Is(err, serializerTypes.ErrClaimsNotSatisfiable) {
-			// This Credential lacks a requested claim, so it must not be returned
-			// (OID4VP 1.0 Section 6.4.1). An older one may still hold the claim.
+			// Section 6.4.1 forbids returning it, and an older one may still hold the claim.
 			claimsNotSatisfiable = err
 			continue
 		}

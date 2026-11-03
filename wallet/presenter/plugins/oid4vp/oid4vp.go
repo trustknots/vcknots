@@ -130,12 +130,11 @@ const defaultTransactionDataHashesAlg = "sha-256"
 // TransactionDataHashAlg picks the hash algorithm for the transaction_data_hashes of
 // the Key Binding JWT (OID4VP 1.0 Appendix B.3.3.1). The KB-JWT carries one algorithm
 // for every entry, so the value has to satisfy each entry's candidate list; an entry
-// without the member asks for sha-256. supported reports whether the serializer can
-// compute an algorithm: a candidate it cannot is dropped, since answering with it
-// would fail a request another candidate answers. sha-256 wins when it survives,
-// since every implementation supports it. When nothing survives the request cannot be
-// answered, and the empty string makes the serializer refuse rather than hash with an
-// algorithm nobody asked for.
+// without the member asks for sha-256. A candidate supported rejects is dropped, since
+// answering with it would fail a request another candidate answers, and sha-256 wins
+// when it survives because every implementation supports it. When nothing survives the
+// request cannot be answered, and the empty string makes the serializer refuse rather
+// than hash with an algorithm nobody asked for.
 func (r *CredentialPresentationRequest) TransactionDataHashAlg(supported func(alg string) bool) string {
 	var candidates []string
 	seen := false

@@ -111,7 +111,6 @@ func (d *DcqlQuery) SelectCredentialQuery(held func(*CredentialQuery) bool) (*Cr
 		}
 		return true
 	}
-	// Without credential_sets every Credential Query is required.
 	if len(d.CredentialSets) == 0 {
 		ids := make([]string, 0, len(d.Credentials))
 		for _, q := range d.Credentials {
@@ -132,10 +131,8 @@ func (d *DcqlQuery) SelectCredentialQuery(held func(*CredentialQuery) bool) (*Cr
 		return byID[single], nil
 	}
 
-	// No single Credential answers the sets, so the only thing left is to say why. A
-	// required set with no satisfiable option at all is access_denied, and so is a
-	// request that requires nothing and offers nothing the wallet can satisfy.
-	// Everything else would need a second Credential.
+	// Nothing answers with one Credential, so all that is left is to work out which
+	// refusal to send. Anything the refusals below do not name would need a second one.
 	anyRequired := false
 	for i, set := range d.CredentialSets {
 		if set.Required != nil && !*set.Required {
@@ -275,8 +272,7 @@ func parseDcqlQuery(raw any) (*DcqlQuery, error) {
 			if !ok {
 				return nil, newAuthorizationRequestError(InvalidRequestError, "dcql_query.credential_sets[%d] must be a JSON object", i)
 			}
-			// options is required and each of its elements is a non-empty array of
-			// Credential Query ids (Section 6.2). An empty element would be satisfied by
+			// Section 6.2 fixes this shape. An empty element would be satisfied by
 			// presenting nothing, which SelectCredentialQuery answers with a plain error
 			// the Verifier never hears about.
 			if !isIDArrays(set["options"], nil) {
@@ -364,8 +360,7 @@ func validateCredentialQuery(index int, credentialQuery map[string]any, seenIDs 
 		}
 	}
 
-	// require_cryptographic_holder_binding is optional and defaults to true; when
-	// present it must be a boolean.
+	// Absence is not an error because Section 6.1 fixes the default at true.
 	if rawBinding, exists := credentialQuery["require_cryptographic_holder_binding"]; exists {
 		if _, ok := rawBinding.(bool); !ok {
 			return newAuthorizationRequestError(InvalidRequestError, "dcql_query.credentials[%d].require_cryptographic_holder_binding must be a boolean", index)
