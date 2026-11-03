@@ -380,8 +380,8 @@ Verifier の応答に `redirect_uri` が含まれる場合、その値が戻り�
 
 * **提示オプション:** 第 3 引数にはフォーマット固有のオプションを渡します。
 SD-JWT VC では `sdjwtvc.SdJwtVcPresentationOptions` により、Key Binding JWT の付与（`RequireKeyBinding`）を制御します。
-開示するクレームは DCQL クエリの `claims` が指定したもの（`claim_sets` がある場合は満たせる最初の選択肢）になり、`claims` が無い場合は 1 件も開示しません（OID4VP 1.0 Section 6.4.1）。Credential が要求されたクレームを持っていない場合、または `SelectedClaims` を指定していてその範囲外のクレームが要求された場合、`PresentCredential` は `serializerTypes.ErrClaimsNotSatisfiable` で失敗し、提示は送らずに `access_denied` のエラー応答を Verifier に POST します。
-KB-JWT の audience と nonce は OID4VP リクエスト（`client_id` と `nonce`）から自動的に設定されます。リクエストに transaction data が含まれる場合の `transaction_data` ハッシュも同様で、アルゴリズムは各 transaction data オブジェクトの `transaction_data_hashes_alg` が揃って受け入れる値を使います（省略時は sha-256）。
+開示するクレームは DCQL クエリの `claims` が指定したもの（`claim_sets` がある場合は満たせる最初の選択肢）になり、`claims` が無い場合は 1 件も開示しません（OID4VP 1.0 Section 6.4.1）。1 つの Credential Query に複数の保存済み Credential が一致する場合は、要求されたクレームをすべて提示できるもののうち最も新しいものを提示します。提示できない Credential について Verifier には何も送りません（提示の直列化は送信より前に走るためです）。一致する Credential のどれも提示できない場合、または `SelectedClaims` を指定していてその範囲外のクレームが要求された場合、`PresentCredential` は `serializerTypes.ErrClaimsNotSatisfiable` で失敗し、提示は送らずに `access_denied` のエラー応答を Verifier に POST します。
+KB-JWT の audience と nonce は OID4VP リクエスト（`client_id` と `nonce`）から自動的に設定されます。リクエストに transaction data が含まれる場合の `transaction_data` ハッシュも同様で、アルゴリズムは各 transaction data オブジェクトの `transaction_data_hashes_alg` が揃って受け入れ、かつ serializer が計算できる値を使います（省略時は sha-256）。
 `transaction_data` を含むリクエストは、その type がすべて `oid4vp.Oid4vpPresenter.SupportedTransactionDataTypes` に列挙されていない限り `invalid_transaction_data` で拒否します。既定値は空です。エントリが参照する Credential Query が Cryptographic Holder Binding を要求していない場合も同じく拒否します（OID4VP 1.0 Appendix B.3.3）。
 `TransactionData` と `TransactionDataHashesAlg` は提示のたびに上書きし、リクエストに含まれない場合は消去するので、1 つのオプション値を使い回しても前のリクエストの値が残りません。`RequireKeyBinding` は、transaction data を含むリクエストで一度強制されると戻りません。
 `nil` を渡すと、その Credential のフォーマットに応じたデフォルトのオプションが使われます（JWT-VC の提示では `nil` が典型的です）。
