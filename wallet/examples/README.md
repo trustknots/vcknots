@@ -504,11 +504,11 @@ go run ./examples/conformance_sdjwt ./examples/server_integration_sdjwt/example_
 `common.NewMockKeyEntry()`. **Any other credential needs that same key, or the Key Binding
 JWT fails.**
 
-Re-importing before every run is not needed for the credential to be found. The wallet selects on
-`format`, `meta.vct_values` and `credential_sets`, and presents the newest match that can disclose
-the requested `claims`, so a credential from an unrelated OID4VCI run is not presented for a dcql
-it does not match. Two credentials that share the `vct` are a different matter, because the newest
-of them wins: keep only the one whose `cnf` holds the mock key.
+The wallet selects on `format`, `meta.vct_values` and `credential_sets` and presents the newest
+match that can disclose the requested `claims`, so a credential from an unrelated OID4VCI run is
+not presented for a dcql it does not match and no reload is needed. Two credentials that share the
+`vct` are a different matter, because the newest wins: keep only the one whose `cnf` holds the mock
+key.
 
 ### Step 4: Run the Module
 
