@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"hash"
-	"slices"
 	"strings"
 	"time"
 
@@ -21,16 +20,16 @@ import (
 
 const defaultHashAlgorithm = "sha-256"
 
-// transactionDataHashesAlgs are the algorithms createKeyBindingJWT can compute
-// transaction data hashes with.
-var transactionDataHashesAlgs = []string{"sha-256", "sha-384", "sha-512"}
-
-// SupportsTransactionDataHashesAlg reports whether transaction data hashes can be
-// computed with alg. Each transaction data object offers its own candidates and one of
-// them has to be used (OID4VP 1.0 Appendix B.3.3.1), so whatever picks among them has
-// to know which ones this serializer can produce.
+// SupportsTransactionDataHashesAlg reports whether this serializer can hash with alg.
+// Each transaction data object offers its own candidates and one of them has to be
+// used (OID4VP 1.0 Appendix B.3.3.1), so whatever picks among them has to know which
+// ones come out of computeDisclosureHash.
 func SupportsTransactionDataHashesAlg(alg string) bool {
-	return slices.Contains(transactionDataHashesAlgs, strings.ToLower(alg))
+	switch strings.ToLower(alg) {
+	case "sha-256", "sha-384", "sha-512":
+		return true
+	}
+	return false
 }
 
 // SdJwtVcSerializer implements Serializer for SD-JWT VC format
@@ -209,12 +208,10 @@ func computeDisclosureHash(disclosure string, algorithm string) (string, error) 
 // normalizeSDHashAlgorithm applies RFC 9901 defaulting behavior for _sd_alg.
 // Unknown or empty values fall back to sha-256.
 func normalizeSDHashAlgorithm(algorithm string) string {
-	switch strings.ToLower(algorithm) {
-	case "sha-256", "sha-384", "sha-512":
-		return strings.ToLower(algorithm)
-	default:
+	if !SupportsTransactionDataHashesAlg(algorithm) {
 		return defaultHashAlgorithm
 	}
+	return strings.ToLower(algorithm)
 }
 
 // KeyBindingJWT represents the structure of a Key Binding JWT

@@ -19,6 +19,7 @@
 package wallet
 
 import (
+	"cmp"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -1679,9 +1680,7 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 	// would rather have answered, and a later one may be the milder complaint.
 	var refusal error
 	putAside := func(id string, reason error) {
-		if refusal == nil {
-			refusal = reason
-		}
+		refusal = cmp.Or(refusal, reason)
 		setAside[id] = true
 	}
 	for {

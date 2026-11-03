@@ -111,83 +111,55 @@ func (d *DcqlQuery) SelectCredentialQuery(held func(*CredentialQuery) bool) (*Cr
 		}
 		return true
 	}
-	// firstSatisfiable returns the first option the wallet can satisfy, preferring one
-	// that keeps the answer at a single Credential; Section 6.4.3 leaves the choice
-	// among options to the Wallet.
-	firstSatisfiable := func(options [][]string, required []string) []string {
-		var first []string
-		for _, option := range options {
-			if !satisfiable(option) {
-				continue
-			}
-			if first == nil {
-				first = option
-			}
-			ids := map[string]bool{}
-			for _, id := range append(slices.Clone(required), option...) {
-				ids[id] = true
-			}
-			if len(ids) == 1 {
-				return option
-			}
-		}
-		return first
-	}
-
-	var required []string
+	// Without credential_sets every Credential Query is required.
 	if len(d.CredentialSets) == 0 {
+		ids := make([]string, 0, len(d.Credentials))
 		for _, q := range d.Credentials {
-			required = append(required, q.ID)
+			ids = append(ids, q.ID)
 		}
-		if !satisfiable(required) {
+		if !satisfiable(ids) {
 			return nil, newAuthorizationRequestError(AccessDeniedError, "the wallet does not hold every requested Credential")
 		}
-	} else if single := d.singleCredentialAnswer(held); single != "" {
-		required = []string{single}
-	} else {
-		// No single Credential answers every required Credential Set, so walk the sets
-		// to tell an unsatisfiable one, which is access_denied, from one that would need
-		// a second Credential, which the refusal below reports.
-		for i, set := range d.CredentialSets {
-			if set.Required != nil && !*set.Required {
-				continue
-			}
-			option := firstSatisfiable(set.Options, required)
-			if option == nil {
-				return nil, newAuthorizationRequestError(AccessDeniedError, "the wallet cannot satisfy dcql_query.credential_sets[%d]", i)
-			}
-			required = append(required, option...)
+		// One Credential per response for now: a request that needs more is refused
+		// rather than half answered, since Section 6.4.2 forbids partial answers.
+		if len(ids) != 1 {
+			return nil, fmt.Errorf("presenting %d Credentials in one response is not supported", len(ids))
 		}
-		if len(required) == 0 {
-			for _, set := range d.CredentialSets {
-				if option := firstSatisfiable(set.Options, nil); option != nil {
-					required = option
-					break
-				}
-			}
-			if required == nil {
-				return nil, newAuthorizationRequestError(AccessDeniedError, "the wallet cannot satisfy any dcql_query.credential_sets entry")
-			}
-		}
+		return byID[ids[0]], nil
 	}
 
-	slices.Sort(required)
-	required = slices.Compact(required)
-	// One Credential per response for now: a request that needs more is refused
-	// rather than half answered, since Section 6.4.2 forbids partial answers.
-	if len(required) != 1 {
-		return nil, fmt.Errorf("presenting %d Credentials in one response is not supported", len(required))
+	if single := d.singleCredentialAnswer(held); single != "" {
+		return byID[single], nil
 	}
-	return byID[required[0]], nil
+
+	// No single Credential answers the sets, so the only thing left is to say why. A
+	// required set with no satisfiable option at all is access_denied, and so is a
+	// request that requires nothing and offers nothing the wallet can satisfy.
+	// Everything else would need a second Credential.
+	anyRequired := false
+	for i, set := range d.CredentialSets {
+		if set.Required != nil && !*set.Required {
+			continue
+		}
+		anyRequired = true
+		if !slices.ContainsFunc(set.Options, satisfiable) {
+			return nil, newAuthorizationRequestError(AccessDeniedError, "the wallet cannot satisfy dcql_query.credential_sets[%d]", i)
+		}
+	}
+	if !anyRequired && !slices.ContainsFunc(d.CredentialSets, func(set CredentialSetQuery) bool {
+		return slices.ContainsFunc(set.Options, satisfiable)
+	}) {
+		return nil, newAuthorizationRequestError(AccessDeniedError, "the wallet cannot satisfy any dcql_query.credential_sets entry")
+	}
+	return nil, fmt.Errorf("presenting more than one Credential in one response is not supported")
 }
 
-// singleCredentialAnswer returns the id of a Credential Query that answers every
-// required Credential Set Query on its own, or "" when no single Credential does and
-// when the request requires nothing. A response carries one Credential, so settling
-// each set in turn can pick a Credential an earlier set offers and leave a later
-// required set needing a second one, refusing a request that one Credential answers.
-// Section 6.4.3 leaves the choice among a set's options to the Wallet, so preferring
-// the Credential they share is allowed.
+// singleCredentialAnswer returns the id of a Credential Query that answers the
+// Credential Set Queries with one Credential, or "" when none does. A response carries
+// one Credential, so settling each set in turn can pick a Credential an earlier set
+// offers and leave a later required set needing a second one, refusing a request that
+// one Credential answers. Section 6.4.3 leaves the choice among a set's options to the
+// Wallet, so preferring the Credential they share is allowed.
 func (d *DcqlQuery) singleCredentialAnswer(held func(*CredentialQuery) bool) string {
 	// answersAlone reports whether one of the options asks for nothing but id.
 	answersAlone := func(options [][]string, id string) bool {
@@ -195,28 +167,26 @@ func (d *DcqlQuery) singleCredentialAnswer(held func(*CredentialQuery) bool) str
 			return len(option) > 0 && !slices.ContainsFunc(option, func(optionID string) bool { return optionID != id })
 		})
 	}
-	var requiredSets []CredentialSetQuery
-	for _, set := range d.CredentialSets {
-		if set.Required == nil || *set.Required {
-			requiredSets = append(requiredSets, set)
-		}
-	}
-	if len(requiredSets) == 0 {
-		return ""
-	}
 	for i := range d.Credentials {
 		q := &d.Credentials[i]
 		if !held(q) {
 			continue
 		}
-		answersAll := true
-		for _, set := range requiredSets {
-			if !answersAlone(set.Options, q.ID) {
+		answersAll, offered := true, false
+		for _, set := range d.CredentialSets {
+			switch {
+			case answersAlone(set.Options, q.ID):
+				offered = true
+			case set.Required == nil || *set.Required:
 				answersAll = false
+			}
+			if !answersAll {
 				break
 			}
 		}
-		if answersAll {
+		// An optional set it answers is enough, but a Credential no set offers on its
+		// own answers nothing at all.
+		if answersAll && offered {
 			return q.ID
 		}
 	}

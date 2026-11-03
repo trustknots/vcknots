@@ -158,9 +158,7 @@ func (r *CredentialPresentationRequest) TransactionDataHashAlg(supported func(al
 	if !seen {
 		candidates = []string{defaultTransactionDataHashesAlg}
 	}
-	if supported != nil {
-		candidates = slices.DeleteFunc(candidates, func(alg string) bool { return !supported(alg) })
-	}
+	candidates = slices.DeleteFunc(candidates, func(alg string) bool { return !supported(alg) })
 	switch {
 	case slices.Contains(candidates, defaultTransactionDataHashesAlg):
 		return defaultTransactionDataHashesAlg
