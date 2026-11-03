@@ -173,6 +173,12 @@ func TestParseDcqlQuery_InvalidRequest(t *testing.T) {
 		{name: "credential_sets not an array", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":{}}`},
 		{name: "credential_sets empty array", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":[]}`},
 		{name: "credential_sets element not an object", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":["x"]}`},
+		{name: "credential_sets without options", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":[{}]}`},
+		{name: "credential_sets options empty", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":[{"options":[]}]}`},
+		// An empty option is satisfied by presenting nothing, which SelectCredentialQuery
+		// can only answer with a plain error the Verifier never hears about (Section 6.2).
+		{name: "credential_sets option empty", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":[{"options":[[]]}]}`},
+		{name: "credential_sets option element not a string", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":[{"options":[[1]]}]}`},
 		{name: "claims empty array", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claims":[]}]}`},
 		{name: "claim without path", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claims":[{"id":"a"}]}]}`},
 		{name: "claim path with negative index", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claims":[{"path":["a",-1]}]}]}`},

@@ -34,6 +34,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/keystore"
 	"github.com/trustknots/vcknots/wallet/presenter"
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
+	presenterTypes "github.com/trustknots/vcknots/wallet/presenter/types"
 	"github.com/trustknots/vcknots/wallet/receiver"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer/plugins/jwtvc"
@@ -4618,6 +4619,31 @@ func TestController_PresentCredential_DCQL_Integration(t *testing.T) {
 		assert.Empty(t, received["error_description"], "the reason would reveal what the user holds")
 	})
 
+	// Section 6.4.3 leaves the choice among a Credential Set's options to the Wallet, so
+	// an option whose claims the held Credential cannot deliver must not refuse the whole
+	// request while another option is answerable.
+	t.Run("a required Credential Set falls through to an option the claims allow", func(t *testing.T) {
+		received, err := present(t, `{"credentials":[
+			{"id":"pid_strict",`+pidMeta+`,"claims":[{"path":["age_over_18"]}]},
+			{"id":"pid_basic",`+pidMeta+`,"claims":[{"path":["given_name"]}]}],
+			"credential_sets":[{"options":[["pid_strict"],["pid_basic"]]}]}`)
+		require.NoError(t, err)
+		id, names := disclosed(t, received)
+		assert.Equal(t, "pid_basic", id, "pid_strict cannot disclose age_over_18")
+		assert.ElementsMatch(t, []string{"given_name"}, names)
+	})
+
+	t.Run("every option refused is still access_denied", func(t *testing.T) {
+		received, err := present(t, `{"credentials":[
+			{"id":"pid_strict",`+pidMeta+`,"claims":[{"path":["age_over_18"]}]},
+			{"id":"pid_stricter",`+pidMeta+`,"claims":[{"path":["age_over_21"]}]}],
+			"credential_sets":[{"options":[["pid_strict"],["pid_stricter"]]}]}`)
+		require.ErrorIs(t, err, serializerTypes.ErrClaimsNotSatisfiable)
+		assert.Equal(t, []string{"access_denied"}, received["error"])
+		assert.Empty(t, received["vp_token"])
+		assert.Empty(t, received["error_description"], "the reason would reveal what the user holds")
+	})
+
 	t.Run("SelectedClaims caps what the DCQL may disclose", func(t *testing.T) {
 		received, err := presentWith(t, `{"credentials":[{"id":"pid_credential",`+pidMeta+`,"claims":[{"path":["given_name"]},{"path":["family_name"]}]}]}`,
 			&sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: true, SelectedClaims: []string{"given_name"}})
@@ -4709,6 +4735,117 @@ func TestController_PresentCredential_ClaimsPickOlderCredential(t *testing.T) {
 	require.NotEmpty(t, received["vp_token"])
 	assert.Contains(t, received.Get("vp_token"), familyName,
 		"the disclosure only the older Credential carries has to be in the response")
+}
+
+// newTransactionDataWallet builds a wallet holding the sample PID whose presenter
+// accepts the sample_type transaction data type, together with the Verifier that
+// records what reaches its response_uri.
+func newTransactionDataWallet(t *testing.T) (*Wallet, *url.Values, string) {
+	t.Helper()
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+	raw, err := os.ReadFile(filepath.Join("examples", "server_integration_sdjwt", "example_sd_jwt.txt"))
+	require.NoError(t, err)
+
+	store, err := local.NewLocalCredentialStorage(filepath.Join(t.TempDir(), "credstore.db"))
+	require.NoError(t, err)
+	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithPlugin(credstore.SupportedCredStoreTypes(0), store))
+	require.NoError(t, err)
+	require.NoError(t, credStore.SaveCredentialEntry(credstore.CredentialEntry{
+		Id:         "pid",
+		ReceivedAt: time.Now(),
+		Raw:        []byte(strings.TrimSpace(string(raw))),
+		MimeType:   string(credential.SDJwtVC),
+	}, credstore.SupportedCredStoreTypes(0)))
+
+	// The type has to be one the wallet accepts, or the request is refused before any
+	// Credential or hash algorithm is chosen.
+	presenters, err := presenter.NewPresentationDispatcher(presenter.WithPlugin(
+		presenterTypes.Oid4vp,
+		&oid4vp.Oid4vpPresenter{SupportedTransactionDataTypes: []string{"sample_type"}},
+	))
+	require.NoError(t, err)
+	w, err := NewWalletWithConfig(Config{CredStore: credStore, Presenter: presenters})
+	require.NoError(t, err)
+
+	received := &url.Values{}
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, r.ParseForm())
+		*received = r.PostForm
+		rw.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	return w, received, server.URL + "/response"
+}
+
+// transactionDataRequest builds an OID4VP query-parameter request carrying one
+// transaction data entry. The query parameter form holds the array as JSON.
+func transactionDataRequest(responseURI, entryJSON, dcql string) string {
+	entry := base64.RawURLEncoding.EncodeToString([]byte(entryJSON))
+	params := url.Values{
+		"client_id":        {"redirect_uri:" + responseURI},
+		"response_type":    {"vp_token"},
+		"response_mode":    {"direct_post"},
+		"response_uri":     {responseURI},
+		"nonce":            {"nonce-1"},
+		"state":            {"state-1"},
+		"transaction_data": {`["` + entry + `"]`},
+		"dcql_query":       {dcql},
+	}
+	return "openid4vp://authorize?" + params.Encode()
+}
+
+// TestController_PresentCredential_TransactionDataHashAlgRefused pins that a request
+// whose transaction data leaves no usable hash algorithm is refused to the Verifier
+// rather than abandoned. The hashes ride in the Key Binding JWT and nowhere else, so
+// the request cannot be answered at all, and Section 8.5 expects the Verifier to be
+// told instead of left waiting for a response.
+func TestController_PresentCredential_TransactionDataHashAlgRefused(t *testing.T) {
+	w, received, responseURI := newTransactionDataWallet(t)
+
+	// sha-1 is the only algorithm the entry offers, and the SD-JWT VC serializer cannot
+	// compute it.
+	uri := transactionDataRequest(responseURI,
+		`{"type":"sample_type","credential_ids":["pid_credential"],"transaction_data_hashes_alg":["sha-1"]}`,
+		`{"credentials":[{"id":"pid_credential","format":"dc+sd-jwt",`+
+			`"meta":{"vct_values":["urn:eu.europa.ec.eudi:pid:1"]}}]}`)
+
+	_, err := w.PresentCredential(uri, newPIDBoundKeyEntry(t), &sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: true})
+	require.Error(t, err)
+	assert.Equal(t, []string{"invalid_transaction_data"}, (*received)["error"],
+		"the Verifier has to be told rather than left waiting")
+	assert.Empty(t, (*received)["vp_token"])
+}
+
+// TestController_PresentCredential_TransactionDataPicksAReferencedQuery pins that a
+// Credential Query the transaction data does not reference is passed over rather than
+// ending the request. Section 5.1 lets the Wallet use any one of the Credentials the
+// entry references, so an option naming one of them is still answerable even after the
+// Wallet's first choice turns out not to be referenced.
+func TestController_PresentCredential_TransactionDataPicksAReferencedQuery(t *testing.T) {
+	w, received, responseURI := newTransactionDataWallet(t)
+
+	const pidMeta = `"format":"dc+sd-jwt","meta":{"vct_values":["urn:eu.europa.ec.eudi:pid:1"]}`
+	// pid_strict is referenced but cannot disclose age_over_18, pid_basic can disclose
+	// its claim but is not referenced, and pid_tx is both.
+	uri := transactionDataRequest(responseURI,
+		`{"type":"sample_type","credential_ids":["pid_strict","pid_tx"]}`,
+		`{"credentials":[
+			{"id":"pid_strict",`+pidMeta+`,"claims":[{"path":["age_over_18"]}]},
+			{"id":"pid_basic",`+pidMeta+`,"claims":[{"path":["given_name"]}]},
+			{"id":"pid_tx",`+pidMeta+`,"claims":[{"path":["family_name"]}]}],
+			"credential_sets":[{"options":[["pid_strict"],["pid_basic"],["pid_tx"]]}]}`)
+
+	_, err := w.PresentCredential(uri, newPIDBoundKeyEntry(t), &sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: true})
+	require.NoError(t, err)
+	assert.Empty(t, (*received)["error"])
+
+	var vpToken map[string][]string
+	require.NoError(t, json.Unmarshal([]byte(received.Get("vp_token")), &vpToken))
+	require.Len(t, vpToken, 1)
+	_, answered := vpToken["pid_tx"]
+	assert.True(t, answered, "the only option both referenced and answerable is pid_tx, got %v", vpToken)
 }
 
 func TestApplyOID4VPRequestOptions(t *testing.T) {

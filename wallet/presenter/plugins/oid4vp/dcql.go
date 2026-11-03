@@ -301,8 +301,16 @@ func parseDcqlQuery(raw any) (*DcqlQuery, error) {
 			return nil, newAuthorizationRequestError(InvalidRequestError, "dcql_query.credential_sets must be a non-empty array when present")
 		}
 		for i, item := range setsArray {
-			if _, ok := item.(map[string]any); !ok {
+			set, ok := item.(map[string]any)
+			if !ok {
 				return nil, newAuthorizationRequestError(InvalidRequestError, "dcql_query.credential_sets[%d] must be a JSON object", i)
+			}
+			// options is required and each of its elements is a non-empty array of
+			// Credential Query ids (Section 6.2). An empty element would be satisfied by
+			// presenting nothing, which SelectCredentialQuery answers with a plain error
+			// the Verifier never hears about.
+			if !isIDArrays(set["options"], nil) {
+				return nil, newAuthorizationRequestError(InvalidRequestError, "dcql_query.credential_sets[%d].options must be a non-empty array of non-empty arrays of Credential Query ids", i)
 			}
 		}
 	}
@@ -462,7 +470,8 @@ func isClaimsPathPointer(raw any) bool {
 }
 
 // isIDArrays reports whether raw is a non-empty array of non-empty arrays of ids
-// that are all in known.
+// that are all in known. A nil known checks the shape alone, for a caller that has
+// nothing to match the ids against.
 func isIDArrays(raw any, known map[string]bool) bool {
 	arrays, ok := raw.([]any)
 	if !ok || len(arrays) == 0 {
@@ -474,7 +483,7 @@ func isIDArrays(raw any, known map[string]bool) bool {
 			return false
 		}
 		for _, rawID := range ids {
-			if id, ok := rawID.(string); !ok || !known[id] {
+			if id, ok := rawID.(string); !ok || (known != nil && !known[id]) {
 				return false
 			}
 		}
