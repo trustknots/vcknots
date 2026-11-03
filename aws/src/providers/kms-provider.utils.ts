@@ -96,7 +96,7 @@ export const toPkcs8Der = (privateKey: unknown): Buffer => {
     return key.export({ format: 'der', type: 'pkcs8' }) as Buffer
   }
   const key = createPrivateKey({
-    key: privateKey as unknown as import('node:crypto').JsonWebKey,
+    key: privateKey as unknown as JsonWebKey,
     format: 'jwk',
   })
   return key.export({ format: 'der', type: 'pkcs8' }) as Buffer

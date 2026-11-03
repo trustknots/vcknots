@@ -96,6 +96,10 @@ aws sts get-caller-identity
 echo "==> CDK account: ${CDK_DEFAULT_ACCOUNT}"
 echo "==> CDK region: ${CDK_DEFAULT_REGION}"
 
+# cdk.json runs the app with tsx, which strips types without checking them; type-check first.
+echo "==> Type check"
+pnpm exec tsc --noEmit
+
 echo "==> CDK bootstrap (no-op if already bootstrapped)"
 pnpm cdk bootstrap
 

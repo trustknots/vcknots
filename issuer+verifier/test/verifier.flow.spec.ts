@@ -438,7 +438,6 @@ describe('VerifierFlow', () => {
       assert.equal(req.request.nonce, 'nonce-123')
     })
 
-
     it('should throw verifier_not_found if metadata missing', async () => {
       mock.method(mockVerifierMetadataStore, 'fetch', async () => null)
       await assert.rejects(
@@ -680,10 +679,12 @@ describe('VerifierFlow', () => {
           vp_formats_supported: { jwt_vc_json: { alg_values: ['ES256'] } },
         })
       )
+      mock.method(mockNonceStoreProvider, 'validate', async () => true)
       mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
         dcqlQuery: { dcql_query: { credentials: [{ id: 'my_vp_cred', format: 'jwt_vc_json' }] } },
         clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
         verifierId,
+        nonce: 'test-nonce',
       }))
       mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
       mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => vpPayload)
@@ -700,7 +701,7 @@ describe('VerifierFlow', () => {
       assert.deepEqual(mockVerifyVerifiablePresentationProvider.verify.mock.calls[0].arguments[1], {
         kind: 'jwt_vp_json',
         expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
-        expectedNonce: undefined,
+        expectedNonce: 'test-nonce',
         allowedAlgs: ['ES256'],
       })
     })
@@ -809,11 +810,13 @@ describe('VerifierFlow', () => {
           vp_formats_supported: { jwt_vc_json: { alg_values: ['ES256'] } },
         })
       )
+      mock.method(mockNonceStoreProvider, 'validate', async () => true)
       mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
         dcqlQuery: { dcql_query: { credentials: [{ id: 'cred_a', format: 'jwt_vc_json' }] } },
         clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
         verifierId,
         state: 'expected-state',
+        nonce: 'test-nonce',
       }))
       mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
       mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({}))
@@ -858,10 +861,12 @@ describe('VerifierFlow', () => {
           vp_formats_supported: { jwt_vc_json: { alg_values: ['ES256', 'ES384'] } },
         })
       )
+      mock.method(mockNonceStoreProvider, 'validate', async () => true)
       mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
         dcqlQuery: { dcql_query: { credentials: [{ id: 'cred_a', format: 'jwt_vc_json' }] } },
         clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
         verifierId,
+        nonce: 'test-nonce',
       }))
       mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
       mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({}))
@@ -871,7 +876,7 @@ describe('VerifierFlow', () => {
       assert.deepEqual(mockVerifyVerifiablePresentationProvider.verify.mock.calls[0].arguments[1], {
         kind: 'jwt_vp_json',
         expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
-        expectedNonce: undefined,
+        expectedNonce: 'test-nonce',
         allowedAlgs: ['ES256', 'ES384'],
       })
     })
@@ -896,10 +901,12 @@ describe('VerifierFlow', () => {
           },
         })
       )
+      mock.method(mockNonceStoreProvider, 'validate', async () => true)
       mock.method(mockVerifierTransactionDataStoreProvider, 'fetch', async () => ({
         dcqlQuery: { dcql_query: { credentials: [{ id: 'cred_a', format: 'dc+sd-jwt' }] } },
         clientId: ClientIdentifier(`redirect_uri:${verifierId}`),
         verifierId,
+        nonce: 'test-nonce',
       }))
       mock.method(mockVerifyVerifiablePresentationProvider, 'canHandle', () => true)
       mock.method(mockVerifyVerifiablePresentationProvider, 'verify', async () => ({}))
@@ -910,7 +917,7 @@ describe('VerifierFlow', () => {
         kind: 'dc+sd-jwt',
         specifiedDisclosures: [],
         expectedAud: ClientIdentifier(`redirect_uri:${verifierId}`),
-        expectedNonce: undefined,
+        expectedNonce: 'test-nonce',
         expectedTransactionDataHashes: undefined,
         allowedSdJwtAlgs: ['ES256', 'ES384'],
         allowedKbJwtAlgs: ['ES256'],

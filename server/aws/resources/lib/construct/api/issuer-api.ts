@@ -37,6 +37,7 @@ export class IssuerApi extends Construct {
         AUTHZ_OAUTH_POLICIES_TABLE_NAME: dataStores.authzOAuthPoliciesTable.tableName,
         ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME:
           dataStores.allowedCredentialConfigurationsTable.tableName,
+        DPOP_PROOF_JTIS_TABLE_NAME: dataStores.dpopProofJtisTable.tableName,
         TX_CODE_PEPPER: requiredEnv('TX_CODE_PEPPER'),
       },
     });
@@ -50,6 +51,9 @@ export class IssuerApi extends Construct {
     // token. Issuer only reads them, plus DeleteItem to drop entries found expired on fetch.
     dataStores.allowedCredentialConfigurationsTable.grantReadData(this.lambdaApi.role);
     dataStores.allowedCredentialConfigurationsTable.grant(this.lambdaApi.role, 'dynamodb:DeleteItem');
+
+    // Credential endpoint rejects replayed DPoP proofs with a conditional put; no read is needed.
+    dataStores.dpopProofJtisTable.grant(this.lambdaApi.role, 'dynamodb:PutItem');
 
     // The issuer creates and uses signing keys at runtime (kmsIssuerSignatureKeyStore).
     grantSignatureKeyStoreAccess(this, this.lambdaApi.role, {
