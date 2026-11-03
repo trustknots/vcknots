@@ -31,6 +31,17 @@ type CredentialQuery struct {
 	Claims []ClaimQuery `json:"claims,omitempty"`
 	// ClaimSets lists alternative combinations of Claims ids.
 	ClaimSets [][]string `json:"claim_sets,omitempty"`
+	// RequireCryptographicHolderBinding indicates whether the Verifier requires a
+	// Cryptographic Holder Binding proof. It is a pointer because Section 6.1 makes
+	// the default true, so an absent member is not the Go zero value.
+	RequireCryptographicHolderBinding *bool `json:"require_cryptographic_holder_binding,omitempty"`
+}
+
+// RequiresCryptographicHolderBinding reports whether the Credential Query asks for a
+// Cryptographic Holder Binding proof. Omitting the member means it does: Section 6.1
+// fixes the default at true.
+func (q *CredentialQuery) RequiresCryptographicHolderBinding() bool {
+	return q.RequireCryptographicHolderBinding == nil || *q.RequireCryptographicHolderBinding
 }
 
 // ClaimQuery is one entry of a Credential Query's claims (OID4VP 1.0 Section 6.3).
@@ -325,6 +336,14 @@ func validateCredentialQuery(index int, credentialQuery map[string]any, seenIDs 
 	if rawMultiple, exists := credentialQuery["multiple"]; exists {
 		if _, ok := rawMultiple.(bool); !ok {
 			return newAuthorizationRequestError(InvalidRequestError, "dcql_query.credentials[%d].multiple must be a boolean", index)
+		}
+	}
+
+	// require_cryptographic_holder_binding is optional and defaults to true; when
+	// present it must be a boolean.
+	if rawBinding, exists := credentialQuery["require_cryptographic_holder_binding"]; exists {
+		if _, ok := rawBinding.(bool); !ok {
+			return newAuthorizationRequestError(InvalidRequestError, "dcql_query.credentials[%d].require_cryptographic_holder_binding must be a boolean", index)
 		}
 	}
 

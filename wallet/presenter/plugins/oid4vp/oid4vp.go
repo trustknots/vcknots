@@ -116,6 +116,64 @@ func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*Credentia
 type transactionData struct {
 	Type          string   `json:"type"`
 	CredentialIDs []string `json:"credential_ids"`
+	// TransactionDataHashesAlg is the candidate list the entry offers for the hash
+	// in transaction_data_hashes, one of which has to be used. It belongs to the
+	// transaction data object, not to the Authorization Request
+	// (OID4VP 1.0 Appendix B.3.3.1).
+	TransactionDataHashesAlg []string `json:"transaction_data_hashes_alg,omitempty"`
+}
+
+// defaultTransactionDataHashesAlg is what an entry that omits the member asks for,
+// and the one algorithm every implementation must support (Appendix B.3.3.1).
+const defaultTransactionDataHashesAlg = "sha-256"
+
+// TransactionDataHashAlg picks the hash algorithm for the transaction_data_hashes of
+// the Key Binding JWT (OID4VP 1.0 Appendix B.3.3.1). The KB-JWT carries one algorithm
+// for every entry, so the value has to satisfy each entry's candidate list; an entry
+// without the member asks for sha-256. sha-256 wins when it survives the intersection,
+// since every implementation supports it. When the entries share no candidate the
+// request cannot be answered, and the empty string makes the serializer refuse rather
+// than hash with an algorithm nobody asked for.
+func (r *CredentialPresentationRequest) TransactionDataHashAlg() string {
+	var candidates []string
+	seen := false
+	for i, encoded := range r.TransactionData {
+		data, authzErr := decodeTransactionData(i, encoded)
+		if authzErr != nil {
+			// validateTransactionData has already refused a request that cannot decode.
+			continue
+		}
+		offered := data.TransactionDataHashesAlg
+		if len(offered) == 0 {
+			offered = []string{defaultTransactionDataHashesAlg}
+		}
+		if !seen {
+			candidates, seen = slices.Clone(offered), true
+			continue
+		}
+		candidates = slices.DeleteFunc(candidates, func(alg string) bool { return !slices.Contains(offered, alg) })
+	}
+	switch {
+	case !seen, slices.Contains(candidates, defaultTransactionDataHashesAlg):
+		return defaultTransactionDataHashesAlg
+	case len(candidates) > 0:
+		return candidates[0]
+	default:
+		return ""
+	}
+}
+
+// referencedCredentialQuery returns the dc+sd-jwt Credential Query a transaction data
+// entry names, or nil when the request carries none with that id.
+func referencedCredentialQuery(query *DcqlQuery, id string) *CredentialQuery {
+	if query == nil {
+		return nil
+	}
+	i := slices.IndexFunc(query.Credentials, func(c CredentialQuery) bool { return c.ID == id && c.Format == "dc+sd-jwt" })
+	if i < 0 {
+		return nil
+	}
+	return &query.Credentials[i]
 }
 
 func decodeTransactionData(i int, encoded string) (*transactionData, *AuthorizationRequestError) {
@@ -147,8 +205,16 @@ func validateTransactionData(req *CredentialPresentationRequest, supportedTypes 
 			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d].credential_ids is required", i)
 		}
 		for _, id := range data.CredentialIDs {
-			if req.DcqlQuery == nil || !slices.ContainsFunc(req.DcqlQuery.Credentials, func(q CredentialQuery) bool { return q.ID == id && q.Format == "dc+sd-jwt" }) {
+			query := referencedCredentialQuery(req.DcqlQuery, id)
+			if query == nil {
 				return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d].credential_ids %q is not a dc+sd-jwt Credential Query of the request", i, id)
+			}
+			// The mechanism needs an SD-JWT VC with Cryptographic Holder Binding, so a
+			// Credential Query that opts out of it cannot authorize a transaction
+			// (OID4VP 1.0 Appendix B.3.3). Only the referenced queries are checked:
+			// an unrelated query may still opt out.
+			if !query.RequiresCryptographicHolderBinding() {
+				return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d].credential_ids %q sets require_cryptographic_holder_binding to false", i, id)
 			}
 		}
 	}

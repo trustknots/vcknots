@@ -1900,15 +1900,21 @@ func applyOID4VPRequestOptions(req *oid4vp.CredentialPresentationRequest, query 
 // no longer answer the Verifier at all.
 func applyTransactionData(req *oid4vp.CredentialPresentationRequest, options serializerTypes.SerializePresentationOptions) {
 	sdOpts, ok := options.(*sdjwtvc.SdJwtVcPresentationOptions)
-	if len(req.TransactionData) == 0 || !ok || sdOpts == nil {
+	if !ok || sdOpts == nil {
+		return
+	}
+	if len(req.TransactionData) == 0 {
+		// Cleared rather than left alone: a caller that reuses one options value across
+		// presentations would otherwise answer this Verifier with hashes over the
+		// previous one's transaction data, which map to no object in this request
+		// (OID4VP 1.0 Appendix B.3.3.1). RequireKeyBinding stays as it is, because once
+		// set there is no telling the caller's own true from one forced below.
+		sdOpts.TransactionData = nil
+		sdOpts.TransactionDataHashesAlg = ""
 		return
 	}
 	sdOpts.TransactionData = req.TransactionData
-	sdOpts.TransactionDataHashesAlg = req.TransactionDataHashesAlg
-	if sdOpts.TransactionDataHashesAlg == "" {
-		// OID4VP transaction_data_hashes_alg default when omitted.
-		sdOpts.TransactionDataHashesAlg = "sha-256"
-	}
+	sdOpts.TransactionDataHashesAlg = req.TransactionDataHashAlg()
 	sdOpts.RequireKeyBinding = true
 }
 

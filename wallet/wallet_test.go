@@ -4708,6 +4708,23 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 		assert.False(t, opts.RequireKeyBinding)
 		assert.Empty(t, opts.TransactionData)
 	})
+
+	// A caller may hold one options value and present twice. The second request must
+	// not answer with hashes over the first one's transaction data.
+	t.Run("a reused options value does not keep the previous transaction data", func(t *testing.T) {
+		opts := &sdjwtvc.SdJwtVcPresentationOptions{}
+		withTransactionData := &oid4vp.CredentialPresentationRequest{
+			OAuthAuthzRequest: req.OAuthAuthzRequest,
+			TransactionData:   []string{"eyJ0eXBlIjoic2FtcGxlX3R5cGUifQ"},
+		}
+
+		applyOID4VPRequestOptions(withTransactionData, nil, opts)
+		require.NotEmpty(t, opts.TransactionData, "precondition: the first request sets it")
+		applyOID4VPRequestOptions(req, nil, opts)
+
+		assert.Empty(t, opts.TransactionData)
+		assert.Empty(t, opts.TransactionDataHashesAlg)
+	})
 }
 
 func TestNewestCredentials_SelectsMostRecentEntries(t *testing.T) {

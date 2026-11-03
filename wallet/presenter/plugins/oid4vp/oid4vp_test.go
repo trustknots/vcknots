@@ -1266,6 +1266,90 @@ func TestValidateTransactionData(t *testing.T) {
 	})
 }
 
+// TestValidateTransactionData_HolderBinding pins OID4VP 1.0 Appendix B.3.3: the
+// transaction data mechanism needs an SD-JWT VC with Cryptographic Holder Binding, so
+// a request whose referenced Credential Query opts out of it must be rejected. Only
+// the referenced queries count.
+func TestValidateTransactionData_HolderBinding(t *testing.T) {
+	supported := []string{"sample_type"}
+	yes, no := true, false
+	req := func(queries ...CredentialQuery) *CredentialPresentationRequest {
+		return &CredentialPresentationRequest{
+			DcqlQuery: &DcqlQuery{Credentials: queries},
+			TransactionData: []string{transactionDataEntry(t, map[string]any{
+				"type": "sample_type", "credential_ids": []string{"pid_credential"},
+			})},
+		}
+	}
+	pid := func(binding *bool) CredentialQuery {
+		return CredentialQuery{ID: "pid_credential", Format: "dc+sd-jwt", RequireCryptographicHolderBinding: binding}
+	}
+
+	t.Run("omitting the member means binding is required", func(t *testing.T) {
+		assert.Nil(t, validateTransactionData(req(pid(nil)), supported))
+	})
+
+	t.Run("an explicit true is accepted", func(t *testing.T) {
+		assert.Nil(t, validateTransactionData(req(pid(&yes)), supported))
+	})
+
+	t.Run("a referenced query that opts out is refused", func(t *testing.T) {
+		err := validateTransactionData(req(pid(&no)), supported)
+		require.NotNil(t, err)
+		assert.Equal(t, InvalidTransactionDataError, err.Code)
+	})
+
+	t.Run("an unreferenced query may opt out", func(t *testing.T) {
+		other := CredentialQuery{ID: "other", Format: "dc+sd-jwt", RequireCryptographicHolderBinding: &no}
+		assert.Nil(t, validateTransactionData(req(pid(nil), other), supported))
+	})
+}
+
+// TestTransactionDataHashAlg pins OID4VP 1.0 Appendix B.3.3.1: transaction_data_hashes_alg
+// is a candidate list inside each transaction data object, one value of which has to be
+// used, and an entry that omits it asks for sha-256.
+func TestTransactionDataHashAlg(t *testing.T) {
+	req := func(objects ...map[string]any) *CredentialPresentationRequest {
+		entries := make([]string, 0, len(objects))
+		for _, o := range objects {
+			entries = append(entries, transactionDataEntry(t, o))
+		}
+		return &CredentialPresentationRequest{TransactionData: entries}
+	}
+	with := func(algs ...string) map[string]any {
+		o := map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}}
+		if algs != nil {
+			o["transaction_data_hashes_alg"] = algs
+		}
+		return o
+	}
+
+	t.Run("an entry without the member asks for sha-256", func(t *testing.T) {
+		assert.Equal(t, "sha-256", req(with()).TransactionDataHashAlg())
+	})
+
+	t.Run("sha-256 wins when it is among the candidates", func(t *testing.T) {
+		assert.Equal(t, "sha-256", req(with("sha-512", "sha-256")).TransactionDataHashAlg())
+	})
+
+	t.Run("a candidate list without sha-256 is honoured", func(t *testing.T) {
+		assert.Equal(t, "sha-512", req(with("sha-512")).TransactionDataHashAlg())
+	})
+
+	t.Run("the value has to satisfy every entry", func(t *testing.T) {
+		assert.Equal(t, "sha-384", req(with("sha-512", "sha-384"), with("sha-384")).TransactionDataHashAlg())
+	})
+
+	t.Run("entries sharing no candidate cannot be answered", func(t *testing.T) {
+		assert.Empty(t, req(with("sha-512"), with("sha-384")).TransactionDataHashAlg(),
+			"the serializer must refuse rather than hash with an algorithm nobody asked for")
+	})
+
+	t.Run("an entry that omits the member still constrains the others", func(t *testing.T) {
+		assert.Empty(t, req(with(), with("sha-512")).TransactionDataHashAlg())
+	})
+}
+
 // TestCheckTransactionDataFor pins that transaction data has to reference the
 // Credential the wallet actually presents: the Wallet must use one of the referenced
 // Credentials for transaction authorization (Sections 5.1 and 8.5).
