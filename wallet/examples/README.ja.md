@@ -504,9 +504,11 @@ go run ./examples/conformance_sdjwt ./examples/server_integration_sdjwt/example_
 公開鍵と一致しているからである。**別の資格情報でも同じモック鍵が `cnf` に必要で、
 無ければ Key Binding JWT が失敗する。**
 
-**実行の直前に毎回投入し直すこと。** Wallet は最後に受け取った資格情報を提示し、DCQL との照合はまだ行わない。
-そのため OID4VCI の実行などで新しい資格情報が入っていると、そちらが提示されて
-`ValidateCredentialVctMatchesDcqlQuery` で失敗する。
+資格情報を見つけさせるために毎回投入し直す必要はない。Wallet は `format`、`meta.vct_values`、
+`credential_sets` で保存済みの資格情報を照合し、要求された `claims` を開示できるもののうち
+最も新しいものを提示する。そのため OID4VCI の実行などで無関係な資格情報が入っていても、
+dcql に一致しないものが提示されることはない。`vct` が同じ資格情報が 2 件あるときは別で、
+新しい方が選ばれる。モック鍵を `cnf` に持つものだけを残すこと。
 
 ### ステップ4: モジュールを実行する
 
