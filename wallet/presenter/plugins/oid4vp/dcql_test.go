@@ -325,6 +325,21 @@ func TestDcqlQuery_SelectCredentialQuery(t *testing.T) {
 		assert.Equal(t, "pid", got.ID)
 	})
 
+	t.Run("a later required set decides which option an earlier one takes", func(t *testing.T) {
+		both := func(*CredentialQuery) bool { return true }
+		got, err := (&DcqlQuery{
+			Credentials: []CredentialQuery{pid, missing},
+			CredentialSets: []CredentialSetQuery{
+				{Options: [][]string{{"pid"}, {"nonexistent_credential"}}, Required: &required},
+				{Options: [][]string{{"nonexistent_credential"}}, Required: &required},
+			},
+		}).SelectCredentialQuery(both)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, "nonexistent_credential", got.ID,
+			"taking pid for the first set would need a second Credential for the second")
+	})
+
 	t.Run("two required credentials are refused, not half answered", func(t *testing.T) {
 		both := func(*CredentialQuery) bool { return true }
 		_, err := (&DcqlQuery{Credentials: []CredentialQuery{pid, missing}}).SelectCredentialQuery(both)

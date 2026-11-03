@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,6 +20,18 @@ import (
 )
 
 const defaultHashAlgorithm = "sha-256"
+
+// transactionDataHashesAlgs are the algorithms createKeyBindingJWT can compute
+// transaction data hashes with.
+var transactionDataHashesAlgs = []string{"sha-256", "sha-384", "sha-512"}
+
+// SupportsTransactionDataHashesAlg reports whether transaction data hashes can be
+// computed with alg. Each transaction data object offers its own candidates and one of
+// them has to be used (OID4VP 1.0 Appendix B.3.3.1), so whatever picks among them has
+// to know which ones this serializer can produce.
+func SupportsTransactionDataHashesAlg(alg string) bool {
+	return slices.Contains(transactionDataHashesAlgs, strings.ToLower(alg))
+}
 
 // SdJwtVcSerializer implements Serializer for SD-JWT VC format
 type SdJwtVcSerializer struct{}
@@ -245,13 +258,8 @@ func createKeyBindingJWT(
 		if len(transactionData) > 0 {
 			return "", fmt.Errorf("transaction_data_hashes_alg is required when transaction_data is present")
 		}
-	} else {
-		switch tdComputeAlg {
-		case "sha-256", "sha-384", "sha-512":
-			// valid
-		default:
-			return "", fmt.Errorf("unsupported transaction_data_hashes_alg: %s", transactionDataHashesAlg)
-		}
+	} else if !SupportsTransactionDataHashesAlg(tdComputeAlg) {
+		return "", fmt.Errorf("unsupported transaction_data_hashes_alg: %s", transactionDataHashesAlg)
 	}
 
 	var transactionDataHashes []string

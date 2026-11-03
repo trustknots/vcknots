@@ -4627,6 +4627,90 @@ func TestController_PresentCredential_DCQL_Integration(t *testing.T) {
 	})
 }
 
+// TestController_PresentCredential_ClaimsPickOlderCredential pins that a Credential
+// Query is answered by the newest held Credential that can deliver its claims, not by
+// the newest that matches its format and metadata. Section 6.4.1 forbids returning a
+// Credential that lacks a requested claim, but refusing the request while another held
+// Credential answers it withholds a presentation the Wallet could make.
+func TestController_PresentCredential_ClaimsPickOlderCredential(t *testing.T) {
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+	raw, err := os.ReadFile(filepath.Join("examples", "server_integration_sdjwt", "example_sd_jwt.txt"))
+	require.NoError(t, err)
+	full := strings.TrimSpace(string(raw))
+
+	// withoutDisclosure drops one claim's disclosure, leaving a Credential whose payload
+	// still digests the claim but which cannot present it.
+	withoutDisclosure := func(t *testing.T, sdJWT, name string) (trimmed, removed string) {
+		t.Helper()
+		parts := strings.Split(sdJWT, "~")
+		for i := 1; i < len(parts); i++ {
+			decoded, decodeErr := base64.RawURLEncoding.DecodeString(parts[i])
+			if decodeErr != nil {
+				continue
+			}
+			var disclosure []any
+			if json.Unmarshal(decoded, &disclosure) != nil || len(disclosure) != 3 {
+				continue
+			}
+			if disclosure[1] == name {
+				return strings.Join(append(parts[:i:i], parts[i+1:]...), "~"), parts[i]
+			}
+		}
+		t.Fatalf("the example SD-JWT VC has no %q disclosure", name)
+		return "", ""
+	}
+
+	store, err := local.NewLocalCredentialStorage(filepath.Join(t.TempDir(), "credstore.db"))
+	require.NoError(t, err)
+	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithPlugin(credstore.SupportedCredStoreTypes(0), store))
+	require.NoError(t, err)
+	save := func(t *testing.T, id, sdJWT string, receivedAt time.Time) {
+		t.Helper()
+		require.NoError(t, credStore.SaveCredentialEntry(credstore.CredentialEntry{
+			Id:         id,
+			ReceivedAt: receivedAt,
+			Raw:        []byte(sdJWT),
+			MimeType:   string(credential.SDJwtVC),
+		}, credstore.SupportedCredStoreTypes(0)))
+	}
+	reissued, familyName := withoutDisclosure(t, full, "family_name")
+	now := time.Now()
+	save(t, "pid", full, now.Add(-time.Hour))
+	save(t, "pid_reissued", reissued, now)
+
+	w, err := NewWalletWithConfig(Config{CredStore: credStore})
+	require.NoError(t, err)
+
+	var received url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, r.ParseForm())
+		received = r.PostForm
+		rw.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	responseURI := server.URL + "/response"
+	params := url.Values{
+		"client_id":     {"redirect_uri:" + responseURI},
+		"response_type": {"vp_token"},
+		"response_mode": {"direct_post"},
+		"response_uri":  {responseURI},
+		"nonce":         {"nonce-1"},
+		"state":         {"state-1"},
+		"dcql_query": {`{"credentials":[{"id":"pid_credential","format":"dc+sd-jwt",` +
+			`"meta":{"vct_values":["urn:eu.europa.ec.eudi:pid:1"]},` +
+			`"claims":[{"path":["given_name"]},{"path":["family_name"]}]}]}`},
+	}
+	_, err = w.PresentCredential("openid4vp://authorize?"+params.Encode(), newPIDBoundKeyEntry(t),
+		&sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: true})
+	require.NoError(t, err, "the older Credential delivers family_name")
+	assert.Empty(t, received["error"])
+	require.NotEmpty(t, received["vp_token"])
+	assert.Contains(t, received.Get("vp_token"), familyName,
+		"the disclosure only the older Credential carries has to be in the response")
+}
+
 func TestApplyOID4VPRequestOptions(t *testing.T) {
 	req := &oid4vp.CredentialPresentationRequest{
 		OAuthAuthzRequest: &oid4vp.OAuthAuthzRequest{

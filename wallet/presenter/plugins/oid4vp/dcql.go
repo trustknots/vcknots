@@ -142,7 +142,12 @@ func (d *DcqlQuery) SelectCredentialQuery(held func(*CredentialQuery) bool) (*Cr
 		if !satisfiable(required) {
 			return nil, newAuthorizationRequestError(AccessDeniedError, "the wallet does not hold every requested Credential")
 		}
+	} else if single := d.singleCredentialAnswer(held); single != "" {
+		required = []string{single}
 	} else {
+		// No single Credential answers every required Credential Set, so walk the sets
+		// to tell an unsatisfiable one, which is access_denied, from one that would need
+		// a second Credential, which the refusal below reports.
 		for i, set := range d.CredentialSets {
 			if set.Required != nil && !*set.Required {
 				continue
@@ -174,6 +179,48 @@ func (d *DcqlQuery) SelectCredentialQuery(held func(*CredentialQuery) bool) (*Cr
 		return nil, fmt.Errorf("presenting %d Credentials in one response is not supported", len(required))
 	}
 	return byID[required[0]], nil
+}
+
+// singleCredentialAnswer returns the id of a Credential Query that answers every
+// required Credential Set Query on its own, or "" when no single Credential does and
+// when the request requires nothing. A response carries one Credential, so settling
+// each set in turn can pick a Credential an earlier set offers and leave a later
+// required set needing a second one, refusing a request that one Credential answers.
+// Section 6.4.3 leaves the choice among a set's options to the Wallet, so preferring
+// the Credential they share is allowed.
+func (d *DcqlQuery) singleCredentialAnswer(held func(*CredentialQuery) bool) string {
+	// answersAlone reports whether one of the options asks for nothing but id.
+	answersAlone := func(options [][]string, id string) bool {
+		return slices.ContainsFunc(options, func(option []string) bool {
+			return len(option) > 0 && !slices.ContainsFunc(option, func(optionID string) bool { return optionID != id })
+		})
+	}
+	var requiredSets []CredentialSetQuery
+	for _, set := range d.CredentialSets {
+		if set.Required == nil || *set.Required {
+			requiredSets = append(requiredSets, set)
+		}
+	}
+	if len(requiredSets) == 0 {
+		return ""
+	}
+	for i := range d.Credentials {
+		q := &d.Credentials[i]
+		if !held(q) {
+			continue
+		}
+		answersAll := true
+		for _, set := range requiredSets {
+			if !answersAlone(set.Options, q.ID) {
+				answersAll = false
+				break
+			}
+		}
+		if answersAll {
+			return q.ID
+		}
+	}
+	return ""
 }
 
 // AuthorizationRequestError is a validation failure of an OID4VP Authorization

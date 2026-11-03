@@ -1323,30 +1323,50 @@ func TestTransactionDataHashAlg(t *testing.T) {
 		}
 		return o
 	}
+	// anyAlg stands in for a serializer that computes whatever it is handed, so the
+	// subtests below exercise the intersection alone.
+	anyAlg := func(string) bool { return true }
+	// sha2 is what the SD-JWT VC serializer can compute.
+	sha2 := func(alg string) bool {
+		switch alg {
+		case "sha-256", "sha-384", "sha-512":
+			return true
+		}
+		return false
+	}
 
 	t.Run("an entry without the member asks for sha-256", func(t *testing.T) {
-		assert.Equal(t, "sha-256", req(with()).TransactionDataHashAlg())
+		assert.Equal(t, "sha-256", req(with()).TransactionDataHashAlg(anyAlg))
 	})
 
 	t.Run("sha-256 wins when it is among the candidates", func(t *testing.T) {
-		assert.Equal(t, "sha-256", req(with("sha-512", "sha-256")).TransactionDataHashAlg())
+		assert.Equal(t, "sha-256", req(with("sha-512", "sha-256")).TransactionDataHashAlg(anyAlg))
 	})
 
 	t.Run("a candidate list without sha-256 is honoured", func(t *testing.T) {
-		assert.Equal(t, "sha-512", req(with("sha-512")).TransactionDataHashAlg())
+		assert.Equal(t, "sha-512", req(with("sha-512")).TransactionDataHashAlg(anyAlg))
 	})
 
 	t.Run("the value has to satisfy every entry", func(t *testing.T) {
-		assert.Equal(t, "sha-384", req(with("sha-512", "sha-384"), with("sha-384")).TransactionDataHashAlg())
+		assert.Equal(t, "sha-384", req(with("sha-512", "sha-384"), with("sha-384")).TransactionDataHashAlg(anyAlg))
 	})
 
 	t.Run("entries sharing no candidate cannot be answered", func(t *testing.T) {
-		assert.Empty(t, req(with("sha-512"), with("sha-384")).TransactionDataHashAlg(),
+		assert.Empty(t, req(with("sha-512"), with("sha-384")).TransactionDataHashAlg(anyAlg),
 			"the serializer must refuse rather than hash with an algorithm nobody asked for")
 	})
 
 	t.Run("an entry that omits the member still constrains the others", func(t *testing.T) {
-		assert.Empty(t, req(with(), with("sha-512")).TransactionDataHashAlg())
+		assert.Empty(t, req(with(), with("sha-512")).TransactionDataHashAlg(anyAlg))
+	})
+
+	t.Run("a candidate the serializer cannot compute is skipped", func(t *testing.T) {
+		assert.Equal(t, "sha-512", req(with("sha-1", "sha-512")).TransactionDataHashAlg(sha2),
+			"answering with sha-1 would fail a request sha-512 answers")
+	})
+
+	t.Run("candidates the serializer cannot compute cannot be answered", func(t *testing.T) {
+		assert.Empty(t, req(with("sha-1")).TransactionDataHashAlg(sha2))
 	})
 }
 

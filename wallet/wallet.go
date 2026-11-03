@@ -1652,7 +1652,7 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 		return "", err
 	}
 
-	credentials, flavor, query, err := w.selectCredentialsForPresentation(req)
+	candidates, flavor, query, err := w.selectCredentialsForPresentation(req)
 	if err != nil {
 		return "", w.refusePresentation(req, err)
 	}
@@ -1670,19 +1670,33 @@ func (w *Wallet) PresentCredentialWithOptions(uriString string, key IKeyEntry, o
 	// what is disclosed.
 	applyOID4VPRequestOptions(req, query, serializeOptions)
 
-	presentation, err := w.buildPresentation(credentials, key, req)
-	if err != nil {
-		return "", err
+	// The candidates match the Credential Query's format and metadata, but whether one
+	// holds a requested claim is known to the serializer, so it surfaces here. Present
+	// the newest that answers: nothing has reached the Verifier yet when it does not,
+	// because submitPresentation serializes before it posts the response.
+	var redirectURI string
+	var claimsNotSatisfiable error
+	for _, candidate := range candidates {
+		presentation, err := w.buildPresentation([]*SavedCredential{candidate}, key, req)
+		if err != nil {
+			return "", err
+		}
+		uri, err := w.submitPresentation(presentation, flavor, endpoint, req, query, key, serializeOptions)
+		if errors.Is(err, serializerTypes.ErrClaimsNotSatisfiable) {
+			// This Credential lacks a requested claim, so it must not be returned
+			// (OID4VP 1.0 Section 6.4.1). An older one may still hold the claim.
+			claimsNotSatisfiable = err
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		redirectURI, claimsNotSatisfiable = uri, nil
+		break
 	}
-
-	redirectURI, err := w.submitPresentation(presentation, flavor, endpoint, req, query, key, serializeOptions)
-	if errors.Is(err, serializerTypes.ErrClaimsNotSatisfiable) {
-		// The Credential lacks a requested claim, so it must not be returned (OID4VP 1.0
-		// Section 6.4.1) and the required Credential Query cannot be answered.
-		return "", w.refusePresentation(req, &oid4vp.AuthorizationRequestError{Code: oid4vp.AccessDeniedError, Err: err})
-	}
-	if err != nil {
-		return "", err
+	if claimsNotSatisfiable != nil {
+		// No held Credential answers the required Credential Query.
+		return "", w.refusePresentation(req, &oid4vp.AuthorizationRequestError{Code: oid4vp.AccessDeniedError, Err: claimsNotSatisfiable})
 	}
 	if redirectURI != "" && onRedirect != nil {
 		if err := onRedirect(redirectURI); err != nil {
@@ -1727,9 +1741,12 @@ func (w *Wallet) parseAuthorizationRequest(uriString string) (*oid4vp.Credential
 	return req, endpoint, nil
 }
 
-// selectCredentialsForPresentation picks the Credential Query to answer and the
-// newest held Credential matching it (OID4VP 1.0 Section 6.4.2). When a required
-// Credential is not held it fails with an access_denied AuthorizationRequestError.
+// selectCredentialsForPresentation picks the Credential Query to answer and the held
+// Credentials matching it, newest first (OID4VP 1.0 Section 6.4.2). It returns every
+// match rather than the newest, because whether a Credential can disclose the
+// requested claims is known to the serializer: the caller presents the first one that
+// can. When a required Credential is not held it fails with an access_denied
+// AuthorizationRequestError.
 func (w *Wallet) selectCredentialsForPresentation(req *oid4vp.CredentialPresentationRequest) ([]*SavedCredential, *credential.SupportedSerializationFlavor, *oid4vp.CredentialQuery, error) {
 	entries, _, err := w.GetCredentialEntries(GetCredentialEntriesRequest{
 		Offset: 0,
@@ -1740,7 +1757,8 @@ func (w *Wallet) selectCredentialsForPresentation(req *oid4vp.CredentialPresenta
 	}
 	entries = newestCredentials(entries, len(entries))
 
-	newestMatch := func(q *oid4vp.CredentialQuery) *SavedCredential {
+	matches := func(q *oid4vp.CredentialQuery) []*SavedCredential {
+		var matched []*SavedCredential
 		for _, entry := range entries {
 			if entry == nil || entry.Entry == nil {
 				continue
@@ -1751,27 +1769,30 @@ func (w *Wallet) selectCredentialsForPresentation(req *oid4vp.CredentialPresenta
 			}
 			format, _, err := flavor.OID4VPFormatIdentifier()
 			if err == nil && q.Matches(format, entry.Credential) {
-				return entry
+				matched = append(matched, entry)
 			}
 		}
-		return nil
+		return matched
 	}
 
 	query, err := req.DcqlQuery.SelectCredentialQuery(func(q *oid4vp.CredentialQuery) bool {
-		return newestMatch(q) != nil
+		return len(matches(q)) > 0
 	})
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	selectedCredentials := []*SavedCredential{newestMatch(query)}
+	candidates := matches(query)
+	if len(candidates) == 0 {
+		return nil, nil, nil, fmt.Errorf("no stored credential matches the selected Credential Query %q", query.ID)
+	}
 
-	// Validate that all selected credentials have the same serialization flavor
-	serializationFlavor, err := w.validateSerializationFlavor(selectedCredentials)
+	// Every candidate matched the same Credential Query, so they share its format.
+	serializationFlavor, err := w.validateSerializationFlavor(candidates)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	return selectedCredentials, serializationFlavor, query, nil
+	return candidates, serializationFlavor, query, nil
 }
 
 // refusePresentation returns err after telling the Verifier about it when OID4VP
@@ -1914,7 +1935,7 @@ func applyTransactionData(req *oid4vp.CredentialPresentationRequest, options ser
 		return
 	}
 	sdOpts.TransactionData = req.TransactionData
-	sdOpts.TransactionDataHashesAlg = req.TransactionDataHashAlg()
+	sdOpts.TransactionDataHashesAlg = req.TransactionDataHashAlg(sdjwtvc.SupportsTransactionDataHashesAlg)
 	sdOpts.RequireKeyBinding = true
 }
 
