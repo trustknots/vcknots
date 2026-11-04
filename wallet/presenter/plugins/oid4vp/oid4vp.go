@@ -145,7 +145,10 @@ func (r *CredentialPresentationRequest) TransactionDataHashAlg(supported func(al
 			continue
 		}
 		offered := data.TransactionDataHashesAlg
-		if len(offered) == 0 {
+		// Absent, not empty: an empty member offers nothing, so it has to leave no candidate
+		// and let the caller refuse. validateTransactionData refuses it on the parse path,
+		// but this method is exported and a caller can build the request itself.
+		if offered == nil {
 			offered = []string{defaultTransactionDataHashesAlg}
 		}
 		if !seen {
@@ -221,6 +224,13 @@ func validateTransactionData(req *CredentialPresentationRequest, supportedTypes 
 			if !query.RequiresCryptographicHolderBinding() {
 				return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d].credential_ids %q sets require_cryptographic_holder_binding to false", i, id)
 			}
+		}
+		// Appendix B.3.3.1 makes this member a non-empty array and reserves the sha-256
+		// default for an entry that omits it, so an empty one offers nothing while still
+		// requiring the response hash to be one of its values. A JSON null decodes to the
+		// same nil as an absent member and is taken as absent.
+		if data.TransactionDataHashesAlg != nil && len(data.TransactionDataHashesAlg) == 0 {
+			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d].transaction_data_hashes_alg must be a non-empty array when present", i)
 		}
 	}
 	return nil

@@ -1253,6 +1253,24 @@ func TestValidateTransactionData(t *testing.T) {
 		assert.Equal(t, InvalidTransactionDataError, err.Code)
 	})
 
+	// Appendix B.3.3.1 defines transaction_data_hashes_alg as a non-empty array and the
+	// sha-256 default for an entry that omits it, so an explicit empty array is neither.
+	t.Run("transaction_data_hashes_alg must not be empty when present", func(t *testing.T) {
+		err := validateTransactionData(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "transaction_data_hashes_alg": []string{}})), supported)
+		require.NotNil(t, err)
+		assert.Equal(t, InvalidTransactionDataError, err.Code)
+	})
+
+	t.Run("a transaction_data_hashes_alg that offers an algorithm is accepted", func(t *testing.T) {
+		assert.Nil(t, validateTransactionData(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "transaction_data_hashes_alg": []string{"sha-384"}})), supported))
+	})
+
+	// A JSON null decodes to the same nil as an absent member, so it is taken as absent.
+	// Only a comment says so, and changing the field's type would silently reverse it.
+	t.Run("a JSON null is taken as an absent member", func(t *testing.T) {
+		assert.Nil(t, validateTransactionData(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "transaction_data_hashes_alg": nil})), supported))
+	})
+
 	t.Run("an entry that is not base64url is refused", func(t *testing.T) {
 		err := validateTransactionData(req("not base64!"), supported)
 		require.NotNil(t, err)
@@ -1337,6 +1355,14 @@ func TestTransactionDataHashAlg(t *testing.T) {
 
 	t.Run("an entry without the member asks for sha-256", func(t *testing.T) {
 		assert.Equal(t, "sha-256", req(with()).TransactionDataHashAlg(anyAlg))
+	})
+
+	// An empty member reaches here only from a caller that built the request itself,
+	// since validateTransactionData refuses it. It asks for no algorithm, so none is
+	// picked and the serializer refuses rather than hash with one nobody offered.
+	t.Run("an empty member asks for nothing", func(t *testing.T) {
+		empty := map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "transaction_data_hashes_alg": []string{}}
+		assert.Empty(t, req(empty).TransactionDataHashAlg(anyAlg))
 	})
 
 	t.Run("sha-256 wins when it is among the candidates", func(t *testing.T) {
