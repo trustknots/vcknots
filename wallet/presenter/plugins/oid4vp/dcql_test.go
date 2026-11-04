@@ -178,6 +178,9 @@ func TestParseDcqlQuery_InvalidRequest(t *testing.T) {
 		// The only one of these whose refusal would never reach the Verifier.
 		{name: "credential_sets option empty", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":[{"options":[[]]}]}`},
 		{name: "credential_sets option element not a string", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":[{"options":[[1]]}]}`},
+		{name: "credential_sets option with an undeclared id", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":[{"options":[["c2"]]}]}`},
+		{name: "credential_sets second option with an undeclared id", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":[{"options":[["c1"],["c2"]]}]}`},
+		{name: "credential_sets option combining a declared and an undeclared id", raw: `{"credentials":[{"id":"c1","format":"jwt_vc_json","meta":{}}],"credential_sets":[{"options":[["c1","c2"]]}]}`},
 		{name: "claims empty array", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claims":[]}]}`},
 		{name: "claim without path", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claims":[{"id":"a"}]}]}`},
 		{name: "claim path with negative index", raw: `{"credentials":[{"id":"c1","format":"dc+sd-jwt","meta":{},"claims":[{"path":["a",-1]}]}]}`},

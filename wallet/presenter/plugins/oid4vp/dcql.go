@@ -272,10 +272,13 @@ func parseDcqlQuery(raw any) (*DcqlQuery, error) {
 			if !ok {
 				return nil, newAuthorizationRequestError(InvalidRequestError, "dcql_query.credential_sets[%d] must be a JSON object", i)
 			}
-			// Section 6.2 fixes this shape. An empty element would be satisfied by
-			// presenting nothing, which SelectCredentialQuery answers with a plain error
-			// the Verifier never hears about.
-			if !isIDArrays(set["options"], nil) {
+			// Section 6.2 fixes the shape and requires every id to reference an entry of
+			// credentials. Left to SelectCredentialQuery an unknown id reads as a Credential
+			// the wallet does not hold, so the request was refused with access_denied, or
+			// quietly answered when another option covered it, instead of being reported as
+			// malformed. An empty element is satisfied by presenting nothing, which only a
+			// plain error the Verifier never hears about catches.
+			if !isIDArrays(set["options"], seenIDs) {
 				return nil, newAuthorizationRequestError(InvalidRequestError, "dcql_query.credential_sets[%d].options must be a non-empty array of non-empty arrays of Credential Query ids", i)
 			}
 		}
@@ -316,7 +319,10 @@ func decodeDcqlQueryObject(raw any) (map[string]any, error) {
 }
 
 // validateCredentialQuery validates a single Credential Query object as per
-// OID4VP 1.0 Section 6.1, recording its id in seenIDs for duplicate detection.
+// OID4VP 1.0 Section 6.1, recording its id in seenIDs, which detects duplicates and is
+// also the set credential_sets options are checked against. The id is recorded before
+// the rest of the object, so only returning on the first error keeps a rejected query's
+// id out of that set.
 func validateCredentialQuery(index int, credentialQuery map[string]any, seenIDs map[string]bool) error {
 	rawID, exists := credentialQuery["id"]
 	if !exists {
@@ -435,8 +441,7 @@ func isClaimsPathPointer(raw any) bool {
 }
 
 // isIDArrays reports whether raw is a non-empty array of non-empty arrays of ids
-// that are all in known. A nil known checks the shape alone, for a caller that has
-// nothing to match the ids against.
+// that are all in known.
 func isIDArrays(raw any, known map[string]bool) bool {
 	arrays, ok := raw.([]any)
 	if !ok || len(arrays) == 0 {
@@ -448,7 +453,7 @@ func isIDArrays(raw any, known map[string]bool) bool {
 			return false
 		}
 		for _, rawID := range ids {
-			if id, ok := rawID.(string); !ok || (known != nil && !known[id]) {
+			if id, ok := rawID.(string); !ok || !known[id] {
 				return false
 			}
 		}
