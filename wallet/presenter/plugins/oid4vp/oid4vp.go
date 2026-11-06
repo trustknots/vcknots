@@ -27,11 +27,18 @@ type Oid4vpPresenter struct {
 	// WARNING: This should NEVER be set to true in production environments.
 	// This is only for conformance testing with self-signed or non-standard certificates.
 	InsecureSkipX509Verify bool
-	// SupportedTransactionDataTypes lists the transaction data types the wallet can
-	// process. A request carrying any other type is rejected with
-	// invalid_transaction_data (OID4VP 1.0 Section 5.1), so while this is empty every
-	// request that carries transaction_data is rejected.
+	// SupportedTransactionDataTypes lists the transaction data types whose definition
+	// adds no member of its own. Listing a type is the shorthand for registering
+	// baseTransactionDataProfile as its validator, so an entry of a listed type is
+	// refused once it carries anything beyond the members OID4VP 1.0 Section 5.1 and
+	// Appendix B.3.3.1 define. A type that defines members of its own needs
+	// RegisterTransactionDataType instead.
 	SupportedTransactionDataTypes []string
+	// transactionDataValidators holds the validator each registered type is checked
+	// with. A type that is neither registered nor listed above is one the wallet cannot
+	// check, so while both are empty every request carrying transaction_data is rejected
+	// with invalid_transaction_data (Section 5.1).
+	transactionDataValidators map[string]TransactionDataValidator
 }
 
 // ParsePresentationRequest parses the presentation request URI and returns a CredentialPresentationRequest,
@@ -102,7 +109,7 @@ func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*Credentia
 	// The request is validated by this point. A Request Object is accepted only
 	// through x509_san_dns with a verified certificate chain (see WithRequestObject),
 	// so the Verifier is authenticated and its response_uri may receive the error.
-	if authzErr := validateTransactionData(req, p.SupportedTransactionDataTypes); authzErr != nil {
+	if authzErr := p.validateTransactionData(req); authzErr != nil {
 		if sendErr := p.SendAuthorizationErrorResponse(req, authzErr); sendErr != nil {
 			return nil, fmt.Errorf("rejected transaction_data: %w (also failed to send error authorization response: %v)", authzErr, sendErr)
 		}
@@ -122,11 +129,74 @@ type transactionData struct {
 	// transaction data object, not to the Authorization Request
 	// (OID4VP 1.0 Appendix B.3.3.1).
 	TransactionDataHashesAlg []string `json:"transaction_data_hashes_alg,omitempty"`
+	// raw is the entry's JSON as the Verifier sent it, which the type's validator needs
+	// because the members a type defines are exactly the ones this struct cannot hold.
+	// Being unexported it is invisible to encoding/json, so a member named raw is an
+	// unknown member like any other.
+	raw json.RawMessage
 }
 
 // defaultTransactionDataHashesAlg is what an entry that omits the member asks for,
 // and the one algorithm every implementation must support (Appendix B.3.3.1).
 const defaultTransactionDataHashesAlg = "sha-256"
+
+// TransactionDataValidator checks one transaction data entry against the definition of
+// the type it is registered for. Section 5.1 requires an error for "transaction data not
+// conforming to the respective type definition" while leaving those definitions out of
+// scope ("The specific values are out of scope for this specification"), so only whoever
+// implements a type can check what it adds.
+//
+// object is the entry's decoded JSON, exactly as the Verifier sent it. That is what the
+// remaining conditions of Section 8.5 need: a member the type does not define, a member
+// of the wrong type, an invalid value and a missing required member are all invisible to
+// a decoder that knows only the members every type shares. Those shared members (type,
+// credential_ids and the Appendix B.3.3.1 transaction_data_hashes_alg) are already
+// checked when a validator runs, so it only has to cover its own type.
+//
+// A non-nil error refuses the whole request with invalid_transaction_data, and its text
+// reaches the Verifier in error_description, so it should describe the entry rather than
+// the wallet's internals.
+type TransactionDataValidator func(object json.RawMessage) error
+
+// RegisterTransactionDataType makes the wallet accept transaction data entries whose
+// type is typeName, checked with validator. It returns the presenter, so a registration
+// can be written where the presenter is wired, and it replaces both an earlier
+// registration for the same type and the base profile a SupportedTransactionDataTypes
+// entry asks for. Register before the presenter parses a request: the registrations are
+// read without a lock and are not meant to change while requests are in flight.
+func (p *Oid4vpPresenter) RegisterTransactionDataType(typeName string, validator TransactionDataValidator) *Oid4vpPresenter {
+	if p.transactionDataValidators == nil {
+		p.transactionDataValidators = map[string]TransactionDataValidator{}
+	}
+	p.transactionDataValidators[typeName] = validator
+	return p
+}
+
+// transactionDataValidator returns the validator a type is checked with, or nil when the
+// wallet supports no such type.
+func (p *Oid4vpPresenter) transactionDataValidator(typeName string) TransactionDataValidator {
+	if validator, ok := p.transactionDataValidators[typeName]; ok {
+		return validator
+	}
+	if slices.Contains(p.SupportedTransactionDataTypes, typeName) {
+		return baseTransactionDataProfile
+	}
+	return nil
+}
+
+// baseTransactionDataProfile is the validator of a type that defines no member of its
+// own: it refuses anything beyond type, credential_ids and transaction_data_hashes_alg
+// (Section 5.1 and Appendix B.3.3.1). A member the wallet does not know is one it cannot
+// show the holder, and signing a Key Binding JWT over an authorization nobody could read
+// is worse than refusing the request (Section 8.5). Only the unknown-member check is
+// left here, since decodeTransactionData has already parsed object as a single JSON
+// value and checked the shared members.
+func baseTransactionDataProfile(object json.RawMessage) error {
+	dec := json.NewDecoder(bytes.NewReader(object))
+	dec.DisallowUnknownFields()
+	var data transactionData
+	return dec.Decode(&data)
+}
 
 // TransactionDataHashAlg picks the hash algorithm for the transaction_data_hashes of
 // the Key Binding JWT (OID4VP 1.0 Appendix B.3.3.1). The KB-JWT carries one algorithm
@@ -191,33 +261,32 @@ func decodeTransactionData(i int, encoded string) (*transactionData, *Authorizat
 		return nil, newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] is not base64url: %v", i, err)
 	}
 	var data transactionData
-	// Unknown members are refused, not dropped (Section 8.5). The wallet implements only
-	// the members Section 5.1 and Appendix B.3.3.1 define, so a member it does not know is
-	// one it cannot show the holder, and signing a Key Binding JWT over an authorization
-	// nobody could read is worse than refusing the request. A decoder accepts anything
-	// after the object where Unmarshal would not, so More guards what Unmarshal caught.
-	dec := json.NewDecoder(bytes.NewReader(decoded))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&data); err != nil {
+	// Unmarshal, not a json.Decoder: it refuses anything after the object, where a
+	// decoder reads the object and leaves the rest. Decoder.More only reports whether an
+	// array or object has a further element, so it answers false for a trailing } or ]
+	// and would let that through. Unknown members survive this decode and are left to
+	// the type's validator, which is the only thing that knows whether they belong.
+	if err := json.Unmarshal(decoded, &data); err != nil {
 		return nil, newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] is not a transaction data object: %v", i, err)
 	}
-	if dec.More() {
-		return nil, newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] has trailing data after the transaction data object", i)
-	}
+	data.raw = decoded
 	return &data, nil
 }
 
 // validateTransactionData checks every transaction_data entry against OID4VP 1.0
-// Section 5.1: a base64url-encoded JSON object with a supported type and
-// credential_ids that name Credential Queries of the request. Only dc+sd-jwt can
-// carry transaction data, in its Key Binding JWT (Appendix B.3.3).
-func validateTransactionData(req *CredentialPresentationRequest, supportedTypes []string) *AuthorizationRequestError {
+// Section 5.1: a base64url-encoded JSON object of a supported type, with credential_ids
+// that name Credential Queries of the request, conforming to its own type definition.
+// The members every type shares are checked here and the rest by the type's validator,
+// because Section 5.1 leaves each type's definition to the document specifying it. Only
+// dc+sd-jwt can carry transaction data, in its Key Binding JWT (Appendix B.3.3).
+func (p *Oid4vpPresenter) validateTransactionData(req *CredentialPresentationRequest) *AuthorizationRequestError {
 	for i, encoded := range req.TransactionData {
 		data, authzErr := decodeTransactionData(i, encoded)
 		if authzErr != nil {
 			return authzErr
 		}
-		if !slices.Contains(supportedTypes, data.Type) {
+		validator := p.transactionDataValidator(data.Type)
+		if validator == nil {
 			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] has unsupported type %q", i, data.Type)
 		}
 		if len(data.CredentialIDs) == 0 {
@@ -242,6 +311,11 @@ func validateTransactionData(req *CredentialPresentationRequest, supportedTypes 
 		// same nil as an absent member and is taken as absent.
 		if data.TransactionDataHashesAlg != nil && len(data.TransactionDataHashesAlg) == 0 {
 			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d].transaction_data_hashes_alg must be a non-empty array when present", i)
+		}
+		// The type's own members come last, so a validator is written against an entry
+		// whose shared members already hold.
+		if err := validator(data.raw); err != nil {
+			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] does not conform to type %q: %v", i, data.Type, err)
 		}
 	}
 	return nil

@@ -1,12 +1,14 @@
 package oid4vp
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -1332,16 +1334,19 @@ func TestValidateTransactionData(t *testing.T) {
 			TransactionData: entries,
 		}
 	}
-	supported := []string{"sample_type"}
+	// sample_type defines no member of its own, so listing it is the same as registering
+	// the base profile as its validator.
+	validate := (&Oid4vpPresenter{SupportedTransactionDataTypes: []string{"sample_type"}}).validateTransactionData
+	validateNoTypes := (&Oid4vpPresenter{}).validateTransactionData
 	entry := func(object map[string]any) string { return transactionDataEntry(t, object) }
 	referencingPID := map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}}
 
 	t.Run("no transaction_data is nothing to check", func(t *testing.T) {
-		assert.Nil(t, validateTransactionData(req(), nil))
+		assert.Nil(t, validateNoTypes(req()))
 	})
 
 	t.Run("an unsupported type is refused", func(t *testing.T) {
-		err := validateTransactionData(req(entry(map[string]any{"type": "unknown_type", "credential_ids": []string{"pid_credential"}})), supported)
+		err := validate(req(entry(map[string]any{"type": "unknown_type", "credential_ids": []string{"pid_credential"}})))
 		require.NotNil(t, err)
 		assert.Equal(t, InvalidTransactionDataError, err.Code)
 	})
@@ -1349,23 +1354,23 @@ func TestValidateTransactionData(t *testing.T) {
 	// The default configuration supports no type, so transaction_data is refused
 	// outright until SupportedTransactionDataTypes names one.
 	t.Run("every type is refused while none is supported", func(t *testing.T) {
-		err := validateTransactionData(req(entry(referencingPID)), nil)
+		err := validateNoTypes(req(entry(referencingPID)))
 		require.NotNil(t, err)
 		assert.Equal(t, InvalidTransactionDataError, err.Code)
 	})
 
 	t.Run("a supported type referencing the request is accepted", func(t *testing.T) {
-		assert.Nil(t, validateTransactionData(req(entry(referencingPID)), supported))
+		assert.Nil(t, validate(req(entry(referencingPID))))
 	})
 
 	t.Run("credential_ids must name a dc+sd-jwt Credential Query of the request", func(t *testing.T) {
-		err := validateTransactionData(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"other"}})), supported)
+		err := validate(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"other"}})))
 		require.NotNil(t, err)
 		assert.Equal(t, InvalidTransactionDataError, err.Code)
 	})
 
 	t.Run("credential_ids is required", func(t *testing.T) {
-		err := validateTransactionData(req(entry(map[string]any{"type": "sample_type"})), supported)
+		err := validate(req(entry(map[string]any{"type": "sample_type"})))
 		require.NotNil(t, err)
 		assert.Equal(t, InvalidTransactionDataError, err.Code)
 	})
@@ -1373,49 +1378,176 @@ func TestValidateTransactionData(t *testing.T) {
 	// Appendix B.3.3.1 defines transaction_data_hashes_alg as a non-empty array and the
 	// sha-256 default for an entry that omits it, so an explicit empty array is neither.
 	t.Run("transaction_data_hashes_alg must not be empty when present", func(t *testing.T) {
-		err := validateTransactionData(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "transaction_data_hashes_alg": []string{}})), supported)
+		err := validate(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "transaction_data_hashes_alg": []string{}})))
 		require.NotNil(t, err)
 		assert.Equal(t, InvalidTransactionDataError, err.Code)
 	})
 
 	t.Run("a transaction_data_hashes_alg that offers an algorithm is accepted", func(t *testing.T) {
-		assert.Nil(t, validateTransactionData(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "transaction_data_hashes_alg": []string{"sha-384"}})), supported))
+		assert.Nil(t, validate(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "transaction_data_hashes_alg": []string{"sha-384"}}))))
 	})
 
 	// A JSON null decodes to the same nil as an absent member, so it is taken as absent.
 	// Only a comment says so, and changing the field's type would silently reverse it.
 	t.Run("a JSON null is taken as an absent member", func(t *testing.T) {
-		assert.Nil(t, validateTransactionData(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "transaction_data_hashes_alg": nil})), supported))
+		assert.Nil(t, validate(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "transaction_data_hashes_alg": nil}))))
 	})
 
-	// Section 8.5 refuses an object of a known type carrying unknown fields. The wallet
-	// implements only the members Section 5.1 and Appendix B.3.3.1 define, so whatever a
-	// type adds is refused instead of being silently dropped and signed over.
-	t.Run("a member the wallet does not implement is refused", func(t *testing.T) {
-		err := validateTransactionData(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "amount": "100"})), supported)
+	// Section 8.5 refuses an object of a known type carrying unknown fields. A listed type
+	// is checked with the base profile, which knows only the members Section 5.1 and
+	// Appendix B.3.3.1 define, so whatever it adds is refused instead of being silently
+	// dropped and signed over.
+	t.Run("a member the type does not define is refused", func(t *testing.T) {
+		err := validate(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "amount": "100"})))
 		require.NotNil(t, err)
 		assert.Equal(t, InvalidTransactionDataError, err.Code)
 	})
 
-	// A json.Decoder accepts anything after the object where json.Unmarshal refused it,
-	// so the guard that keeps refusing it is pinned rather than assumed.
+	// json.Unmarshal is what refuses anything after the object. A json.Decoder reads the
+	// object and leaves the rest, and Decoder.More only reports whether an array or object
+	// has a further element, so it answers false for a trailing } or ] and lets those
+	// through. Every shape is pinned, not just the one a second object makes.
 	t.Run("trailing data after the object is refused", func(t *testing.T) {
-		trailing := base64.RawURLEncoding.EncodeToString([]byte(`{"type":"sample_type","credential_ids":["pid_credential"]}{"type":"sample_type"}`))
-		err := validateTransactionData(req(trailing), supported)
-		require.NotNil(t, err)
-		assert.Equal(t, InvalidTransactionDataError, err.Code)
+		const object = `{"type":"sample_type","credential_ids":["pid_credential"]}`
+		for _, trailing := range []string{object, "}", "]", ",", " not json"} {
+			err := validate(req(base64.RawURLEncoding.EncodeToString([]byte(object + trailing))))
+			require.NotNil(t, err, "trailing %q has to be refused", trailing)
+			assert.Equal(t, InvalidTransactionDataError, err.Code)
+		}
 	})
 
 	t.Run("an entry that is not base64url is refused", func(t *testing.T) {
-		err := validateTransactionData(req("not base64!"), supported)
+		err := validate(req("not base64!"))
 		require.NotNil(t, err)
 		assert.Equal(t, InvalidTransactionDataError, err.Code)
 	})
 
 	t.Run("an entry that is not a JSON object is refused", func(t *testing.T) {
-		err := validateTransactionData(req(base64.RawURLEncoding.EncodeToString([]byte(`"a string"`))), supported)
+		err := validate(req(base64.RawURLEncoding.EncodeToString([]byte(`"a string"`))))
 		require.NotNil(t, err)
 		assert.Equal(t, InvalidTransactionDataError, err.Code)
+	})
+}
+
+// exampleTypeValidator is the validator of a transaction data type that defines a member
+// of its own, the shape OID4VP 1.0 Section 5.1 sketches in its non-normative example with
+// "other transaction data type specific parameters": an amount the End-User is asked to
+// authorize. Nothing outside the document defining the type can know the member is
+// required, which is why a validator is registered rather than inferred.
+func exampleTypeValidator(object json.RawMessage) error {
+	var entry struct {
+		Amount *int `json:"amount"`
+		// The shared members are declared so they are not taken for members example_type
+		// leaves undefined. validateTransactionData has already checked them.
+		Type          string   `json:"type"`
+		CredentialIDs []string `json:"credential_ids"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(object))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&entry); err != nil {
+		return err
+	}
+	if entry.Amount == nil {
+		return errors.New("amount is required")
+	}
+	if *entry.Amount <= 0 {
+		return errors.New("amount has to be greater than zero")
+	}
+	return nil
+}
+
+// TestTransactionDataTypeValidator pins OID4VP 1.0 Section 5.1: the Wallet must return an
+// error for "transaction data not conforming to the respective type definition", and a
+// type's definition is out of scope of the specification, so it reaches the wallet as a
+// registered validator. Every condition Section 8.5 lists for an object of a known type
+// is covered: an unknown member, a member of the wrong type, a member with an invalid
+// value, and a missing required member — the last of which no schema-less check can see.
+func TestTransactionDataTypeValidator(t *testing.T) {
+	withExampleType := func() *Oid4vpPresenter {
+		return (&Oid4vpPresenter{}).RegisterTransactionDataType("example_type", exampleTypeValidator)
+	}
+	req := func(object map[string]any) *CredentialPresentationRequest {
+		return &CredentialPresentationRequest{
+			DcqlQuery:       &DcqlQuery{Credentials: []CredentialQuery{{ID: "pid_credential", Format: "dc+sd-jwt"}}},
+			TransactionData: []string{transactionDataEntry(t, object)},
+		}
+	}
+	entry := func(extra map[string]any) map[string]any {
+		object := map[string]any{"type": "example_type", "credential_ids": []string{"pid_credential"}}
+		for name, value := range extra {
+			object[name] = value
+		}
+		return object
+	}
+
+	t.Run("an entry conforming to its type is accepted", func(t *testing.T) {
+		assert.Nil(t, withExampleType().validateTransactionData(req(entry(map[string]any{"amount": 100}))))
+	})
+
+	// Registering is enough; the type does not also have to be listed. The listing is
+	// only the shorthand for the base profile.
+	t.Run("a registered type needs no entry in SupportedTransactionDataTypes", func(t *testing.T) {
+		p := withExampleType()
+		require.Empty(t, p.SupportedTransactionDataTypes)
+		assert.Nil(t, p.validateTransactionData(req(entry(map[string]any{"amount": 100}))))
+	})
+
+	refused := map[string]map[string]any{
+		"a missing required member is refused":         nil,
+		"a member of the wrong type is refused":        {"amount": "100"},
+		"a member with an invalid value is refused":    {"amount": 0},
+		"a member the type does not define is refused": {"amount": 100, "memo": "pay"},
+	}
+	for name, extra := range refused {
+		t.Run(name, func(t *testing.T) {
+			err := withExampleType().validateTransactionData(req(entry(extra)))
+			require.NotNil(t, err)
+			assert.Equal(t, InvalidTransactionDataError, err.Code)
+		})
+	}
+
+	// Without this the registry would only ever add types, never tighten one: a type
+	// listed by an integrator who later learns it has members of its own has to end up
+	// checked by the validator, not by the base profile that accepts the listing.
+	t.Run("a validator replaces the base profile of a listed type", func(t *testing.T) {
+		p := &Oid4vpPresenter{SupportedTransactionDataTypes: []string{"example_type"}}
+		listedOnly := p.validateTransactionData(req(entry(map[string]any{"amount": 100})))
+		require.NotNil(t, listedOnly, "the base profile does not know the amount member")
+
+		p.RegisterTransactionDataType("example_type", exampleTypeValidator)
+		assert.Nil(t, p.validateTransactionData(req(entry(map[string]any{"amount": 100}))))
+	})
+
+	t.Run("a later registration replaces an earlier one", func(t *testing.T) {
+		p := withExampleType().RegisterTransactionDataType("example_type", func(json.RawMessage) error {
+			return errors.New("refused by the later validator")
+		})
+		err := p.validateTransactionData(req(entry(map[string]any{"amount": 100})))
+		require.NotNil(t, err)
+		assert.Equal(t, InvalidTransactionDataError, err.Code)
+	})
+
+	t.Run("a type with neither a validator nor a listing is refused", func(t *testing.T) {
+		err := withExampleType().validateTransactionData(req(map[string]any{
+			"type": "other_type", "credential_ids": []string{"pid_credential"}, "amount": 100,
+		}))
+		require.NotNil(t, err)
+		assert.Equal(t, InvalidTransactionDataError, err.Code)
+		assert.Contains(t, err.Error(), "unsupported type")
+	})
+
+	// A validator is written against an entry whose shared members hold, so it must not
+	// run before they are checked.
+	t.Run("the shared members are checked before the type's own", func(t *testing.T) {
+		called := false
+		p := (&Oid4vpPresenter{}).RegisterTransactionDataType("example_type", func(json.RawMessage) error {
+			called = true
+			return nil
+		})
+		err := p.validateTransactionData(req(entry(map[string]any{"credential_ids": []string{"ghost"}})))
+		require.NotNil(t, err)
+		assert.Contains(t, err.Error(), "credential_ids")
+		assert.False(t, called, "the validator ran on an entry whose credential_ids name nothing")
 	})
 }
 
@@ -1424,7 +1556,7 @@ func TestValidateTransactionData(t *testing.T) {
 // a request whose referenced Credential Query opts out of it must be rejected. Only
 // the referenced queries count.
 func TestValidateTransactionData_HolderBinding(t *testing.T) {
-	supported := []string{"sample_type"}
+	validate := (&Oid4vpPresenter{SupportedTransactionDataTypes: []string{"sample_type"}}).validateTransactionData
 	yes, no := true, false
 	req := func(queries ...CredentialQuery) *CredentialPresentationRequest {
 		return &CredentialPresentationRequest{
@@ -1439,22 +1571,22 @@ func TestValidateTransactionData_HolderBinding(t *testing.T) {
 	}
 
 	t.Run("omitting the member means binding is required", func(t *testing.T) {
-		assert.Nil(t, validateTransactionData(req(pid(nil)), supported))
+		assert.Nil(t, validate(req(pid(nil))))
 	})
 
 	t.Run("an explicit true is accepted", func(t *testing.T) {
-		assert.Nil(t, validateTransactionData(req(pid(&yes)), supported))
+		assert.Nil(t, validate(req(pid(&yes))))
 	})
 
 	t.Run("a referenced query that opts out is refused", func(t *testing.T) {
-		err := validateTransactionData(req(pid(&no)), supported)
+		err := validate(req(pid(&no)))
 		require.NotNil(t, err)
 		assert.Equal(t, InvalidTransactionDataError, err.Code)
 	})
 
 	t.Run("an unreferenced query may opt out", func(t *testing.T) {
 		other := CredentialQuery{ID: "other", Format: "dc+sd-jwt", RequireCryptographicHolderBinding: &no}
-		assert.Nil(t, validateTransactionData(req(pid(nil), other), supported))
+		assert.Nil(t, validate(req(pid(nil), other)))
 	})
 }
 
