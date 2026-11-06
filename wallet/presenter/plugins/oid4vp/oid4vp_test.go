@@ -1388,6 +1388,24 @@ func TestValidateTransactionData(t *testing.T) {
 		assert.Nil(t, validateTransactionData(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "transaction_data_hashes_alg": nil})), supported))
 	})
 
+	// Section 8.5 refuses an object of a known type carrying unknown fields. The wallet
+	// implements only the members Section 5.1 and Appendix B.3.3.1 define, so whatever a
+	// type adds is refused instead of being silently dropped and signed over.
+	t.Run("a member the wallet does not implement is refused", func(t *testing.T) {
+		err := validateTransactionData(req(entry(map[string]any{"type": "sample_type", "credential_ids": []string{"pid_credential"}, "amount": "100"})), supported)
+		require.NotNil(t, err)
+		assert.Equal(t, InvalidTransactionDataError, err.Code)
+	})
+
+	// A json.Decoder accepts anything after the object where json.Unmarshal refused it,
+	// so the guard that keeps refusing it is pinned rather than assumed.
+	t.Run("trailing data after the object is refused", func(t *testing.T) {
+		trailing := base64.RawURLEncoding.EncodeToString([]byte(`{"type":"sample_type","credential_ids":["pid_credential"]}{"type":"sample_type"}`))
+		err := validateTransactionData(req(trailing), supported)
+		require.NotNil(t, err)
+		assert.Equal(t, InvalidTransactionDataError, err.Code)
+	})
+
 	t.Run("an entry that is not base64url is refused", func(t *testing.T) {
 		err := validateTransactionData(req("not base64!"), supported)
 		require.NotNil(t, err)

@@ -1,6 +1,7 @@
 package oid4vp
 
 import (
+	"bytes"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -190,8 +191,18 @@ func decodeTransactionData(i int, encoded string) (*transactionData, *Authorizat
 		return nil, newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] is not base64url: %v", i, err)
 	}
 	var data transactionData
-	if err := json.Unmarshal(decoded, &data); err != nil {
+	// Unknown members are refused, not dropped (Section 8.5). The wallet implements only
+	// the members Section 5.1 and Appendix B.3.3.1 define, so a member it does not know is
+	// one it cannot show the holder, and signing a Key Binding JWT over an authorization
+	// nobody could read is worse than refusing the request. A decoder accepts anything
+	// after the object where Unmarshal would not, so More guards what Unmarshal caught.
+	dec := json.NewDecoder(bytes.NewReader(decoded))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&data); err != nil {
 		return nil, newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] is not a transaction data object: %v", i, err)
+	}
+	if dec.More() {
+		return nil, newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] has trailing data after the transaction data object", i)
 	}
 	return &data, nil
 }
