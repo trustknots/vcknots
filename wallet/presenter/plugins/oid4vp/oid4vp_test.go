@@ -226,12 +226,19 @@ const signedRequestObjectHost = "verifier.example.org"
 // with a self-signed certificate whose dNSName SAN matches the x509_san_dns client_id.
 // This is the only shape a signed request object can take, because every other Client
 // Identifier Prefix leaves the wallet without a trusted key (OID4VP 1.0 Section 5.9.3).
-// Callers override or add claims through extra.
+// Callers override or add claims through extra, where a nil value removes a claim.
+// dnsNames overrides the certificate's dNSName SAN, which tests that need the error
+// response delivered locally must set: the destination check compares the response_uri
+// host against the client_id, so both have to name the capturing server.
 //
 // The returned pool trusts the signing certificate, for the tests that exercise real
 // chain verification. Tests that skip verification discard it.
-func newSignedRequestObject(t *testing.T, extra map[string]any) (string, *x509.CertPool) {
+func newSignedRequestObject(t *testing.T, extra map[string]any, dnsNames ...string) (string, *x509.CertPool) {
 	t.Helper()
+
+	if len(dnsNames) == 0 {
+		dnsNames = []string{signedRequestObjectHost}
+	}
 
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -240,7 +247,7 @@ func newSignedRequestObject(t *testing.T, extra map[string]any) (string, *x509.C
 		SerialNumber:          big.NewInt(1),
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
-		DNSNames:              []string{signedRequestObjectHost},
+		DNSNames:              dnsNames,
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 	}
@@ -274,6 +281,12 @@ func newSignedRequestObject(t *testing.T, extra map[string]any) (string, *x509.C
 		},
 	}
 	for k, v := range extra {
+		// Left in place a nil would reach the wallet as the string "<nil>" and count as
+		// present, so it removes the claim instead and the parameter is genuinely missing.
+		if v == nil {
+			delete(claims, k)
+			continue
+		}
 		claims[k] = v
 	}
 
@@ -669,12 +682,14 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 			wantErr: true,
 			errSub:  "dcql_query.credentials must be a non-empty array",
 		},
-		// redirect_uri matches the client_id-derived value on purpose so the
-		// mismatch check (redirectURIFromParam vs redirectURIFromClientID) does
-		// not fire first and the new exclusivity check is exercised.
+		// Section 8.2 forbids the pair whatever the Response Mode, and response_mode
+		// here is deliberately not direct_post: the refusal now carries a code, so with
+		// direct_post this case would post it to the response_uri named below.
+		// TestOid4vpPresenter_SendsErrorAuthorizationResponse covers that delivery
+		// against a local server.
 		{
 			name:    "redirect_uri and response_uri must not coexist",
-			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=direct_post&redirect_uri=http://example.com/cb&response_uri=https://example.com/response",
+			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=fragment&redirect_uri=http://example.com/cb&response_uri=https://example.com/response",
 			wantErr: true,
 			errSub:  "redirect_uri and response_uri must not both be present",
 		},
@@ -693,6 +708,21 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 	}
 }
 
+// newErrorCapturingServer stands in for the Verifier's response_uri and records the
+// form it is posted, so a test can assert both what was delivered and that nothing was.
+func newErrorCapturingServer(t *testing.T) (*httptest.Server, *url.Values) {
+	t.Helper()
+	captured := &url.Values{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("failed to parse form: %v", err)
+		}
+		*captured = r.PostForm
+		w.WriteHeader(http.StatusOK)
+	}))
+	return server, captured
+}
+
 // When an Authorization Request is rejected with an OAuth error code and
 // response_mode=direct_post, the wallet posts the error authorization response
 // (error, error_description, state) to response_uri.
@@ -700,19 +730,6 @@ func TestOid4vpPresenter_SendsErrorAuthorizationResponse(t *testing.T) {
 	t.Setenv(env.HTTP_ALLOWED.String(), "true")
 
 	p := &Oid4vpPresenter{}
-
-	newErrorCapturingServer := func(t *testing.T) (*httptest.Server, *url.Values) {
-		t.Helper()
-		captured := &url.Values{}
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if err := r.ParseForm(); err != nil {
-				t.Errorf("failed to parse form: %v", err)
-			}
-			*captured = r.PostForm
-			w.WriteHeader(http.StatusOK)
-		}))
-		return server, captured
-	}
 
 	baseURI := func(responseURI, extraParams string) string {
 		return "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&state=err-state&response_mode=direct_post&response_uri=" +
@@ -738,6 +755,12 @@ func TestOid4vpPresenter_SendsErrorAuthorizationResponse(t *testing.T) {
 			name:        "unsupported format posts vp_formats_not_supported",
 			extraParams: "&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%22c1%22%2C%22format%22%3A%22mso_mdoc%22%2C%22meta%22%3A%7B%7D%7D%5D%7D",
 			wantError:   "vp_formats_not_supported",
+		},
+		{
+			// Section 8.2 makes this one a MUST rather than a local refusal.
+			name:        "redirect_uri with direct_post posts invalid_request",
+			extraParams: "&redirect_uri=http://example.com/cb&dcql_query=" + testDcqlQueryParam,
+			wantError:   "invalid_request",
 		},
 		{
 			name:        "presentation_definition posts invalid_request",
@@ -785,9 +808,9 @@ func TestOid4vpPresenter_SendsErrorAuthorizationResponse(t *testing.T) {
 		}
 	})
 
-	// A Request Object's validation fails before its signature is verified,
-	// so its response_uri is unauthenticated and must not receive the error
-	// authorization response.
+	// A Request Object whose Client Identifier Prefix names no verification key can
+	// never be authenticated, so the response_uri it names must not receive the error
+	// authorization response however well-formed the rest of the request is.
 	t.Run("no error response for request object path", func(t *testing.T) {
 		server, captured := newErrorCapturingServer(t)
 		defer server.Close()
@@ -824,6 +847,100 @@ func TestOid4vpPresenter_SendsErrorAuthorizationResponse(t *testing.T) {
 		if !strings.Contains(err.Error(), "failed to send error authorization response") {
 			t.Fatalf("expected send failure to be reported, got: %v", err)
 		}
+	})
+}
+
+// TestOid4vpPresenter_SignedRequestObject_ErrorAuthorizationResponse pins OID4VP 1.0
+// Section 8.2 on the signed Request Object path: a parameter error is answered at the
+// Verifier's response_uri once the certificate, the signature and the response
+// destination check out, and is answered nowhere when any of those fails.
+func TestOid4vpPresenter_SignedRequestObject_ErrorAuthorizationResponse(t *testing.T) {
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+	// The certificate, the client_id and the response_uri all have to name the capturing
+	// server, since the destination check compares that host against the client_id.
+	objectFor := func(t *testing.T, server *httptest.Server, extra map[string]any) string {
+		t.Helper()
+		host := mustParseURL(t, server.URL).Hostname()
+		claims := map[string]any{
+			"client_id":    "x509_san_dns:" + host,
+			"response_uri": server.URL,
+			"state":        "err-state",
+		}
+		for k, v := range extra {
+			claims[k] = v
+		}
+		obj, _ := newSignedRequestObject(t, claims, host)
+		return obj
+	}
+	uriFor := func(obj string) string {
+		return "openid4vp://present?request=" + url.QueryEscape(obj)
+	}
+
+	t.Run("a missing parameter is answered once the Verifier is authenticated", func(t *testing.T) {
+		server, captured := newErrorCapturingServer(t)
+		defer server.Close()
+
+		obj := objectFor(t, server, map[string]any{"nonce": nil})
+		_, err := newSignedRequestObjectPresenter().ParsePresentationRequest(uriFor(obj))
+		require.Error(t, err)
+		assert.Equal(t, "invalid_request", captured.Get("error"))
+		assert.Contains(t, captured.Get("error_description"), "nonce")
+		assert.Equal(t, "err-state", captured.Get("state"))
+		assert.Empty(t, captured.Get("vp_token"))
+	})
+
+	// The case Section 8.2 makes a MUST.
+	t.Run("a redirect_uri with direct_post is answered with invalid_request", func(t *testing.T) {
+		server, captured := newErrorCapturingServer(t)
+		defer server.Close()
+
+		obj := objectFor(t, server, map[string]any{"redirect_uri": server.URL + "/cb"})
+		_, err := newSignedRequestObjectPresenter().ParsePresentationRequest(uriFor(obj))
+		require.Error(t, err)
+		assert.Equal(t, "invalid_request", captured.Get("error"))
+		assert.Contains(t, captured.Get("error_description"), "must not both be present")
+	})
+
+	t.Run("a signature that does not verify is answered nowhere", func(t *testing.T) {
+		server, captured := newErrorCapturingServer(t)
+		defer server.Close()
+
+		parts := strings.Split(objectFor(t, server, map[string]any{"nonce": nil}), ".")
+		require.Len(t, parts, 3)
+		// One character of the signature, so header and payload stay well-formed and the
+		// request fails at verification rather than at parsing.
+		flipped := []byte(parts[2])
+		if flipped[0] == 'A' {
+			flipped[0] = 'B'
+		} else {
+			flipped[0] = 'A'
+		}
+		parts[2] = string(flipped)
+
+		_, err := newSignedRequestObjectPresenter().ParsePresentationRequest(uriFor(strings.Join(parts, ".")))
+		require.Error(t, err)
+		assert.Empty(t, *captured, "nothing authenticated the response_uri")
+	})
+
+	t.Run("a response_uri the client_id does not name is answered nowhere", func(t *testing.T) {
+		server, captured := newErrorCapturingServer(t)
+		defer server.Close()
+
+		// The certificate and the client_id name the capturing server by address while
+		// the response_uri names it by hostname. The destination check therefore sees a
+		// host it did not authenticate, even though a POST would arrive at the very
+		// server watching, so this fails if the check is ever dropped.
+		parsed := mustParseURL(t, server.URL)
+		obj, _ := newSignedRequestObject(t, map[string]any{
+			"client_id":    "x509_san_dns:" + parsed.Hostname(),
+			"response_uri": "http://localhost:" + parsed.Port() + "/response",
+			"nonce":        nil,
+		}, parsed.Hostname())
+
+		_, err := newSignedRequestObjectPresenter().ParsePresentationRequest(uriFor(obj))
+		require.Error(t, err)
+		assert.Empty(t, *captured)
 	})
 }
 

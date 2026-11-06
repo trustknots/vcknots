@@ -85,10 +85,10 @@ func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*Credentia
 	if err != nil {
 		// OID4VP: when the Authorization Request is rejected with an OAuth
 		// error code and response_mode=direct_post, deliver the error
-		// authorization response to the Verifier's response_uri. Requests
-		// received as Request Objects are excluded: their validation fails
-		// before the signature is verified, so the response_uri is not yet
-		// trustworthy (see requestBuilder.errorResponseAllowed).
+		// authorization response to the Verifier's response_uri. A Request Object
+		// reaches here only once its signature and response destination have been
+		// checked, because WithRequestObject holds its parameter errors back until
+		// then (see requestBuilder.errorResponseAllowed).
 		var authzErr *AuthorizationRequestError
 		if errors.As(err, &authzErr) && builder.errorResponseAllowed {
 			if sendErr := p.SendAuthorizationErrorResponse(builder.req, authzErr); sendErr != nil {
@@ -497,11 +497,13 @@ type requestBuilder struct {
 	x509TrustChainRoots    *x509.CertPool
 	insecureSkipX509Verify bool
 	errValidation          error
-	// errorResponseAllowed marks that the request parameters came from plain
-	// query parameters (user-initiated URI). Validation failures on the
-	// Request Object paths occur before the object's signature is verified,
-	// so their response_uri is unauthenticated and must not receive an error
-	// authorization response (unauthenticated outbound POST / SSRF primitive).
+	// errorResponseAllowed marks that the response_uri may receive an error
+	// authorization response, because whoever named it has been authenticated.
+	// Plain query parameters set it at once, the URI being user-initiated. A
+	// Request Object sets it only after its certificate chain, signature,
+	// client_id and response destination have all been checked; until then its
+	// response_uri is unauthenticated and posting there would be an
+	// unauthenticated outbound POST (an SSRF primitive).
 	errorResponseAllowed bool
 }
 
@@ -554,9 +556,11 @@ func (b *requestBuilder) validate() error {
 // redirect_uri and response_uri request parameters are both set. Per OID4VP
 // they are mutually exclusive on the wire: response_uri is used with
 // response_mode=direct_post (and its JWT variant), redirect_uri otherwise.
-func validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam string) error {
+// Section 8.2 requires the refusal to reach the Verifier as invalid_request, so it
+// carries the code rather than being a plain error.
+func validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam string) *AuthorizationRequestError {
 	if redirectURIFromParam != "" && responseURIFromParam != "" {
-		return fmt.Errorf("redirect_uri and response_uri must not both be present in the same request")
+		return newAuthorizationRequestError(InvalidRequestError, "redirect_uri and response_uri must not both be present in the same request")
 	}
 	return nil
 }
@@ -623,11 +627,6 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 		}
 	}
 
-	if redirectURIFromParam != "" && redirectURIFromClientID != "" && redirectURIFromParam != redirectURIFromClientID {
-		b.errValidation = fmt.Errorf("redirect_uri mismatch between parameter and one derived from client_id")
-		return
-	}
-
 	b.req.RedirectURI = redirectURIFromClientID
 	b.req.State = getParam("state", false)
 	b.req.Nonce = getParam("nonce", true)
@@ -636,17 +635,27 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 
 	responseURIFromParam := getParam("response_uri", b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost)
 
-	if err := validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam); err != nil {
-		b.errValidation = err
-		return
-	}
-
 	b.req.ResponseURI = responseURIFromParam
 
 	// The checks below are performed after the response parameters
 	// (response_mode, response_uri, state) are populated, so that the
 	// resulting *AuthorizationRequestError can be delivered to the Verifier
 	// as an error authorization response when response_mode=direct_post.
+
+	// Section 8.2 makes this one a MUST, so it comes before the mismatch below: with
+	// x509_san_dns the client_id yields a bare DNS name, which no redirect_uri URL can
+	// equal, so the mismatch would otherwise always answer first and send nothing.
+	if authzErr := validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam); authzErr != nil {
+		b.errValidation = authzErr
+		return
+	}
+
+	// A redirect_uri contradicting the one the client_id names leaves no Verifier this
+	// could be answered to, so it stays a plain error that reaches nobody.
+	if redirectURIFromParam != "" && redirectURIFromClientID != "" && redirectURIFromParam != redirectURIFromClientID {
+		b.errValidation = fmt.Errorf("redirect_uri mismatch between parameter and one derived from client_id")
+		return
+	}
 
 	// Presentation Exchange based parameters were removed in OID4VP 1.0 in
 	// favor of dcql_query; this wallet does not accept them.
@@ -808,10 +817,16 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 
 	b.setParamsWithAnyMap(claims)
 
-	if err := b.validate(); err != nil {
-		b.errValidation = err
-		return b
+	// Held back rather than returned. Sections 8.2 and 8.5 send these refusals to the
+	// Verifier's response_uri, and at this point nothing has authenticated that
+	// destination, so they surface only once the certificate chain, the signature, the
+	// client_id and the response destination have all been checked. Nothing between here
+	// and there reads errValidation, so clearing it cannot skip a check.
+	paramErr := b.errValidation
+	if paramErr == nil {
+		paramErr = b.validate()
 	}
+	b.errValidation = nil
 
 	// x509_san_dns
 	clientID, err := parseOID4VPClientID(b.req.ClientID)
@@ -945,6 +960,18 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 			return b
 		}
 
+		// Everything above authenticates the Verifier and its response destination, so a
+		// parameter error held back earlier can now be delivered there.
+		b.errValidation = paramErr
+		b.errorResponseAllowed = true
+		return b
+	}
+
+	// A held parameter error is still the more specific answer, and leaving
+	// errorResponseAllowed unset keeps it from being delivered to a destination no key
+	// has authenticated.
+	if paramErr != nil {
+		b.errValidation = paramErr
 		return b
 	}
 
