@@ -46,6 +46,10 @@ export {
   DynamoDbOAuthClientAssertionJtiStoreOptions,
   dynamodbOAuthClientAssertionJtiStore,
 } from './providers/dynamodb-oauth-client-assertion-jti-store.provider'
+export {
+  DynamoDbVerifierTransactionDataStoreOptions,
+  dynamodbVerifierTransactionDataStore,
+} from './providers/dynamodb-verifier-transaction-store.provider'
 export { KmsProviderOptions, resolveKmsClient } from './providers/kms'
 export { kmsAuthzSignatureKeyStore } from './providers/kms-authz-signature-key-store.provider'
 export { kmsIssuerSignatureKeyStore } from './providers/kms-issuer-signature-key-store.provider'
