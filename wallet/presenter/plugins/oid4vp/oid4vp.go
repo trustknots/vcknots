@@ -1,6 +1,7 @@
 package oid4vp
 
 import (
+	"bytes"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,6 +27,18 @@ type Oid4vpPresenter struct {
 	// WARNING: This should NEVER be set to true in production environments.
 	// This is only for conformance testing with self-signed or non-standard certificates.
 	InsecureSkipX509Verify bool
+	// SupportedTransactionDataTypes lists the transaction data types whose definition
+	// adds no member of its own. Listing a type is the shorthand for registering
+	// baseTransactionDataProfile as its validator, so an entry of a listed type is
+	// refused once it carries anything beyond the members OID4VP 1.0 Section 5.1 and
+	// Appendix B.3.3.1 define. A type that defines members of its own needs
+	// RegisterTransactionDataType instead.
+	SupportedTransactionDataTypes []string
+	// transactionDataValidators holds the validator each registered type is checked
+	// with. A type that is neither registered nor listed above is one the wallet cannot
+	// check, so while both are empty every request carrying transaction_data is rejected
+	// with invalid_transaction_data (Section 5.1).
+	transactionDataValidators map[string]TransactionDataValidator
 }
 
 // ParsePresentationRequest parses the presentation request URI and returns a CredentialPresentationRequest,
@@ -79,27 +93,255 @@ func (p *Oid4vpPresenter) ParsePresentationRequest(uriString string) (*Credentia
 	if err != nil {
 		// OID4VP: when the Authorization Request is rejected with an OAuth
 		// error code and response_mode=direct_post, deliver the error
-		// authorization response to the Verifier's response_uri. Requests
-		// received as Request Objects are excluded: their validation fails
-		// before the signature is verified, so the response_uri is not yet
-		// trustworthy (see requestBuilder.errorResponseAllowed).
+		// authorization response to the Verifier's response_uri. A Request Object
+		// reaches here only once its signature and response destination have been
+		// checked, because WithRequestObject holds its parameter errors back until
+		// then (see requestBuilder.errorResponseAllowed).
 		var authzErr *AuthorizationRequestError
 		if errors.As(err, &authzErr) && builder.errorResponseAllowed {
-			if sendErr := p.sendAuthorizationErrorResponse(builder.req, authzErr); sendErr != nil {
+			if sendErr := p.SendAuthorizationErrorResponse(builder.req, authzErr); sendErr != nil {
 				return nil, fmt.Errorf("failed to build CredentialPresentationRequest: %w (also failed to send error authorization response: %v)", err, sendErr)
 			}
 		}
 		return nil, fmt.Errorf("failed to build CredentialPresentationRequest: %w", err)
 	}
 
+	// The request is validated by this point. A Request Object is accepted only
+	// through x509_san_dns with a verified certificate chain (see WithRequestObject),
+	// so the Verifier is authenticated and its response_uri may receive the error.
+	if authzErr := p.validateTransactionData(req); authzErr != nil {
+		if sendErr := p.SendAuthorizationErrorResponse(req, authzErr); sendErr != nil {
+			return nil, fmt.Errorf("rejected transaction_data: %w (also failed to send error authorization response: %v)", authzErr, sendErr)
+		}
+		return nil, fmt.Errorf("rejected transaction_data: %w", authzErr)
+	}
+
 	return req, nil
 }
 
-// sendAuthorizationErrorResponse posts the OAuth 2.0 error authorization
+// transactionData is the part of a transaction data object every type shares
+// (OID4VP 1.0 Section 5.1).
+type transactionData struct {
+	Type          string   `json:"type"`
+	CredentialIDs []string `json:"credential_ids"`
+	// TransactionDataHashesAlg is the candidate list the entry offers for the hash
+	// in transaction_data_hashes, one of which has to be used. It belongs to the
+	// transaction data object, not to the Authorization Request
+	// (OID4VP 1.0 Appendix B.3.3.1).
+	TransactionDataHashesAlg []string `json:"transaction_data_hashes_alg,omitempty"`
+	// raw is the entry's JSON as the Verifier sent it, which the type's validator needs
+	// because the members a type defines are exactly the ones this struct cannot hold.
+	// Being unexported it is invisible to encoding/json, so a member named raw is an
+	// unknown member like any other.
+	raw json.RawMessage
+}
+
+// defaultTransactionDataHashesAlg is what an entry that omits the member asks for,
+// and the one algorithm every implementation must support (Appendix B.3.3.1).
+const defaultTransactionDataHashesAlg = "sha-256"
+
+// TransactionDataValidator checks one transaction data entry against the definition of
+// the type it is registered for. Section 5.1 requires an error for "transaction data not
+// conforming to the respective type definition" while leaving those definitions out of
+// scope ("The specific values are out of scope for this specification"), so only whoever
+// implements a type can check what it adds.
+//
+// object is the entry's decoded JSON, exactly as the Verifier sent it. That is what the
+// remaining conditions of Section 8.5 need: a member the type does not define, a member
+// of the wrong type, an invalid value and a missing required member are all invisible to
+// a decoder that knows only the members every type shares. Those shared members (type,
+// credential_ids and the Appendix B.3.3.1 transaction_data_hashes_alg) are already
+// checked when a validator runs, so it only has to cover its own type.
+//
+// A non-nil error refuses the whole request with invalid_transaction_data, and its text
+// reaches the Verifier in error_description, so it should describe the entry rather than
+// the wallet's internals.
+type TransactionDataValidator func(object json.RawMessage) error
+
+// RegisterTransactionDataType makes the wallet accept transaction data entries whose
+// type is typeName, checked with validator. It returns the presenter, so a registration
+// can be written where the presenter is wired, and it replaces both an earlier
+// registration for the same type and the base profile a SupportedTransactionDataTypes
+// entry asks for. Register before the presenter parses a request: the registrations are
+// read without a lock and are not meant to change while requests are in flight.
+func (p *Oid4vpPresenter) RegisterTransactionDataType(typeName string, validator TransactionDataValidator) *Oid4vpPresenter {
+	if p.transactionDataValidators == nil {
+		p.transactionDataValidators = map[string]TransactionDataValidator{}
+	}
+	p.transactionDataValidators[typeName] = validator
+	return p
+}
+
+// transactionDataValidator returns the validator a type is checked with, or nil when the
+// wallet supports no such type.
+func (p *Oid4vpPresenter) transactionDataValidator(typeName string) TransactionDataValidator {
+	if validator, ok := p.transactionDataValidators[typeName]; ok {
+		return validator
+	}
+	if slices.Contains(p.SupportedTransactionDataTypes, typeName) {
+		return baseTransactionDataProfile
+	}
+	return nil
+}
+
+// baseTransactionDataProfile is the validator of a type that defines no member of its
+// own: it refuses anything beyond type, credential_ids and transaction_data_hashes_alg
+// (Section 5.1 and Appendix B.3.3.1). A member the wallet does not know is one it cannot
+// show the holder, and signing a Key Binding JWT over an authorization nobody could read
+// is worse than refusing the request (Section 8.5). Only the unknown-member check is
+// left here, since decodeTransactionData has already parsed object as a single JSON
+// value and checked the shared members.
+func baseTransactionDataProfile(object json.RawMessage) error {
+	dec := json.NewDecoder(bytes.NewReader(object))
+	dec.DisallowUnknownFields()
+	var data transactionData
+	return dec.Decode(&data)
+}
+
+// TransactionDataHashAlg picks the hash algorithm for the transaction_data_hashes of
+// the Key Binding JWT (OID4VP 1.0 Appendix B.3.3.1). The KB-JWT carries one algorithm
+// for every entry, so the value has to satisfy each entry's candidate list; an entry
+// without the member asks for sha-256. A candidate supported rejects is dropped, since
+// answering with it would fail a request another candidate answers, and sha-256 wins
+// when it survives because every implementation supports it. When nothing survives the
+// request cannot be answered, and the empty string makes the serializer refuse rather
+// than hash with an algorithm nobody asked for.
+func (r *CredentialPresentationRequest) TransactionDataHashAlg(supported func(alg string) bool) string {
+	var candidates []string
+	seen := false
+	for i, encoded := range r.TransactionData {
+		data, authzErr := decodeTransactionData(i, encoded)
+		if authzErr != nil {
+			// validateTransactionData has already refused a request that cannot decode.
+			continue
+		}
+		offered := data.TransactionDataHashesAlg
+		// Absent, not empty: an empty member offers nothing, so it has to leave no candidate
+		// and let the caller refuse. validateTransactionData refuses it on the parse path,
+		// but this method is exported and a caller can build the request itself.
+		if offered == nil {
+			offered = []string{defaultTransactionDataHashesAlg}
+		}
+		if !seen {
+			candidates, seen = slices.Clone(offered), true
+			continue
+		}
+		candidates = slices.DeleteFunc(candidates, func(alg string) bool { return !slices.Contains(offered, alg) })
+	}
+	if !seen {
+		candidates = []string{defaultTransactionDataHashesAlg}
+	}
+	candidates = slices.DeleteFunc(candidates, func(alg string) bool { return !supported(alg) })
+	switch {
+	case slices.Contains(candidates, defaultTransactionDataHashesAlg):
+		return defaultTransactionDataHashesAlg
+	case len(candidates) > 0:
+		return candidates[0]
+	default:
+		return ""
+	}
+}
+
+// referencedCredentialQuery returns the dc+sd-jwt Credential Query a transaction data
+// entry names, or nil when the request carries none with that id.
+func referencedCredentialQuery(query *DcqlQuery, id string) *CredentialQuery {
+	if query == nil {
+		return nil
+	}
+	i := slices.IndexFunc(query.Credentials, func(c CredentialQuery) bool { return c.ID == id && c.Format == "dc+sd-jwt" })
+	if i < 0 {
+		return nil
+	}
+	return &query.Credentials[i]
+}
+
+func decodeTransactionData(i int, encoded string) (*transactionData, *AuthorizationRequestError) {
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(encoded, "="))
+	if err != nil {
+		return nil, newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] is not base64url: %v", i, err)
+	}
+	var data transactionData
+	// Unmarshal, not a json.Decoder: it refuses anything after the object, where a
+	// decoder reads the object and leaves the rest. Decoder.More only reports whether an
+	// array or object has a further element, so it answers false for a trailing } or ]
+	// and would let that through. Unknown members survive this decode and are left to
+	// the type's validator, which is the only thing that knows whether they belong.
+	if err := json.Unmarshal(decoded, &data); err != nil {
+		return nil, newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] is not a transaction data object: %v", i, err)
+	}
+	data.raw = decoded
+	return &data, nil
+}
+
+// validateTransactionData checks every transaction_data entry against OID4VP 1.0
+// Section 5.1: a base64url-encoded JSON object of a supported type, with credential_ids
+// that name Credential Queries of the request, conforming to its own type definition.
+// The members every type shares are checked here and the rest by the type's validator,
+// because Section 5.1 leaves each type's definition to the document specifying it. Only
+// dc+sd-jwt can carry transaction data, in its Key Binding JWT (Appendix B.3.3).
+func (p *Oid4vpPresenter) validateTransactionData(req *CredentialPresentationRequest) *AuthorizationRequestError {
+	for i, encoded := range req.TransactionData {
+		data, authzErr := decodeTransactionData(i, encoded)
+		if authzErr != nil {
+			return authzErr
+		}
+		validator := p.transactionDataValidator(data.Type)
+		if validator == nil {
+			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] has unsupported type %q", i, data.Type)
+		}
+		if len(data.CredentialIDs) == 0 {
+			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d].credential_ids is required", i)
+		}
+		for _, id := range data.CredentialIDs {
+			query := referencedCredentialQuery(req.DcqlQuery, id)
+			if query == nil {
+				return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d].credential_ids %q is not a dc+sd-jwt Credential Query of the request", i, id)
+			}
+			// The mechanism needs an SD-JWT VC with Cryptographic Holder Binding, so a
+			// Credential Query that opts out of it cannot authorize a transaction
+			// (OID4VP 1.0 Appendix B.3.3). Only the referenced queries are checked:
+			// an unrelated query may still opt out.
+			if !query.RequiresCryptographicHolderBinding() {
+				return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d].credential_ids %q sets require_cryptographic_holder_binding to false", i, id)
+			}
+		}
+		// Appendix B.3.3.1 makes this member a non-empty array and reserves the sha-256
+		// default for an entry that omits it, so an empty one offers nothing while still
+		// requiring the response hash to be one of its values. A JSON null decodes to the
+		// same nil as an absent member and is taken as absent.
+		if data.TransactionDataHashesAlg != nil && len(data.TransactionDataHashesAlg) == 0 {
+			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d].transaction_data_hashes_alg must be a non-empty array when present", i)
+		}
+		// The type's own members come last, so a validator is written against an entry
+		// whose shared members already hold.
+		if err := validator(data.raw); err != nil {
+			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] does not conform to type %q: %v", i, data.Type, err)
+		}
+	}
+	return nil
+}
+
+// CheckTransactionDataFor rejects transaction data that does not reference the
+// Credential Query the wallet answers: the Wallet must use one of the referenced
+// Credentials for transaction authorization (OID4VP 1.0 Sections 5.1 and 8.5).
+func (r *CredentialPresentationRequest) CheckTransactionDataFor(queryID string) *AuthorizationRequestError {
+	for i, encoded := range r.TransactionData {
+		data, authzErr := decodeTransactionData(i, encoded)
+		if authzErr != nil {
+			return authzErr
+		}
+		if !slices.Contains(data.CredentialIDs, queryID) {
+			return newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] does not reference the Credential the wallet presents", i)
+		}
+	}
+	return nil
+}
+
+// SendAuthorizationErrorResponse posts the OAuth 2.0 error authorization
 // response (error, error_description and state) to the Verifier's
 // response_uri when response_mode=direct_post. It is a no-op when the
 // partially parsed request has no usable direct_post response_uri.
-func (p *Oid4vpPresenter) sendAuthorizationErrorResponse(req *CredentialPresentationRequest, authzErr *AuthorizationRequestError) error {
+func (p *Oid4vpPresenter) SendAuthorizationErrorResponse(req *CredentialPresentationRequest, authzErr *AuthorizationRequestError) error {
 	if req == nil || req.ResponseMode != OAuthAuthzReqResponseModeDirectPost || req.ResponseURI == "" {
 		return nil
 	}
@@ -340,11 +582,13 @@ type requestBuilder struct {
 	x509TrustChainRoots    *x509.CertPool
 	insecureSkipX509Verify bool
 	errValidation          error
-	// errorResponseAllowed marks that the request parameters came from plain
-	// query parameters (user-initiated URI). Validation failures on the
-	// Request Object paths occur before the object's signature is verified,
-	// so their response_uri is unauthenticated and must not receive an error
-	// authorization response (unauthenticated outbound POST / SSRF primitive).
+	// errorResponseAllowed marks that the response_uri may receive an error
+	// authorization response, because whoever named it has been authenticated.
+	// Plain query parameters set it at once, the URI being user-initiated. A
+	// Request Object sets it only after its certificate chain, signature,
+	// client_id and response destination have all been checked; until then its
+	// response_uri is unauthenticated and posting there would be an
+	// unauthenticated outbound POST (an SSRF primitive).
 	errorResponseAllowed bool
 }
 
@@ -397,9 +641,11 @@ func (b *requestBuilder) validate() error {
 // redirect_uri and response_uri request parameters are both set. Per OID4VP
 // they are mutually exclusive on the wire: response_uri is used with
 // response_mode=direct_post (and its JWT variant), redirect_uri otherwise.
-func validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam string) error {
+// Section 8.2 requires the refusal to reach the Verifier as invalid_request, so it
+// carries the code rather than being a plain error.
+func validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam string) *AuthorizationRequestError {
 	if redirectURIFromParam != "" && responseURIFromParam != "" {
-		return fmt.Errorf("redirect_uri and response_uri must not both be present in the same request")
+		return newAuthorizationRequestError(InvalidRequestError, "redirect_uri and response_uri must not both be present in the same request")
 	}
 	return nil
 }
@@ -466,11 +712,6 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 		}
 	}
 
-	if redirectURIFromParam != "" && redirectURIFromClientID != "" && redirectURIFromParam != redirectURIFromClientID {
-		b.errValidation = fmt.Errorf("redirect_uri mismatch between parameter and one derived from client_id")
-		return
-	}
-
 	b.req.RedirectURI = redirectURIFromClientID
 	b.req.State = getParam("state", false)
 	b.req.Nonce = getParam("nonce", true)
@@ -479,11 +720,6 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 
 	responseURIFromParam := getParam("response_uri", b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost)
 
-	if err := validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam); err != nil {
-		b.errValidation = err
-		return
-	}
-
 	b.req.ResponseURI = responseURIFromParam
 
 	// The checks below are performed after the response parameters
@@ -491,8 +727,23 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 	// resulting *AuthorizationRequestError can be delivered to the Verifier
 	// as an error authorization response when response_mode=direct_post.
 
+	// Section 8.2 makes this one a MUST, so it comes before the mismatch below: with
+	// x509_san_dns the client_id yields a bare DNS name, which no redirect_uri URL can
+	// equal, so the mismatch would otherwise always answer first and send nothing.
+	if authzErr := validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam); authzErr != nil {
+		b.errValidation = authzErr
+		return
+	}
+
+	// A redirect_uri contradicting the one the client_id names leaves no Verifier this
+	// could be answered to, so it stays a plain error that reaches nobody.
+	if redirectURIFromParam != "" && redirectURIFromClientID != "" && redirectURIFromParam != redirectURIFromClientID {
+		b.errValidation = fmt.Errorf("redirect_uri mismatch between parameter and one derived from client_id")
+		return
+	}
+
 	// Presentation Exchange based parameters were removed in OID4VP 1.0 in
-	// favor of dcql_query; this wallet does not accept them (Issue #606).
+	// favor of dcql_query; this wallet does not accept them.
 	for _, unsupported := range []string{"presentation_definition", "presentation_definition_uri", "presentation_submission"} {
 		if _, exists := params[unsupported]; exists {
 			b.errValidation = newAuthorizationRequestError(InvalidRequestError, "%s is not supported; use dcql_query instead", unsupported)
@@ -550,15 +801,30 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 	}
 
 	if td, exists := params["transaction_data"]; exists && td != nil {
+		// Assigned rather than appended: the Request Object path runs this twice.
+		b.req.TransactionData = nil
 		switch v := td.(type) {
 		case []interface{}:
-			for _, item := range v {
-				if str, ok := item.(string); ok {
-					b.req.TransactionData = append(b.req.TransactionData, str)
+			for i, item := range v {
+				str, ok := item.(string)
+				if !ok {
+					b.errValidation = newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data[%d] must be a string", i)
+					return
 				}
+				b.req.TransactionData = append(b.req.TransactionData, str)
 			}
 		case []string:
 			b.req.TransactionData = v
+		case string:
+			// A query parameter carries the array as JSON.
+			if err := json.Unmarshal([]byte(v), &b.req.TransactionData); err != nil {
+				b.errValidation = newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data must be a JSON array of strings: %v", err)
+				return
+			}
+		}
+		if len(b.req.TransactionData) == 0 {
+			b.errValidation = newAuthorizationRequestError(InvalidTransactionDataError, "transaction_data must be a non-empty array of strings")
+			return
 		}
 	}
 
@@ -636,10 +902,16 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 
 	b.setParamsWithAnyMap(claims)
 
-	if err := b.validate(); err != nil {
-		b.errValidation = err
-		return b
+	// Held back rather than returned. Sections 8.2 and 8.5 send these refusals to the
+	// Verifier's response_uri, and at this point nothing has authenticated that
+	// destination, so they surface only once the certificate chain, the signature, the
+	// client_id and the response destination have all been checked. Nothing between here
+	// and there reads errValidation, so clearing it cannot skip a check.
+	paramErr := b.errValidation
+	if paramErr == nil {
+		paramErr = b.validate()
 	}
+	b.errValidation = nil
 
 	// x509_san_dns
 	clientID, err := parseOID4VPClientID(b.req.ClientID)
@@ -740,7 +1012,7 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 			return b
 		}
 
-		// ClientID should contain DNS name which is same as the SAN of the leaf certificate in the x5c array (OID4VP x509_san_dns). #106
+		// ClientID should contain DNS name which is same as the SAN of the leaf certificate in the x5c array (OID4VP x509_san_dns).
 		matched := false
 		for _, n := range (*certificates)[0].DNSNames {
 			if clientID.original == n {
@@ -753,7 +1025,7 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 			return b
 		}
 
-		// response_uri / redirect_uri check #107
+		// response_uri / redirect_uri check
 		var uri *url.URL
 		if b.req.ResponseMode == "direct_post" {
 			uri, err = url.Parse(b.req.ResponseURI)
@@ -773,6 +1045,18 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 			return b
 		}
 
+		// Everything above authenticates the Verifier and its response destination, so a
+		// parameter error held back earlier can now be delivered there.
+		b.errValidation = paramErr
+		b.errorResponseAllowed = true
+		return b
+	}
+
+	// A held parameter error is still the more specific answer, and leaving
+	// errorResponseAllowed unset keeps it from being delivered to a destination no key
+	// has authenticated.
+	if paramErr != nil {
+		b.errValidation = paramErr
 		return b
 	}
 
@@ -807,7 +1091,7 @@ func (b *requestBuilder) WithRequestObject(obj string) *requestBuilder {
 // https scheme, set Content-Type: application/x-www-form-urlencoded and
 // Accept: application/oauth-authz-req+jwt. The https requirement is also
 // applied to the GET method for project-wide consistency with the same
-// guard in wallet/receiver/plugins/oid4vci/oid4vci.go (Issue #29).
+// guard in wallet/receiver/plugins/oid4vci/oid4vci.go.
 // It can be relaxed by setting the VCKNOTS_WALLET_HTTP_ALLOWED environment
 // variable for testing.
 func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMethod) *requestBuilder {

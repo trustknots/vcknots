@@ -373,14 +373,17 @@ func presentCredential(w *wallet.Wallet, key wallet.IKeyEntry, oid4vpURI string)
 }
 ```
 
-`PresentCredential` は、OID4VP リクエストをパースし（`request_uri` で参照される JAR Request Object も含み、その署名は `X509TrustChainRoots` に対して検証されます）、保存済みの Credential のうち最も新しく受領した 1 件を選択し（DCQL クエリとの照合は現時点では行いません）、`key` で Verifiable Presentation をシリアライズして署名し、Verifier の `response_uri`（`response_mode=direct_post`）に POST します。
+`PresentCredential` は、OID4VP リクエストをパースし（`request_uri` で参照される JAR Request Object も含み、その署名は `X509TrustChainRoots` に対して検証されます）、リクエストの DCQL クエリに合致する保存済みの Credential のうち最も新しい 1 件を選択し（`format`、SD-JWT VC では `meta.vct_values`、および `credential_sets` を照合します）、`key` で Verifiable Presentation をシリアライズして署名し、Verifier の `response_uri`（`response_mode=direct_post`）に POST します。
 Wallet が `redirect_uri` に送信することはありません。
 Verifier の応答に `redirect_uri` が含まれる場合、その値が戻り値として呼び出し側に返されます（含まれない場合は空文字列です）。
+クエリを満たす Credential を保有していない場合は、提示の代わりに `access_denied` のエラー応答を POST します。理由は添えません。どの Credential を保有しているかを Verifier に知らせてしまうためです（OID4VP 1.0 Section 15.9）。
 
 * **提示オプション:** 第 3 引数にはフォーマット固有のオプションを渡します。
 SD-JWT VC では `sdjwtvc.SdJwtVcPresentationOptions` により、Key Binding JWT の付与（`RequireKeyBinding`）を制御します。
-開示するクレームは DCQL クエリの `claims` が指定したもの（`claim_sets` がある場合は満たせる最初の選択肢）になり、`claims` が無い場合は 1 件も開示しません（OID4VP 1.0 Section 6.4.1）。Credential が要求されたクレームを持っていない場合、または `SelectedClaims` を指定していてその範囲外のクレームが要求された場合、`PresentCredential` は `serializerTypes.ErrClaimsNotSatisfiable` で失敗し、Verifier には何も送りません。
-KB-JWT の audience と nonce は OID4VP リクエスト（`client_id` と `nonce`）から自動的に設定されます。リクエストに transaction data が含まれる場合の `transaction_data` ハッシュも同様です。
+開示するクレームは DCQL クエリの `claims` が指定したもの（`claim_sets` がある場合は満たせる最初の選択肢）になり、`claims` が無い場合は 1 件も開示しません（OID4VP 1.0 Section 6.4.1）。1 つの Credential Query に複数の保存済み Credential が一致する場合は、要求されたクレームをすべて提示できるもののうち最も新しいものを提示します。どれも提示できない場合は、クエリの `credential_sets` の次の選択肢に移ります。どの選択肢も残っていない場合、または `SelectedClaims` を指定していてその範囲外のクレームが要求された場合、`PresentCredential` は `serializerTypes.ErrClaimsNotSatisfiable` で失敗し、提示の代わりに `access_denied` のエラー応答を Verifier に POST します。
+KB-JWT の audience と nonce は OID4VP リクエスト（`client_id` と `nonce`）から自動的に設定されます。リクエストに transaction data が含まれる場合の `transaction_data` ハッシュも同様で、アルゴリズムは各 transaction data オブジェクトの `transaction_data_hashes_alg` が揃って受け入れ、かつ serializer が計算できる値を使います（省略時は sha-256）。
+`transaction_data` を含むリクエストは、その type がすべて `oid4vp.Oid4vpPresenter.SupportedTransactionDataTypes` に列挙されているか `oid4vp.Oid4vpPresenter.RegisterTransactionDataType` で登録されているかのいずれかでない限り `invalid_transaction_data` で拒否します。どちらも既定値は空です。エントリがその type の定義に適合しない場合も拒否します。列挙は「その type が `type` / `credential_ids` / `transaction_data_hashes_alg` 以外のメンバーを定義しない」という宣言なので、それ以外のメンバーを持つエントリは拒否されます。独自のメンバーを定義する type には `oid4vp.TransactionDataValidator` を登録します。Section 5.1 は type ごとの定義をその type を規定する文書に委ねているため、validator が Verifier の送ってきたままの JSON を受け取り、type が定義しないメンバー・型が違うメンバー・不正な値・必須メンバーの欠落（Section 8.5 が既知 type のオブジェクトについて挙げる条件）をエラーにします。エラーの文面は `error_description` として Verifier に届きます。エントリが参照する Credential Query が Cryptographic Holder Binding を要求していない場合も同じく拒否します（OID4VP 1.0 Appendix B.3.3）。全エントリが提示していて serializer が計算できる `transaction_data_hashes_alg` が 1 つも無い場合も拒否します。
+`TransactionData` と `TransactionDataHashesAlg` は提示のたびに上書きし、リクエストに含まれない場合は消去するので、1 つのオプション値を使い回しても前のリクエストの値が残りません。`RequireKeyBinding` は、transaction data を含むリクエストで一度強制されると戻りません。
 `nil` を渡すと、その Credential のフォーマットに応じたデフォルトのオプションが使われます（JWT-VC の提示では `nil` が典型的です）。
 * **リダイレクト処理:** Verifier のリダイレクト URI をコールバックで受け取りたい場合は、`PresentCredentialWithOptions` に `&wallet.PresentCredentialOptions{OnRedirect: func(uri string) error {...}}` を渡します。
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 
 	"github.com/trustknots/vcknots/wallet/credential"
 )
@@ -30,6 +31,17 @@ type CredentialQuery struct {
 	Claims []ClaimQuery `json:"claims,omitempty"`
 	// ClaimSets lists alternative combinations of Claims ids.
 	ClaimSets [][]string `json:"claim_sets,omitempty"`
+	// RequireCryptographicHolderBinding indicates whether the Verifier requires a
+	// Cryptographic Holder Binding proof. It is a pointer because Section 6.1 makes
+	// the default true, so an absent member is not the Go zero value.
+	RequireCryptographicHolderBinding *bool `json:"require_cryptographic_holder_binding,omitempty"`
+}
+
+// RequiresCryptographicHolderBinding reports whether the Credential Query asks for a
+// Cryptographic Holder Binding proof. Omitting the member means it does: Section 6.1
+// fixes the default at true.
+func (q *CredentialQuery) RequiresCryptographicHolderBinding() bool {
+	return q.RequireCryptographicHolderBinding == nil || *q.RequireCryptographicHolderBinding
 }
 
 // ClaimQuery is one entry of a Credential Query's claims (OID4VP 1.0 Section 6.3).
@@ -44,6 +56,138 @@ type ClaimQuery struct {
 type CredentialSetQuery struct {
 	Options  [][]string `json:"options,omitempty"`
 	Required *bool      `json:"required,omitempty"`
+}
+
+// Matches reports whether a held Credential with the given Credential Format
+// Identifier satisfies the format and meta constraints of the Credential Query
+// (Section 6.1, Appendix B). Its claims are checked when the presentation is
+// serialized.
+func (q *CredentialQuery) Matches(format string, cred *credential.Credential) bool {
+	if q.Format != format || cred == nil {
+		return false
+	}
+	// Only the dc+sd-jwt meta (vct_values, Appendix B.3.5) is applied; other formats
+	// match on format alone. Add type_values when jwt_vc_json needs it.
+	if format == "dc+sd-jwt" {
+		return matchVctValues(q.Meta, cred.Types)
+	}
+	return true
+}
+
+// matchVctValues requires the SD-JWT VC type (vct) to be one of vct_values. Type
+// inheritance is not resolved. Without vct_values nothing is constrained.
+func matchVctValues(meta map[string]any, credentialTypes []string) bool {
+	raw, present := meta["vct_values"]
+	if !present {
+		return true
+	}
+	values, ok := raw.([]any)
+	if !ok {
+		return false
+	}
+	for _, v := range values {
+		if vct, ok := v.(string); ok && slices.Contains(credentialTypes, vct) {
+			return true
+		}
+	}
+	return false
+}
+
+// SelectCredentialQuery returns the Credential Query the wallet answers (OID4VP 1.0
+// Section 6.4.2). held reports whether the wallet holds a Credential matching a
+// Credential Query. It fails with access_denied when a required Credential is not
+// held. Optional Credential Set Queries are answered only when nothing is required.
+func (d *DcqlQuery) SelectCredentialQuery(held func(*CredentialQuery) bool) (*CredentialQuery, error) {
+	byID := make(map[string]*CredentialQuery, len(d.Credentials))
+	for i := range d.Credentials {
+		byID[d.Credentials[i].ID] = &d.Credentials[i]
+	}
+	satisfiable := func(ids []string) bool {
+		for _, id := range ids {
+			q, ok := byID[id]
+			if !ok || !held(q) {
+				return false
+			}
+		}
+		return true
+	}
+	if len(d.CredentialSets) == 0 {
+		ids := make([]string, 0, len(d.Credentials))
+		for _, q := range d.Credentials {
+			ids = append(ids, q.ID)
+		}
+		if !satisfiable(ids) {
+			return nil, newAuthorizationRequestError(AccessDeniedError, "the wallet does not hold every requested Credential")
+		}
+		// One Credential per response for now: a request that needs more is refused
+		// rather than half answered, since Section 6.4.2 forbids partial answers.
+		if len(ids) != 1 {
+			return nil, fmt.Errorf("presenting %d Credentials in one response is not supported", len(ids))
+		}
+		return byID[ids[0]], nil
+	}
+
+	if single := d.singleCredentialAnswer(held); single != "" {
+		return byID[single], nil
+	}
+
+	// Nothing answers with one Credential, so all that is left is to work out which
+	// refusal to send. Anything the refusals below do not name would need a second one.
+	anyRequired := false
+	for i, set := range d.CredentialSets {
+		if set.Required != nil && !*set.Required {
+			continue
+		}
+		anyRequired = true
+		if !slices.ContainsFunc(set.Options, satisfiable) {
+			return nil, newAuthorizationRequestError(AccessDeniedError, "the wallet cannot satisfy dcql_query.credential_sets[%d]", i)
+		}
+	}
+	if !anyRequired && !slices.ContainsFunc(d.CredentialSets, func(set CredentialSetQuery) bool {
+		return slices.ContainsFunc(set.Options, satisfiable)
+	}) {
+		return nil, newAuthorizationRequestError(AccessDeniedError, "the wallet cannot satisfy any dcql_query.credential_sets entry")
+	}
+	return nil, fmt.Errorf("presenting more than one Credential in one response is not supported")
+}
+
+// singleCredentialAnswer returns the id of a Credential Query that answers the
+// Credential Set Queries with one Credential, or "" when none does. A response carries
+// one Credential, so settling each set in turn can pick a Credential an earlier set
+// offers and leave a later required set needing a second one, refusing a request that
+// one Credential answers. Section 6.4.3 leaves the choice among a set's options to the
+// Wallet, so preferring the Credential they share is allowed.
+func (d *DcqlQuery) singleCredentialAnswer(held func(*CredentialQuery) bool) string {
+	// answersAlone reports whether one of the options asks for nothing but id.
+	answersAlone := func(options [][]string, id string) bool {
+		return slices.ContainsFunc(options, func(option []string) bool {
+			return len(option) > 0 && !slices.ContainsFunc(option, func(optionID string) bool { return optionID != id })
+		})
+	}
+	for i := range d.Credentials {
+		q := &d.Credentials[i]
+		if !held(q) {
+			continue
+		}
+		answersAll, offered := true, false
+		for _, set := range d.CredentialSets {
+			switch {
+			case answersAlone(set.Options, q.ID):
+				offered = true
+			case set.Required == nil || *set.Required:
+				answersAll = false
+			}
+			if !answersAll {
+				break
+			}
+		}
+		// An optional set it answers is enough, but a Credential no set offers on its
+		// own answers nothing at all.
+		if answersAll && offered {
+			return q.ID
+		}
+	}
+	return ""
 }
 
 // AuthorizationRequestError is a validation failure of an OID4VP Authorization
@@ -124,8 +268,18 @@ func parseDcqlQuery(raw any) (*DcqlQuery, error) {
 			return nil, newAuthorizationRequestError(InvalidRequestError, "dcql_query.credential_sets must be a non-empty array when present")
 		}
 		for i, item := range setsArray {
-			if _, ok := item.(map[string]any); !ok {
+			set, ok := item.(map[string]any)
+			if !ok {
 				return nil, newAuthorizationRequestError(InvalidRequestError, "dcql_query.credential_sets[%d] must be a JSON object", i)
+			}
+			// Section 6.2 fixes the shape and requires every id to reference an entry of
+			// credentials. Left to SelectCredentialQuery an unknown id reads as a Credential
+			// the wallet does not hold, so the request was refused with access_denied, or
+			// quietly answered when another option covered it, instead of being reported as
+			// malformed. An empty element is satisfied by presenting nothing, which only a
+			// plain error the Verifier never hears about catches.
+			if !isIDArrays(set["options"], seenIDs) {
+				return nil, newAuthorizationRequestError(InvalidRequestError, "dcql_query.credential_sets[%d].options must be a non-empty array of non-empty arrays of Credential Query ids", i)
 			}
 		}
 	}
@@ -165,7 +319,10 @@ func decodeDcqlQueryObject(raw any) (map[string]any, error) {
 }
 
 // validateCredentialQuery validates a single Credential Query object as per
-// OID4VP 1.0 Section 6.1, recording its id in seenIDs for duplicate detection.
+// OID4VP 1.0 Section 6.1, recording its id in seenIDs, which detects duplicates and is
+// also the set credential_sets options are checked against. The id is recorded before
+// the rest of the object, so only returning on the first error keeps a rejected query's
+// id out of that set.
 func validateCredentialQuery(index int, credentialQuery map[string]any, seenIDs map[string]bool) error {
 	rawID, exists := credentialQuery["id"]
 	if !exists {
@@ -206,6 +363,13 @@ func validateCredentialQuery(index int, credentialQuery map[string]any, seenIDs 
 	if rawMultiple, exists := credentialQuery["multiple"]; exists {
 		if _, ok := rawMultiple.(bool); !ok {
 			return newAuthorizationRequestError(InvalidRequestError, "dcql_query.credentials[%d].multiple must be a boolean", index)
+		}
+	}
+
+	// Absence is not an error because Section 6.1 fixes the default at true.
+	if rawBinding, exists := credentialQuery["require_cryptographic_holder_binding"]; exists {
+		if _, ok := rawBinding.(bool); !ok {
+			return newAuthorizationRequestError(InvalidRequestError, "dcql_query.credentials[%d].require_cryptographic_holder_binding must be a boolean", index)
 		}
 	}
 

@@ -20,6 +20,18 @@ import (
 
 const defaultHashAlgorithm = "sha-256"
 
+// SupportsTransactionDataHashesAlg reports whether this serializer can hash with alg.
+// Each transaction data object offers its own candidates and one of them has to be
+// used (OID4VP 1.0 Appendix B.3.3.1), so whatever picks among them has to know which
+// ones come out of computeDisclosureHash.
+func SupportsTransactionDataHashesAlg(alg string) bool {
+	switch strings.ToLower(alg) {
+	case "sha-256", "sha-384", "sha-512":
+		return true
+	}
+	return false
+}
+
 // SdJwtVcSerializer implements Serializer for SD-JWT VC format
 type SdJwtVcSerializer struct{}
 
@@ -196,12 +208,10 @@ func computeDisclosureHash(disclosure string, algorithm string) (string, error) 
 // normalizeSDHashAlgorithm applies RFC 9901 defaulting behavior for _sd_alg.
 // Unknown or empty values fall back to sha-256.
 func normalizeSDHashAlgorithm(algorithm string) string {
-	switch strings.ToLower(algorithm) {
-	case "sha-256", "sha-384", "sha-512":
-		return strings.ToLower(algorithm)
-	default:
+	if !SupportsTransactionDataHashesAlg(algorithm) {
 		return defaultHashAlgorithm
 	}
+	return strings.ToLower(algorithm)
 }
 
 // KeyBindingJWT represents the structure of a Key Binding JWT
@@ -245,13 +255,8 @@ func createKeyBindingJWT(
 		if len(transactionData) > 0 {
 			return "", fmt.Errorf("transaction_data_hashes_alg is required when transaction_data is present")
 		}
-	} else {
-		switch tdComputeAlg {
-		case "sha-256", "sha-384", "sha-512":
-			// valid
-		default:
-			return "", fmt.Errorf("unsupported transaction_data_hashes_alg: %s", transactionDataHashesAlg)
-		}
+	} else if !SupportsTransactionDataHashesAlg(tdComputeAlg) {
+		return "", fmt.Errorf("unsupported transaction_data_hashes_alg: %s", transactionDataHashesAlg)
 	}
 
 	var transactionDataHashes []string
@@ -527,6 +532,12 @@ func (s *SdJwtVcSerializer) SerializePresentation(
 		if !ok {
 			return nil, nil, types.NewInvalidCredentialError("invalid presentation options type", nil)
 		}
+	}
+
+	// Transaction data is returned in the Key Binding JWT, so it cannot be dropped
+	// silently (OID4VP 1.0 Section 8.4, Appendix B.3.3).
+	if sdOpts != nil && len(sdOpts.TransactionData) > 0 && !sdOpts.RequireKeyBinding {
+		return nil, nil, types.NewInvalidCredentialError("transaction data requires a Key Binding JWT", nil)
 	}
 
 	// Validate key binding requirements

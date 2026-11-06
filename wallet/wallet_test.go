@@ -34,6 +34,7 @@ import (
 	"github.com/trustknots/vcknots/wallet/keystore"
 	"github.com/trustknots/vcknots/wallet/presenter"
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
+	presenterTypes "github.com/trustknots/vcknots/wallet/presenter/types"
 	"github.com/trustknots/vcknots/wallet/receiver"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer/plugins/jwtvc"
@@ -4504,52 +4505,79 @@ func newPIDBoundKeyEntry(t *testing.T) IKeyEntry {
 	return key
 }
 
+// sampleSdJWT is the PID the OIDF OpenID4VP conformance runs present.
+func sampleSdJWT(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("examples", "server_integration_sdjwt", "example_sd_jwt.txt"))
+	require.NoError(t, err)
+	return strings.TrimSpace(string(raw))
+}
+
+// newSampleCredStore returns a throwaway store holding the given SD-JWT VCs, oldest
+// first. It is throwaway because the default store is the conformance runner's.
+func newSampleCredStore(t *testing.T, sdJWTs ...string) *credstore.CredStoreDispatcher {
+	t.Helper()
+	store, err := local.NewLocalCredentialStorage(filepath.Join(t.TempDir(), "credstore.db"))
+	require.NoError(t, err)
+	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithPlugin(credstore.SupportedCredStoreTypes(0), store))
+	require.NoError(t, err)
+	received := time.Now().Add(-time.Duration(len(sdJWTs)) * time.Hour)
+	for i, sdJWT := range sdJWTs {
+		require.NoError(t, credStore.SaveCredentialEntry(credstore.CredentialEntry{
+			Id:         fmt.Sprintf("pid-%d", i),
+			ReceivedAt: received.Add(time.Duration(i) * time.Hour),
+			Raw:        []byte(sdJWT),
+			MimeType:   string(credential.SDJwtVC),
+		}, credstore.SupportedCredStoreTypes(0)))
+	}
+	return credStore
+}
+
+// newRecordingVerifier returns the form the Verifier receives and its response_uri.
+func newRecordingVerifier(t *testing.T) (*url.Values, string) {
+	t.Helper()
+	received := &url.Values{}
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, r.ParseForm())
+		*received = r.PostForm
+		rw.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	return received, server.URL + "/response"
+}
+
+// oid4vpRequestURI builds a direct_post Authorization Request for dcql, overriding or
+// adding the parameters in extra.
+func oid4vpRequestURI(responseURI, dcql string, extra url.Values) string {
+	params := url.Values{
+		"client_id":     {"redirect_uri:" + responseURI},
+		"response_type": {"vp_token"},
+		"response_mode": {"direct_post"},
+		"response_uri":  {responseURI},
+		"nonce":         {"nonce-1"},
+		"state":         {"state-1"},
+		"dcql_query":    {dcql},
+	}
+	for name, values := range extra {
+		params[name] = values
+	}
+	return "openid4vp://authorize?" + params.Encode()
+}
+
 // TestController_PresentCredential_DCQL_Integration presents the PID used for the OIDF
 // OpenID4VP conformance runs against the DCQL shapes the suite's modules send, and checks
 // what reaches the Verifier's response_uri.
 func TestController_PresentCredential_DCQL_Integration(t *testing.T) {
 	t.Setenv(env.HTTP_ALLOWED.String(), "true")
 
-	raw, err := os.ReadFile(filepath.Join("examples", "server_integration_sdjwt", "example_sd_jwt.txt"))
-	require.NoError(t, err)
-
-	// A throwaway store: the default one is the store the conformance runner uses.
-	store, err := local.NewLocalCredentialStorage(filepath.Join(t.TempDir(), "credstore.db"))
-	require.NoError(t, err)
-	credStore, err := credstore.NewCredStoreDispatcher(credstore.WithPlugin(credstore.SupportedCredStoreTypes(0), store))
-	require.NoError(t, err)
-	require.NoError(t, credStore.SaveCredentialEntry(credstore.CredentialEntry{
-		Id:         "pid",
-		ReceivedAt: time.Now(),
-		Raw:        []byte(strings.TrimSpace(string(raw))),
-		MimeType:   string(credential.SDJwtVC),
-	}, credstore.SupportedCredStoreTypes(0)))
-
-	w, err := NewWalletWithConfig(Config{CredStore: credStore})
+	w, err := NewWalletWithConfig(Config{CredStore: newSampleCredStore(t, sampleSdJWT(t))})
 	require.NoError(t, err)
 
 	presentWith := func(t *testing.T, dcql string, options *sdjwtvc.SdJwtVcPresentationOptions) (url.Values, error) {
 		t.Helper()
-		var received url.Values
-		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-			assert.NoError(t, r.ParseForm())
-			received = r.PostForm
-			rw.WriteHeader(http.StatusOK)
-		}))
-		defer server.Close()
-
-		responseURI := server.URL + "/response"
-		params := url.Values{
-			"client_id":     {"redirect_uri:" + responseURI},
-			"response_type": {"vp_token"},
-			"response_mode": {"direct_post"},
-			"response_uri":  {responseURI},
-			"nonce":         {"nonce-1"},
-			"state":         {"state-1"},
-			"dcql_query":    {dcql},
-		}
-		_, err := w.PresentCredential("openid4vp://authorize?"+params.Encode(), newPIDBoundKeyEntry(t), options)
-		return received, err
+		received, responseURI := newRecordingVerifier(t)
+		_, err := w.PresentCredential(oid4vpRequestURI(responseURI, dcql, nil), newPIDBoundKeyEntry(t), options)
+		return *received, err
 	}
 	present := func(t *testing.T, dcql string) (url.Values, error) {
 		t.Helper()
@@ -4607,20 +4635,177 @@ func TestController_PresentCredential_DCQL_Integration(t *testing.T) {
 	})
 
 	// The Credential must not be returned when it cannot deliver every requested claim
-	// (OID4VP 1.0 Section 6.4.1). Telling the Verifier with an error response is not
-	// part of this change, so nothing reaches it.
-	t.Run("returns nothing when the credential lacks a requested claim", func(t *testing.T) {
+	// (OID4VP 1.0 Section 6.4.1), and the Verifier is told why with access_denied
+	// (Section 8.5). The reason is withheld, because it would reveal which Credentials
+	// the user holds (Section 15.9).
+	t.Run("refuses with access_denied when the credential lacks a requested claim", func(t *testing.T) {
 		received, err := present(t, `{"credentials":[{"id":"pid_credential",`+pidMeta+`,"claims":[{"path":["given_name"]},{"path":["age_over_18"]}]}]}`)
 		require.ErrorIs(t, err, serializerTypes.ErrClaimsNotSatisfiable)
-		assert.Empty(t, received, "nothing may be sent to the Verifier")
+		assert.Equal(t, []string{"access_denied"}, received["error"])
+		assert.Empty(t, received["vp_token"], "no Credential may be returned")
+		assert.Empty(t, received["error_description"], "the reason would reveal what the user holds")
+	})
+
+	// Section 6.4.3 leaves the choice among a Credential Set's options to the Wallet, so
+	// an option whose claims the held Credential cannot deliver must not refuse the whole
+	// request while another option is answerable.
+	t.Run("a required Credential Set falls through to an option the claims allow", func(t *testing.T) {
+		received, err := present(t, `{"credentials":[
+			{"id":"pid_strict",`+pidMeta+`,"claims":[{"path":["age_over_18"]}]},
+			{"id":"pid_basic",`+pidMeta+`,"claims":[{"path":["given_name"]}]}],
+			"credential_sets":[{"options":[["pid_strict"],["pid_basic"]]}]}`)
+		require.NoError(t, err)
+		id, names := disclosed(t, received)
+		assert.Equal(t, "pid_basic", id, "pid_strict cannot disclose age_over_18")
+		assert.ElementsMatch(t, []string{"given_name"}, names)
+	})
+
+	t.Run("every option refused is still access_denied", func(t *testing.T) {
+		received, err := present(t, `{"credentials":[
+			{"id":"pid_strict",`+pidMeta+`,"claims":[{"path":["age_over_18"]}]},
+			{"id":"pid_stricter",`+pidMeta+`,"claims":[{"path":["age_over_21"]}]}],
+			"credential_sets":[{"options":[["pid_strict"],["pid_stricter"]]}]}`)
+		require.ErrorIs(t, err, serializerTypes.ErrClaimsNotSatisfiable)
+		assert.Equal(t, []string{"access_denied"}, received["error"])
+		assert.Empty(t, received["vp_token"])
+		assert.Empty(t, received["error_description"], "the reason would reveal what the user holds")
 	})
 
 	t.Run("SelectedClaims caps what the DCQL may disclose", func(t *testing.T) {
 		received, err := presentWith(t, `{"credentials":[{"id":"pid_credential",`+pidMeta+`,"claims":[{"path":["given_name"]},{"path":["family_name"]}]}]}`,
 			&sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: true, SelectedClaims: []string{"given_name"}})
 		require.ErrorIs(t, err, serializerTypes.ErrClaimsNotSatisfiable)
-		assert.Empty(t, received, "nothing may be sent to the Verifier")
+		assert.Equal(t, []string{"access_denied"}, received["error"])
+		assert.Empty(t, received["vp_token"], "no Credential may be returned")
 	})
+}
+
+// TestController_PresentCredential_ClaimsPickOlderCredential pins that a Credential
+// Query is answered by the newest held Credential that can deliver its claims, not by
+// the newest that matches its format and metadata. Section 6.4.1 forbids returning a
+// Credential that lacks a requested claim, but refusing the request while another held
+// Credential answers it withholds a presentation the Wallet could make.
+func TestController_PresentCredential_ClaimsPickOlderCredential(t *testing.T) {
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+	full := sampleSdJWT(t)
+
+	// withoutDisclosure drops one claim's disclosure, leaving a Credential whose payload
+	// still digests the claim but which cannot present it.
+	withoutDisclosure := func(t *testing.T, sdJWT, name string) (trimmed, removed string) {
+		t.Helper()
+		parts := strings.Split(sdJWT, "~")
+		for i := 1; i < len(parts); i++ {
+			decoded, decodeErr := base64.RawURLEncoding.DecodeString(parts[i])
+			if decodeErr != nil {
+				continue
+			}
+			var disclosure []any
+			if json.Unmarshal(decoded, &disclosure) != nil || len(disclosure) != 3 {
+				continue
+			}
+			if disclosure[1] == name {
+				return strings.Join(append(parts[:i:i], parts[i+1:]...), "~"), parts[i]
+			}
+		}
+		t.Fatalf("the example SD-JWT VC has no %q disclosure", name)
+		return "", ""
+	}
+
+	// The reissued Credential is the newer of the two.
+	reissued, familyName := withoutDisclosure(t, full, "family_name")
+	w, err := NewWalletWithConfig(Config{CredStore: newSampleCredStore(t, full, reissued)})
+	require.NoError(t, err)
+
+	received, responseURI := newRecordingVerifier(t)
+	uri := oid4vpRequestURI(responseURI, `{"credentials":[{"id":"pid_credential","format":"dc+sd-jwt",`+
+		`"meta":{"vct_values":["urn:eu.europa.ec.eudi:pid:1"]},`+
+		`"claims":[{"path":["given_name"]},{"path":["family_name"]}]}]}`, nil)
+
+	_, err = w.PresentCredential(uri, newPIDBoundKeyEntry(t), &sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: true})
+	require.NoError(t, err, "the older Credential delivers family_name")
+	assert.Empty(t, (*received)["error"])
+	assert.Contains(t, received.Get("vp_token"), familyName,
+		"the disclosure only the older Credential carries has to be in the response")
+}
+
+// newTransactionDataWallet builds a wallet holding the sample PID whose presenter
+// accepts the sample_type transaction data type, together with the Verifier that
+// records what reaches its response_uri.
+func newTransactionDataWallet(t *testing.T) (*Wallet, *url.Values, string) {
+	t.Helper()
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+
+	// The type has to be one the wallet accepts, or the request is refused before any
+	// Credential or hash algorithm is chosen.
+	presenters, err := presenter.NewPresentationDispatcher(presenter.WithPlugin(
+		presenterTypes.Oid4vp,
+		&oid4vp.Oid4vpPresenter{SupportedTransactionDataTypes: []string{"sample_type"}},
+	))
+	require.NoError(t, err)
+	w, err := NewWalletWithConfig(Config{CredStore: newSampleCredStore(t, sampleSdJWT(t)), Presenter: presenters})
+	require.NoError(t, err)
+
+	received, responseURI := newRecordingVerifier(t)
+	return w, received, responseURI
+}
+
+// transactionDataParam carries one transaction data entry. The query parameter form
+// holds the array as JSON.
+func transactionDataParam(entryJSON string) url.Values {
+	return url.Values{"transaction_data": {`["` + base64.RawURLEncoding.EncodeToString([]byte(entryJSON)) + `"]`}}
+}
+
+// TestController_PresentCredential_TransactionDataHashAlgRefused pins that a request
+// whose transaction data leaves no usable hash algorithm is refused to the Verifier
+// rather than abandoned. The hashes ride in the Key Binding JWT and nowhere else, so
+// the request cannot be answered at all, and Section 8.5 expects the Verifier to be
+// told instead of left waiting for a response.
+func TestController_PresentCredential_TransactionDataHashAlgRefused(t *testing.T) {
+	w, received, responseURI := newTransactionDataWallet(t)
+
+	// sha-1 is the only algorithm the entry offers, and the SD-JWT VC serializer cannot
+	// compute it.
+	uri := oid4vpRequestURI(responseURI,
+		`{"credentials":[{"id":"pid_credential","format":"dc+sd-jwt",`+
+			`"meta":{"vct_values":["urn:eu.europa.ec.eudi:pid:1"]}}]}`,
+		transactionDataParam(`{"type":"sample_type","credential_ids":["pid_credential"],"transaction_data_hashes_alg":["sha-1"]}`))
+
+	_, err := w.PresentCredential(uri, newPIDBoundKeyEntry(t), &sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: true})
+	require.Error(t, err)
+	assert.Equal(t, []string{"invalid_transaction_data"}, (*received)["error"],
+		"the Verifier has to be told rather than left waiting")
+	assert.Empty(t, (*received)["vp_token"])
+}
+
+// TestController_PresentCredential_TransactionDataPicksAReferencedQuery pins that a
+// Credential Query the transaction data does not reference is passed over rather than
+// ending the request. Section 5.1 lets the Wallet use any one of the Credentials the
+// entry references, so an option naming one of them is still answerable even after the
+// Wallet's first choice turns out not to be referenced.
+func TestController_PresentCredential_TransactionDataPicksAReferencedQuery(t *testing.T) {
+	w, received, responseURI := newTransactionDataWallet(t)
+
+	const pidMeta = `"format":"dc+sd-jwt","meta":{"vct_values":["urn:eu.europa.ec.eudi:pid:1"]}`
+	// pid_strict is referenced but cannot disclose age_over_18, pid_basic can disclose
+	// its claim but is not referenced, and pid_tx is both.
+	uri := oid4vpRequestURI(responseURI,
+		`{"credentials":[
+			{"id":"pid_strict",`+pidMeta+`,"claims":[{"path":["age_over_18"]}]},
+			{"id":"pid_basic",`+pidMeta+`,"claims":[{"path":["given_name"]}]},
+			{"id":"pid_tx",`+pidMeta+`,"claims":[{"path":["family_name"]}]}],
+			"credential_sets":[{"options":[["pid_strict"],["pid_basic"],["pid_tx"]]}]}`,
+		transactionDataParam(`{"type":"sample_type","credential_ids":["pid_strict","pid_tx"]}`))
+
+	_, err := w.PresentCredential(uri, newPIDBoundKeyEntry(t), &sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: true})
+	require.NoError(t, err)
+	assert.Empty(t, (*received)["error"])
+
+	var vpToken map[string][]string
+	require.NoError(t, json.Unmarshal([]byte(received.Get("vp_token")), &vpToken))
+	require.Len(t, vpToken, 1)
+	_, answered := vpToken["pid_tx"]
+	assert.True(t, answered, "the only option both referenced and answerable is pid_tx, got %v", vpToken)
 }
 
 func TestApplyOID4VPRequestOptions(t *testing.T) {
@@ -4680,6 +4865,46 @@ func TestApplyOID4VPRequestOptions(t *testing.T) {
 
 		require.NotNil(t, opts.ClaimsQuery, "the DCQL must take over from SelectedClaims")
 		assert.Nil(t, opts.ClaimsQuery.Claims)
+	})
+
+	t.Run("transaction data forces a Key Binding JWT", func(t *testing.T) {
+		opts := &sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: false}
+		withTransactionData := &oid4vp.CredentialPresentationRequest{
+			OAuthAuthzRequest: req.OAuthAuthzRequest,
+			TransactionData:   []string{"eyJ0eXBlIjoic2FtcGxlX3R5cGUifQ"},
+		}
+
+		applyOID4VPRequestOptions(withTransactionData, nil, opts)
+
+		assert.Equal(t, withTransactionData.TransactionData, opts.TransactionData)
+		assert.Equal(t, "sha-256", opts.TransactionDataHashesAlg, "the OID4VP default when the request omits it")
+		assert.True(t, opts.RequireKeyBinding, "the hashes are returned in the Key Binding JWT and nowhere else")
+	})
+
+	t.Run("a request without transaction data leaves key binding to the caller", func(t *testing.T) {
+		opts := &sdjwtvc.SdJwtVcPresentationOptions{RequireKeyBinding: false}
+
+		applyOID4VPRequestOptions(req, nil, opts)
+
+		assert.False(t, opts.RequireKeyBinding)
+		assert.Empty(t, opts.TransactionData)
+	})
+
+	// A caller may hold one options value and present twice. The second request must
+	// not answer with hashes over the first one's transaction data.
+	t.Run("a reused options value does not keep the previous transaction data", func(t *testing.T) {
+		opts := &sdjwtvc.SdJwtVcPresentationOptions{}
+		withTransactionData := &oid4vp.CredentialPresentationRequest{
+			OAuthAuthzRequest: req.OAuthAuthzRequest,
+			TransactionData:   []string{"eyJ0eXBlIjoic2FtcGxlX3R5cGUifQ"},
+		}
+
+		applyOID4VPRequestOptions(withTransactionData, nil, opts)
+		require.NotEmpty(t, opts.TransactionData, "precondition: the first request sets it")
+		applyOID4VPRequestOptions(req, nil, opts)
+
+		assert.Empty(t, opts.TransactionData)
+		assert.Empty(t, opts.TransactionDataHashesAlg)
 	})
 }
 

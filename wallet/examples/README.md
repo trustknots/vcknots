@@ -504,9 +504,11 @@ go run ./examples/conformance_sdjwt ./examples/server_integration_sdjwt/example_
 `common.NewMockKeyEntry()`. **Any other credential needs that same key, or the Key Binding
 JWT fails.**
 
-**Import it again right before each run.** The wallet presents the credential it received most
-recently and does not yet match it against the DCQL query, so a newer credential (for example one
-from an OID4VCI run) would be presented instead and fail `ValidateCredentialVctMatchesDcqlQuery`.
+The wallet selects on `format`, `meta.vct_values` and `credential_sets` and presents the newest
+match that can disclose the requested `claims`, so a credential from an unrelated OID4VCI run is
+not presented for a dcql it does not match and no reload is needed. Two credentials that share the
+`vct` are a different matter, because the newest wins: keep only the one whose `cnf` holds the mock
+key.
 
 ### Step 4: Run the Module
 
@@ -535,7 +537,8 @@ level=INFO msg="=== Credential Presented ==="
 
 - **`oid4vp-1final-wallet-alternate-happy-flow` cannot run with `direct_post` on suite 5.3.1.**
   The suite stops with `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`
-  before it contacts the wallet (conformance-suite issue #1982). The wallet cannot fix this.
+  before it contacts the wallet: the step that adds those parameters is applied even for
+  response modes that have none. The wallet cannot fix this.
 - **Some negative modules end in REVIEW, not PASSED.** An invalid Request Object signature and
   a mismatched or invalid `client_id` cannot be authenticated, so rejecting them without
   answering the Verifier is correct and REVIEW is the final result. `missing-nonce` and

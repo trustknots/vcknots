@@ -504,9 +504,11 @@ go run ./examples/conformance_sdjwt ./examples/server_integration_sdjwt/example_
 公開鍵と一致しているからである。**別の資格情報でも同じモック鍵が `cnf` に必要で、
 無ければ Key Binding JWT が失敗する。**
 
-**実行の直前に毎回投入し直すこと。** Wallet は最後に受け取った資格情報を提示し、DCQL との照合はまだ行わない。
-そのため OID4VCI の実行などで新しい資格情報が入っていると、そちらが提示されて
-`ValidateCredentialVctMatchesDcqlQuery` で失敗する。
+Wallet は `format`、`meta.vct_values`、`credential_sets` で保存済みの資格情報を照合し、
+要求された `claims` を開示できるもののうち最も新しいものを提示する。そのため OID4VCI の実行などで
+無関係な資格情報が入っていても dcql に一致しないものは提示されず、毎回の投入し直しも要らない。
+`vct` が同じ資格情報が 2 件あるときは別で、新しい方が選ばれる。
+モック鍵を `cnf` に持つものだけを残すこと。
 
 ### ステップ4: モジュールを実行する
 
@@ -534,7 +536,7 @@ level=INFO msg="=== Credential Presented ==="
 
 - **suite 5.3.1 では `oid4vp-1final-wallet-alternate-happy-flow` を `direct_post` で実行できない。**
   suite が Wallet に接続する前に `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`
-  で停止する（conformance-suite issue #1982）。Wallet 側では直せない。
+  で停止する。暗号化パラメータを足す手順が、それを持たない response mode でも適用されているため。Wallet 側では直せない。
 - **一部の否定系モジュールは PASSED ではなく REVIEW で終わる。** Request Object の署名不正と `client_id` の
   不一致・不正は、リクエストを認証できないため、Verifier に応答せず拒否するのが正しく、REVIEW が最終結果になる。
   一方 `missing-nonce` と `redirect-uri-with-direct-post` は署名自体は正しいので、本来は `response_uri` に

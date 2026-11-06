@@ -1389,3 +1389,21 @@ func TestSdJwtVcPresentationOptions_SetNonce(t *testing.T) {
 		})
 	}
 }
+
+// TestSerializePresentation_TransactionDataNeedsKeyBinding pins that transaction data
+// is never dropped silently: it is returned in the Key Binding JWT (OID4VP 1.0 Section
+// 8.4, Appendix B.3.3), so a presentation without one cannot carry it.
+func TestSerializePresentation_TransactionDataNeedsKeyBinding(t *testing.T) {
+	serializer, err := NewSdJwtVcSerializer()
+	require.NoError(t, err)
+	presentation := &credential.CredentialPresentation{
+		Types:       []string{"VerifiablePresentation"},
+		Credentials: [][]byte{[]byte(createTestSDJWT())},
+	}
+
+	_, _, err = serializer.SerializePresentation(credential.SDJwtVC, presentation, nil, &SdJwtVcPresentationOptions{
+		RequireKeyBinding: false,
+		TransactionData:   []string{"eyJ0eXBlIjoic2FtcGxlX3R5cGUifQ"},
+	})
+	require.Error(t, err, "transaction data is present without a Key Binding JWT")
+}
