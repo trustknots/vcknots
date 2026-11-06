@@ -109,27 +109,44 @@ describe('dynamodbVerifierTransactionDataStore', () => {
     assert.equal(fetched, null)
   })
 
-  it('should return null when the transaction is expired', async () => {
+  it('should return null and delete the item when the transaction is expired', async () => {
     const pastExpiry = Date.now() - 1000
     ddbMock.on(GetCommand).resolves({
       Item: { id: transactionId, ...transactionRecord, expires_at: pastExpiry },
     })
+    ddbMock.on(DeleteCommand).resolves({})
 
     const provider = createProvider()
     const fetched = await provider.fetch(transactionId)
 
     assert.equal(fetched, null)
+    const deleteCall = ddbMock.commandCalls(DeleteCommand)[0]
+    assert.equal(deleteCall?.args[0].input.TableName, TABLE_NAME)
+    assert.deepEqual(deleteCall?.args[0].input.Key, { id: transactionId })
   })
 
-  it('should return null when expires_at is missing', async () => {
+  it('should return null and delete the item when expires_at is missing', async () => {
     ddbMock.on(GetCommand).resolves({
       Item: { id: transactionId, ...transactionRecord },
     })
+    ddbMock.on(DeleteCommand).resolves({})
 
     const provider = createProvider()
     const fetched = await provider.fetch(transactionId)
 
     assert.equal(fetched, null)
+    assert.equal(ddbMock.commandCalls(DeleteCommand).length, 1)
+  })
+
+  it('should not delete a transaction that has not expired', async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { id: transactionId, ...transactionRecord, expires_at: Date.now() + 300 * 1000 },
+    })
+
+    const provider = createProvider()
+    await provider.fetch(transactionId)
+
+    assert.equal(ddbMock.commandCalls(DeleteCommand).length, 0)
   })
 
   it('should reject a stored item that does not match the Transaction schema', async () => {

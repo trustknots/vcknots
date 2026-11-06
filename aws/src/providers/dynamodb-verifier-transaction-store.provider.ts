@@ -77,6 +77,13 @@ export const dynamodbVerifierTransactionDataStore = (
 
       // DynamoDB TTL is eventually consistent — check manually.
       if (typeof item.expires_at !== 'number' || Date.now() > item.expires_at) {
+        // Delete now instead of waiting for TTL.
+        await client.send(
+          new DeleteCommand({
+            TableName: tableName,
+            Key: { id: transactionId },
+          })
+        )
         return null
       }
 
