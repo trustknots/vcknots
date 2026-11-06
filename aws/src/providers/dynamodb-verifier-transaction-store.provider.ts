@@ -77,13 +77,22 @@ export const dynamodbVerifierTransactionDataStore = (
 
       // DynamoDB TTL is eventually consistent — check manually.
       if (typeof item.expires_at !== 'number' || Date.now() > item.expires_at) {
-        // Delete now instead of waiting for TTL.
-        await client.send(
-          new DeleteCommand({
-            TableName: tableName,
-            Key: { id: transactionId },
-          })
-        )
+        // Delete now instead of waiting for TTL, keeping an item re-saved since the read above.
+        // A failure here is left to TTL: the transaction is expired for the caller either way.
+        try {
+          await client.send(
+            new DeleteCommand({
+              TableName: tableName,
+              Key: { id: transactionId },
+              ConditionExpression: 'attribute_not_exists(expires_at) OR expires_at < :now',
+              ExpressionAttributeValues: { ':now': Date.now() },
+            })
+          )
+        } catch (error) {
+          if ((error as { name?: string })?.name !== 'ConditionalCheckFailedException') {
+            console.error(`Failed to delete expired transaction ${transactionId}: ${error}`)
+          }
+        }
         return null
       }
 

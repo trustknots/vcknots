@@ -123,6 +123,43 @@ describe('dynamodbVerifierTransactionDataStore', () => {
     const deleteCall = ddbMock.commandCalls(DeleteCommand)[0]
     assert.equal(deleteCall?.args[0].input.TableName, TABLE_NAME)
     assert.deepEqual(deleteCall?.args[0].input.Key, { id: transactionId })
+    assert.equal(
+      deleteCall?.args[0].input.ConditionExpression,
+      'attribute_not_exists(expires_at) OR expires_at < :now'
+    )
+    assert.equal(typeof deleteCall?.args[0].input.ExpressionAttributeValues?.[':now'], 'number')
+  })
+
+  it('should return null without logging when the item was re-saved before the delete', async (t) => {
+    const logged = t.mock.method(console, 'error', () => {})
+    ddbMock.on(GetCommand).resolves({
+      Item: { id: transactionId, ...transactionRecord, expires_at: Date.now() - 1000 },
+    })
+    ddbMock.on(DeleteCommand).rejects(
+      Object.assign(new Error('conditional check failed'), {
+        name: 'ConditionalCheckFailedException',
+      })
+    )
+
+    const provider = createProvider()
+    const fetched = await provider.fetch(transactionId)
+
+    assert.equal(fetched, null)
+    assert.equal(logged.mock.callCount(), 0)
+  })
+
+  it('should return null and log when deleting an expired transaction fails', async (t) => {
+    const logged = t.mock.method(console, 'error', () => {})
+    ddbMock.on(GetCommand).resolves({
+      Item: { id: transactionId, ...transactionRecord, expires_at: Date.now() - 1000 },
+    })
+    ddbMock.on(DeleteCommand).rejects(new Error('throttled'))
+
+    const provider = createProvider()
+    const fetched = await provider.fetch(transactionId)
+
+    assert.equal(fetched, null)
+    assert.equal(logged.mock.callCount(), 1)
   })
 
   it('should return null and delete the item when expires_at is missing', async () => {
