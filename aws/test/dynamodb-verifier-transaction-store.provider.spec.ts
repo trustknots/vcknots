@@ -130,8 +130,7 @@ describe('dynamodbVerifierTransactionDataStore', () => {
     assert.equal(typeof deleteCall?.args[0].input.ExpressionAttributeValues?.[':now'], 'number')
   })
 
-  it('should return null without logging when the item was re-saved before the delete', async (t) => {
-    const logged = t.mock.method(console, 'error', () => {})
+  it('should return null when the item was re-saved before the delete', async () => {
     ddbMock.on(GetCommand).resolves({
       Item: { id: transactionId, ...transactionRecord, expires_at: Date.now() - 1000 },
     })
@@ -145,11 +144,9 @@ describe('dynamodbVerifierTransactionDataStore', () => {
     const fetched = await provider.fetch(transactionId)
 
     assert.equal(fetched, null)
-    assert.equal(logged.mock.callCount(), 0)
   })
 
-  it('should return null and log when deleting an expired transaction fails', async (t) => {
-    const logged = t.mock.method(console, 'error', () => {})
+  it('should return null when deleting an expired transaction fails', async () => {
     ddbMock.on(GetCommand).resolves({
       Item: { id: transactionId, ...transactionRecord, expires_at: Date.now() - 1000 },
     })
@@ -159,7 +156,6 @@ describe('dynamodbVerifierTransactionDataStore', () => {
     const fetched = await provider.fetch(transactionId)
 
     assert.equal(fetched, null)
-    assert.equal(logged.mock.callCount(), 1)
   })
 
   it('should return null and delete the item when expires_at is missing', async () => {
