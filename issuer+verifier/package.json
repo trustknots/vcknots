@@ -51,9 +51,9 @@
 		"@sd-jwt/crypto-nodejs": "0.19.0",
 		"@sd-jwt/decode": "0.19.0",
 		"base64url": "3.0.1",
-		"dcql": "^4.0.0",
+		"dcql": "^4.0.1",
 		"did-resolver": "6.0.0",
-		"jose": "6.2.13",
+		"jose": "6.2.15",
 		"jsonwebtoken": "9.0.3",
 		"key-did-resolver": "4.0.0",
 		"zod": "4.6.7"
