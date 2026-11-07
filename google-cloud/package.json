@@ -20,7 +20,7 @@
 	"keywords": [],
 	"author": "",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@12.15.0",
+	"packageManager": "pnpm@12.17.0",
 	"dependencies": {
 		"@google-cloud/kms": "6.3.0",
 		"@node-rs/crc32": "1.10.8",
