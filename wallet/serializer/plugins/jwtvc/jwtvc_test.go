@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/keystore"
+	"github.com/trustknots/vcknots/wallet/serializer/types"
 )
 
 func TestNewJwtVcSerializer(t *testing.T) {
@@ -449,6 +450,31 @@ func TestDeserializeCredential_AdditionalCases(t *testing.T) {
 	_, err = serializer.DeserializeCredential(credential.JwtVc, []byte(validJWT))
 	if err == nil {
 		t.Fatal("expected error for invalid credential structure")
+	}
+}
+
+func TestDeserializeCredential_RejectsNonCompactSerialization(t *testing.T) {
+	serializer, err := NewJwtVcSerializer()
+	require.NoError(t, err)
+
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"vc":{"id":"urn:uuid:1","type":["VerifiableCredential"],"issuer":"https://issuer.example","credentialSubject":{"id":"did:example:holder"}}}`))
+	signature := base64.RawURLEncoding.EncodeToString([]byte("signature"))
+	compact := header + "." + payload + "." + signature
+
+	// The compact form is accepted, so the rejections below are caused by the serialization alone.
+	_, err = serializer.DeserializeCredential(credential.JwtVc, []byte(compact))
+	require.NoError(t, err)
+
+	for name, data := range map[string]string{
+		"surrounding spaces": " " + compact + " ",
+		// The only periods are the two in the unprotected header, so splitting on "." still yields three parts.
+		"JWS JSON with exactly two periods": `{"payload":"` + payload + `","protected":"` + header + `","header":{"kid":"a.b.c"},"signature":"` + signature + `"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := serializer.DeserializeCredential(credential.JwtVc, []byte(data))
+			require.ErrorIs(t, err, types.ErrInvalidJWT)
+		})
 	}
 }
 

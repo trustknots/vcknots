@@ -242,7 +242,7 @@ func (is *OID4VCIIssuerServer) validateClientAssertion(r *http.Request) error {
 		return fmt.Errorf("client_id is required")
 	}
 
-	token, err := jose.ParseSigned(assertion, []jose.SignatureAlgorithm{jose.ES256})
+	token, err := jose.ParseSignedCompact(assertion, []jose.SignatureAlgorithm{jose.ES256})
 	if err != nil {
 		return fmt.Errorf("failed to parse client_assertion: %w", err)
 	}
