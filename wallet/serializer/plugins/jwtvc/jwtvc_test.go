@@ -453,27 +453,43 @@ func TestDeserializeCredential_AdditionalCases(t *testing.T) {
 	}
 }
 
-func TestDeserializeCredential_RejectsNonCompactSerialization(t *testing.T) {
+// A jwt_vc_json credential is a signed JWT (OID4VCI 1.0 Appendix A.1.1), so it uses the JWS Compact
+// Serialization (RFC 7519 Section 1): base64url-encoded values separated by periods
+// (OID4VCI 1.0 Appendix A.1.1.4; RFC 7515 Sections 2 and 7.1).
+// Only the serialization is under test; DeserializeCredential does not verify the signature.
+func TestDeserializeCredential_JWSCompactSerialization(t *testing.T) {
 	serializer, err := NewJwtVcSerializer()
 	require.NoError(t, err)
 
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256"}`))
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"vc":{"id":"urn:uuid:1","type":["VerifiableCredential"],"issuer":"https://issuer.example","credentialSubject":{"id":"did:example:holder"}}}`))
-	signature := base64.RawURLEncoding.EncodeToString([]byte("signature"))
-	compact := header + "." + payload + "." + signature
+	signingInput := header + "." + payload
 
-	// The compact form is accepted, so the rejections below are caused by the serialization alone.
-	_, err = serializer.DeserializeCredential(credential.JwtVc, []byte(compact))
-	require.NoError(t, err)
-
-	for name, data := range map[string]string{
-		"surrounding spaces": " " + compact + " ",
-		// The only periods are the two in the unprotected header, so splitting on "." still yields three parts.
-		"JWS JSON with exactly two periods": `{"payload":"` + payload + `","protected":"` + header + `","header":{"kid":"a.b.c"},"signature":"` + signature + `"}`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, err := serializer.DeserializeCredential(credential.JwtVc, []byte(data))
-			require.ErrorIs(t, err, types.ErrInvalidJWT)
+	tests := []struct {
+		name  string
+		data  string
+		valid bool
+	}{
+		// "-_8" (0xfb 0xff) uses both URL-safe characters; the padding and standard alphabet rows encode the same bytes.
+		{"JWS Compact Serialization", signingInput + ".-_8", true},
+		// Flattened JWS JSON Serialization (RFC 7515 Section 7.2.2) with a JWS Unprotected Header,
+		// which the compact form cannot carry (RFC 7515 Section 7.1).
+		{"JWS JSON Serialization", `{"payload":"` + payload + `","protected":"` + header + `","header":{"kid":"did:web:issuer.example.com#key-1"},"signature":"-_8"}`, false},
+		// RFC 7515 Section 2: no whitespace.
+		{"space", signingInput + ".-_8 ", false},
+		// RFC 7515 Section 2: trailing '=' characters omitted.
+		{"padding", signingInput + ".-_8=", false},
+		// RFC 7515 Section 2: the URL- and filename-safe alphabet (RFC 4648 Section 5).
+		{"standard base64 alphabet", signingInput + ".+/8", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := serializer.DeserializeCredential(credential.JwtVc, []byte(tt.data))
+			if tt.valid {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, types.ErrInvalidJWT)
+			}
 		})
 	}
 }
