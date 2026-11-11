@@ -5,6 +5,7 @@
 		":semanticCommitTypeAll(build)",
 		":disableDependencyDashboard"
 	],
+	"postUpdateOptions": ["pnpmDedupe"],
 	"timezone": "Asia/Tokyo",
 	"schedule": ["* 19-23 * * 0"],
 	"minimumReleaseAge": "5 days",
