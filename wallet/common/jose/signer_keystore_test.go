@@ -59,7 +59,7 @@ func TestJWKSigner_SignsForEveryClientAuthAlgorithm(t *testing.T) {
 				serialized, err := signed.CompactSerialize()
 				require.NoError(t, err)
 
-				parsed, err := jose.ParseSigned(serialized, []jose.SignatureAlgorithm{tt.alg})
+				parsed, err := jose.ParseSignedCompact(serialized, []jose.SignatureAlgorithm{tt.alg})
 				require.NoError(t, err)
 
 				payload, err := parsed.Verify(&privKey.PublicKey)

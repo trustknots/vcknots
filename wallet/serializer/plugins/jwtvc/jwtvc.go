@@ -69,7 +69,7 @@ func (s *JwtVcSerializer) DeserializeCredential(flavor credential.SupportedSeria
 	}
 
 	// Parse JWT using go-jose (automatic structure validation)
-	jws, err := jose.ParseSigned(string(data), []jose.SignatureAlgorithm{
+	jws, err := jose.ParseSignedCompact(string(data), []jose.SignatureAlgorithm{
 		jose.ES256, jose.ES384, jose.ES512, jose.EdDSA, jose.RS256,
 	})
 	if err != nil {
@@ -214,7 +214,7 @@ func (s *JwtVcSerializer) SerializePresentation(flavor credential.SupportedSeria
 	}
 
 	// Parse the JWT to extract proof information
-	jws, err := jose.ParseSigned(jwtString, []jose.SignatureAlgorithm{keyAlg})
+	jws, err := jose.ParseSignedCompact(jwtString, []jose.SignatureAlgorithm{keyAlg})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse signed JWT: %w", err)
 	}
