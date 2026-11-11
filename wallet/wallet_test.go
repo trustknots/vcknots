@@ -1155,7 +1155,7 @@ func TestWallet_generateDPoPProof_SignatureVerifies(t *testing.T) {
 	proof, err := w.generateDPoPProof(key, http.MethodPost, "https://server.example.com/token", "", nil)
 	require.NoError(t, err)
 
-	parsed, err := jose.ParseSigned(proof, []jose.SignatureAlgorithm{jose.ES256})
+	parsed, err := jose.ParseSignedCompact(proof, []jose.SignatureAlgorithm{jose.ES256})
 	require.NoError(t, err)
 
 	embeddedJWK := parsed.Signatures[0].Header.JSONWebKey
