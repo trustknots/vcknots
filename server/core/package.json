@@ -37,10 +37,6 @@
 		"./utils/www-authenticate.js": {
 			"types": "./lib/utils/www-authenticate.d.ts",
 			"default": "./lib/utils/www-authenticate.js"
-		},
-		"./utils/direct-post-vp-aud-transaction-store": {
-			"types": "./lib/utils/direct-post-vp-aud-transaction-store.d.ts",
-			"default": "./lib/utils/direct-post-vp-aud-transaction-store.js"
 		}
 	},
 	"scripts": {

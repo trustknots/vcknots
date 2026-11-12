@@ -47,13 +47,39 @@ const context = initializeContext({
 // Create VerifierFlow instance
 const verifierFlow = initializeVerifierFlow(context);
 
+// Store that maps the OpenID4VP `state` to the verifier transaction ID
+const stateStore = context.providers.get('verifier-state-store-provider');
+const stateInUseError = {
+  error: 'invalid_request',
+  error_description: 'state is already in use for an active presentation transaction',
+};
+
+// Takes the wallet's `state` binding atomically, so that concurrent responses carrying the same
+// `state` cannot both be verified. The binding is not put back even if verification fails.
+const takeTransactionId = async (state: string | undefined) => {
+  if (state == null || state.trim() === '') {
+    return {
+      ok: false as const,
+      error: { error: 'invalid_request', error_description: 'state is required for VP audience validation' },
+    };
+  }
+  const transactionId = await stateStore.take(state);
+  if (transactionId === null) {
+    return {
+      ok: false as const,
+      error: { error: 'invalid_request', error_description: 'unknown or expired state' },
+    };
+  }
+  return { ok: true as const, transactionId };
+};
+
 ```
 
 ## 3. Sample Implementation of the Verifier Feature
 
 Introduction:
 - The Verifier metadata is pre-registered when the server starts. ([initializeVerifierMetadata](#initializeVerifierMetadata))
-- `vpAudTx` in the sample code is a sample utility that maps `state` to `transactionId`. In your actual application, manage this using sessions or a database.
+- `stateStore` in the sample code is the `verifier-state-store-provider` (`context.providers.get('verifier-state-store-provider')`), which maps `state` to `transactionId`. The default is in-memory; replace it with a shared store (e.g. DynamoDB) when running multiple instances.
 
 
 
@@ -120,9 +146,8 @@ verifyApp.post('/request', async (c) => {
         ],
       },
     }
-    const reserved = vpAudTx.reserve(state)
-    if (!reserved.ok) {
-      return c.json(reserved.error, 400)
+    if (!(await stateStore.reserve(state))) {
+      return c.json(stateInUseError, 400)
     }
     const { request, transactionId: verifierTxId } = await verifierFlow
       .createAuthzRequest(verifierId, 'vp_token', client_id, 'direct_post', query, false, {
@@ -130,11 +155,13 @@ verifyApp.post('/request', async (c) => {
         response_uri: `${baseUrl}/callback`,
         base_url: baseUrl,
       })
-      .catch((err: unknown) => {
-        vpAudTx.consume(state)
+      .catch(async (err: unknown) => {
+        await stateStore.consume(state).catch(() => {})
         throw err
       })
-    vpAudTx.register(state, verifierTxId)
+    if (!(await stateStore.register(state, verifierTxId))) {
+      return c.json(stateInUseError, 400)
+    }
 
     const encoded = Object.entries({ ...request, state })
       .map(([key, value]) => {
@@ -241,11 +268,11 @@ verifyApp.post('/request-object', async (c) => {
         ? validateClientIdScheme(input.client_id)
         : 'x509_san_dns:localhost',
   }
-  let reserved: ReturnType<typeof vpAudTx.reserve> | undefined
+  let reserved = false
   try {
-    reserved = vpAudTx.reserve(requestObject.state)
-    if (!reserved.ok) {
-      return c.json(reserved.error, 400)
+    reserved = await stateStore.reserve(requestObject.state)
+    if (!reserved) {
+      return c.json(stateInUseError, 400)
     }
     const verifierId = VerifierClientId(baseUrl)
     const { request, transactionId: verifierTxId } = await verifierFlow.createAuthzRequest(
@@ -265,7 +292,9 @@ verifyApp.post('/request-object', async (c) => {
           : {}),
       }
     )
-    vpAudTx.register(requestObject.state, verifierTxId)
+    if (!(await stateStore.register(requestObject.state, verifierTxId))) {
+      return c.json(stateInUseError, 400)
+    }
     console.log('[verify] direct_post transaction_id:', verifierTxId)
     const encoded = Object.entries(request)
       .map(([key, value]) => {
@@ -276,8 +305,8 @@ verifyApp.post('/request-object', async (c) => {
 
     return c.text(`openid4vp:?${encoded}`)
   } catch (err) {
-    if (reserved?.ok) {
-      vpAudTx.consume(requestObject.state)
+    if (reserved) {
+      await stateStore.consume(requestObject.state).catch(() => {})
     }
     const errorResponse = handleError(err)
     const status = errorResponse.error === 'internal_server_error' ? 500 : 400
@@ -405,7 +434,7 @@ verifyApp.post('/callback', async (c) => {
       return c.json(parsed.error, 400)
     }
     const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-    const resolved = vpAudTx.resolve(authorizationResponse.state)
+    const resolved = await takeTransactionId(authorizationResponse.state)
     if (!resolved.ok) {
       return c.json(resolved.error, 400)
     }
@@ -413,7 +442,6 @@ verifyApp.post('/callback', async (c) => {
       authorizationResponse,
       resolved.transactionId
     )
-    vpAudTx.consume(authorizationResponse.state ?? '')
     console.log('Verified VP Payload:', vpPayload)
     return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
   } catch (err) {

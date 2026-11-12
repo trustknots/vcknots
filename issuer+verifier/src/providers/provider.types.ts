@@ -551,6 +551,34 @@ export type VerifierTransactionDataStoreProvider = {
   delete(transactionId: TransactionId): Promise<void>
 }
 
+/**
+ * Binds the OpenID4VP `state` (echoed back by the wallet on `direct_post`) to the verifier
+ * transaction ID. `state` is chosen by the client, so every write that must not clobber an
+ * active binding is conditional. `reserve`, `register` and `take` must each check and write
+ * atomically, since concurrent requests may carry the same `state`.
+ */
+export type VerifierStateStoreProvider = {
+  kind: 'verifier-state-store-provider'
+  name: string
+  single: true
+
+  /** Reserves `state` before the transaction exists. Returns false if `state` is already active. */
+  reserve(state: string, options?: { ttlMs?: number }): Promise<boolean>
+  /**
+   * Binds a reserved (or free / expired) `state` to `transactionId`.
+   * Returns false if `state` is already bound to an active transaction.
+   */
+  register(state: string, transactionId: string, options?: { ttlMs?: number }): Promise<boolean>
+  /**
+   * Atomically removes the active binding for `state` and returns its transaction ID, so only one
+   * response can proceed with it. Returns null, without removing anything, if `state` is unknown,
+   * expired, or only reserved.
+   */
+  take(state: string): Promise<string | null>
+  /** Removes `state` unconditionally. */
+  consume(state: string): Promise<void>
+}
+
 export type Provider =
   | IssuerMetadataStoreProvider
   | IssuerSignatureKeyStoreProvider
@@ -596,5 +624,6 @@ export type Provider =
   | CertificateProvider
   | TransactionDataProvider
   | VerifierTransactionDataStoreProvider
+  | VerifierStateStoreProvider
   | TransactionIdProvider
   | TransactionCodeProvider

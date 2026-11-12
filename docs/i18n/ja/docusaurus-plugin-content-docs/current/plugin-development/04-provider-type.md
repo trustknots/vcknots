@@ -47,3 +47,4 @@ sidebar_position: 44
 | 証明書の検証や、証明書から公開鍵を取得する処理を変更したい | [`certificate-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20certificate-provider&type=code) |
 | Transaction Code の生成方法を変更したい | [`transaction-code-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20transaction-code-provider&type=code) |
 | Transaction Data の生成方法を変更したい | [`transaction-data-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20transaction-data-provider&type=code) |
+| `direct_post` の応答で、OpenID4VP の `state` と Verifier の transaction の対応づけ方を変更したい | [`verifier-state-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20verifier-state-store-provider&type=code) |

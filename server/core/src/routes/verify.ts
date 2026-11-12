@@ -9,14 +9,39 @@ import {
   initializeVerifierFlow,
 } from '@trustknots/vcknots/verifier'
 import { Hono } from 'hono'
-import { createDirectPostVpAudTransactionStore } from '../utils/direct-post-vp-aud-transaction-store.js'
 import { handleError } from '../utils/error-handler.js'
 
 export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
   const verifyApp = new Hono()
 
   const verifierFlow = initializeVerifierFlow(context)
-  const vpAudTx = createDirectPostVpAudTransactionStore()
+  const stateStore = context.providers.get('verifier-state-store-provider')
+  const stateInUseError = {
+    error: 'invalid_request',
+    error_description: 'state is already in use for an active presentation transaction',
+  }
+
+  // Takes the wallet's `state` binding atomically, so that concurrent responses carrying the same
+  // `state` cannot both be verified. The binding is not put back even if verification fails.
+  const takeTransactionId = async (state: string | undefined) => {
+    if (state == null || state.trim() === '') {
+      return {
+        ok: false as const,
+        error: {
+          error: 'invalid_request',
+          error_description: 'state is required for VP audience validation',
+        },
+      }
+    }
+    const transactionId = await stateStore.take(state)
+    if (transactionId === null) {
+      return {
+        ok: false as const,
+        error: { error: 'invalid_request', error_description: 'unknown or expired state' },
+      }
+    }
+    return { ok: true as const, transactionId }
+  }
 
   type PayloadResult =
     | { ok: true; payload: Partial<VerifierAuthorizationResponse> }
@@ -122,9 +147,8 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         },
       }
 
-      const reserved = vpAudTx.reserve(state)
-      if (!reserved.ok) {
-        return c.json(reserved.error, 400)
+      if (!(await stateStore.reserve(state))) {
+        return c.json(stateInUseError, 400)
       }
       const { request, transactionId: verifierTxId } = await verifierFlow
         .createAuthzRequest(verifierId, 'vp_token', client_id, 'direct_post', query, false, {
@@ -132,11 +156,13 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           response_uri: `${baseUrl}/callback`,
           base_url: baseUrl,
         })
-        .catch((err: unknown) => {
-          vpAudTx.consume(state)
+        .catch(async (err: unknown) => {
+          await stateStore.consume(state).catch(() => {})
           throw err
         })
-      vpAudTx.register(state, verifierTxId)
+      if (!(await stateStore.register(state, verifierTxId))) {
+        return c.json(stateInUseError, 400)
+      }
       console.log('[verify] direct_post transaction_id:', verifierTxId)
 
       const encoded = Object.entries({ ...request, state })
@@ -187,7 +213,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
 
-      const resolved = vpAudTx.resolve(authorizationResponse.state)
+      const resolved = await takeTransactionId(authorizationResponse.state)
       if (!resolved.ok) {
         return c.json(resolved.error, 400)
       }
@@ -195,7 +221,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         authorizationResponse,
         resolved.transactionId
       )
-      vpAudTx.consume(authorizationResponse.state ?? '')
       console.log('Verified VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
@@ -236,7 +261,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       }
 
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-      const resolved = vpAudTx.resolve(authorizationResponse.state)
+      const resolved = await takeTransactionId(authorizationResponse.state)
       if (!resolved.ok) {
         return c.json(resolved.error, 400)
       }
@@ -245,7 +270,6 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         resolved.transactionId,
         { isKbJwt: true }
       )
-      vpAudTx.consume(authorizationResponse.state ?? '')
       console.log('Verified KBJWT VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
@@ -328,11 +352,11 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           : 'x509_san_dns:localhost',
     }
 
-    let reserved: ReturnType<typeof vpAudTx.reserve> | undefined
+    let reserved = false
     try {
-      reserved = vpAudTx.reserve(requestObject.state)
-      if (!reserved.ok) {
-        return c.json(reserved.error, 400)
+      reserved = await stateStore.reserve(requestObject.state)
+      if (!reserved) {
+        return c.json(stateInUseError, 400)
       }
       const verifierId = VerifierClientId(baseUrl)
       const { request, transactionId: verifierTxId } = await verifierFlow.createAuthzRequest(
@@ -352,7 +376,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
             : {}),
         }
       )
-      vpAudTx.register(requestObject.state, verifierTxId)
+      if (!(await stateStore.register(requestObject.state, verifierTxId))) {
+        return c.json(stateInUseError, 400)
+      }
       console.log('[verify] direct_post transaction_id:', verifierTxId)
       const encoded = Object.entries(request)
         .map(([key, value]) => {
@@ -363,8 +389,8 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
       return c.text(`openid4vp:?${encoded}`)
     } catch (err) {
-      if (reserved?.ok) {
-        vpAudTx.consume(requestObject.state)
+      if (reserved) {
+        await stateStore.consume(requestObject.state).catch(() => {})
       }
       const errorResponse = handleError(err)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400
@@ -437,7 +463,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     try {
       const existing = await verifierFlow.getTransaction(transactionId)
       if (existing.state) {
-        vpAudTx.consume(existing.state)
+        await stateStore.consume(existing.state)
       }
       await verifierFlow.deleteTransaction(transactionId)
       return c.json({ ok: true }, 200)
