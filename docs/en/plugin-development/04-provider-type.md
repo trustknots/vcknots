@@ -46,3 +46,4 @@ This section explains which `provider` you should replace or extend depending on
 | Change certificate validation or public key extraction from certificates | [`certificate-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20certificate-provider&type=code) |
 | Change how Transaction Codes are generated | [`transaction-code-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20transaction-code-provider&type=code) |
 | Change how Transaction Data is generated | [`transaction-data-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20transaction-data-provider&type=code) |
+| Change how the OpenID4VP `state` is bound to its Verifier transaction for `direct_post` responses | [`verifier-state-store-provider`](https://github.com/search?q=repo%3Atrustknots%2Fvcknots%20verifier-state-store-provider&type=code) |
