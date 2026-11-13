@@ -9,14 +9,25 @@ import {
   initializeVerifierFlow,
 } from '@trustknots/vcknots/verifier'
 import { Hono } from 'hono'
-import { createDirectPostVpAudTransactionStore } from '../utils/direct-post-vp-aud-transaction-store.js'
+import {
+  createDirectPostVpAudTransactionStore,
+  DirectPostVpAudTransactionStore,
+} from '../utils/direct-post-vp-aud-transaction-store.js'
 import { handleError } from '../utils/error-handler.js'
 
-export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
+export type VerifierServerOptions = {
+  vpAudTransactionStore?: DirectPostVpAudTransactionStore
+}
+
+export const createVerifierRouter = (
+  context: VcknotsContext,
+  baseUrl: string,
+  options?: VerifierServerOptions
+) => {
   const verifyApp = new Hono()
 
   const verifierFlow = initializeVerifierFlow(context)
-  const vpAudTx = createDirectPostVpAudTransactionStore()
+  const vpAudTx = options?.vpAudTransactionStore ?? createDirectPostVpAudTransactionStore()
 
   type PayloadResult =
     | { ok: true; payload: Partial<VerifierAuthorizationResponse> }
@@ -122,31 +133,50 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         },
       }
 
-      const reserved = vpAudTx.reserve(state)
+      const reserved = await vpAudTx.reserve(state)
       if (!reserved.ok) {
         return c.json(reserved.error, 400)
       }
-      const { request, transactionId: verifierTxId } = await verifierFlow
-        .createAuthzRequest(verifierId, 'vp_token', client_id, 'direct_post', query, false, {
-          state,
-          response_uri: `${baseUrl}/callback`,
-          base_url: baseUrl,
-        })
-        .catch((err: unknown) => {
-          vpAudTx.consume(state)
-          throw err
-        })
-      vpAudTx.register(state, verifierTxId)
-      console.log('[verify] direct_post transaction_id:', verifierTxId)
 
-      const encoded = Object.entries({ ...request, state })
-        .map(([key, value]) => {
-          const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
-          return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
-        })
-        .join('&')
+      let verifierTxId: string | undefined
+      try {
+        const { request, transactionId } = await verifierFlow.createAuthzRequest(
+          verifierId,
+          'vp_token',
+          client_id,
+          'direct_post',
+          query,
+          false,
+          {
+            state,
+            response_uri: `${baseUrl}/callback`,
+            base_url: baseUrl,
+          }
+        )
+        verifierTxId = transactionId
 
-      return c.text(`openid4vp:?${encoded}`)
+        const registered = await vpAudTx.register(state, verifierTxId, reserved.reservationToken)
+        if (!registered.ok) {
+          await verifierFlow.deleteTransaction(verifierTxId)
+          return c.json(registered.error, 400)
+        }
+
+        console.log('[verify] direct_post transaction_id:', verifierTxId)
+        const encoded = Object.entries({ ...request, state })
+          .map(([key, value]) => {
+            const encode =
+              value && typeof value === 'object' ? JSON.stringify(value) : String(value)
+            return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
+          })
+          .join('&')
+        return c.text(`openid4vp:?${encoded}`)
+      } catch (err) {
+        await Promise.allSettled([
+          vpAudTx.release(state, reserved.reservationToken),
+          verifierTxId ? verifierFlow.deleteTransaction(verifierTxId) : Promise.resolve(),
+        ])
+        throw err
+      }
     } catch (err) {
       const errorResponse = handleError(err)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400
@@ -187,7 +217,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
 
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
 
-      const resolved = vpAudTx.resolve(authorizationResponse.state)
+      const resolved = await vpAudTx.resolve(authorizationResponse.state)
       if (!resolved.ok) {
         return c.json(resolved.error, 400)
       }
@@ -195,7 +225,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         authorizationResponse,
         resolved.transactionId
       )
-      vpAudTx.consume(authorizationResponse.state ?? '')
+      await vpAudTx
+        .consume(authorizationResponse.state ?? '', resolved.transactionId)
+        .catch((e) => console.error('[verify] consume failed (verification succeeded):', e))
       console.log('Verified VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
@@ -236,7 +268,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
       }
 
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-      const resolved = vpAudTx.resolve(authorizationResponse.state)
+      const resolved = await vpAudTx.resolve(authorizationResponse.state)
       if (!resolved.ok) {
         return c.json(resolved.error, 400)
       }
@@ -245,7 +277,9 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
         resolved.transactionId,
         { isKbJwt: true }
       )
-      vpAudTx.consume(authorizationResponse.state ?? '')
+      await vpAudTx
+        .consume(authorizationResponse.state ?? '', resolved.transactionId)
+        .catch((e) => console.error('[verify] consume failed (verification succeeded):', e))
       console.log('Verified KBJWT VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
@@ -328,14 +362,15 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           : 'x509_san_dns:localhost',
     }
 
-    let reserved: ReturnType<typeof vpAudTx.reserve> | undefined
+    const reserved = await vpAudTx.reserve(requestObject.state)
+    if (!reserved.ok) {
+      return c.json(reserved.error, 400)
+    }
+
+    let verifierTxId: string | undefined
     try {
-      reserved = vpAudTx.reserve(requestObject.state)
-      if (!reserved.ok) {
-        return c.json(reserved.error, 400)
-      }
       const verifierId = VerifierClientId(baseUrl)
-      const { request, transactionId: verifierTxId } = await verifierFlow.createAuthzRequest(
+      const { request, transactionId } = await verifierFlow.createAuthzRequest(
         verifierId,
         'vp_token',
         requestObject.client_id,
@@ -352,7 +387,18 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
             : {}),
         }
       )
-      vpAudTx.register(requestObject.state, verifierTxId)
+      verifierTxId = transactionId
+
+      const registered = await vpAudTx.register(
+        requestObject.state,
+        verifierTxId,
+        reserved.reservationToken
+      )
+      if (!registered.ok) {
+        await verifierFlow.deleteTransaction(verifierTxId)
+        return c.json(registered.error, 400)
+      }
+
       console.log('[verify] direct_post transaction_id:', verifierTxId)
       const encoded = Object.entries(request)
         .map(([key, value]) => {
@@ -360,12 +406,12 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
           return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
         })
         .join('&')
-
       return c.text(`openid4vp:?${encoded}`)
     } catch (err) {
-      if (reserved?.ok) {
-        vpAudTx.consume(requestObject.state)
-      }
+      await Promise.allSettled([
+        vpAudTx.release(requestObject.state, reserved.reservationToken),
+        verifierTxId ? verifierFlow.deleteTransaction(verifierTxId) : Promise.resolve(),
+      ])
       const errorResponse = handleError(err)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400
       return c.json(errorResponse, status)
@@ -437,7 +483,7 @@ export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) =
     try {
       const existing = await verifierFlow.getTransaction(transactionId)
       if (existing.state) {
-        vpAudTx.consume(existing.state)
+        await vpAudTx.consume(existing.state, transactionId)
       }
       await verifierFlow.deleteTransaction(transactionId)
       return c.json({ ok: true }, 200)

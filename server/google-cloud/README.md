@@ -24,7 +24,8 @@ The endpoint list in this README is an overview of the paths used in this sample
 ```text
 google-cloud/
 ├─ src/
-│  └─ example.ts      # Google Cloud / Firebase startup entrypoint (uses createServer from @trustknots/server-core)
+│  ├─ example.ts                           # Google Cloud / Firebase startup entrypoint
+│  └─ firestore-direct-post-state-store.ts # Firestore-backed vpAudTransactionStore implementation
 ├─ .env.example       # Sample environment variable configuration
 ├─ package.json
 └─ tsconfig.json
@@ -156,6 +157,27 @@ Authz metadata initialized
 ```
 
 The server starts on `http://localhost:8080` by default.
+
+## vpAudTransactionStore Firestore Implementation
+
+`server/google-cloud` provides a Firestore-backed `DirectPostVpAudTransactionStore` implementation for multi-instance environments such as Cloud Run.
+
+```ts
+import { createFirestoreDirectPostStateStore } from './firestore-direct-post-state-store.js'
+
+createServer({
+  providers: [...],
+  verifier: {
+    vpAudTransactionStore: createFirestoreDirectPostStateStore({
+      app: firebaseApp,
+      databaseId: process.env.FIRESTORE_DATABASE_ID, // optional, uses default DB if omitted
+      ttlMs: 5 * 60 * 1000,                          // optional, default: 5 minutes
+    }),
+  },
+})
+```
+
+`reserve`, `register`, and `release` are executed atomically via Firestore transactions, preventing state conflicts across multiple instances. For details on the `vpAudTransactionStore` interface and design, see the [server-core README](../core/README.md#vpaudtransactionstore).
 
 ## Notes
 
