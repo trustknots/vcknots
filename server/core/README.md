@@ -55,7 +55,7 @@ The shared `POST /token` route also uses the same OAuth policy. It can also veri
 If the token request body contains `client_id`, that value is used first. If it is absent, the client id is derived from the `client_assertion` JWT `iss` / `sub`. For Pre-Authorized Code token requests where neither source yields a client id, the request is treated as an anonymous token request and the anonymous client policy is used only when the Authorization Server metadata `pre-authorized_grant_anonymous_access_supported` is `true`. If it is omitted or `false`, the request fails with `invalid_client`. See the [single-server README](../single/README.md#post-token) for details.
 
 | mode | `POST /token` behavior |
-|------|-------------------------|
+| --- | --- |
 | `off` | DPoP is not used. The server issues a Bearer access token. |
 | `optional` | If the DPoP header is absent, the server issues a Bearer access token. If the DPoP header is present, the server verifies the proof and issues a DPoP-bound access token. |
 | `required` | The DPoP header is required. A missing or malformed DPoP header results in `invalid_request`. |
@@ -92,7 +92,7 @@ Inject a `DirectPostVpAudTransactionStore` implementation used in the `direct_po
 | `reserve(state)` | Reserves the state and returns a `reservationToken`. Returns `invalid_request` if the state is already in use. |
 | `register(state, transactionId, reservationToken)` | Validates the `reservationToken` and binds the verifier transaction ID to the state. |
 | `resolve(state)` | Returns the `transactionId` for the state. Returns `invalid_request` if unknown or expired. |
-| `consume(state, transactionId)` | Deletes the state entry after successful VP verification. |
+| `consume(state, transactionId)` | Deletes the state entry only when the stored transaction ID matches `transactionId`. Called after successful VP verification. |
 | `release(state, reservationToken)` | Rollback on error. Validates the `reservationToken` and deletes the state entry. |
 
 This follows a two-phase commit pattern: `reserve` → `register` (on success) or `release` (on error), preventing duplicate state registration from concurrent requests.
