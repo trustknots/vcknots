@@ -171,8 +171,10 @@ export const createVerifierRouter = (
           .join('&')
         return c.text(`openid4vp:?${encoded}`)
       } catch (err) {
-        await vpAudTx.release(state, reserved.reservationToken)
-        if (verifierTxId) await verifierFlow.deleteTransaction(verifierTxId).catch(() => {})
+        await Promise.allSettled([
+          vpAudTx.release(state, reserved.reservationToken),
+          verifierTxId ? verifierFlow.deleteTransaction(verifierTxId) : Promise.resolve(),
+        ])
         throw err
       }
     } catch (err) {
@@ -223,7 +225,9 @@ export const createVerifierRouter = (
         authorizationResponse,
         resolved.transactionId
       )
-      await vpAudTx.consume(authorizationResponse.state ?? '', resolved.transactionId)
+      await vpAudTx
+        .consume(authorizationResponse.state ?? '', resolved.transactionId)
+        .catch((e) => console.error('[verify] consume failed (verification succeeded):', e))
       console.log('Verified VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
@@ -273,7 +277,9 @@ export const createVerifierRouter = (
         resolved.transactionId,
         { isKbJwt: true }
       )
-      await vpAudTx.consume(authorizationResponse.state ?? '', resolved.transactionId)
+      await vpAudTx
+        .consume(authorizationResponse.state ?? '', resolved.transactionId)
+        .catch((e) => console.error('[verify] consume failed (verification succeeded):', e))
       console.log('Verified KBJWT VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
     } catch (err) {
@@ -402,8 +408,10 @@ export const createVerifierRouter = (
         .join('&')
       return c.text(`openid4vp:?${encoded}`)
     } catch (err) {
-      await vpAudTx.release(requestObject.state, reserved.reservationToken)
-      if (verifierTxId) await verifierFlow.deleteTransaction(verifierTxId).catch(() => {})
+      await Promise.allSettled([
+        vpAudTx.release(requestObject.state, reserved.reservationToken),
+        verifierTxId ? verifierFlow.deleteTransaction(verifierTxId) : Promise.resolve(),
+      ])
       const errorResponse = handleError(err)
       const status = errorResponse.error === 'internal_server_error' ? 500 : 400
       return c.json(errorResponse, status)
