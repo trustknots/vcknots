@@ -24,7 +24,8 @@ Issuer / Authorization Server / Verifier の実際の API 仕様（パラメー�
 ```text
 google-cloud/
 ├─ src/        
-│  └─ example.ts          # Google Cloud / Firebase 起動エントリ
+│  ├─ example.ts                           # Google Cloud / Firebase 起動エントリ
+│  └─ firestore-direct-post-state-store.ts # Firestore 版 vpAudTransactionStore 実装
 ├─ .env.example           # 環境変数設定のサンプル
 ├─ package.json
 └─ tsconfig.json
@@ -155,6 +156,27 @@ Authz metadata initialized
 ```
 
 既定では `http://localhost:8080` で起動します。
+
+## vpAudTransactionStore Firestore 実装
+
+`server/google-cloud` は Cloud Run などのマルチインスタンス環境向けに、Firestore を使った `DirectPostVpAudTransactionStore` 実装を提供します。
+
+```ts
+import { createFirestoreDirectPostStateStore } from './firestore-direct-post-state-store.js'
+
+createServer({
+  providers: [...],
+  verifier: {
+    vpAudTransactionStore: createFirestoreDirectPostStateStore({
+      app: firebaseApp,
+      databaseId: process.env.FIRESTORE_DATABASE_ID, // 省略時はデフォルト DB
+      ttlMs: 5 * 60 * 1000,                          // 省略時: 5 分
+    }),
+  },
+})
+```
+
+Firestore トランザクションを使って `reserve` / `register` / `release` をアトミックに処理するため、複数インスタンス間での state 競合を防ぎます。`vpAudTransactionStore` の詳細は [server-core README](../core/README.ja.md#verifier-オプションvpaudtransactionstore) を参照してください。
 
 ## 補足
 
