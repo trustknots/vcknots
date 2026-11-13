@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { cert, initializeApp } from 'firebase-admin/app'
 import { firestore, kms, secretManager } from '@trustknots/google-cloud'
 import { createServer } from '@trustknots/server-core'
+import { createFirestoreDirectPostStateStore } from './firestore-direct-post-state-store.js'
 
 // Reference:
 // const vk = vcknots({
@@ -82,4 +83,10 @@ createServer({
       credentials: secretManagerCredentials,
     }),
   ],
+  verifier: {
+    vpAudTransactionStore: createFirestoreDirectPostStateStore({
+      app: firebaseApp,
+      databaseId: process.env.FIRESTORE_DATABASE_ID,
+    }),
+  },
 })
