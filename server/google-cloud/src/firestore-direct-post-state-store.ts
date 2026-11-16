@@ -107,27 +107,23 @@ export const createFirestoreDirectPostStateStore = (
     }
 
     const ref = docRef(state)
-    let transactionId: string | undefined
-    let isExpired = false
 
+    type TxOutcome = { kind: 'acquired'; transactionId: string } | { kind: 'expired' }
+
+    let outcome: TxOutcome
     try {
-      await db.runTransaction(async (tx: Transaction) => {
+      outcome = await db.runTransaction(async (tx: Transaction): Promise<TxOutcome> => {
         const doc = await tx.get(ref)
         const now = Date.now()
-        if (!doc.exists) {
-          throw new Error('acquire_failed')
-        }
+        if (!doc.exists) throw new Error('acquire_failed')
         const data = doc.data() as StoredState
         if (now > data.expiresAt.toMillis()) {
           tx.delete(ref)
-          isExpired = true
-          return // 正常終了してトランザクションをコミットし、delete を確定させる
+          return { kind: 'expired' }
         }
-        if (data.status !== 'registered') {
-          throw new Error('acquire_failed')
-        }
-        transactionId = data.transactionId
+        if (data.status !== 'registered') throw new Error('acquire_failed')
         tx.set(ref, { ...data, status: 'processing' })
+        return { kind: 'acquired', transactionId: data.transactionId }
       })
     } catch (err) {
       if (err instanceof Error && err.message === 'acquire_failed') {
@@ -136,11 +132,8 @@ export const createFirestoreDirectPostStateStore = (
       throw err
     }
 
-    if (isExpired || !transactionId) {
-      return errorResult('unknown or expired state')
-    }
-
-    return { ok: true as const, transactionId }
+    if (outcome.kind === 'expired') return errorResult('unknown or expired state')
+    return { ok: true as const, transactionId: outcome.transactionId }
   }
 
   // Fix #2 (consume): verify transactionId before deleting to prevent wrong-generation delete
