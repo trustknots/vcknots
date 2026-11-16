@@ -91,11 +91,14 @@ import { handleError } from '@trustknots/server-core/utils/error-handler'
 | --- | --- |
 | `reserve(state)` | state を予約し、`reservationToken` を返す。同一 state が使用中なら `invalid_request` を返す。 |
 | `register(state, transactionId, reservationToken)` | `reservationToken` を検証し、state に verifier トランザクション ID を紐づける。 |
-| `resolve(state)` | state に対応する `transactionId` を返す。未登録・期限切れは `invalid_request`。 |
+| `acquire(state)` | state を `registered` から `processing` へ原子的に遷移させ、`transactionId` を返す。未登録・期限切れ・処理中の場合は `invalid_request` を返す。並行する callback が同一トランザクションを二重に検証しないことを保証する。 |
 | `consume(state, transactionId)` | 保存済みの transactionId が引数と一致する場合に限り state エントリを削除する。VP 検証成功後に呼び出す。 |
 | `release(state, reservationToken)` | エラー時のロールバック。`reservationToken` を検証して state エントリを削除する。 |
 
-`reserve` → `register`（成功時）または `release`（エラー時）という 2 フェーズコミットパターンで、並行リクエストによる state の二重登録を防ぎます。
+state は明示的なライフサイクルをたどります：`reserved` → `registered` → `processing` → （削除）
+
+- リクエストフェーズ：`reserve` → `register`（成功時）または `release`（エラー時）
+- コールバックフェーズ：`acquire`（原子的・排他的）→ `consume`（成功時）
 
 Firestore を使った実装例は [Google Cloud サーバー README](../google-cloud/README.ja.md#vpaudtransactionstore-firestore-実装) を参照してください。
 

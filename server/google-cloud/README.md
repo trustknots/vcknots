@@ -177,7 +177,7 @@ createServer({
 })
 ```
 
-`reserve`, `register`, and `release` are executed atomically via Firestore transactions, preventing state conflicts across multiple instances. For details on the `vpAudTransactionStore` interface and design, see the [server-core README](../core/README.md#vpaudtransactionstore).
+`reserve`, `register`, `acquire`, and `release` are executed atomically via Firestore transactions, preventing state conflicts across multiple instances. `acquire` additionally ensures that only one concurrent callback can transition a state to `processing`, preventing duplicate VP verification. For details on the `vpAudTransactionStore` interface and design, see the [server-core README](../core/README.md#vpaudtransactionstore).
 
 ## Notes
 

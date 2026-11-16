@@ -176,7 +176,7 @@ createServer({
 })
 ```
 
-Firestore トランザクションを使って `reserve` / `register` / `release` をアトミックに処理するため、複数インスタンス間での state 競合を防ぎます。`vpAudTransactionStore` の詳細は [server-core README](../core/README.ja.md#vpaudtransactionstore) を参照してください。
+Firestore トランザクションを使って `reserve` / `register` / `acquire` / `release` をアトミックに処理するため、複数インスタンス間での state 競合を防ぎます。特に `acquire` は state を `processing` へ原子的に遷移させることで、並行する callback による VP の二重検証を防止します。`vpAudTransactionStore` の詳細は [server-core README](../core/README.ja.md#vpaudtransactionstore) を参照してください。
 
 ## 補足
 

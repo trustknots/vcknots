@@ -91,11 +91,14 @@ Inject a `DirectPostVpAudTransactionStore` implementation used in the `direct_po
 | --- | --- |
 | `reserve(state)` | Reserves the state and returns a `reservationToken`. Returns `invalid_request` if the state is already in use. |
 | `register(state, transactionId, reservationToken)` | Validates the `reservationToken` and binds the verifier transaction ID to the state. |
-| `resolve(state)` | Returns the `transactionId` for the state. Returns `invalid_request` if unknown or expired. |
+| `acquire(state)` | Atomically transitions the state from `registered` to `processing` and returns the `transactionId`. Returns `invalid_request` if unknown, expired, or already processing — ensuring only one concurrent callback proceeds to VP verification. |
 | `consume(state, transactionId)` | Deletes the state entry only when the stored transaction ID matches `transactionId`. Called after successful VP verification. |
 | `release(state, reservationToken)` | Rollback on error. Validates the `reservationToken` and deletes the state entry. |
 
-This follows a two-phase commit pattern: `reserve` → `register` (on success) or `release` (on error), preventing duplicate state registration from concurrent requests.
+The state follows an explicit lifecycle: `reserved` → `registered` → `processing` → (deleted).
+
+- Request phase: `reserve` → `register` (on success) or `release` (on error)
+- Callback phase: `acquire` (atomic, exclusive) → `consume` (on success)
 
 For a Firestore-backed implementation example, see the [Google Cloud server README](../google-cloud/README.md#vpaudtransactionstore-firestore-implementation).
 
