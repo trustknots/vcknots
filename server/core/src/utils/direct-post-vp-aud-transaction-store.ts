@@ -3,10 +3,13 @@ import { randomUUID } from 'node:crypto'
 /** Default TTL for in-memory `direct_post` state-to-transaction binding (5 minutes). */
 export const DEFAULT_DIRECT_POST_STATE_TTL_MS = 5 * 60 * 1000
 
+type StateStatus = 'reserved' | 'registered' | 'processing'
+
 type StateTransaction = {
   transactionId: string
   reservationToken: string
   expiresAt: number
+  status: StateStatus
 }
 
 type OkWithToken = { ok: true; reservationToken: string }
@@ -20,7 +23,7 @@ export type DirectPostVpAudTransactionStore = {
     transactionId: string,
     reservationToken: string
   ) => Promise<OkResult | ErrorResult>
-  resolve: (state: string | undefined) => Promise<{ ok: true; transactionId: string } | ErrorResult>
+  acquire: (state: string | undefined) => Promise<{ ok: true; transactionId: string } | ErrorResult>
   consume: (state: string, transactionId: string) => Promise<void>
   release: (state: string, reservationToken: string) => Promise<void>
 }
@@ -57,7 +60,12 @@ export function createDirectPostVpAudTransactionStore(options?: {
     }
     byState.delete(state)
     const reservationToken = randomUUID()
-    byState.set(state, { transactionId: '', reservationToken, expiresAt: Date.now() + ttlMs })
+    byState.set(state, {
+      transactionId: '',
+      reservationToken,
+      expiresAt: Date.now() + ttlMs,
+      status: 'reserved',
+    })
     return { ok: true as const, reservationToken }
   }
 
@@ -66,7 +74,7 @@ export function createDirectPostVpAudTransactionStore(options?: {
     if (
       existing === undefined ||
       Date.now() > existing.expiresAt ||
-      existing.transactionId !== '' ||
+      existing.status !== 'reserved' ||
       existing.reservationToken !== reservationToken
     ) {
       return {
@@ -77,11 +85,11 @@ export function createDirectPostVpAudTransactionStore(options?: {
         },
       }
     }
-    byState.set(state, { transactionId, reservationToken, expiresAt: Date.now() + ttlMs })
+    byState.set(state, { ...existing, transactionId, status: 'registered' })
     return { ok: true as const }
   }
 
-  const resolve = async (state: string | undefined) => {
+  const acquire = async (state: string | undefined) => {
     if (state == null || state.trim() === '') {
       return {
         ok: false as const,
@@ -105,12 +113,13 @@ export function createDirectPostVpAudTransactionStore(options?: {
         error: { error: 'invalid_request', error_description: 'unknown or expired state' },
       }
     }
-    if (rec.transactionId === '') {
+    if (rec.status !== 'registered') {
       return {
         ok: false as const,
         error: { error: 'invalid_request', error_description: 'unknown or expired state' },
       }
     }
+    byState.set(state, { ...rec, status: 'processing' })
     return { ok: true as const, transactionId: rec.transactionId }
   }
 
@@ -123,10 +132,10 @@ export function createDirectPostVpAudTransactionStore(options?: {
 
   const release = async (state: string, reservationToken: string): Promise<void> => {
     const existing = byState.get(state)
-    if (existing?.transactionId === '' && existing.reservationToken === reservationToken) {
+    if (existing?.status === 'reserved' && existing.reservationToken === reservationToken) {
       byState.delete(state)
     }
   }
 
-  return { reserve, register, resolve, consume, release }
+  return { reserve, register, acquire, consume, release }
 }

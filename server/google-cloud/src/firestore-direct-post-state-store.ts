@@ -9,6 +9,7 @@ type StoredState = {
   transactionId: string
   reservationToken: string
   expiresAt: Timestamp
+  status: 'reserved' | 'registered' | 'processing'
 }
 
 const stateToDocId = (state: string) => createHash('sha256').update(state).digest('hex')
@@ -54,6 +55,7 @@ export const createFirestoreDirectPostStateStore = (
           transactionId: '',
           reservationToken,
           expiresAt: Timestamp.fromMillis(now + ttlMs),
+          status: 'reserved',
         })
       })
       return { ok: true as const, reservationToken }
@@ -78,7 +80,7 @@ export const createFirestoreDirectPostStateStore = (
         const data = doc.data() as StoredState
         if (
           now > data.expiresAt.toMillis() ||
-          data.transactionId !== '' ||
+          data.status !== 'reserved' ||
           data.reservationToken !== reservationToken
         ) {
           throw new Error('register_failed')
@@ -87,6 +89,7 @@ export const createFirestoreDirectPostStateStore = (
           transactionId,
           reservationToken,
           expiresAt: Timestamp.fromMillis(now + ttlMs),
+          status: 'registered',
         })
       })
       return { ok: true as const }
@@ -98,37 +101,46 @@ export const createFirestoreDirectPostStateStore = (
     }
   }
 
-  const resolve = async (state: string | undefined) => {
+  const acquire = async (state: string | undefined) => {
     if (state == null || state.trim() === '') {
       return errorResult('state is required for VP audience validation')
     }
 
     const ref = docRef(state)
-    const doc = await ref.get()
-    if (!doc.exists) {
-      return errorResult('unknown or expired state')
-    }
+    let transactionId: string | undefined
+    let isExpired = false
 
-    const data = doc.data() as StoredState
-    if (Date.now() > data.expiresAt.toMillis()) {
-      // Fix #2: conditional delete — only remove if still expired at delete time
+    try {
       await db.runTransaction(async (tx: Transaction) => {
-        const current = await tx.get(ref)
-        if (current.exists) {
-          const d = current.data() as StoredState
-          if (Date.now() > d.expiresAt.toMillis()) {
-            tx.delete(ref)
-          }
+        const doc = await tx.get(ref)
+        const now = Date.now()
+        if (!doc.exists) {
+          throw new Error('acquire_failed')
         }
+        const data = doc.data() as StoredState
+        if (now > data.expiresAt.toMillis()) {
+          tx.delete(ref)
+          isExpired = true
+          return // 正常終了してトランザクションをコミットし、delete を確定させる
+        }
+        if (data.status !== 'registered') {
+          throw new Error('acquire_failed')
+        }
+        transactionId = data.transactionId
+        tx.set(ref, { ...data, status: 'processing' })
       })
+    } catch (err) {
+      if (err instanceof Error && err.message === 'acquire_failed') {
+        return errorResult('unknown or expired state')
+      }
+      throw err
+    }
+
+    if (isExpired || !transactionId) {
       return errorResult('unknown or expired state')
     }
 
-    if (data.transactionId === '') {
-      return errorResult('unknown or expired state')
-    }
-
-    return { ok: true as const, transactionId: data.transactionId }
+    return { ok: true as const, transactionId }
   }
 
   // Fix #2 (consume): verify transactionId before deleting to prevent wrong-generation delete
@@ -151,12 +163,12 @@ export const createFirestoreDirectPostStateStore = (
       const doc = await tx.get(ref)
       if (doc.exists) {
         const data = doc.data() as StoredState
-        if (data.transactionId === '' && data.reservationToken === reservationToken) {
+        if (data.status === 'reserved' && data.reservationToken === reservationToken) {
           tx.delete(ref)
         }
       }
     })
   }
 
-  return { reserve, register, resolve, consume, release }
+  return { reserve, register, acquire, consume, release }
 }

@@ -217,16 +217,16 @@ export const createVerifierRouter = (
 
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
 
-      const resolved = await vpAudTx.resolve(authorizationResponse.state)
-      if (!resolved.ok) {
-        return c.json(resolved.error, 400)
+      const acquired = await vpAudTx.acquire(authorizationResponse.state)
+      if (!acquired.ok) {
+        return c.json(acquired.error, 400)
       }
       const vpPayload = await verifierFlow.verifyPresentations(
         authorizationResponse,
-        resolved.transactionId
+        acquired.transactionId
       )
       await vpAudTx
-        .consume(authorizationResponse.state ?? '', resolved.transactionId)
+        .consume(authorizationResponse.state ?? '', acquired.transactionId)
         .catch((e) => console.error('[verify] consume failed (verification succeeded):', e))
       console.log('Verified VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
@@ -268,17 +268,17 @@ export const createVerifierRouter = (
       }
 
       const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-      const resolved = await vpAudTx.resolve(authorizationResponse.state)
-      if (!resolved.ok) {
-        return c.json(resolved.error, 400)
+      const acquired = await vpAudTx.acquire(authorizationResponse.state)
+      if (!acquired.ok) {
+        return c.json(acquired.error, 400)
       }
       const vpPayload = await verifierFlow.verifyPresentations(
         authorizationResponse,
-        resolved.transactionId,
+        acquired.transactionId,
         { isKbJwt: true }
       )
       await vpAudTx
-        .consume(authorizationResponse.state ?? '', resolved.transactionId)
+        .consume(authorizationResponse.state ?? '', acquired.transactionId)
         .catch((e) => console.error('[verify] consume failed (verification succeeded):', e))
       console.log('Verified KBJWT VP Payload:', vpPayload)
       return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
