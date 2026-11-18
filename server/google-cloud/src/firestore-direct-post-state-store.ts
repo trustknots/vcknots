@@ -8,7 +8,7 @@ const DEFAULT_TTL_MS = 5 * 60 * 1000
 type StoredState = {
   transactionId: string
   reservationToken: string
-  expiresAt: Timestamp
+  expires_at: Timestamp
   status: 'reserved' | 'registered' | 'processing'
 }
 
@@ -22,7 +22,6 @@ const errorResult = (error_description: string) => ({
 export const createFirestoreDirectPostStateStore = (
   options?: FirestoreProviderOptions & { ttlMs?: number }
 ): DirectPostVpAudTransactionStore => {
-  // Fix #5: handle databaseId without app
   const db = options?.app
     ? options.databaseId
       ? getFirestore(options.app, options.databaseId)
@@ -34,7 +33,7 @@ export const createFirestoreDirectPostStateStore = (
   const ns = options?.namespace?.replace(/\//g, '') || 'vcknots-server'
   const ttlMs = options?.ttlMs ?? DEFAULT_TTL_MS
 
-  // Fix #4: use SHA-256 of state as document ID to avoid path issues
+  // use SHA-256 of state as document ID to avoid path issues
   const docRef = (state: string) => db.doc(`${ns}/v1/directPostStates/${stateToDocId(state)}`)
 
   const reserve = async (state: string) => {
@@ -47,14 +46,14 @@ export const createFirestoreDirectPostStateStore = (
         const now = Date.now()
         if (doc.exists) {
           const data = doc.data() as StoredState
-          if (now <= data.expiresAt.toMillis()) {
+          if (now <= data.expires_at.toMillis()) {
             throw new Error('state_conflict')
           }
         }
         tx.set(ref, {
           transactionId: '',
           reservationToken,
-          expiresAt: Timestamp.fromMillis(now + ttlMs),
+          expires_at: Timestamp.fromMillis(now + ttlMs),
           status: 'reserved',
         })
       })
@@ -79,7 +78,7 @@ export const createFirestoreDirectPostStateStore = (
         }
         const data = doc.data() as StoredState
         if (
-          now > data.expiresAt.toMillis() ||
+          now > data.expires_at.toMillis() ||
           data.status !== 'reserved' ||
           data.reservationToken !== reservationToken
         ) {
@@ -88,7 +87,7 @@ export const createFirestoreDirectPostStateStore = (
         tx.set(ref, {
           transactionId,
           reservationToken,
-          expiresAt: Timestamp.fromMillis(now + ttlMs),
+          expires_at: Timestamp.fromMillis(now + ttlMs),
           status: 'registered',
         })
       })
@@ -117,7 +116,7 @@ export const createFirestoreDirectPostStateStore = (
         const now = Date.now()
         if (!doc.exists) throw new Error('acquire_failed')
         const data = doc.data() as StoredState
-        if (now > data.expiresAt.toMillis()) {
+        if (now > data.expires_at.toMillis()) {
           tx.delete(ref)
           return { kind: 'expired' }
         }
@@ -136,7 +135,7 @@ export const createFirestoreDirectPostStateStore = (
     return { ok: true as const, transactionId: outcome.transactionId }
   }
 
-  // Fix #2 (consume): verify transactionId before deleting to prevent wrong-generation delete
+  // verify transactionId before deleting to prevent wrong-generation delete
   const consume = async (state: string, transactionId: string) => {
     const ref = docRef(state)
     await db.runTransaction(async (tx: Transaction) => {

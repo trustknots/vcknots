@@ -85,7 +85,12 @@ export function createDirectPostVpAudTransactionStore(options?: {
         },
       }
     }
-    byState.set(state, { ...existing, transactionId, status: 'registered' })
+    byState.set(state, {
+      ...existing,
+      transactionId,
+      status: 'registered',
+      expiresAt: Date.now() + ttlMs,
+    })
     return { ok: true as const }
   }
 

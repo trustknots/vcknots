@@ -100,6 +100,8 @@ The state follows an explicit lifecycle: `reserved` → `registered` → `proces
 - Request phase: `reserve` → `register` (on success) or `release` (on error)
 - Callback phase: `acquire` (atomic, exclusive) → `consume` (on success)
 
+If VP verification fails after `acquire`, the state remains in `processing` until its TTL expires or `DELETE /presentation-transaction/:transactionId` is called. During that window, both retrying the same `/callback` and issuing a new `/request` with the same `state` will return `invalid_request`. This is intentional to prevent duplicate VP verification.
+
 For a Firestore-backed implementation example, see the [Google Cloud server README](../google-cloud/README.md#vpaudtransactionstore-firestore-implementation).
 
 ## Build

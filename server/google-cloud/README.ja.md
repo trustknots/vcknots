@@ -170,6 +170,7 @@ createServer({
     vpAudTransactionStore: createFirestoreDirectPostStateStore({
       app: firebaseApp,
       databaseId: process.env.FIRESTORE_DATABASE_ID, // 省略時はデフォルト DB
+      namespace: 'vcknots-server',                   // 省略時: 'vcknots-server'
       ttlMs: 5 * 60 * 1000,                          // 省略時: 5 分
     }),
   },
@@ -177,6 +178,8 @@ createServer({
 ```
 
 Firestore トランザクションを使って `reserve` / `register` / `acquire` / `release` をアトミックに処理するため、複数インスタンス間での state 競合を防ぎます。特に `acquire` は state を `processing` へ原子的に遷移させることで、並行する callback による VP の二重検証を防止します。`vpAudTransactionStore` の詳細は [server-core README](../core/README.ja.md#vpaudtransactionstore) を参照してください。
+
+**`namespace` について**: デフォルトは `'vcknots'` ではなく `'vcknots-server'` です。ライブラリ付属のプロバイダー（nonce・request-object など）はすべて `'vcknots'` をルートコレクションとして使うため、このストアはサーバー層のデータを明示的に別のルートに分離しています。すべてのデータを同じルートに集約したい場合は `namespace: 'vcknots'` を明示的に指定してください。
 
 ## 補足
 

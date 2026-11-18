@@ -171,6 +171,7 @@ createServer({
     vpAudTransactionStore: createFirestoreDirectPostStateStore({
       app: firebaseApp,
       databaseId: process.env.FIRESTORE_DATABASE_ID, // optional, uses default DB if omitted
+      namespace: 'vcknots-server',                   // optional, default: 'vcknots-server'
       ttlMs: 5 * 60 * 1000,                          // optional, default: 5 minutes
     }),
   },
@@ -178,6 +179,8 @@ createServer({
 ```
 
 `reserve`, `register`, `acquire`, and `release` are executed atomically via Firestore transactions, preventing state conflicts across multiple instances. `acquire` additionally ensures that only one concurrent callback can transition a state to `processing`, preventing duplicate VP verification. For details on the `vpAudTransactionStore` interface and design, see the [server-core README](../core/README.md#vpaudtransactionstore).
+
+**Note on `namespace`**: The default is `'vcknots-server'`, not `'vcknots'`. This is intentional: the library's own providers (nonce, request-object, etc.) all use `'vcknots'` as their root collection, so this store uses a different root to keep server-layer state separate. If you want all data under one root, pass `namespace: 'vcknots'` explicitly.
 
 ## Notes
 

@@ -100,6 +100,8 @@ state は明示的なライフサイクルをたどります：`reserved` → `r
 - リクエストフェーズ：`reserve` → `register`（成功時）または `release`（エラー時）
 - コールバックフェーズ：`acquire`（原子的・排他的）→ `consume`（成功時）
 
+VP 検証が失敗した場合、state は `processing` のまま TTL が切れるか `DELETE /presentation-transaction/:transactionId` が呼ばれるまで残ります。その間は、同じ state での `/callback` の再送も `/request` のやり直しも `invalid_request` になります。これは VP の二重検証を防ぐための意図的な挙動です。
+
 Firestore を使った実装例は [Google Cloud サーバー README](../google-cloud/README.ja.md#vpaudtransactionstore-firestore-実装) を参照してください。
 
 ## ビルド
