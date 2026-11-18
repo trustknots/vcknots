@@ -53,7 +53,7 @@ const verifierFlow = initializeVerifierFlow(context);
 
 Introduction:
 - The Verifier metadata is pre-registered when the server starts. ([initializeVerifierMetadata](#initializeVerifierMetadata))
-- `vpAudTx` in the sample code is a sample utility that maps `state` to `transactionId`. In your actual application, manage this using sessions or a database.
+- `vpAudTx` in the sample code is a `DirectPostVpAudTransactionStore` implementation that maps `state` to `transactionId`. In your actual application, inject an external store implementation using sessions or a database.
 
 
 
@@ -120,7 +120,7 @@ verifyApp.post('/request', async (c) => {
         ],
       },
     }
-    const reserved = vpAudTx.reserve(state)
+    const reserved = await vpAudTx.reserve(state)
     if (!reserved.ok) {
       return c.json(reserved.error, 400)
     }
@@ -130,11 +130,11 @@ verifyApp.post('/request', async (c) => {
         response_uri: `${baseUrl}/callback`,
         base_url: baseUrl,
       })
-      .catch((err: unknown) => {
-        vpAudTx.consume(state)
+      .catch(async (err: unknown) => {
+        await vpAudTx.release(state, reserved.reservationToken)
         throw err
       })
-    vpAudTx.register(state, verifierTxId)
+    await vpAudTx.register(state, verifierTxId, reserved.reservationToken)
 
     const encoded = Object.entries({ ...request, state })
       .map(([key, value]) => {
@@ -241,12 +241,11 @@ verifyApp.post('/request-object', async (c) => {
         ? validateClientIdScheme(input.client_id)
         : 'x509_san_dns:localhost',
   }
-  let reserved: ReturnType<typeof vpAudTx.reserve> | undefined
+  const reserved = await vpAudTx.reserve(requestObject.state)
+  if (!reserved.ok) {
+    return c.json(reserved.error, 400)
+  }
   try {
-    reserved = vpAudTx.reserve(requestObject.state)
-    if (!reserved.ok) {
-      return c.json(reserved.error, 400)
-    }
     const verifierId = VerifierClientId(baseUrl)
     const { request, transactionId: verifierTxId } = await verifierFlow.createAuthzRequest(
       verifierId,
@@ -265,7 +264,7 @@ verifyApp.post('/request-object', async (c) => {
           : {}),
       }
     )
-    vpAudTx.register(requestObject.state, verifierTxId)
+    await vpAudTx.register(requestObject.state, verifierTxId, reserved.reservationToken)
     console.log('[verify] direct_post transaction_id:', verifierTxId)
     const encoded = Object.entries(request)
       .map(([key, value]) => {
@@ -276,9 +275,7 @@ verifyApp.post('/request-object', async (c) => {
 
     return c.text(`openid4vp:?${encoded}`)
   } catch (err) {
-    if (reserved?.ok) {
-      vpAudTx.consume(requestObject.state)
-    }
+    await vpAudTx.release(requestObject.state, reserved.reservationToken)
     const errorResponse = handleError(err)
     const status = errorResponse.error === 'internal_server_error' ? 500 : 400
     return c.json(errorResponse, status)
@@ -405,15 +402,15 @@ verifyApp.post('/callback', async (c) => {
       return c.json(parsed.error, 400)
     }
     const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-    const resolved = vpAudTx.resolve(authorizationResponse.state)
-    if (!resolved.ok) {
-      return c.json(resolved.error, 400)
+    const acquired = await vpAudTx.acquire(authorizationResponse.state)
+    if (!acquired.ok) {
+      return c.json(acquired.error, 400)
     }
     const vpPayload = await verifierFlow.verifyPresentations(
       authorizationResponse,
-      resolved.transactionId
+      acquired.transactionId
     )
-    vpAudTx.consume(authorizationResponse.state ?? '')
+    await vpAudTx.consume(authorizationResponse.state ?? '', acquired.transactionId)
     console.log('Verified VP Payload:', vpPayload)
     return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
   } catch (err) {

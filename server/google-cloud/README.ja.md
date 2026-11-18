@@ -24,7 +24,8 @@ Issuer / Authorization Server / Verifier の実際の API 仕様（パラメー�
 ```text
 google-cloud/
 ├─ src/        
-│  └─ example.ts          # Google Cloud / Firebase 起動エントリ
+│  ├─ example.ts                           # Google Cloud / Firebase 起動エントリ
+│  └─ firestore-direct-post-state-store.ts # Firestore 版 vpAudTransactionStore 実装
 ├─ .env.example           # 環境変数設定のサンプル
 ├─ package.json
 └─ tsconfig.json
@@ -155,6 +156,30 @@ Authz metadata initialized
 ```
 
 既定では `http://localhost:8080` で起動します。
+
+## vpAudTransactionStore Firestore 実装
+
+`server/google-cloud` は Cloud Run などのマルチインスタンス環境向けに、Firestore を使った `DirectPostVpAudTransactionStore` 実装を提供します。
+
+```ts
+import { createFirestoreDirectPostStateStore } from './firestore-direct-post-state-store.js'
+
+createServer({
+  providers: [...],
+  verifier: {
+    vpAudTransactionStore: createFirestoreDirectPostStateStore({
+      app: firebaseApp,
+      databaseId: process.env.FIRESTORE_DATABASE_ID, // 省略時はデフォルト DB
+      namespace: 'vcknots-server',                   // 省略時: 'vcknots-server'
+      ttlMs: 5 * 60 * 1000,                          // 省略時: 5 分
+    }),
+  },
+})
+```
+
+Firestore トランザクションを使って `reserve` / `register` / `acquire` / `release` をアトミックに処理するため、複数インスタンス間での state 競合を防ぎます。特に `acquire` は state を `processing` へ原子的に遷移させることで、並行する callback による VP の二重検証を防止します。`vpAudTransactionStore` の詳細は [server-core README](../core/README.ja.md#vpaudtransactionstore) を参照してください。
+
+**`namespace` について**: デフォルトは `'vcknots'` ではなく `'vcknots-server'` です。ライブラリ付属のプロバイダー（nonce・request-object など）はすべて `'vcknots'` をルートコレクションとして使うため、このストアはサーバー層のデータを明示的に別のルートに分離しています。すべてのデータを同じルートに集約したい場合は `namespace: 'vcknots'` を明示的に指定してください。
 
 ## 補足
 
