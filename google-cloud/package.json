@@ -27,8 +27,8 @@
 		"@google-cloud/secret-manager": "7.2.0",
 		"@trustknots/vcknots": "workspace:*",
 		"ecdsa-sig-formatter": "1.0.11",
-		"firebase-admin": "14.5.0",
-		"jose": "6.2.15",
+		"firebase-admin": "14.5.1",
+		"jose": "6.2.17",
 		"zod": "4.6.7"
 	}
 }
