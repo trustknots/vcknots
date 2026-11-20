@@ -45,7 +45,7 @@
 	],
 	"author": "Trust Knots Project Team",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@12.17.0",
+	"packageManager": "pnpm@12.21.0",
 	"dependencies": {
 		"@sd-jwt/core": "0.24.3",
 		"@sd-jwt/crypto-nodejs": "0.19.0",
