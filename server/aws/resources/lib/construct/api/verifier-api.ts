@@ -3,7 +3,7 @@ import { Stack } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { DataStores } from '../data/data-stores';
 import { grantSignatureKeyStoreAccess } from '../security/signature-key-policy';
-import { LambdaApi } from './lambda-api';
+import { LambdaApi, requiredEnv } from './lambda-api';
 
 // Both values must match aws/src/providers/kms-verifier-signature-key-store.provider.ts. They are
 // matched against the alias and tag the provider attaches at runtime, so a mismatch is not caught
@@ -29,13 +29,18 @@ export class VerifierApi extends Construct {
         dataStores.requestObjectsTable,
         dataStores.noncesTable,
         dataStores.verifierTransactionsTable,
+        dataStores.verifierStatesTable,
       ],
       environment: {
         VERIFIERS_TABLE_NAME: dataStores.verifiersTable.tableName,
         REQUEST_OBJECTS_TABLE_NAME: dataStores.requestObjectsTable.tableName,
         NONCES_TABLE_NAME: dataStores.noncesTable.tableName,
         VERIFIER_TRANSACTIONS_TABLE_NAME: dataStores.verifierTransactionsTable.tableName,
+        VERIFIER_STATES_TABLE_NAME: dataStores.verifierStatesTable.tableName,
         VERIFIER_CERTIFICATE_SECRET_PREFIX,
+        // The verifier never hashes tx_code, but @trustknots/aws checks this at import time, so
+        // the Lambda fails to initialize without it.
+        TX_CODE_PEPPER: requiredEnv('TX_CODE_PEPPER'),
       },
     });
 
