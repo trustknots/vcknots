@@ -18,12 +18,12 @@
 	"author": "",
 	"license": "Apache-2.0",
 	"dependencies": {
-		"@hono/node-server": "2.1.6",
+		"@hono/node-server": "2.1.8",
 		"@trustknots/aws": "workspace:*",
 		"@trustknots/server-core": "workspace:*",
 		"@trustknots/vcknots": "workspace:*",
-		"dotenv": "18.0.9",
-		"hono": "4.13.16"
+		"dotenv": "18.0.10",
+		"hono": "4.13.18"
 	},
 	"devDependencies": {
 		"@types/aws-lambda": "8.10.164",
