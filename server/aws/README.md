@@ -19,7 +19,7 @@ src/
 │   ├── create-base-app.ts      # Shared Hono app factory
 │   ├── create-issuer-app.ts    # Issuer app (DynamoDB issuer metadata, OAuth policy/client stores, allowed credential configuration store, DPoP proof jti store, KMS issuer + Authz public-key stores)
 │   ├── create-authz-app.ts     # Authorization Server app (DynamoDB authz server metadata store, allowed credential configuration store, DPoP proof jti store)
-│   └── create-verifier-app.ts  # Verifier app (DynamoDB verifier metadata store + KMS signature key store)
+│   └── create-verifier-app.ts  # Verifier app (DynamoDB verifier metadata store + KMS signature key store; injects the DynamoDB direct_post state store into the router)
 ├── handlers/
 │   ├── issuer.ts               # Lambda handler / local entrypoint — Issuer (port 8081)
 │   ├── authz.ts                # Lambda handler / local entrypoint — Authorization Server (port 8082)
@@ -27,7 +27,8 @@ src/
 ├── context/
 │   └── vcknots-context.ts      # VcknotsContext and baseUrl helpers
 ├── utils/
-│   └── error-logger.ts         # Sanitized error logging
+│   ├── error-logger.ts         # Sanitized error logging
+│   └── dynamodb-direct-post-state-store.ts  # DynamoDB implementation of vpAudTransactionStore (state → transaction id)
 ├── .env.example                # Sample environment variables
 └── package.json
 ```
@@ -88,6 +89,7 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `VERIFIERS_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `VerifiersTableName`) |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `RequestObjectsTableName`) |
 | `VERIFIER_TRANSACTIONS_TABLE_NAME` | Verifier **required** | DynamoDB table name for VP request transactions (stack output: `VerifierTransactionsTableName`) |
+| `VERIFIER_STATES_TABLE_NAME` | Verifier **required** | DynamoDB table name for `direct_post` `state` → transaction bindings (stack output: `VerifierStatesTableName`) |
 | `NONCES_TABLE_NAME` | Verifier **required** | DynamoDB table name (stack output: `NoncesTableName`) |
 | `ISSUER_PORT` | Issuer (optional) | Override the Issuer listening port (default: `8081`) |
 | `ISSUER_BASE_URL` | Issuer (optional) | Override the base URL used in Issuer metadata (default: `http://localhost:{ISSUER_PORT}`) |
@@ -98,7 +100,7 @@ Edit `.env`. Table names are available in the CloudFormation stack outputs after
 | `VERIFIER_CERTIFICATE_SECRET_PREFIX` | Verifier (optional) | Secrets Manager name prefix for verifier certificates (default: `vcknots/verifier-certificates`). Changing it requires updating the IAM grant in `server/aws/resources` to match |
 | `PRIVATE_KEY_PATH` / `CERTIFICATE_PATH` | Verifier (optional unless `VERIFIER_BASE_URL` is non-local) | Paths to the PEM private key and X.509 certificate registered on first startup (default when `VERIFIER_BASE_URL` is local: the sample chain in `server/samples/certificate-openid-test/`) |
 
-**`ISSUERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME` (Issuer & Authz), `NONCES_TABLE_NAME` (Issuer, Authz & Verifier), `AUTH_SERVERS_TABLE_NAME`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`, `DPOP_PROOF_JTIS_TABLE_NAME` (Issuer & Authz), `OAUTH_CLIENT_ASSERTION_JTIS_TABLE_NAME` (Authz), `VERIFIERS_TABLE_NAME`, `REQUEST_OBJECTS_TABLE_NAME`, and `VERIFIER_TRANSACTIONS_TABLE_NAME` are required** — each server exits at startup if a table name it needs is missing.
+**`ISSUERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME` (Issuer & Authz), `NONCES_TABLE_NAME` (Issuer, Authz & Verifier), `AUTH_SERVERS_TABLE_NAME`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`, `DPOP_PROOF_JTIS_TABLE_NAME` (Issuer & Authz), `OAUTH_CLIENT_ASSERTION_JTIS_TABLE_NAME` (Authz), `VERIFIERS_TABLE_NAME`, `REQUEST_OBJECTS_TABLE_NAME`, `VERIFIER_TRANSACTIONS_TABLE_NAME`, and `VERIFIER_STATES_TABLE_NAME` are required** — each server exits at startup if a table name it needs is missing.
 
 **`TX_CODE_PEPPER` is required by every server.** It is a secret pepper used to HMAC-hash `tx_code` values before storing them in DynamoDB. Because `@trustknots/aws` evaluates it at import time, the Issuer, Authorization Server, and Verifier all fail at startup with `TX_CODE_PEPPER environment variable is required` when it is missing. Use a sufficiently long random secret and keep it stable per environment — rotating it invalidates previously stored `tx_code` hashes.
 

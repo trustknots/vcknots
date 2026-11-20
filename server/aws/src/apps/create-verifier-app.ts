@@ -16,6 +16,7 @@ import {
   initializeVerifierFlow,
 } from '@trustknots/vcknots/verifier'
 import type { VcknotsOptions } from '@trustknots/vcknots'
+import { createDynamoDbDirectPostStateStore } from '../utils/dynamodb-direct-post-state-store.js'
 import { createBaseApp } from './create-base-app.js'
 
 export function createVerifierApp(options?: VcknotsOptions) {
@@ -39,6 +40,11 @@ export function createVerifierApp(options?: VcknotsOptions) {
     throw new Error('VERIFIER_TRANSACTIONS_TABLE_NAME is required')
   }
 
+  const verifierStatesTableName = process.env.VERIFIER_STATES_TABLE_NAME
+  if (!verifierStatesTableName) {
+    throw new Error('VERIFIER_STATES_TABLE_NAME is required')
+  }
+
   const rawPort = process.env.VERIFIER_PORT ?? '8083'
   const port = Number.parseInt(rawPort, 10)
   if (!Number.isFinite(port)) throw new Error(`Invalid VERIFIER_PORT: "${rawPort}"`)
@@ -53,8 +59,14 @@ export function createVerifierApp(options?: VcknotsOptions) {
   const certificateStore = secretsManagerVerifierCertificateStore({
     secretPrefix: process.env.VERIFIER_CERTIFICATE_SECRET_PREFIX,
   })
+  // The state → transaction id binding is a server-layer concern, so it is injected into the
+  // router rather than registered as a library provider. Without it the router falls back to an
+  // in-memory map, which is not shared across Lambda instances.
+  const vpAudTransactionStore = createDynamoDbDirectPostStateStore({
+    tableName: verifierStatesTableName,
+  })
   const { app, context } = createBaseApp(
-    createVerifierRouter,
+    (context, baseUrl) => createVerifierRouter(context, baseUrl, { vpAudTransactionStore }),
     { port, baseUrl: process.env.VERIFIER_BASE_URL },
     {
       ...options,

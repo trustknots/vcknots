@@ -19,7 +19,7 @@ src/
 │   ├── create-base-app.ts      # 共通 Hono アプリファクトリ
 │   ├── create-issuer-app.ts    # Issuer アプリ（DynamoDB issuer メタデータ / OAuth policy・client ストア、allowed credential configuration ストア、DPoP proof jti ストア、KMS issuer 署名鍵 + Authz 公開鍵ストア）
 │   ├── create-authz-app.ts     # Authorization Server アプリ（DynamoDB authz server メタデータストア、allowed credential configuration ストア、DPoP proof jti ストア）
-│   └── create-verifier-app.ts  # Verifier アプリ（DynamoDB verifier メタデータストア + KMS 署名鍵ストア）
+│   └── create-verifier-app.ts  # Verifier アプリ（DynamoDB verifier メタデータストア + KMS 署名鍵ストア。DynamoDB 版 direct_post state ストアをルーターに注入）
 ├── handlers/
 │   ├── issuer.ts               # Lambda ハンドラー / ローカル起動エントリーポイント — Issuer（ポート 8081）
 │   ├── authz.ts                # Lambda ハンドラー / ローカル起動エントリーポイント — Authorization Server（ポート 8082）
@@ -27,7 +27,8 @@ src/
 ├── context/
 │   └── vcknots-context.ts      # VcknotsContext と baseUrl ヘルパー
 ├── utils/
-│   └── error-logger.ts         # エラーログのサニタイズ処理
+│   ├── error-logger.ts         # エラーログのサニタイズ処理
+│   └── dynamodb-direct-post-state-store.ts  # DynamoDB 版 vpAudTransactionStore 実装（state → transaction ID）
 ├── .env.example                # 環境変数サンプル
 └── package.json
 ```
@@ -88,6 +89,7 @@ cp .env.example .env
 | `VERIFIERS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `VerifiersTableName`） |
 | `REQUEST_OBJECTS_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `RequestObjectsTableName`） |
 | `VERIFIER_TRANSACTIONS_TABLE_NAME` | Verifier **必須** | VPリクエストのtransaction用DynamoDBテーブル名（スタック出力: `VerifierTransactionsTableName`） |
+| `VERIFIER_STATES_TABLE_NAME` | Verifier **必須** | `direct_post`の`state`とtransactionの対応表用DynamoDBテーブル名（スタック出力: `VerifierStatesTableName`） |
 | `NONCES_TABLE_NAME` | Verifier **必須** | DynamoDB テーブル名（スタック出力: `NoncesTableName`） |
 | `ISSUER_PORT` | Issuer（任意） | Issuer のリッスンポートを上書き（デフォルト: `8081`） |
 | `ISSUER_BASE_URL` | Issuer（任意） | Issuer メタデータで使用するベース URL を上書き（デフォルト: `http://localhost:{ISSUER_PORT}`） |
@@ -98,7 +100,7 @@ cp .env.example .env
 | `VERIFIER_CERTIFICATE_SECRET_PREFIX` | Verifier（任意） | Verifier 証明書を保存する Secrets Manager のシークレット名プレフィックス（デフォルト: `vcknots/verifier-certificates`）。変更する場合は `server/aws/resources` の IAM 許可も合わせて更新が必要 |
 | `PRIVATE_KEY_PATH` / `CERTIFICATE_PATH` | Verifier（`VERIFIER_BASE_URL` が非localの場合は必須） | 初回起動時に登録する秘密鍵（PEM）と X.509 証明書のファイルパス（`VERIFIER_BASE_URL` がlocalの場合のデフォルト: `server/samples/certificate-openid-test/` の同梱サンプル） |
 
-**`ISSUERS_TABLE_NAME`・`PRE_CODES_TABLE_NAME`（Issuer・Authz）・`NONCES_TABLE_NAME`（Issuer・Authz・Verifier）・`AUTH_SERVERS_TABLE_NAME`・`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`・`AUTHZ_OAUTH_POLICIES_TABLE_NAME`・`ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`・`DPOP_PROOF_JTIS_TABLE_NAME`（Issuer・Authz）・`OAUTH_CLIENT_ASSERTION_JTIS_TABLE_NAME`（Authz）・`VERIFIERS_TABLE_NAME`・`REQUEST_OBJECTS_TABLE_NAME`・`VERIFIER_TRANSACTIONS_TABLE_NAME` は必須**です。必要なテーブル名が未設定の場合、該当サーバーは起動時に終了します。
+**`ISSUERS_TABLE_NAME`・`PRE_CODES_TABLE_NAME`（Issuer・Authz）・`NONCES_TABLE_NAME`（Issuer・Authz・Verifier）・`AUTH_SERVERS_TABLE_NAME`・`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`・`AUTHZ_OAUTH_POLICIES_TABLE_NAME`・`ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`・`DPOP_PROOF_JTIS_TABLE_NAME`（Issuer・Authz）・`OAUTH_CLIENT_ASSERTION_JTIS_TABLE_NAME`（Authz）・`VERIFIERS_TABLE_NAME`・`REQUEST_OBJECTS_TABLE_NAME`・`VERIFIER_TRANSACTIONS_TABLE_NAME`・`VERIFIER_STATES_TABLE_NAME` は必須**です。必要なテーブル名が未設定の場合、該当サーバーは起動時に終了します。
 
 **`TX_CODE_PEPPER` は全サーバーで必須**です。`tx_code` を DynamoDB に保存する前に HMAC-SHA256 でハッシュ化するための秘密値（pepper）です。`@trustknots/aws` は import 時にこの値を評価するため、未設定の場合は Issuer・Authorization Server・Verifier のいずれも起動時に `TX_CODE_PEPPER environment variable is required` でエラーになります。十分に長いランダム文字列を設定し、環境ごとに固定して運用してください（変更すると既存データの `tx_code` 検証に失敗します）。
 

@@ -18,6 +18,7 @@
 	"author": "",
 	"license": "Apache-2.0",
 	"dependencies": {
+		"@aws-sdk/lib-dynamodb": "3.1161.0",
 		"@hono/node-server": "2.1.6",
 		"@trustknots/aws": "workspace:*",
 		"@trustknots/server-core": "workspace:*",

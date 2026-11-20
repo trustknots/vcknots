@@ -29,12 +29,14 @@ export class VerifierApi extends Construct {
         dataStores.requestObjectsTable,
         dataStores.noncesTable,
         dataStores.verifierTransactionsTable,
+        dataStores.verifierStatesTable,
       ],
       environment: {
         VERIFIERS_TABLE_NAME: dataStores.verifiersTable.tableName,
         REQUEST_OBJECTS_TABLE_NAME: dataStores.requestObjectsTable.tableName,
         NONCES_TABLE_NAME: dataStores.noncesTable.tableName,
         VERIFIER_TRANSACTIONS_TABLE_NAME: dataStores.verifierTransactionsTable.tableName,
+        VERIFIER_STATES_TABLE_NAME: dataStores.verifierStatesTable.tableName,
         VERIFIER_CERTIFICATE_SECRET_PREFIX,
       },
     });
