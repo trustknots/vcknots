@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { DeleteCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
+import { DeleteCommand, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { DynamoDbProviderOptions, resolveDynamoDbDocumentClient } from '@trustknots/aws'
 import type { DirectPostVpAudTransactionStore } from '@trustknots/server-core'
 
@@ -98,10 +98,43 @@ export const createDynamoDbDirectPostStateStore = (
       )
       return { ok: true as const }
     } catch (error) {
+      // The update may have been applied even though this call failed: DynamoDB can return a 5xx
+      // after applying a write, and the SDK's retry then fails the condition because the item is
+      // already `registered`. Treat our own binding as registered instead of leaving it behind
+      // pointing at a transaction the caller is about to delete.
+      if (await isRegisteredBy(state, transactionId, reservationToken)) {
+        return { ok: true as const }
+      }
       if (isConditionalCheckFailed(error)) {
         return errorResult('state is already in use for an active presentation transaction')
       }
       throw error
+    }
+  }
+
+  /** Whether `state` is bound to `transactionId` under this reservation (strongly consistent read). */
+  const isRegisteredBy = async (
+    state: string,
+    transactionId: string,
+    reservationToken: string
+  ): Promise<boolean> => {
+    try {
+      const result = await client.send(
+        new GetCommand({
+          TableName: tableName,
+          Key: { id: stateToId(state) },
+          ConsistentRead: true,
+        })
+      )
+      const item = result.Item as StoredState | undefined
+      return (
+        item?.status === 'registered' &&
+        item.reservation_token === reservationToken &&
+        item.transaction_id === transactionId
+      )
+    } catch {
+      // Could not confirm; fall back to reporting the original failure.
+      return false
     }
   }
 
