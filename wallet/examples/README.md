@@ -533,12 +533,19 @@ level=INFO msg="Stored credential" id=... vct=urn:eu.europa.ec.eudi:pid:1 disclo
 level=INFO msg="=== Credential Presented ==="
 ```
 
+When a presentation succeeds and the Verifier answers with a `redirect_uri`, the runner opens
+it in the default browser (OID4VP 1.0 Section 8.2), with `open` on macOS and `xdg-open` on
+Linux. A URI other than `https` is not opened and logs a WARN line. A WARN line is also logged
+when `open` or `xdg-open` cannot be started; paste the logged `redirect_uri` into a browser
+yourself in that case. Whether a browser actually opens afterwards is not checked.
+
 ### Known Limitations
 
-- **`oid4vp-1final-wallet-alternate-happy-flow` cannot run with `direct_post` on suite 5.3.1.**
-  The suite stops with `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`
-  before it contacts the wallet: the step that adds those parameters is applied even for
-  response modes that have none. The wallet cannot fix this.
+- **`oid4vp-1final-wallet-alternate-happy-flow` passes on suite 5.3.4.** Suite 5.3.1 stops with
+  `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`
+  before it contacts the wallet. The module checks that the `redirect_uri` returned by the
+  Response Endpoint is opened in a browser within 30 seconds, so run it on a desktop
+  (macOS or Linux) where the default browser can be opened.
 - **Some negative modules end in REVIEW, not PASSED.** An invalid Request Object signature and
   a mismatched or invalid `client_id` cannot be authenticated, so rejecting them without
   answering the Verifier is correct and REVIEW is the final result. `missing-nonce` and

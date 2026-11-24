@@ -77,8 +77,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -444,7 +446,37 @@ func presentStoredCredential(oid4vpURI string, logger *slog.Logger) {
 	logger.Info("=== Credential Presented ===")
 	if redirectURI != "" {
 		logger.Info("Verifier requested redirect", "redirect_uri", redirectURI)
+		// OID4VP 1.0 Section 8.2: the Wallet MUST redirect the user agent to this URI. The
+		// Verifier may carry a value in the fragment that only a browser sees, so fetching
+		// it over HTTP from here would not do.
+		if err := openInBrowser(redirectURI); err != nil {
+			logger.Warn("Did not open the redirect_uri in a browser", "error", err)
+		}
 	}
+}
+
+// openInBrowser hands an https URI to the desktop's default browser. The URI comes from
+// the Verifier, so other schemes are refused rather than passed to the OS, which would
+// open files or launch other applications for them.
+func openInBrowser(uri string) error {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("refusing to open a non-https redirect_uri (scheme %q)", u.Scheme)
+	}
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", uri)
+	case "linux":
+		cmd = exec.Command("xdg-open", uri)
+	default:
+		return fmt.Errorf("opening a browser is not supported on %s", runtime.GOOS)
+	}
+	// Start, not Run: xdg-open may stay attached to a browser it had to launch.
+	return cmd.Start()
 }
 
 func main() {

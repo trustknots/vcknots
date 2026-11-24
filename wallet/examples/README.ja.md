@@ -532,11 +532,17 @@ level=INFO msg="Stored credential" id=... vct=urn:eu.europa.ec.eudi:pid:1 disclo
 level=INFO msg="=== Credential Presented ==="
 ```
 
+提示に成功し、Verifier が応答で `redirect_uri` を返したときは、ランナーがそれを既定のブラウザで開く
+（OID4VP 1.0 Section 8.2）。macOS は `open`、Linux は `xdg-open` を使う。`https` 以外の URI は開かずに WARN を出す。
+`open` / `xdg-open` を起動できなかったときも WARN が出るので、その場合はログの `redirect_uri` を手でブラウザに貼って
+開くこと。起動した後にブラウザが実際に開いたかどうかは確かめない。
+
 ### 既知の制約
 
-- **suite 5.3.1 では `oid4vp-1final-wallet-alternate-happy-flow` を `direct_post` で実行できない。**
-  suite が Wallet に接続する前に `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata`
-  で停止する。暗号化パラメータを足す手順が、それを持たない response mode でも適用されているため。Wallet 側では直せない。
+- **`oid4vp-1final-wallet-alternate-happy-flow` は suite 5.3.4 で PASSED する。** 5.3.1 は Wallet に接続する前に
+  `replacement requested for missing condition: AddVP1FinalEncryptionParametersToClientMetadata` で停止する。
+  このモジュールは、Response Endpoint が返した `redirect_uri` が 30 秒以内にブラウザで開かれることを確かめるので、
+  既定のブラウザを開けるデスクトップ環境（macOS / Linux）で実行すること。
 - **一部の否定系モジュールは PASSED ではなく REVIEW で終わる。** Request Object の署名不正と `client_id` の
   不一致・不正は、リクエストを認証できないため、Verifier に応答せず拒否するのが正しく、REVIEW が最終結果になる。
   一方 `missing-nonce` と `redirect-uri-with-direct-post` は署名自体は正しいので、本来は `response_uri` に
