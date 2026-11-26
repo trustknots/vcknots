@@ -54,18 +54,16 @@ In the notes column of the OpenID for Verifiable Presentations table, a note tha
 | [8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3) | Authorization Response | Encrypted Authorization Response | ❌ | ✅ `ECDH-ES`, `ECDH-ES+A128KW`, `ECDH-ES+A192KW`, `ECDH-ES+A256KW` | [Wallet] [Details](#wallet-encrypted-response) |
 | [8.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.4) | Transaction Data | Transaction Data | Since `v0.7.0`<br />✅ | ✅ `dc+sd-jwt` | Supported for `dc+sd-jwt` only.<br />[Wallet] [Details](#wallet-transaction-data) |
 | [8.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5) | Authorization Response | Authorization Error Response | ❌ | ✅ `invalid_request`, `invalid_scope`, `vp_formats_not_supported`, `invalid_transaction_data`, `access_denied` | [Wallet] [Details](#wallet-error-response) |
-| [10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-10) | Metadata | Wallet Metadata | ❌ | ❌ | [Wallet] No metadata is published, and no `wallet_metadata` is sent when a Request Object is fetched with `request_uri_method=post` (Section 5.10). |
+| [10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-10) | Metadata | Wallet Metadata | ❌ | ❌ | [Wallet] No metadata is published, and no `wallet_metadata` is sent with `request_uri_method=post` (Section 5.10). |
 | [11](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-11) | Metadata | Verifier Metadata — `client_metadata` | Since `v0.7.0`<br />✅ | ✅ `jwks` | [Wallet] [Details](#wallet-verifier-metadata) |
-| [12](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-12) | Client Authentication | Verifier Attestation JWT | ❌ | ❌ | [Wallet] A request whose Client Identifier uses the `verifier_attestation` prefix is refused. |
-| [Appendix A](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-A) | Digital Credentials API | Digital Credentials API / DC API | ❌ | ❌ | [Wallet] The Wallet is invoked only with an Authorization Request URI and offers no Digital Credentials API entry point. The reserved `origin` Client Identifier Prefix is refused, as Section 5.9.3 requires. |
+| [12](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-12) | Client Authentication | Verifier Attestation JWT | ❌ | ❌ | [Wallet] The `verifier_attestation` Client Identifier Prefix is refused. |
+| [Appendix A](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-A) | Digital Credentials API | Digital Credentials API / DC API | ❌ | ❌ | [Wallet] The Wallet is invoked only with an Authorization Request URI. The reserved `origin` Client Identifier Prefix is refused, as Section 5.9.3 requires. |
 | [Appendix B.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.1) | Credential Format | `jwt_vc_json` format | Since `v0.7.0`<br />✅ | ✅ | [Wallet] [Details](#wallet-jwt-vc-json) |
 | [Appendix B.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.2) | Credential Format | `mso_mdoc` (Mobile Documents / mdocs) | ❌ | ❌ | [Wallet] A request containing a Credential Query for this format is refused with `vp_formats_not_supported` (see [DCQL](#wallet-dcql)). |
 | [Appendix B.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3) | Credential Format | SD-JWT VC format (`dc+sd-jwt`) | Since `v0.7.0`<br />✅ | ✅ | [Verifier] Only ES256 is supported as the signing algorithm. |
 | [Appendix B.3.6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.6) | Holder Binding | SD-JWT VC Key Binding / KB-JWT | Since `v0.7.0`<br />✅ | ✅ | [Verifier] Only ES256 is supported as the signing algorithm.<br />[Wallet] [Details](#wallet-key-binding) |
 
 ### Wallet notes {#oid4vp-wallet-notes}
-
-How the Wallet implements the rows that link here: deviations from the specification, limitations and conditions.
 
 #### 5 Authorization Request {#wallet-authorization-request}
 
@@ -93,9 +91,9 @@ How the Wallet implements the rows that link here: deviations from the specifica
 
 #### 5.10 Request URI Method {#wallet-request-uri-method}
 
-- Without `request_uri_method`, `request_uri` is fetched with GET. With `post`, the Wallet sends a POST with an empty body, passing neither `wallet_metadata` nor `wallet_nonce` (both optional, Section 5.10).
+- With `request_uri_method=post`, the Wallet sends a POST with an empty body, passing neither `wallet_metadata` nor `wallet_nonce` (both optional, Section 5.10).
 - `request_uri` has to be an `https` URL. An `http` URL is accepted as well when `VCKNOTS_WALLET_HTTP_ALLOWED` or `VCKNOTS_WALLET_DEBUG` is `true`.
-- An HTTP error response ends the request (Section 5.10.2). A redirect is not followed and ends the request too. The content type of the response is not checked, although Section 5.10.1 requires `application/oauth-authz-req+jwt` for the response to a `post` request.
+- Any status other than 200, including a redirect, ends the request (Section 5.10.2). The content type of the response is not checked, although Section 5.10.1 requires `application/oauth-authz-req+jwt` for the response to a `post` request.
 - `request_uri_method` is accepted in any letter case, and an empty value is taken as `get`, although Section 5.1 defines only `get` and `post`, both case-sensitive. Any other value is refused without `invalid_request_uri_method` (Section 8.5).
 
 #### 6 DCQL {#wallet-dcql}
@@ -103,10 +101,9 @@ How the Wallet implements the rows that link here: deviations from the specifica
 - Supported formats are `dc+sd-jwt` and `jwt_vc_json`. A request with a Credential Query for any other format, such as `mso_mdoc`, is refused with `vp_formats_not_supported`, even when the request could be answered without that query. A malformed query is refused with `invalid_request`, although `meta` is checked only for being an object, and `trusted_authorities` and the `values` of a Claims Query are not checked at all.
 - The Wallet answers exactly one Credential Query with exactly one Credential, and ignores `multiple`.
 - With `credential_sets`, the Wallet takes the option that lets one Credential answer every required set. An option is passed over for the next one when none of the held Credentials matching it can disclose the requested claims, or when not every transaction data entry references it. The request is refused only when no option is left: with `invalid_transaction_data` when the first option passed over was one the transaction data does not reference, and with `access_denied` otherwise. When no option was passed over and only more than one Credential could answer the request, no error response is sent (see [Authorization Response](#wallet-authorization-response)).
-- For `dc+sd-jwt`, the Wallet matches `meta.vct_values` and discloses only the requested `claims`. It presents the most recently stored Credential that can deliver them, with the first `claim_sets` option that Credential can satisfy. Only a Credential that cannot disclose a requested claim is passed over for an older one. `jwt_vc_json` Credentials match on `format` alone and are presented whole.
+- For `dc+sd-jwt`, the Wallet matches `meta.vct_values` and discloses only the requested `claims`. It presents the most recently stored Credential that can deliver them, with the first `claim_sets` option that Credential can satisfy. Only a Credential that cannot disclose a requested claim is passed over for an older one.
 - A `dc+sd-jwt` Credential Query without `vct_values`, which Appendix B.3.5 makes REQUIRED, matches any held `dc+sd-jwt` Credential. One whose `vct_values` is empty or not an array matches none, so a request that needs it is refused with `access_denied` rather than `invalid_request`.
 - `trusted_authorities` (Section 6.1) and the `values` of a Claims Query are ignored: a requested claim is disclosed whatever its value (Section 6.4.1).
-- `require_cryptographic_holder_binding` alone does not make the Wallet attach a Key Binding JWT (see [SD-JWT VC Key Binding](#wallet-key-binding)).
 
 #### 8.1 Authorization Response {#wallet-authorization-response}
 
@@ -116,19 +113,19 @@ How the Wallet implements the rows that link here: deviations from the specifica
 
 #### 8.2 Response Mode {#wallet-response-mode}
 
-- The Authorization Response is posted to `response_uri` as `application/x-www-form-urlencoded`, and an HTTP error response is treated as a failure. A redirect is not followed and is treated as a failure as well, and the same holds for an Authorization Error Response.
+- The Authorization Response is posted to `response_uri` as `application/x-www-form-urlencoded`, and any status other than 200, including a redirect, is treated as a failure. The same holds for an Authorization Error Response.
 - `response_uri` has to be an `https` URL. The check is turned off when `VCKNOTS_WALLET_HTTP_ALLOWED` or `VCKNOTS_WALLET_DEBUG` is `true`.
 - A request carrying `redirect_uri` is refused with `invalid_request` (Section 8.2).
-- A `redirect_uri` the Response URI returns for a successful response is returned to the caller and passed to `PresentCredentialOptions.OnRedirect`. The Wallet does not open it itself, so the application has to redirect the user agent to it (Section 8.2).
+- A `redirect_uri` the Response URI returns for a successful response is returned to the caller and passed to `PresentCredentialOptions.OnRedirect`. The application has to redirect the user agent to it (Section 8.2).
 - A `redirect_uri` returned for an Authorization Error Response is discarded, although Section 8.2 requires the Wallet to redirect the user agent to it as well.
 - A request using any other Response Mode, such as `fragment`, `query` or `direct_post.jwt`, is refused.
 
 #### 8.3 Encrypted Authorization Response {#wallet-encrypted-response}
 
-- Encryption follows JARM client metadata rather than Section 8.3. The Wallet encrypts only when `client_metadata` carries `authorization_encrypted_response_alg` and `authorization_encrypted_response_enc`, JARM members that OID4VP 1.0 does not use. It then sends an unsigned JWE carrying `vp_token`, and `state` when the request carried one, in the `response` parameter.
+- Encryption follows JARM client metadata rather than Section 8.3. The Wallet encrypts only when `client_metadata` carries the JARM members `authorization_encrypted_response_alg` and `authorization_encrypted_response_enc`. It then sends an unsigned JWE carrying `vp_token`, and `state` when the request carried one, in the `response` parameter.
 - With `authorization_encrypted_response_alg` alone, with an `alg` the Wallet column does not list, or without a key in `client_metadata.jwks`, the presentation fails and nothing is sent.
 - The JWE `alg` and `enc` are taken from those two members, not from the `alg` of the chosen JWK or from `encrypted_response_enc_values_supported`, and `A128GCM` is not applied as the default.
-- The key is the first one in `client_metadata.jwks` whose `use` is `enc`, or the first key when none is, and its `kid` goes into the JWE header.
+- The key is the first one in `client_metadata.jwks` whose `use` is `enc`, or the first key when none is.
 - A request using the Response Mode `direct_post.jwt` (Section 8.3.1) is refused.
 
 #### 8.4 Transaction Data {#wallet-transaction-data}
@@ -139,17 +136,17 @@ How the Wallet implements the rows that link here: deviations from the specifica
   - an entry is not base64url-encoded JSON, or carries no `credential_ids`;
   - a Credential Query an entry references does not exist, is not `dc+sd-jwt`, or sets `require_cryptographic_holder_binding` to false (Appendix B.3.3);
   - no `transaction_data_hashes_alg` is both offered by every entry and computable by the serializer (`sha-256`, `sha-384` or `sha-512`).
-- A Credential Set option that not every entry references is passed over instead, and the request is refused only once no option referenced by every entry can be presented (Section 5.1). The refusal is `invalid_transaction_data` when an unreferenced option was passed over first, and `access_denied` otherwise, except that no error response is sent when no option was passed over and only more than one Credential could answer the request (see [DCQL](#wallet-dcql)).
-- Although the base64url encoding the specification uses has no padding (Section 2), an entry that carries trailing `=` padding or line breaks is accepted as well, unless a line break follows the padding. The hashes are computed over the string as received (Appendix B.3.3.1), so they still match the hashes the Verifier computes over the entries it sent.
+- A Credential Set option that not every entry references is passed over instead, and the request is refused only once no option referenced by every entry can be presented (Section 5.1, see [DCQL](#wallet-dcql)).
+- Although the base64url encoding the specification uses has no padding (Section 2), an entry that carries trailing `=` padding or line breaks is accepted as well, unless a line break follows the padding. The hashes are computed over the string as received (Appendix B.3.3.1).
 - Although Appendix B.3.3.1 defines `transaction_data_hashes_alg` as a non-empty array of strings, a `null` value is taken as absent, so `sha-256` is used, and `null` elements of the array are passed over.
 
 #### 8.5 Authorization Error Response {#wallet-error-response}
 
 - With `response_mode=direct_post`, the Wallet posts `error`, and `state` when the request carried one, to `response_uri`, with `error_description` except for `access_denied`, whose reason would reveal which Credentials the user holds (Section 15.9). A request using any other response mode is refused without an error response.
-- A Request Object (`request` / `request_uri`) using the `x509_san_dns` Client Identifier Prefix gets an error response for a parameter validation failure too, but only once its certificate chain (unless `Oid4vpPresenter.InsecureSkipX509Verify` is set), signature, `client_id` and response destination have all been verified. A failure found earlier is held back until then.
+- A Request Object (`request` / `request_uri`) using the `x509_san_dns` Client Identifier Prefix gets an error response for a parameter validation failure too, but only once its certificate chain (unless `Oid4vpPresenter.InsecureSkipX509Verify` is set), signature, `client_id` and response destination have all been verified.
 - A Request Object naming no verification key, such as one using the `redirect_uri` prefix, is refused outright instead and gets no error response, since it authenticates no destination to send one to.
 - A refusal the Wallet attaches no code to is not sent at all. Among them are a Client Identifier Prefix the Wallet does not support, which Section 8.5 assigns to `invalid_request`, and a non-empty `request_uri_method` that is neither `get` nor `post` in any letter case: `invalid_request_uri_method` is never sent.
-- A request passed as URL-encoded parameters gets an error response only when its Client Identifier uses the `redirect_uri` prefix and its `response_uri`, if present, equals the Client Identifier without the prefix, since nothing else authenticates that `response_uri`. An unrecognized prefix, `origin` or a `client_id` without a prefix is refused before any other check.
+- A request passed as URL-encoded parameters gets an error response only when its Client Identifier uses the `redirect_uri` prefix and its `response_uri`, if present, equals the Client Identifier without the prefix, since nothing else authenticates that `response_uri`.
 - `vp_formats_not_supported` is returned as soon as one Credential Query names a format other than `dc+sd-jwt` or `jwt_vc_json`, even when that query is only one option of a Credential Set or belongs to an optional one. Section 8.5 defines the code for a Wallet that supports none of the requested formats, and Section 6.4.2 lets a Credential Set be satisfied with any of its options.
 
 #### 11 Verifier Metadata — `client_metadata` {#wallet-verifier-metadata}

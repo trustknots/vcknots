@@ -54,18 +54,16 @@ OpenID for Verifiable Presentations の表の備考欄では、`[Verifier]` ま�
 | [8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3) | Authorization Response | 暗号化された Authorization Response | ❌ | ✅ `ECDH-ES`、`ECDH-ES+A128KW`、`ECDH-ES+A192KW`、`ECDH-ES+A256KW` | [Wallet] [詳細](#wallet-encrypted-response) |
 | [8.4](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.4) | Transaction Data | Transaction Data | `v0.7.0` 以降<br />✅ | ✅ `dc+sd-jwt` | `dc+sd-jwt` のみ対応。<br />[Wallet] [詳細](#wallet-transaction-data) |
 | [8.5](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5) | Authorization Response | Authorization Error Response | ❌ | ✅ `invalid_request`、`invalid_scope`、`vp_formats_not_supported`、`invalid_transaction_data`、`access_denied` | [Wallet] [詳細](#wallet-error-response) |
-| [10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-10) | Metadata | Wallet Metadata | ❌ | ❌ | [Wallet] メタデータは公開せず、`request_uri_method=post` で Request Object を取得するときも `wallet_metadata` を送らない（Section 5.10）。 |
+| [10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-10) | Metadata | Wallet Metadata | ❌ | ❌ | [Wallet] メタデータは公開せず、`request_uri_method=post` のときも `wallet_metadata` を送らない（Section 5.10）。 |
 | [11](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-11) | Metadata | Verifier Metadata — `client_metadata` | `v0.7.0` 以降<br />✅ | ✅ `jwks` | [Wallet] [詳細](#wallet-verifier-metadata) |
-| [12](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-12) | Client Authentication | Verifier Attestation JWT | ❌ | ❌ | [Wallet] Client Identifier が `verifier_attestation` のプレフィックスを使うリクエストは拒否する。 |
-| [Appendix A](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-A) | Digital Credentials API | Digital Credential API／DC API | ❌ | ❌ | [Wallet] Wallet は Authorization Request の URI でのみ起動され、Digital Credentials API の入口を持たない。予約された `origin` の Client Identifier Prefix は、Section 5.9.3 の要求どおり拒否する。 |
+| [12](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-12) | Client Authentication | Verifier Attestation JWT | ❌ | ❌ | [Wallet] `verifier_attestation` の Client Identifier Prefix は拒否する。 |
+| [Appendix A](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-A) | Digital Credentials API | Digital Credential API／DC API | ❌ | ❌ | [Wallet] Wallet は Authorization Request の URI でのみ起動される。予約された `origin` の Client Identifier Prefix は、Section 5.9.3 の要求どおり拒否する。 |
 | [Appendix B.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.1) | Credential Format | `jwt_vc_json`形式 | `v0.7.0` 以降<br />✅ | ✅ | [Wallet] [詳細](#wallet-jwt-vc-json) |
 | [Appendix B.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.2) | Credential Format | `mso_mdoc`（Mobile Documents／mdocs） | ❌ | ❌ | [Wallet] このフォーマットの Credential Query を含む要求は `vp_formats_not_supported` で拒否する（[DCQL](#wallet-dcql) を参照）。 |
 | [Appendix B.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3) | Credential Format | SD-JWT-VC形式（`dc+sd-jwt`） | `v0.7.0` 以降<br />✅ | ✅ | [Verifier] 署名アルゴリズムは ES256 のみ対応。 |
 | [Appendix B.3.6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.6) | Holder Binding | SD-JWT VC Key Binding／KB-JWT | `v0.7.0` 以降<br />✅ | ✅ | [Verifier] 署名アルゴリズムは ES256 のみ対応。<br />[Wallet] [詳細](#wallet-key-binding) |
 
 ### Wallet の備考 {#oid4vp-wallet-notes}
-
-表からリンクしている行について、Wallet の実装の仕方（仕様からの逸脱・制約・条件）を記載します。
 
 #### 5 Authorization Request {#wallet-authorization-request}
 
@@ -93,9 +91,9 @@ OpenID for Verifiable Presentations の表の備考欄では、`[Verifier]` ま�
 
 #### 5.10 Request URI Method {#wallet-request-uri-method}
 
-- `request_uri_method` が無いときは、`request_uri` を GET で取得する。`post` のときは空のボディで POST し、`wallet_metadata` も `wallet_nonce` も渡さない（どちらも任意、Section 5.10）。
+- `request_uri_method=post` のときは空のボディで POST し、`wallet_metadata` も `wallet_nonce` も渡さない（どちらも任意、Section 5.10）。
 - `request_uri` は `https` の URL でなければならない。`VCKNOTS_WALLET_HTTP_ALLOWED` か `VCKNOTS_WALLET_DEBUG` が `true` のときは `http` の URL も受け入れる。
-- HTTP のエラー応答を受けると、要求の処理を終える（Section 5.10.2）。リダイレクトは追わず、受けた時点で処理を終える。応答のコンテンツタイプは確認しないが、Section 5.10.1 は `post` の要求に対する応答が `application/oauth-authz-req+jwt` であることを求めている。
+- 200 以外の応答（リダイレクトを含む）を受けると、要求の処理を終える（Section 5.10.2）。応答のコンテンツタイプは確認しないが、Section 5.10.1 は `post` の要求に対する応答が `application/oauth-authz-req+jwt` であることを求めている。
 - `request_uri_method` は大文字小文字を区別せずに受け入れ、空の値は `get` とみなすが、Section 5.1 が定める値は大文字小文字を区別する `get` と `post` だけである。それ以外の値は `invalid_request_uri_method` を送らずに拒否する（Section 8.5）。
 
 #### 6 DCQL {#wallet-dcql}
@@ -103,10 +101,9 @@ OpenID for Verifiable Presentations の表の備考欄では、`[Verifier]` ま�
 - 対応フォーマットは `dc+sd-jwt` と `jwt_vc_json` である。`mso_mdoc` など他のフォーマットの Credential Query を含む要求は、そのクエリが無くても答えられる場合でも `vp_formats_not_supported` で拒否する。構造が不正なクエリは `invalid_request` で拒否するが、`meta` はオブジェクトであることしか確認せず、`trusted_authorities` と Claims Query の `values` は確認しない。
 - Wallet が答える Credential Query は 1 つだけで、それに Credential 1 件で答え、`multiple` は無視する。
 - `credential_sets` がある場合は、必須セットすべてを Credential 1 件で満たせる選択肢を採る。一致する保有 Credential のどれも要求されたクレームを開示できない選択肢と、参照しない transaction data のエントリが 1 つでもある選択肢は、読み飛ばして次の選択肢に移る。要求を拒否するのは選択肢が残らなくなったときだけで、最初に読み飛ばした選択肢が transaction data の参照していないものなら `invalid_transaction_data`、それ以外なら `access_denied` で拒否する。読み飛ばした選択肢が無く、2 件以上の Credential を使わないと答えられない場合は、エラー応答を送らない（[Authorization Response](#wallet-authorization-response) を参照）。
-- `dc+sd-jwt` では `meta.vct_values` を照合し、要求された `claims` だけを開示する。要求を満たせる Credential のうち最も新しく保存したものを、その Credential が満たせる最初の `claim_sets` の選択肢で提示する。古い Credential に移るのは、要求されたクレームを開示できない場合だけである。`jwt_vc_json` の Credential は `format` だけで照合し、Credential 全体を提示する。
+- `dc+sd-jwt` では `meta.vct_values` を照合し、要求された `claims` だけを開示する。要求を満たせる Credential のうち最も新しく保存したものを、その Credential が満たせる最初の `claim_sets` の選択肢で提示する。古い Credential に移るのは、要求されたクレームを開示できない場合だけである。
 - Appendix B.3.5 が必須とする `vct_values` を持たない `dc+sd-jwt` の Credential Query は、保有するどの `dc+sd-jwt` Credential にも一致する。`vct_values` が空または配列でない Credential Query はどれにも一致しないため、そのクエリを必要とする要求は `invalid_request` ではなく `access_denied` で拒否する。
 - `trusted_authorities`（Section 6.1）と Claims Query の `values` は無視し、要求されたクレームを値にかかわらず開示する（Section 6.4.1）。
-- `require_cryptographic_holder_binding` だけでは Key Binding JWT を付与しない（[SD-JWT VC Key Binding](#wallet-key-binding) を参照）。
 
 #### 8.1 Authorization Response {#wallet-authorization-response}
 
@@ -116,19 +113,19 @@ OpenID for Verifiable Presentations の表の備考欄では、`[Verifier]` ま�
 
 #### 8.2 Response Mode {#wallet-response-mode}
 
-- Authorization Response を `application/x-www-form-urlencoded` で `response_uri` に POST し、HTTP のエラー応答を失敗として扱う。リダイレクトは追わずに失敗として扱い、Authorization Error Response でも同じである。
+- Authorization Response を `application/x-www-form-urlencoded` で `response_uri` に POST し、200 以外の応答（リダイレクトを含む）を失敗として扱う。Authorization Error Response でも同じである。
 - `response_uri` は `https` の URL でなければならない。`VCKNOTS_WALLET_HTTP_ALLOWED` か `VCKNOTS_WALLET_DEBUG` が `true` のときは、この検査を行わない。
 - `redirect_uri` を含む要求は `invalid_request` で拒否する（Section 8.2）。
-- 成功応答に対して Response URI が返した `redirect_uri` は、呼び出し元に返し、`PresentCredentialOptions.OnRedirect` にも渡す。Wallet 自身はこれを開かないため、User Agent をそこへリダイレクトするのはアプリケーションの役割である（Section 8.2）。
+- 成功応答に対して Response URI が返した `redirect_uri` は、呼び出し元に返し、`PresentCredentialOptions.OnRedirect` にも渡す。User Agent をそこへリダイレクトするのはアプリケーションの役割である（Section 8.2）。
 - Authorization Error Response に対して返された `redirect_uri` は捨てるが、Section 8.2 はこれについても User Agent をリダイレクトするよう Wallet に求めている。
 - `fragment`、`query`、`direct_post.jwt` など他の Response Mode を使う要求は拒否する。
 
 #### 8.3 暗号化された Authorization Response {#wallet-encrypted-response}
 
-- 暗号化は Section 8.3 ではなく JARM のクライアントメタデータに従う。暗号化するのは、OID4VP 1.0 が使わない JARM のメンバー `authorization_encrypted_response_alg` と `authorization_encrypted_response_enc` が `client_metadata` にある場合だけである。そのときは `vp_token` と、要求にあれば `state` を入れた無署名の JWE を `response` パラメータで送る。
+- 暗号化は Section 8.3 ではなく JARM のクライアントメタデータに従う。暗号化するのは、JARM のメンバー `authorization_encrypted_response_alg` と `authorization_encrypted_response_enc` が `client_metadata` にある場合だけである。そのときは `vp_token` と、要求にあれば `state` を入れた無署名の JWE を `response` パラメータで送る。
 - `authorization_encrypted_response_alg` だけの場合、Wallet 列に無い `alg` の場合、`client_metadata.jwks` に鍵が無い場合は、提示に失敗し、何も送らない。
 - JWE の `alg` と `enc` はこの 2 つのメンバーから取り、選んだ JWK の `alg` や `encrypted_response_enc_values_supported` は使わず、既定値の `A128GCM` も適用しない。
-- 鍵は `client_metadata.jwks` のうち `use` が `enc` の最初の鍵で、該当が無ければ先頭の鍵を使い、その `kid` を JWE ヘッダに入れる。
+- 鍵は `client_metadata.jwks` のうち `use` が `enc` の最初の鍵で、該当が無ければ先頭の鍵を使う。
 - Response Mode `direct_post.jwt`（Section 8.3.1）を使う要求は拒否する。
 
 #### 8.4 Transaction Data {#wallet-transaction-data}
@@ -139,17 +136,17 @@ OpenID for Verifiable Presentations の表の備考欄では、`[Verifier]` ま�
   - エントリが base64url の JSON でないか、`credential_ids` を持たないとき。
   - エントリが参照する Credential Query が存在しないか、`dc+sd-jwt` でないか、`require_cryptographic_holder_binding` を false にしているとき（Appendix B.3.3）。
   - 全エントリが提示していて serializer が計算できる（`sha-256`、`sha-384`、`sha-512`）`transaction_data_hashes_alg` が 1 つも無いとき。
-- 参照していないエントリが 1 つでもある Credential Set の選択肢は読み飛ばし、すべてのエントリが参照する選択肢がどれも提示できなくなってから拒否する（Section 5.1）。最初に読み飛ばしたのが参照されていない選択肢なら `invalid_transaction_data`、それ以外なら `access_denied` で拒否するが、読み飛ばした選択肢が無く、2 件以上の Credential を使わないと答えられない場合はエラー応答を送らない（[DCQL](#wallet-dcql) を参照）。
-- 仕様が用いる base64url はパディングを持たない（Section 2）が、末尾の `=` のパディングや改行を含むエントリも、パディングの後ろに改行がある場合を除いて受理する。ハッシュは受け取った文字列そのものに対して計算する（Appendix B.3.3.1）ので、Verifier が送ったエントリから計算するハッシュと一致する。
+- 参照していないエントリが 1 つでもある Credential Set の選択肢は読み飛ばし、すべてのエントリが参照する選択肢がどれも提示できなくなってから拒否する（Section 5.1、[DCQL](#wallet-dcql) を参照）。
+- 仕様が用いる base64url はパディングを持たない（Section 2）が、末尾の `=` のパディングや改行を含むエントリも、パディングの後ろに改行がある場合を除いて受理する。ハッシュは受け取った文字列そのものに対して計算する（Appendix B.3.3.1）。
 - Appendix B.3.3.1 は `transaction_data_hashes_alg` を文字列の空でない配列と定めているが、値が `null` なら省略とみなして `sha-256` を使い、配列の `null` の要素は読み飛ばす。
 
 #### 8.5 Authorization Error Response {#wallet-error-response}
 
 - `response_mode=direct_post` のとき、Wallet は `error` と、要求にあれば `state` を `response_uri` に POST し、`error_description` も添えるが、理由からユーザーがどの Credential を保有しているかが分かってしまう `access_denied` には添えない（Section 15.9）。他の response mode を使う要求は、エラー応答を返さずに拒否する。
-- `x509_san_dns` の Client Identifier Prefix を使う Request Object（`request` / `request_uri`）に対しても、パラメータ検証の失敗にエラー応答を返すが、それは証明書チェーン（`Oid4vpPresenter.InsecureSkipX509Verify` を設定した場合を除く）・署名・`client_id`・応答先をすべて検証した後に限られる。それより前に見つかった失敗は、検証が終わるまで保持される。
+- `x509_san_dns` の Client Identifier Prefix を使う Request Object（`request` / `request_uri`）に対しても、パラメータ検証の失敗にエラー応答を返すが、それは証明書チェーン（`Oid4vpPresenter.InsecureSkipX509Verify` を設定した場合を除く）・署名・`client_id`・応答先をすべて検証した後に限られる。
 - `redirect_uri` プレフィックスを使うもののように検証鍵を一切名乗らない Request Object は、代わりに即座に拒否され、エラー応答を送る先を何も認証していないため、エラー応答は返らない。
 - Wallet がコードを付けない拒否は一切送られない。これにあたるものには、Wallet が対応していない Client Identifier Prefix（Section 8.5 はこれに `invalid_request` を割り当てている）と、大文字小文字を問わず `get` でも `post` でもない、空でない `request_uri_method` がある（`invalid_request_uri_method` は送出しない）。
-- URL エンコードされたパラメータで渡すリクエストがエラー応答を受けるのは、Client Identifier が `redirect_uri` プレフィックスを使い、`response_uri` があればそれがプレフィックスを除いた Client Identifier と等しい場合だけである（それ以外の `response_uri` を認証するものは無いため）。認識しないプレフィックス、`origin`、プレフィックスの無い `client_id` は他の検査より前に拒否される。
+- URL エンコードされたパラメータで渡すリクエストがエラー応答を受けるのは、Client Identifier が `redirect_uri` プレフィックスを使い、`response_uri` があればそれがプレフィックスを除いた Client Identifier と等しい場合だけである（それ以外の `response_uri` を認証するものは無いため）。
 - Credential Query のどれか 1 つでも `dc+sd-jwt` と `jwt_vc_json` 以外のフォーマットを指定すると、そのクエリが Credential Set の選択肢の 1 つにすぎない場合や必須でない Credential Set に属する場合でも、`vp_formats_not_supported` を返す。Section 8.5 はこのコードを要求されたフォーマットを 1 つも扱えない Wallet のために定めており、Section 6.4.2 は Credential Set をどの選択肢で満たしてもよいとしている。
 
 #### 11 Verifier Metadata — `client_metadata` {#wallet-verifier-metadata}

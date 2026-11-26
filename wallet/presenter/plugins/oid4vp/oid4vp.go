@@ -592,12 +592,11 @@ type requestBuilder struct {
 	errValidation          error
 	// errorResponseAllowed marks that the response_uri may receive an error
 	// authorization response, because whoever named it has been authenticated.
-	// Plain query parameters set it only with the redirect_uri prefix, whose Client
-	// Identifier is the response_uri itself (see WithQueryParams). A
-	// Request Object sets it only after its certificate chain, signature,
-	// client_id and response destination have all been checked; until then its
-	// response_uri is unauthenticated and posting there would be an
-	// unauthenticated outbound POST (an SSRF primitive).
+	// Plain query parameters set it only with the redirect_uri prefix (see
+	// WithQueryParams). A Request Object sets it only after its certificate
+	// chain, signature, client_id and response destination have all been
+	// checked; until then its response_uri is unauthenticated and posting there
+	// would be an unauthenticated outbound POST (an SSRF primitive).
 	errorResponseAllowed bool
 }
 
@@ -728,8 +727,8 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 	// With the redirect_uri prefix the Client Identifier is the Response URI itself, so the
 	// Verifier may omit response_uri (Section 5.9.3), and a response_uri it does send has to
 	// be that URI (Section 8.2: "a value that the client would be permitted to use as
-	// redirect_uri"). A different one is a plain error: the Client Identifier does not name
-	// it, so nothing authenticates it as a destination for an error response either.
+	// redirect_uri"). A different one is a plain error, as nothing authenticates it as a
+	// destination for an error response.
 	responseURIFromParam := getParam("response_uri", b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost && prefix != OID4VPClientIDPrefixRedirectURI)
 	b.req.ResponseURI = responseURIFromParam
 	if prefix == OID4VPClientIDPrefixRedirectURI {
@@ -748,9 +747,7 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 	// resulting *AuthorizationRequestError can be delivered to the Verifier
 	// as an error authorization response when response_mode=direct_post.
 
-	// Section 8.2: "If the redirect_uri Authorization Request parameter is present when the
-	// Response Mode is direct_post, the Wallet MUST return an invalid_request Authorization
-	// Response error."
+	// Required by Section 8.2.
 	if redirectURIFromParam != "" && b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost {
 		b.errValidation = newAuthorizationRequestError(InvalidRequestError, "redirect_uri must not be present when response_mode is direct_post")
 		return
@@ -864,11 +861,10 @@ func (b *requestBuilder) WithQueryParams(params map[string][]string) *requestBui
 
 	// An unsigned request can only use redirect_uri, whose Client Identifier is the response
 	// destination itself. Every other prefix names a key the request would have to be signed
-	// with (Section 5.9.3: with x509_san_dns "The request MUST be signed"). This overrides any
-	// error set above with a plain one, because the response_uri of such a request is
-	// unauthenticated and must not receive an error response. Only a redirect_uri request,
-	// whose response_uri setParamsWithAnyMap has bound to the Client Identifier, may get one;
-	// a request without a usable client_id gets none.
+	// with (Section 5.9.3: with x509_san_dns "The request MUST be signed"). Such a request
+	// gets a plain error, overriding any set above, since its unauthenticated response_uri
+	// must not receive an error response. Only a redirect_uri request (response_uri bound in
+	// setParamsWithAnyMap) may get one.
 	cid, err := parseOID4VPClientID(b.req.ClientID)
 	if err == nil && cid.prefix != OID4VPClientIDPrefixRedirectURI {
 		b.errValidation = fmt.Errorf("client_id prefix %s requires a signed request object", cid.prefix)

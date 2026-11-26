@@ -721,9 +721,7 @@ func TestOid4vpPresenter_ParsePresentationRequest_QueryParamValidations(t *testi
 			wantErr: true,
 			errSub:  "dcql_query.credentials must be a non-empty array",
 		},
-		// The response_uri here is the http one the client_id yields, so the refusal is not
-		// delivered while https is required. TestOid4vpPresenter_SendsErrorAuthorizationResponse
-		// covers that delivery against a local server.
+		// TestOid4vpPresenter_SendsErrorAuthorizationResponse covers delivering this refusal.
 		{
 			name:    "redirect_uri with direct_post is refused",
 			uri:     "openid4vp://present?client_id=redirect_uri:http://example.com/cb&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=direct_post&redirect_uri=http://example.com/cb",
@@ -846,8 +844,7 @@ func TestOid4vpPresenter_SendsErrorAuthorizationResponse(t *testing.T) {
 		assert.Empty(t, *captured)
 	})
 
-	// With the redirect_uri prefix the Client Identifier is the Response URI, so a request
-	// that omits response_uri is answered there.
+	// With the redirect_uri prefix the Client Identifier is the Response URI.
 	t.Run("an omitted response_uri is answered at the redirect_uri client_id", func(t *testing.T) {
 		server, captured := newErrorCapturingServer(t)
 		defer server.Close()
@@ -916,8 +913,8 @@ func TestOid4vpPresenter_SendsErrorAuthorizationResponse(t *testing.T) {
 
 		// A redirect_uri client_id leaves a signed request object unauthenticated, so it
 		// is rejected with a code that would be deliverable on the query parameter path.
-		// The client_id names the response_uri, so the request reaches that final refusal
-		// rather than the response_uri check, and the response_uri must still not receive it.
+		// The client_id names the response_uri so the request gets past the response_uri
+		// check to that refusal.
 		requestObject, _ := newSignedRequestObject(t, map[string]any{
 			"client_id":    "redirect_uri:" + server.URL,
 			"response_uri": server.URL,
@@ -1785,8 +1782,7 @@ func TestCheckTransactionDataFor(t *testing.T) {
 }
 
 // newRedirectingServer redirects every request with status to a target that counts
-// what reaches it and answers 200 with body, the answer a redirect that is followed
-// would end on.
+// its hits and answers 200 with body.
 func newRedirectingServer(t *testing.T, status int, body string) (*httptest.Server, *int) {
 	t.Helper()
 	hits := new(int)
