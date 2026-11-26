@@ -181,6 +181,8 @@ Firestore トランザクションを使って `reserve` / `register` / `acquire
 
 **`namespace` について**: デフォルトは `'vcknots'` ではなく `'vcknots-server'` です。ライブラリ付属のプロバイダー（nonce・request-object など）はすべて `'vcknots'` をルートコレクションとして使うため、このストアはサーバー層のデータを明示的に別のルートに分離しています。すべてのデータを同じルートに集約したい場合は `namespace: 'vcknots'` を明示的に指定してください。
 
+**Firestore TTL ポリシー**: 期限切れの state エントリを Firestore に自動削除させるには、`directPostStates` コレクショングループに対して `expires_at` フィールド（Timestamp 型）を TTL フィールドとするポリシーを設定してください。Firestore の TTL 削除は即時ではなく、期限切れから最大 24 時間後に削除されます。このポリシーは Firebase コンソールまたは `gcloud firestore fields ttls update` コマンドで手動設定が必要です。
+
 ## 補足
 
 - `server/google-cloud` は workspace パッケージ `@trustknots/server-core` に依存します。
