@@ -728,7 +728,8 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 	// Verifier may omit response_uri (Section 5.9.3), and a response_uri it does send has to
 	// be that URI (Section 8.2: "a value that the client would be permitted to use as
 	// redirect_uri"). A different one is a plain error, as nothing authenticates it as a
-	// destination for an error response.
+	// destination for an error response. An empty one counts as omitted, as RFC 6749
+	// Section 3.1 requires of every parameter sent without a value.
 	responseURIFromParam := getParam("response_uri", b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost && prefix != OID4VPClientIDPrefixRedirectURI)
 	b.req.ResponseURI = responseURIFromParam
 	if prefix == OID4VPClientIDPrefixRedirectURI {
@@ -747,7 +748,7 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 	// resulting *AuthorizationRequestError can be delivered to the Verifier
 	// as an error authorization response when response_mode=direct_post.
 
-	// Required by Section 8.2.
+	// Required by Section 8.2. An empty redirect_uri counts as omitted (RFC 6749 Section 3.1).
 	if redirectURIFromParam != "" && b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost {
 		b.errValidation = newAuthorizationRequestError(InvalidRequestError, "redirect_uri must not be present when response_mode is direct_post")
 		return

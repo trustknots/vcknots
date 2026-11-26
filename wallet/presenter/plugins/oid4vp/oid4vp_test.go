@@ -1038,12 +1038,22 @@ func TestOid4vpPresenter_SignedRequestObject_ErrorAuthorizationResponse(t *testi
 }
 
 // With the redirect_uri prefix the Verifier may omit response_uri (Section 5.9.3): the
-// Client Identifier is the Response URI.
+// Client Identifier is the Response URI. A parameter sent without a value counts as
+// omitted (RFC 6749 Section 3.1), so neither an empty response_uri nor an empty
+// redirect_uri is refused.
 func TestOid4vpPresenter_ParsePresentationRequest_ResponseURIFromRedirectURIClientID(t *testing.T) {
-	uri := "openid4vp://present?client_id=redirect_uri:https://example.com/response&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=direct_post"
-	req, err := (&Oid4vpPresenter{}).ParsePresentationRequest(uri)
-	require.NoError(t, err)
-	assert.Equal(t, "https://example.com/response", req.ResponseURI)
+	base := "openid4vp://present?client_id=redirect_uri:https://example.com/response&response_type=vp_token&nonce=n&dcql_query=" + testDcqlQueryParam + "&response_mode=direct_post"
+	for name, uri := range map[string]string{
+		"omitted response_uri": base,
+		"empty response_uri":   base + "&response_uri=",
+		"empty redirect_uri":   base + "&redirect_uri=",
+	} {
+		t.Run(name, func(t *testing.T) {
+			req, err := (&Oid4vpPresenter{}).ParsePresentationRequest(uri)
+			require.NoError(t, err)
+			assert.Equal(t, "https://example.com/response", req.ResponseURI)
+		})
+	}
 }
 
 func TestOid4vpPresenter_ParsePresentationRequest_AllowsNonHTTPSResponseURI_WhenValidationDisabled(t *testing.T) {
