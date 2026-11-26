@@ -384,13 +384,21 @@ func parseResponseURI(responseURI string) (*url.URL, error) {
 // wallet reads; the endpoint is derived from request input.
 const maxVerifierResponseBodySize = 1 << 20 // 1 MiB
 
+// verifierHTTPClient refuses to follow redirects. Following one would fetch the
+// request object, or send the vp_token, to an origin the request never named,
+// over http as well: a 307 or 308 replays a POST with its body, and a 301 to
+// 303 turns it into a GET whose 200 reads as success. Neither endpoint redirects.
+var verifierHTTPClient = &http.Client{
+	Timeout: 30 * time.Second,
+	CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+		return fmt.Errorf("redirected to %s: redirects are not followed", req.URL.Redacted())
+	},
+}
+
 // postAuthorizationResponse form-POSTs an authorization response (or error
 // response) to the verifier and returns the response body on HTTP 200.
 func postAuthorizationResponse(endpoint string, formData url.Values) ([]byte, error) {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	resp, err := client.Post(endpoint, "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
+	resp, err := verifierHTTPClient.Post(endpoint, "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -1157,11 +1165,8 @@ func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMetho
 		return b
 	}
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
 	req.Header.Set("User-Agent", "")
-	resp, err := client.Do(req)
+	resp, err := verifierHTTPClient.Do(req)
 	if err != nil {
 		b.errValidation = fmt.Errorf("failed to send %s request to %s: %w", method, uri, err)
 		return b

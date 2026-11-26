@@ -1783,3 +1783,62 @@ func TestCheckTransactionDataFor(t *testing.T) {
 	require.NotNil(t, err)
 	assert.Equal(t, InvalidTransactionDataError, err.Code)
 }
+
+// newRedirectingServer redirects every request with status to a target that counts
+// what reaches it and answers 200 with body, the answer a redirect that is followed
+// would end on.
+func newRedirectingServer(t *testing.T, status int, body string) (*httptest.Server, *int) {
+	t.Helper()
+	hits := new(int)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		*hits++
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(target.Close)
+	redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, status)
+	}))
+	t.Cleanup(redirecting.Close)
+	return redirecting, hits
+}
+
+// A followed redirect would carry the request_uri POST, the vp_token or the error
+// response to an origin the request never named. A 303 turns the POST into a GET whose
+// 200 would read as success, and a 307 replays the POST with its body.
+func TestOid4vpPresenter_RedirectsAreNotFollowed(t *testing.T) {
+	t.Setenv(env.HTTP_ALLOWED.String(), "true")
+	requestObject, _ := newSignedRequestObject(t, map[string]any{"state": "test-state"})
+
+	for _, status := range []int{http.StatusSeeOther, http.StatusTemporaryRedirect} {
+		t.Run("request_uri "+http.StatusText(status), func(t *testing.T) {
+			server, hits := newRedirectingServer(t, status, requestObject)
+			uri := "openid4vp://present?client_id=x509_san_dns:" + signedRequestObjectHost +
+				"&request_uri=" + url.QueryEscape(server.URL) + "&request_uri_method=post"
+			_, err := newSignedRequestObjectPresenter().ParsePresentationRequest(uri)
+			require.ErrorContains(t, err, "redirects are not followed")
+			assert.Zero(t, *hits)
+		})
+
+		t.Run("authorization response "+http.StatusText(status), func(t *testing.T) {
+			server, hits := newRedirectingServer(t, status, `{"redirect_uri":"https://example.com/callback"}`)
+			endpoint, err := url.Parse(server.URL)
+			require.NoError(t, err)
+			redirectURI, err := (&Oid4vpPresenter{}).Present(types.Oid4vp, *endpoint, []byte("a.valid.jwt"),
+				&types.PresentationRequest{CredentialQueryID: "cred1", State: "test-state"})
+			require.ErrorContains(t, err, "redirects are not followed")
+			assert.Empty(t, redirectURI)
+			assert.Zero(t, *hits)
+		})
+
+		t.Run("error response "+http.StatusText(status), func(t *testing.T) {
+			server, hits := newRedirectingServer(t, status, "")
+			req := &CredentialPresentationRequest{
+				OAuthAuthzRequest: &OAuthAuthzRequest{ResponseMode: OAuthAuthzReqResponseModeDirectPost, State: "err-state"},
+				ResponseURI:       server.URL,
+			}
+			err := (&Oid4vpPresenter{}).SendAuthorizationErrorResponse(req, newAuthorizationRequestError(InvalidRequestError, "x"))
+			require.ErrorContains(t, err, "redirects are not followed")
+			assert.Zero(t, *hits)
+		})
+	}
+}

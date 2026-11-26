@@ -95,7 +95,7 @@ How the Wallet implements the rows that link here: deviations from the specifica
 
 - Without `request_uri_method`, `request_uri` is fetched with GET. With `post`, the Wallet sends a POST with an empty body, passing neither `wallet_metadata` nor `wallet_nonce` (both optional, Section 5.10).
 - `request_uri` has to be an `https` URL. An `http` URL is accepted as well when `VCKNOTS_WALLET_HTTP_ALLOWED` or `VCKNOTS_WALLET_DEBUG` is `true`.
-- An HTTP error response ends the request (Section 5.10.2). The content type of the response is not checked, although Section 5.10.1 requires `application/oauth-authz-req+jwt` for the response to a `post` request.
+- An HTTP error response ends the request (Section 5.10.2). A redirect is not followed and ends the request too. The content type of the response is not checked, although Section 5.10.1 requires `application/oauth-authz-req+jwt` for the response to a `post` request.
 - `request_uri_method` is accepted in any letter case, and an empty value is taken as `get`, although Section 5.1 defines only `get` and `post`, both case-sensitive. Any other value is refused without `invalid_request_uri_method` (Section 8.5).
 
 #### 6 DCQL {#wallet-dcql}
@@ -116,7 +116,7 @@ How the Wallet implements the rows that link here: deviations from the specifica
 
 #### 8.2 Response Mode {#wallet-response-mode}
 
-- The Authorization Response is posted to `response_uri` as `application/x-www-form-urlencoded`, and an HTTP error response is treated as a failure.
+- The Authorization Response is posted to `response_uri` as `application/x-www-form-urlencoded`, and an HTTP error response is treated as a failure. A redirect is not followed and is treated as a failure as well, and the same holds for an Authorization Error Response.
 - `response_uri` has to be an `https` URL. The check is turned off when `VCKNOTS_WALLET_HTTP_ALLOWED` or `VCKNOTS_WALLET_DEBUG` is `true`.
 - A request carrying `redirect_uri` is refused with `invalid_request` (Section 8.2).
 - A `redirect_uri` the Response URI returns for a successful response is returned to the caller and passed to `PresentCredentialOptions.OnRedirect`. The Wallet does not open it itself, so the application has to redirect the user agent to it (Section 8.2).

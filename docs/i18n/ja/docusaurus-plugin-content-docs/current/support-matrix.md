@@ -95,7 +95,7 @@ OpenID for Verifiable Presentations の表の備考欄では、`[Verifier]` ま�
 
 - `request_uri_method` が無いときは、`request_uri` を GET で取得する。`post` のときは空のボディで POST し、`wallet_metadata` も `wallet_nonce` も渡さない（どちらも任意、Section 5.10）。
 - `request_uri` は `https` の URL でなければならない。`VCKNOTS_WALLET_HTTP_ALLOWED` か `VCKNOTS_WALLET_DEBUG` が `true` のときは `http` の URL も受け入れる。
-- HTTP のエラー応答を受けると、要求の処理を終える（Section 5.10.2）。応答のコンテンツタイプは確認しないが、Section 5.10.1 は `post` の要求に対する応答が `application/oauth-authz-req+jwt` であることを求めている。
+- HTTP のエラー応答を受けると、要求の処理を終える（Section 5.10.2）。リダイレクトは追わず、受けた時点で処理を終える。応答のコンテンツタイプは確認しないが、Section 5.10.1 は `post` の要求に対する応答が `application/oauth-authz-req+jwt` であることを求めている。
 - `request_uri_method` は大文字小文字を区別せずに受け入れ、空の値は `get` とみなすが、Section 5.1 が定める値は大文字小文字を区別する `get` と `post` だけである。それ以外の値は `invalid_request_uri_method` を送らずに拒否する（Section 8.5）。
 
 #### 6 DCQL {#wallet-dcql}
@@ -116,7 +116,7 @@ OpenID for Verifiable Presentations の表の備考欄では、`[Verifier]` ま�
 
 #### 8.2 Response Mode {#wallet-response-mode}
 
-- Authorization Response を `application/x-www-form-urlencoded` で `response_uri` に POST し、HTTP のエラー応答を失敗として扱う。
+- Authorization Response を `application/x-www-form-urlencoded` で `response_uri` に POST し、HTTP のエラー応答を失敗として扱う。リダイレクトは追わずに失敗として扱い、Authorization Error Response でも同じである。
 - `response_uri` は `https` の URL でなければならない。`VCKNOTS_WALLET_HTTP_ALLOWED` か `VCKNOTS_WALLET_DEBUG` が `true` のときは、この検査を行わない。
 - `redirect_uri` を含む要求は `invalid_request` で拒否する（Section 8.2）。
 - 成功応答に対して Response URI が返した `redirect_uri` は、呼び出し元に返し、`PresentCredentialOptions.OnRedirect` にも渡す。Wallet 自身はこれを開かないため、User Agent をそこへリダイレクトするのはアプリケーションの役割である（Section 8.2）。
