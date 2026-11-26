@@ -182,7 +182,7 @@ createServer({
 
 **Note on `namespace`**: The default is `'vcknots-server'`, not `'vcknots'`. This is intentional: the library's own providers (nonce, request-object, etc.) all use `'vcknots'` as their root collection, so this store uses a different root to keep server-layer state separate. If you want all data under one root, pass `namespace: 'vcknots'` explicitly.
 
-**Firestore TTL policy**: To have Firestore automatically delete expired state entries, configure a TTL policy on the `states` collection group with the `expires_at` field (Timestamp type). Note that Firestore TTL deletion is not immediate — documents may remain for up to 24 hours after the expiry time. This policy must be configured manually in the Firebase console or via `gcloud firestore fields ttls update`.
+**Firestore TTL policy**: To have Firestore automatically delete expired state entries, configure a TTL policy on the `states` collection group with the `expires_at` field (Timestamp type). Note that Firestore TTL deletion is not immediate — documents are typically deleted within 24 hours of the expiry time, but the exact deletion time is not guaranteed. This policy must be configured manually in the Firebase console or via `gcloud firestore fields ttls update`.
 
 ## Notes
 
