@@ -21,7 +21,7 @@ const errorResult = (error_description: string) => ({
 })
 
 export const createFirestoreStateStore = (
-  options?: FirestoreProviderOptions & { ttlMs?: number }
+  options?: FirestoreProviderOptions & { ttlMs?: number; verifierUrl?: string }
 ): DirectPostVpAudTransactionStore => {
   const db = options?.app
     ? options.databaseId
@@ -41,9 +41,12 @@ export const createFirestoreStateStore = (
 
   const ns = options?.namespace?.replace(/\//g, '') || 'vcknots-server'
   const ttlMs = options?.ttlMs ?? DEFAULT_TTL_MS
+  const verifierPrefix = options?.verifierUrl
+    ? `verifiers/${createHash('md5').update(options.verifierUrl).digest('base64url')}/`
+    : ''
 
-  // use SHA-256 of state as document ID to avoid path issues
-  const docRef = (state: string) => db.doc(`${ns}/v1/states/${stateToDocId(state)}`)
+  const docRef = (state: string) =>
+    db.doc(`${ns}/v1/${verifierPrefix}states/${stateToDocId(state)}`)
 
   const reserve = async (state: string) => {
     const ref = docRef(state)

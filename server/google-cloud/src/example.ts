@@ -87,6 +87,7 @@ createServer({
     vpAudTransactionStore: createFirestoreStateStore({
       app: firebaseApp,
       databaseId: process.env.FIRESTORE_DATABASE_ID,
+      verifierUrl: process.env.BASE_URL,
     }),
   },
 })

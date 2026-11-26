@@ -172,6 +172,7 @@ createServer({
       databaseId: process.env.FIRESTORE_DATABASE_ID, // 省略時はデフォルト DB
       namespace: 'vcknots-server',                   // 省略時: 'vcknots-server'
       ttlMs: 5 * 60 * 1000,                          // 省略時: 5 分
+      verifierUrl: process.env.BASE_URL,             // 省略可: 指定時は verifiers/<md5>/states/ 配下、省略時は states/ 直下に保存
     }),
   },
 })
@@ -181,7 +182,7 @@ Firestore トランザクションを使って `reserve` / `register` / `acquire
 
 **`namespace` について**: デフォルトは `'vcknots'` ではなく `'vcknots-server'` です。ライブラリ付属のプロバイダー（nonce・request-object など）はすべて `'vcknots'` をルートコレクションとして使うため、このストアはサーバー層のデータを明示的に別のルートに分離しています。すべてのデータを同じルートに集約したい場合は `namespace: 'vcknots'` を明示的に指定してください。
 
-**Firestore TTL ポリシー**: 期限切れの state エントリを Firestore に自動削除させるには、`states` コレクショングループに対して `expires_at` フィールド（Timestamp 型）を TTL フィールドとするポリシーを設定してください。Firestore の TTL 削除は即時ではなく、通常は期限切れから 24 時間以内に削除されますが、削除時刻は保証されません。このポリシーは Firebase コンソールまたは `gcloud firestore fields ttls update` コマンドで手動設定が必要です。
+**Firestore TTL ポリシー**: 期限切れの state エントリを Firestore に自動削除させるには、`states` コレクショングループに対して `expires_at` フィールド（Timestamp 型）を TTL フィールドとするポリシーを設定してください。このポリシーは `verifierUrl` や `namespace` オプションに関わらず適用されます。Firestore の TTL 削除は即時ではなく、通常は期限切れから 24 時間以内に削除されますが、削除時刻は保証されません。このポリシーは Firebase コンソールまたは `gcloud firestore fields ttls update` コマンドで手動設定が必要です。
 
 ## 補足
 
