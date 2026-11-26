@@ -750,7 +750,7 @@ func TestController_parseAuthorizationRequest_RejectsNonHTTPSResponseURI(t *test
 
 	dcqlQuery := url.QueryEscape(`{"credentials":[{"id":"cred1","format":"jwt_vc_json","meta":{}}]}`)
 	uri := fmt.Sprintf(
-		"openid4vp://present?client_id=redirect_uri:https://example.com/cb&response_type=vp_token&nonce=test-nonce&dcql_query=%s&response_mode=direct_post&response_uri=http://example.com/response",
+		"openid4vp://present?client_id=redirect_uri:http://example.com/response&response_type=vp_token&nonce=test-nonce&dcql_query=%s&response_mode=direct_post&response_uri=http://example.com/response",
 		dcqlQuery,
 	)
 
@@ -767,7 +767,7 @@ func TestController_parseAuthorizationRequest_AllowsNonHTTPSResponseURI_WhenVali
 
 	dcqlQuery := url.QueryEscape(`{"credentials":[{"id":"cred1","format":"jwt_vc_json","meta":{}}]}`)
 	uri := fmt.Sprintf(
-		"openid4vp://present?client_id=redirect_uri:https://example.com/cb&response_type=vp_token&nonce=test-nonce&dcql_query=%s&response_mode=direct_post&response_uri=http://example.com/response",
+		"openid4vp://present?client_id=redirect_uri:http://example.com/response&response_type=vp_token&nonce=test-nonce&dcql_query=%s&response_mode=direct_post&response_uri=http://example.com/response",
 		dcqlQuery,
 	)
 
@@ -4068,7 +4068,7 @@ func TestController_PresentCredential_CallsRedirectHandler(t *testing.T) {
 
 	// Step 2: Present the credential and verify redirect handler execution
 	dcqlQuery := `{"credentials":[{"id":"cred1","format":"jwt_vc_json","meta":{}}]}`
-	clientID := "redirect_uri:https://example.com/cb"
+	clientID := "redirect_uri:" + responseServer.URL
 	presentationURI := fmt.Sprintf(
 		"openid4vp://present?dcql_query=%s&client_id=%s&response_type=vp_token&response_mode=direct_post&response_uri=%s&nonce=test-nonce-123&state=test-state-456",
 		url.QueryEscape(dcqlQuery),

@@ -86,10 +86,10 @@ How the Wallet implements the rows that link here: deviations from the specifica
 #### 5.9.3 Client Identifier Prefix {#wallet-client-identifier-prefix}
 
 - `x509_san_dns`: a Request Object is accepted only when its Client Identifier without the prefix matches a dNSName SAN of the leaf certificate in `x5c`, and the host of its `response_uri` equals that value (Sections 5.9.3 and 8.2).
-- `redirect_uri`: a Request Object whose `client_id` claim uses this prefix is refused (Section 5.9.3). With `response_mode=direct_post`, `response_uri` is required, although Section 5.9.3 lets the Verifier omit it.
-- A request passed as URL-encoded parameters is not authenticated, whatever its Client Identifier Prefix.
+- `redirect_uri`: a Request Object whose `client_id` claim uses this prefix is refused (Section 5.9.3).
+- A request passed as URL-encoded parameters is accepted only with the `redirect_uri` Client Identifier Prefix. Its `response_uri` may be omitted, and when present it has to equal the Client Identifier without the prefix (Sections 5.9.3 and 8.2); a different one is refused without an error response.
 - A `client_id` without a prefix is refused, since the Wallet has no pre-registered clients (Section 5.9.2).
-- A Client Identifier using `decentralized_identifier`, `verifier_attestation`, `x509_hash`, `openid_federation` or an unrecognized prefix is refused, and so is a Request Object whose certificate or `response_uri` does not match its Client Identifier. Neither refusal is sent to the Verifier, although Section 8.5 defines `invalid_request` for both. A request passed as URL-encoded parameters with one of the four prefixes named here can still get an error response for another check (see [Authorization Error Response](#wallet-error-response)).
+- A Client Identifier using `decentralized_identifier`, `verifier_attestation`, `x509_hash`, `openid_federation` or an unrecognized prefix is refused, and so is a Request Object whose certificate or `response_uri` does not match its Client Identifier. Neither refusal is sent to the Verifier, although Section 8.5 defines `invalid_request` for both.
 
 #### 5.10 Request URI Method {#wallet-request-uri-method}
 
@@ -118,10 +118,10 @@ How the Wallet implements the rows that link here: deviations from the specifica
 
 - The Authorization Response is posted to `response_uri` as `application/x-www-form-urlencoded`, and an HTTP error response is treated as a failure.
 - `response_uri` has to be an `https` URL. The check is turned off when `VCKNOTS_WALLET_HTTP_ALLOWED` or `VCKNOTS_WALLET_DEBUG` is `true`.
-- A request carrying `redirect_uri` alongside `response_uri` is refused with `invalid_request`.
+- A request carrying `redirect_uri` is refused with `invalid_request` (Section 8.2).
 - A `redirect_uri` the Response URI returns for a successful response is returned to the caller and passed to `PresentCredentialOptions.OnRedirect`. The Wallet does not open it itself, so the application has to redirect the user agent to it (Section 8.2).
 - A `redirect_uri` returned for an Authorization Error Response is discarded, although Section 8.2 requires the Wallet to redirect the user agent to it as well.
-- Other Response Modes, such as `fragment`, `query` and `direct_post.jwt`, are not supported.
+- A request using any other Response Mode, such as `fragment`, `query` or `direct_post.jwt`, is refused.
 
 #### 8.3 Encrypted Authorization Response {#wallet-encrypted-response}
 
@@ -129,7 +129,7 @@ How the Wallet implements the rows that link here: deviations from the specifica
 - With `authorization_encrypted_response_alg` alone, with an `alg` the Wallet column does not list, or without a key in `client_metadata.jwks`, the presentation fails and nothing is sent.
 - The JWE `alg` and `enc` are taken from those two members, not from the `alg` of the chosen JWK or from `encrypted_response_enc_values_supported`, and `A128GCM` is not applied as the default.
 - The key is the first one in `client_metadata.jwks` whose `use` is `enc`, or the first key when none is, and its `kid` goes into the JWE header.
-- The Response Mode `direct_post.jwt` (Section 8.3.1) is not supported.
+- A request using the Response Mode `direct_post.jwt` (Section 8.3.1) is refused.
 
 #### 8.4 Transaction Data {#wallet-transaction-data}
 
@@ -145,11 +145,11 @@ How the Wallet implements the rows that link here: deviations from the specifica
 
 #### 8.5 Authorization Error Response {#wallet-error-response}
 
-- With `response_mode=direct_post`, the Wallet posts `error`, and `state` when the request carried one, to `response_uri`, with `error_description` except for `access_denied`, whose reason would reveal which Credentials the user holds (Section 15.9). No error response is sent with any other response mode.
+- With `response_mode=direct_post`, the Wallet posts `error`, and `state` when the request carried one, to `response_uri`, with `error_description` except for `access_denied`, whose reason would reveal which Credentials the user holds (Section 15.9). A request using any other response mode is refused without an error response.
 - A Request Object (`request` / `request_uri`) using the `x509_san_dns` Client Identifier Prefix gets an error response for a parameter validation failure too, but only once its certificate chain (unless `Oid4vpPresenter.InsecureSkipX509Verify` is set), signature, `client_id` and response destination have all been verified. A failure found earlier is held back until then.
 - A Request Object naming no verification key, such as one using the `redirect_uri` prefix, is refused outright instead and gets no error response, since it authenticates no destination to send one to.
 - A refusal the Wallet attaches no code to is not sent at all. Among them are a Client Identifier Prefix the Wallet does not support, which Section 8.5 assigns to `invalid_request`, and a non-empty `request_uri_method` that is neither `get` nor `post` in any letter case: `invalid_request_uri_method` is never sent.
-- In URL-encoded parameters, a request using the `decentralized_identifier`, `verifier_attestation`, `x509_hash` or `openid_federation` prefix that also fails a check carrying a code while its parameters are read, such as a missing parameter, `scope` or a malformed `dcql_query`, gets an error response with that code. The checks on each `transaction_data` entry are not reached. An unrecognized prefix, `origin` or a `client_id` without a prefix is refused before any other check and gets none.
+- A request passed as URL-encoded parameters gets an error response only when its Client Identifier uses the `redirect_uri` prefix and its `response_uri`, if present, equals the Client Identifier without the prefix, since nothing else authenticates that `response_uri`. An unrecognized prefix, `origin` or a `client_id` without a prefix is refused before any other check.
 - `vp_formats_not_supported` is returned as soon as one Credential Query names a format other than `dc+sd-jwt` or `jwt_vc_json`, even when that query is only one option of a Credential Set or belongs to an optional one. Section 8.5 defines the code for a Wallet that supports none of the requested formats, and Section 6.4.2 lets a Credential Set be satisfied with any of its options.
 
 #### 11 Verifier Metadata — `client_metadata` {#wallet-verifier-metadata}

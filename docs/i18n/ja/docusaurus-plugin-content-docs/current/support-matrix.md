@@ -86,10 +86,10 @@ OpenID for Verifiable Presentations の表の備考欄では、`[Verifier]` ま�
 #### 5.9.3 Client Identifier Prefix {#wallet-client-identifier-prefix}
 
 - `x509_san_dns`：Request Object を受け入れるのは、プレフィックスを除いた Client Identifier が `x5c` のリーフ証明書の dNSName SAN と一致し、`response_uri` のホストがその値と等しい場合だけである（Section 5.9.3、8.2）。
-- `redirect_uri`：`client_id` クレームがこのプレフィックスを使う Request Object は拒否する（Section 5.9.3）。`response_mode=direct_post` のときは `response_uri` を必須とするが、Section 5.9.3 は Verifier がこれを省略することを認めている。
-- URL エンコードされたパラメータで渡すリクエストは、Client Identifier Prefix によらず認証されない。
+- `redirect_uri`：`client_id` クレームがこのプレフィックスを使う Request Object は拒否する（Section 5.9.3）。
+- URL エンコードされたパラメータで渡すリクエストは、`redirect_uri` の Client Identifier Prefix でだけ受け入れる。`response_uri` は省略してよいが、ある場合はプレフィックスを除いた Client Identifier と等しくなければならず（Section 5.9.3、8.2）、異なる場合はエラー応答を返さずに拒否する。
 - Wallet は事前登録されたクライアントを持たないので、プレフィックスの無い `client_id` は拒否する（Section 5.9.2）。
-- `decentralized_identifier`、`verifier_attestation`、`x509_hash`、`openid_federation` と認識しないプレフィックスを使う Client Identifier は拒否し、証明書や `response_uri` が Client Identifier と一致しない Request Object も拒否する。Section 8.5 はどちらにも `invalid_request` を定めているが、どちらの拒否も Verifier には送らない。ただし、ここに名前を挙げた 4 つのプレフィックスを使う URL エンコードされたリクエストは、他の検査の失敗によってエラー応答を受けることがある（[Authorization Error Response](#wallet-error-response) を参照）。
+- `decentralized_identifier`、`verifier_attestation`、`x509_hash`、`openid_federation` と認識しないプレフィックスを使う Client Identifier は拒否し、証明書や `response_uri` が Client Identifier と一致しない Request Object も拒否する。Section 8.5 はどちらにも `invalid_request` を定めているが、どちらの拒否も Verifier には送らない。
 
 #### 5.10 Request URI Method {#wallet-request-uri-method}
 
@@ -118,10 +118,10 @@ OpenID for Verifiable Presentations の表の備考欄では、`[Verifier]` ま�
 
 - Authorization Response を `application/x-www-form-urlencoded` で `response_uri` に POST し、HTTP のエラー応答を失敗として扱う。
 - `response_uri` は `https` の URL でなければならない。`VCKNOTS_WALLET_HTTP_ALLOWED` か `VCKNOTS_WALLET_DEBUG` が `true` のときは、この検査を行わない。
-- `response_uri` と同時に `redirect_uri` を含む要求は `invalid_request` で拒否する。
+- `redirect_uri` を含む要求は `invalid_request` で拒否する（Section 8.2）。
 - 成功応答に対して Response URI が返した `redirect_uri` は、呼び出し元に返し、`PresentCredentialOptions.OnRedirect` にも渡す。Wallet 自身はこれを開かないため、User Agent をそこへリダイレクトするのはアプリケーションの役割である（Section 8.2）。
 - Authorization Error Response に対して返された `redirect_uri` は捨てるが、Section 8.2 はこれについても User Agent をリダイレクトするよう Wallet に求めている。
-- `fragment`、`query`、`direct_post.jwt` など他の Response Mode には対応していない。
+- `fragment`、`query`、`direct_post.jwt` など他の Response Mode を使う要求は拒否する。
 
 #### 8.3 暗号化された Authorization Response {#wallet-encrypted-response}
 
@@ -129,7 +129,7 @@ OpenID for Verifiable Presentations の表の備考欄では、`[Verifier]` ま�
 - `authorization_encrypted_response_alg` だけの場合、Wallet 列に無い `alg` の場合、`client_metadata.jwks` に鍵が無い場合は、提示に失敗し、何も送らない。
 - JWE の `alg` と `enc` はこの 2 つのメンバーから取り、選んだ JWK の `alg` や `encrypted_response_enc_values_supported` は使わず、既定値の `A128GCM` も適用しない。
 - 鍵は `client_metadata.jwks` のうち `use` が `enc` の最初の鍵で、該当が無ければ先頭の鍵を使い、その `kid` を JWE ヘッダに入れる。
-- Response Mode `direct_post.jwt`（Section 8.3.1）には対応していない。
+- Response Mode `direct_post.jwt`（Section 8.3.1）を使う要求は拒否する。
 
 #### 8.4 Transaction Data {#wallet-transaction-data}
 
@@ -145,11 +145,11 @@ OpenID for Verifiable Presentations の表の備考欄では、`[Verifier]` ま�
 
 #### 8.5 Authorization Error Response {#wallet-error-response}
 
-- `response_mode=direct_post` のとき、Wallet は `error` と、要求にあれば `state` を `response_uri` に POST し、`error_description` も添えるが、理由からユーザーがどの Credential を保有しているかが分かってしまう `access_denied` には添えない（Section 15.9）。他の response mode ではエラー応答を送らない。
+- `response_mode=direct_post` のとき、Wallet は `error` と、要求にあれば `state` を `response_uri` に POST し、`error_description` も添えるが、理由からユーザーがどの Credential を保有しているかが分かってしまう `access_denied` には添えない（Section 15.9）。他の response mode を使う要求は、エラー応答を返さずに拒否する。
 - `x509_san_dns` の Client Identifier Prefix を使う Request Object（`request` / `request_uri`）に対しても、パラメータ検証の失敗にエラー応答を返すが、それは証明書チェーン（`Oid4vpPresenter.InsecureSkipX509Verify` を設定した場合を除く）・署名・`client_id`・応答先をすべて検証した後に限られる。それより前に見つかった失敗は、検証が終わるまで保持される。
 - `redirect_uri` プレフィックスを使うもののように検証鍵を一切名乗らない Request Object は、代わりに即座に拒否され、エラー応答を送る先を何も認証していないため、エラー応答は返らない。
 - Wallet がコードを付けない拒否は一切送られない。これにあたるものには、Wallet が対応していない Client Identifier Prefix（Section 8.5 はこれに `invalid_request` を割り当てている）と、大文字小文字を問わず `get` でも `post` でもない、空でない `request_uri_method` がある（`invalid_request_uri_method` は送出しない）。
-- URL エンコードされたパラメータでは、`decentralized_identifier`、`verifier_attestation`、`x509_hash`、`openid_federation` のプレフィックスを使う要求が、パラメータを読み取る段階でコードを伴う検査（必須パラメータの欠落、`scope`、構造が不正な `dcql_query` など）にも失敗すると、そのコードのエラー応答が送られる。`transaction_data` の各エントリに対する検査には到達しない。認識しないプレフィックス、`origin`、プレフィックスの無い `client_id` は他の検査より前に拒否され、エラー応答は送られない。
+- URL エンコードされたパラメータで渡すリクエストがエラー応答を受けるのは、Client Identifier が `redirect_uri` プレフィックスを使い、`response_uri` があればそれがプレフィックスを除いた Client Identifier と等しい場合だけである（それ以外の `response_uri` を認証するものは無いため）。認識しないプレフィックス、`origin`、プレフィックスの無い `client_id` は他の検査より前に拒否される。
 - Credential Query のどれか 1 つでも `dc+sd-jwt` と `jwt_vc_json` 以外のフォーマットを指定すると、そのクエリが Credential Set の選択肢の 1 つにすぎない場合や必須でない Credential Set に属する場合でも、`vp_formats_not_supported` を返す。Section 8.5 はこのコードを要求されたフォーマットを 1 つも扱えない Wallet のために定めており、Section 6.4.2 は Credential Set をどの選択肢で満たしてもよいとしている。
 
 #### 11 Verifier Metadata — `client_metadata` {#wallet-verifier-metadata}
