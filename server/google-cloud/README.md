@@ -25,7 +25,7 @@ The endpoint list in this README is an overview of the paths used in this sample
 google-cloud/
 ├─ src/
 │  ├─ example.ts                           # Google Cloud / Firebase startup entrypoint
-│  └─ firestore-direct-post-state-store.ts # Firestore-backed vpAudTransactionStore implementation
+│  └─ firestore-state-store.ts             # Firestore-backed vpAudTransactionStore implementation
 ├─ .env.example       # Sample environment variable configuration
 ├─ package.json
 └─ tsconfig.json
@@ -163,12 +163,12 @@ The server starts on `http://localhost:8080` by default.
 `server/google-cloud` provides a Firestore-backed `DirectPostVpAudTransactionStore` implementation for multi-instance environments such as Cloud Run.
 
 ```ts
-import { createFirestoreDirectPostStateStore } from './firestore-direct-post-state-store.js'
+import { createFirestoreStateStore } from './firestore-state-store.js'
 
 createServer({
   providers: [...],
   verifier: {
-    vpAudTransactionStore: createFirestoreDirectPostStateStore({
+    vpAudTransactionStore: createFirestoreStateStore({
       app: firebaseApp,
       databaseId: process.env.FIRESTORE_DATABASE_ID, // optional, uses default DB if omitted
       namespace: 'vcknots-server',                   // optional, default: 'vcknots-server'
@@ -182,7 +182,7 @@ createServer({
 
 **Note on `namespace`**: The default is `'vcknots-server'`, not `'vcknots'`. This is intentional: the library's own providers (nonce, request-object, etc.) all use `'vcknots'` as their root collection, so this store uses a different root to keep server-layer state separate. If you want all data under one root, pass `namespace: 'vcknots'` explicitly.
 
-**Firestore TTL policy**: To have Firestore automatically delete expired state entries, configure a TTL policy on the `directPostStates` collection group with the `expires_at` field (Timestamp type). Note that Firestore TTL deletion is not immediate — documents may remain for up to 24 hours after the expiry time. This policy must be configured manually in the Firebase console or via `gcloud firestore fields ttls update`.
+**Firestore TTL policy**: To have Firestore automatically delete expired state entries, configure a TTL policy on the `states` collection group with the `expires_at` field (Timestamp type). Note that Firestore TTL deletion is not immediate — documents may remain for up to 24 hours after the expiry time. This policy must be configured manually in the Firebase console or via `gcloud firestore fields ttls update`.
 
 ## Notes
 

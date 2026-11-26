@@ -25,7 +25,7 @@ Issuer / Authorization Server / Verifier の実際の API 仕様（パラメー�
 google-cloud/
 ├─ src/        
 │  ├─ example.ts                           # Google Cloud / Firebase 起動エントリ
-│  └─ firestore-direct-post-state-store.ts # Firestore 版 vpAudTransactionStore 実装
+│  └─ firestore-state-store.ts             # Firestore 版 vpAudTransactionStore 実装
 ├─ .env.example           # 環境変数設定のサンプル
 ├─ package.json
 └─ tsconfig.json
@@ -162,12 +162,12 @@ Authz metadata initialized
 `server/google-cloud` は Cloud Run などのマルチインスタンス環境向けに、Firestore を使った `DirectPostVpAudTransactionStore` 実装を提供します。
 
 ```ts
-import { createFirestoreDirectPostStateStore } from './firestore-direct-post-state-store.js'
+import { createFirestoreStateStore } from './firestore-state-store.js'
 
 createServer({
   providers: [...],
   verifier: {
-    vpAudTransactionStore: createFirestoreDirectPostStateStore({
+    vpAudTransactionStore: createFirestoreStateStore({
       app: firebaseApp,
       databaseId: process.env.FIRESTORE_DATABASE_ID, // 省略時はデフォルト DB
       namespace: 'vcknots-server',                   // 省略時: 'vcknots-server'
@@ -181,7 +181,7 @@ Firestore トランザクションを使って `reserve` / `register` / `acquire
 
 **`namespace` について**: デフォルトは `'vcknots'` ではなく `'vcknots-server'` です。ライブラリ付属のプロバイダー（nonce・request-object など）はすべて `'vcknots'` をルートコレクションとして使うため、このストアはサーバー層のデータを明示的に別のルートに分離しています。すべてのデータを同じルートに集約したい場合は `namespace: 'vcknots'` を明示的に指定してください。
 
-**Firestore TTL ポリシー**: 期限切れの state エントリを Firestore に自動削除させるには、`directPostStates` コレクショングループに対して `expires_at` フィールド（Timestamp 型）を TTL フィールドとするポリシーを設定してください。Firestore の TTL 削除は即時ではなく、期限切れから最大 24 時間後に削除されます。このポリシーは Firebase コンソールまたは `gcloud firestore fields ttls update` コマンドで手動設定が必要です。
+**Firestore TTL ポリシー**: 期限切れの state エントリを Firestore に自動削除させるには、`states` コレクショングループに対して `expires_at` フィールド（Timestamp 型）を TTL フィールドとするポリシーを設定してください。Firestore の TTL 削除は即時ではなく、期限切れから最大 24 時間後に削除されます。このポリシーは Firebase コンソールまたは `gcloud firestore fields ttls update` コマンドで手動設定が必要です。
 
 ## 補足
 

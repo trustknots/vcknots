@@ -6,6 +6,7 @@ import { getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore'
 const DEFAULT_TTL_MS = 5 * 60 * 1000
 
 type StoredState = {
+  state: string
   transactionId: string
   reservationToken: string
   expires_at: Timestamp
@@ -19,7 +20,7 @@ const errorResult = (error_description: string) => ({
   error: { error: 'invalid_request', error_description },
 })
 
-export const createFirestoreDirectPostStateStore = (
+export const createFirestoreStateStore = (
   options?: FirestoreProviderOptions & { ttlMs?: number }
 ): DirectPostVpAudTransactionStore => {
   const db = options?.app
@@ -30,11 +31,19 @@ export const createFirestoreDirectPostStateStore = (
       ? getFirestore(options.databaseId)
       : getFirestore()
 
+  try {
+    db.settings({ ignoreUndefinedProperties: true })
+  } catch (cause) {
+    if (!(cause instanceof Error) || !cause.message.includes('already been initialized')) {
+      throw cause
+    }
+  }
+
   const ns = options?.namespace?.replace(/\//g, '') || 'vcknots-server'
   const ttlMs = options?.ttlMs ?? DEFAULT_TTL_MS
 
   // use SHA-256 of state as document ID to avoid path issues
-  const docRef = (state: string) => db.doc(`${ns}/v1/directPostStates/${stateToDocId(state)}`)
+  const docRef = (state: string) => db.doc(`${ns}/v1/states/${stateToDocId(state)}`)
 
   const reserve = async (state: string) => {
     const ref = docRef(state)
@@ -51,6 +60,7 @@ export const createFirestoreDirectPostStateStore = (
           }
         }
         tx.set(ref, {
+          state,
           transactionId: '',
           reservationToken,
           expires_at: Timestamp.fromMillis(now + ttlMs),
@@ -85,6 +95,7 @@ export const createFirestoreDirectPostStateStore = (
           throw new Error('register_failed')
         }
         tx.set(ref, {
+          state,
           transactionId,
           reservationToken,
           expires_at: Timestamp.fromMillis(now + ttlMs),
