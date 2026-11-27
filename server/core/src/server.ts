@@ -21,8 +21,13 @@ import {
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createApp } from './app.js'
+import type { VerifierServerOptions } from './routes/verify.js'
 
-export const createServer = (options?: VcknotsOptions) => {
+type ServerOptions = VcknotsOptions & {
+  verifier?: VerifierServerOptions
+}
+
+export const createServer = (options?: ServerOptions) => {
   const __dirname = dirname(fileURLToPath(import.meta.url))
   const samplesDir = join(__dirname, '../../samples')
   const issuerMetadataConfigRaw = JSON.parse(
@@ -57,7 +62,7 @@ export const createServer = (options?: VcknotsOptions) => {
   const verifierFlow = initializeVerifierFlow(context)
 
   const baseUrl = process.env.BASE_URL ?? 'http://localhost:8080'
-  const app = createApp(context, baseUrl)
+  const app = createApp(context, baseUrl, options?.verifier)
 
   async function main() {
     if (!(await initializeVerifierMetadata(baseUrl, verifierMetadataConfig))) {

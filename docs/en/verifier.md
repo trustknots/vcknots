@@ -53,7 +53,7 @@ const verifierFlow = initializeVerifierFlow(context);
 
 Introduction:
 - The Verifier metadata is pre-registered when the server starts. ([initializeVerifierMetadata](#initializeVerifierMetadata))
-- `vpAudTx` in the sample code is a sample utility that maps `state` to `transactionId`. In your actual application, manage this using sessions or a database.
+- `vpAudTx` in the sample code is a `DirectPostVpAudTransactionStore` implementation that maps `state` to `transactionId`. In your actual application, inject an external store implementation using sessions or a database.
 
 
 
@@ -81,14 +81,15 @@ verifyApp.post('/request', async (c) => {
     const verifierId = VerifierClientId(baseUrl)
     type Payload = Record<string, unknown>
     const body: Payload = await c.req.json<Payload>().catch(() => ({}))
-    const credentialId = ('credentialId' in body ? body.credentialId : undefined) as
-      | string
-      | undefined
+    const credentialId =
+      typeof body.credentialId === 'string' && body.credentialId.trim() !== ''
+        ? body.credentialId
+        : undefined
     if (!credentialId) {
       return c.json(
         {
           error: 'invalid_request',
-          error_description: 'credentialId is required.',
+          error_description: 'credentialId must be a non-empty string.',
         },
         400
       )
@@ -120,29 +121,39 @@ verifyApp.post('/request', async (c) => {
         ],
       },
     }
-    const reserved = vpAudTx.reserve(state)
+    const reserved = await vpAudTx.reserve(state)
     if (!reserved.ok) {
       return c.json(reserved.error, 400)
     }
-    const { request, transactionId: verifierTxId } = await verifierFlow
-      .createAuthzRequest(verifierId, 'vp_token', client_id, 'direct_post', query, false, {
-        state,
-        response_uri: `${baseUrl}/callback`,
-        base_url: baseUrl,
-      })
-      .catch((err: unknown) => {
-        vpAudTx.consume(state)
-        throw err
-      })
-    vpAudTx.register(state, verifierTxId)
-
-    const encoded = Object.entries({ ...request, state })
-      .map(([key, value]) => {
-        const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
-        return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
-      })
-      .join('&')
+    let verifierTxId: string | undefined
+    try {
+      const { request, transactionId } = await verifierFlow.createAuthzRequest(
+        verifierId, 'vp_token', client_id, 'direct_post', query, false, {
+          state,
+          response_uri: `${baseUrl}/callback`,
+          base_url: baseUrl,
+        }
+      )
+      verifierTxId = transactionId
+      const registered = await vpAudTx.register(state, verifierTxId, reserved.reservationToken)
+      if (!registered.ok) {
+        await verifierFlow.deleteTransaction(verifierTxId)
+        return c.json(registered.error, 400)
+      }
+      const encoded = Object.entries({ ...request, state })
+        .map(([key, value]) => {
+          const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
+          return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
+        })
+        .join('&')
       return c.text(`openid4vp:?${encoded}`)
+    } catch (err) {
+      await Promise.allSettled([
+        vpAudTx.release(state, reserved.reservationToken),
+        verifierTxId ? verifierFlow.deleteTransaction(verifierTxId) : Promise.resolve(),
+      ])
+      throw err
+    }
   } catch (err) {
     const errorResponse = handleError(err)
     const status = errorResponse.error === 'internal_server_error' ? 500 : 400
@@ -241,14 +252,14 @@ verifyApp.post('/request-object', async (c) => {
         ? validateClientIdScheme(input.client_id)
         : 'x509_san_dns:localhost',
   }
-  let reserved: ReturnType<typeof vpAudTx.reserve> | undefined
+  const reserved = await vpAudTx.reserve(requestObject.state)
+  if (!reserved.ok) {
+    return c.json(reserved.error, 400)
+  }
+  let verifierTxId: string | undefined
   try {
-    reserved = vpAudTx.reserve(requestObject.state)
-    if (!reserved.ok) {
-      return c.json(reserved.error, 400)
-    }
     const verifierId = VerifierClientId(baseUrl)
-    const { request, transactionId: verifierTxId } = await verifierFlow.createAuthzRequest(
+    const { request, transactionId } = await verifierFlow.createAuthzRequest(
       verifierId,
       'vp_token',
       requestObject.client_id,
@@ -265,7 +276,12 @@ verifyApp.post('/request-object', async (c) => {
           : {}),
       }
     )
-    vpAudTx.register(requestObject.state, verifierTxId)
+    verifierTxId = transactionId
+    const registered = await vpAudTx.register(requestObject.state, verifierTxId, reserved.reservationToken)
+    if (!registered.ok) {
+      await verifierFlow.deleteTransaction(verifierTxId)
+      return c.json(registered.error, 400)
+    }
     console.log('[verify] direct_post transaction_id:', verifierTxId)
     const encoded = Object.entries(request)
       .map(([key, value]) => {
@@ -276,9 +292,10 @@ verifyApp.post('/request-object', async (c) => {
 
     return c.text(`openid4vp:?${encoded}`)
   } catch (err) {
-    if (reserved?.ok) {
-      vpAudTx.consume(requestObject.state)
-    }
+    await Promise.allSettled([
+      vpAudTx.release(requestObject.state, reserved.reservationToken),
+      verifierTxId ? verifierFlow.deleteTransaction(verifierTxId) : Promise.resolve(),
+    ])
     const errorResponse = handleError(err)
     const status = errorResponse.error === 'internal_server_error' ? 500 : 400
     return c.json(errorResponse, status)
@@ -342,7 +359,17 @@ This is an endpoint for Wallets and other clients to retrieve the Request Object
 verifyApp.get('/request.jwt/:request-object-Id', async (c) => {
   try {
     const verifierId = VerifierClientId(baseUrl)
-    const requestObjectId = VerifierRequestObjectId(c.req.param('request-object-Id'))
+    const parseResult = VerifierRequestObjectId.schema.safeParse(c.req.param('request-object-Id'))
+    if (!parseResult.success) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Invalid request-object-Id parameter.',
+        },
+        400
+      )
+    }
+    const requestObjectId = parseResult.data
     const jar = await verifierFlow.findRequestObject(verifierId, requestObjectId)
     return c.body(jar, 200, {
       'Content-Type': 'application/oauth-authz-req+jwt',
@@ -399,21 +426,32 @@ verifyApp.post('/callback', async (c) => {
         400
       )
     }
-    const formData = await c.req.formData()
+    const formData = await c.req.formData().catch(() => null)
+    if (!formData) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          error_description: 'Request body must be a valid form data.',
+        },
+        400
+      )
+    }
     const parsed = parseFormPayload(formData)
     if (!parsed.ok) {
       return c.json(parsed.error, 400)
     }
     const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-    const resolved = vpAudTx.resolve(authorizationResponse.state)
-    if (!resolved.ok) {
-      return c.json(resolved.error, 400)
+    const acquired = await vpAudTx.acquire(authorizationResponse.state)
+    if (!acquired.ok) {
+      return c.json(acquired.error, 400)
     }
     const vpPayload = await verifierFlow.verifyPresentations(
       authorizationResponse,
-      resolved.transactionId
+      acquired.transactionId
     )
-    vpAudTx.consume(authorizationResponse.state ?? '')
+    await vpAudTx
+      .consume(authorizationResponse.state ?? '', acquired.transactionId)
+      .catch((e) => console.error('[verify] consume failed (verification succeeded):', e))
     console.log('Verified VP Payload:', vpPayload)
     return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
   } catch (err) {

@@ -24,7 +24,8 @@ Issuer / Authorization Server / Verifier の実際の API 仕様（パラメー�
 ```text
 google-cloud/
 ├─ src/        
-│  └─ example.ts          # Google Cloud / Firebase 起動エントリ
+│  ├─ example.ts                           # Google Cloud / Firebase 起動エントリ
+│  └─ firestore-state-store.ts             # Firestore 版 vpAudTransactionStore 実装
 ├─ .env.example           # 環境変数設定のサンプル
 ├─ package.json
 └─ tsconfig.json
@@ -155,6 +156,33 @@ Authz metadata initialized
 ```
 
 既定では `http://localhost:8080` で起動します。
+
+## vpAudTransactionStore Firestore 実装
+
+`server/google-cloud` は Cloud Run などのマルチインスタンス環境向けに、Firestore を使った `DirectPostVpAudTransactionStore` 実装を提供します。
+
+```ts
+import { createFirestoreStateStore } from './firestore-state-store.js'
+
+createServer({
+  providers: [...],
+  verifier: {
+    vpAudTransactionStore: createFirestoreStateStore({
+      app: firebaseApp,
+      databaseId: process.env.FIRESTORE_DATABASE_ID, // 省略時はデフォルト DB
+      namespace: 'vcknots-server',                   // 省略時: 'vcknots-server'
+      ttlMs: 5 * 60 * 1000,                          // 省略時: 5 分
+      verifierUrl: process.env.BASE_URL,             // 省略可: 指定時は verifiers/<md5>/states/ 配下、省略時は states/ 直下に保存
+    }),
+  },
+})
+```
+
+Firestore トランザクションを使って `reserve` / `register` / `acquire` / `release` をアトミックに処理するため、複数インスタンス間での state 競合を防ぎます。特に `acquire` は state を `processing` へ原子的に遷移させることで、並行する callback による VP の二重検証を防止します。`vpAudTransactionStore` の詳細は [server-core README](../core/README.ja.md#vpaudtransactionstore) を参照してください。
+
+**`namespace` について**: デフォルトは `'vcknots'` ではなく `'vcknots-server'` です。ライブラリ付属のプロバイダー（nonce・request-object など）はすべて `'vcknots'` をルートコレクションとして使うため、このストアはサーバー層のデータを明示的に別のルートに分離しています。すべてのデータを同じルートに集約したい場合は `namespace: 'vcknots'` を明示的に指定してください。
+
+**Firestore TTL ポリシー**: 期限切れの state エントリを Firestore に自動削除させるには、`states` コレクショングループに対して `expires_at` フィールド（Timestamp 型）を TTL フィールドとするポリシーを設定してください。このポリシーは `verifierUrl` や `namespace` オプションに関わらず適用されます。Firestore の TTL 削除は即時ではなく、通常は期限切れから 24 時間以内に削除されますが、削除時刻は保証されません。このポリシーは Firebase コンソールまたは `gcloud firestore fields ttls update` コマンドで手動設定が必要です。
 
 ## 補足
 
