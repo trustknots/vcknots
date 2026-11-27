@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { afterEach, before, describe, it, mock } from 'node:test'
 
-import { SDJwtInstance } from '@sd-jwt/core'
+import { SdJwtInstance } from '@sd-jwt/core'
 import { digest, ES256, generateSalt } from '@sd-jwt/crypto-nodejs'
 import { ClientIdentifier } from '../../src/client-id-prefix.types'
 import { VcknotsError } from '../../src/errors/vcknots.error'
@@ -47,7 +47,7 @@ describe('sd-jwt provider', () => {
 
   const issueSdJwt = async (iss: string, headerOverrides: Record<string, unknown> = {}) => {
     const signer = await ES256.getSigner(privateJwk)
-    const instance = new SDJwtInstance({
+    const instance = new SdJwtInstance({
       hasher: digest,
       signer,
       saltGenerator: () => generateSalt(8),

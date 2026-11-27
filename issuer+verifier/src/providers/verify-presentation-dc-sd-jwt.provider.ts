@@ -1,6 +1,6 @@
 import { VcknotsError, err } from '../errors/vcknots.error'
 import { VerifyVerifiablePresentationProvider } from './provider.types'
-const { SDJwtInstance } = require('@sd-jwt/core')
+const { SdJwtInstance } = require('@sd-jwt/core')
 import { ES256, digest } from '@sd-jwt/crypto-nodejs'
 import { decodeSdJwt, splitSdJwt } from '@sd-jwt/decode'
 import * as jose from 'jose'
@@ -230,7 +230,7 @@ export const verifyVerifiablePresentationDcSdJwt = (
         }
       }
       const kbVerifier = isKbJwt ? await ES256.getVerifier(cnf.jwk) : undefined
-      const sdJwtInst = new SDJwtInstance({
+      const sdJwtInst = new SdJwtInstance({
         verifier,
         hasher: digest,
         kbVerifier: kbVerifier,
