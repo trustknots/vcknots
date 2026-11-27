@@ -371,6 +371,9 @@ importers:
 
   server/aws/src:
     dependencies:
+      '@aws-sdk/lib-dynamodb':
+        specifier: 3.1161.0
+        version: 3.1161.0(@aws-sdk/client-dynamodb@3.1161.0)
       '@hono/node-server':
         specifier: 2.1.6
         version: 2.1.6(hono@4.13.16)

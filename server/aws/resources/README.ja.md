@@ -91,9 +91,9 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore`、`kmsIssuerSigna
 |---|---|---|---|
 | Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`、`NONCES_TABLE_NAME`、`PRE_CODES_TABLE_NAME`、`AUTHZ_BASE_URL`、`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`、`AUTHZ_OAUTH_POLICIES_TABLE_NAME`、`ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`、`DPOP_PROOF_JTIS_TABLE_NAME`、`TX_CODE_PEPPER` |
 | Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`、`PRE_CODES_TABLE_NAME`、`NONCES_TABLE_NAME`、`AUTHZ_OAUTH_CLIENTS_TABLE_NAME`、`AUTHZ_OAUTH_POLICIES_TABLE_NAME`、`ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`、`DPOP_PROOF_JTIS_TABLE_NAME`、`OAUTH_CLIENT_ASSERTION_JTIS_TABLE_NAME`、`TX_CODE_PEPPER` |
-| Verifier | `/vcknots/{stage}/verifier` | `vcknots-verifier-{stage}` | `VERIFIERS_TABLE_NAME`、`REQUEST_OBJECTS_TABLE_NAME`、`NONCES_TABLE_NAME`、`VERIFIER_TRANSACTIONS_TABLE_NAME`、`VERIFIER_CERTIFICATE_SECRET_PREFIX` |
+| Verifier | `/vcknots/{stage}/verifier` | `vcknots-verifier-{stage}` | `VERIFIERS_TABLE_NAME`、`REQUEST_OBJECTS_TABLE_NAME`、`NONCES_TABLE_NAME`、`VERIFIER_TRANSACTIONS_TABLE_NAME`、`VERIFIER_STATES_TABLE_NAME`、`VERIFIER_CERTIFICATE_SECRET_PREFIX`、`TX_CODE_PEPPER` |
 
-`TX_CODE_PEPPER` はデプロイ時の環境変数から読み込まれ（[デプロイ](#デプロイ)参照）、Issuer/Authz Lambda の環境変数に注入されます。未設定の場合、CDK synth はすぐに失敗します。
+`TX_CODE_PEPPER` はデプロイ時の環境変数から読み込まれ（[デプロイ](#デプロイ)参照）、Issuer/Authz/Verifier Lambda の環境変数に注入されます。未設定の場合、CDK synth はすぐに失敗します。Verifier は `tx_code` をハッシュ化しませんが、`@trustknots/aws` が import 時に pepper をチェックするため、Verifier Lambda にも必要です。
 
 `lib/construct/api/` のロール別 construct が DynamoDB テーブル、IAM、環境変数を接続します。
 
@@ -117,8 +117,9 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore`、`kmsIssuerSigna
 | DpopProofJtisTable | `jwkThumbprint:jti`のSHA-256（hex） | あり（`ttl`） | リプレイ防止用に、proof鍵ごとの使用済みDPoP proofの`jti` |
 | OAuthClientAssertionJtisTable | `[client_id, jti]` のハッシュ（SHA-256、hex） | あり（`ttl`） | 使用済みの `private_key_jwt` `client_assertion` の jti（リプレイ防止） |
 | VerifierTransactionsTable | Transaction ID | あり（`ttl`） | ウォレットの応答を待つVPリクエストのtransaction（DCQLクエリ、`client_id`、`nonce`、`state`） |
+| VerifierStatesTable | `state`のSHA-256（hex） | あり（`ttl`） | `direct_post`の`state`とtransaction IDの対応。リクエスト時に予約・登録し、ウォレットの応答時に`processing`へ原子的に遷移させる（1回のみ） |
 
-`id` 以外の属性（メタデータ本体、`expires_at`、`ttl` など）はアプリケーションが書き込みます。TTL を使うテーブル（PreCodesTable / NoncesTable / RequestObjectsTable / AllowedCredentialConfigurationsTable / DpopProofJtisTable / OAuthClientAssertionJtisTable / VerifierTransactionsTable）では、`expires_at` はアプリケーションレベルの有効期限で **epoch ミリ秒**（Firestore / in-memory プロバイダと揃えた期限判定に使用）、`ttl` は DynamoDB TTL 専用の **epoch 秒**属性です。
+`id` 以外の属性（メタデータ本体、`expires_at`、`ttl` など）はアプリケーションが書き込みます。TTL を使うテーブル（PreCodesTable / NoncesTable / RequestObjectsTable / AllowedCredentialConfigurationsTable / DpopProofJtisTable / OAuthClientAssertionJtisTable / VerifierTransactionsTable / VerifierStatesTable）では、`expires_at` はアプリケーションレベルの有効期限で **epoch ミリ秒**（Firestore / in-memory プロバイダと揃えた期限判定に使用）、`ttl` は DynamoDB TTL 専用の **epoch 秒**属性です。
 
 ### IAM
 
@@ -126,7 +127,7 @@ Issuer は `@trustknots/aws` の `dynamodbIssuerMetadataStore`、`kmsIssuerSigna
 |---|---|
 | Issuer | IssuersTable、NoncesTable（読み書き）；PreCodesTable（書き込みのみ）；AuthzOAuthClientsTable、AuthzOAuthPoliciesTable（読み取りのみ）；AllowedCredentialConfigurationsTable（読み取り＋期限切れ削除用の `DeleteItem`）；DpopProofJtisTable（`PutItem`のみ） |
 | Authz | AuthServersTable、PreCodesTable、NoncesTable、AuthzOAuthClientsTable、AuthzOAuthPoliciesTable、AllowedCredentialConfigurationsTable（読み書き）；DpopProofJtisTable、OAuthClientAssertionJtisTable（`PutItem`のみ） |
-| Verifier | VerifiersTable、RequestObjectsTable、NoncesTable、VerifierTransactionsTable（読み書き） |
+| Verifier | VerifiersTable、RequestObjectsTable、NoncesTable、VerifierTransactionsTable、VerifierStatesTable（読み書き） |
 
 Issuer ロール・Authz ロール・Verifier ロールには署名鍵ストア用にスコープを絞った KMS ポリシーも付与されています（`grantSignatureKeyStoreAccess()`、`lib/construct/security/signature-key-policy.ts` 参照）。鍵は実行時に作成されるため ARN で指定できず、各ステートメントは条件でスコープを絞っています:
 
@@ -154,7 +155,7 @@ Verifier ロールには `secretsManagerVerifierCertificateStore` 用にスコ�
 ### スタック出力
 
 - `IssuerApiUrl`、`AuthzApiUrl`、`VerifierApiUrl`
-- `IssuersTableName`、`AuthServersTableName`、`PreCodesTableName`、`NoncesTableName`、`VerifiersTableName`、`RequestObjectsTableName`、`AuthzOAuthClientsTableName`、`AuthzOAuthPoliciesTableName`、`AllowedCredentialConfigurationsTableName`、`DpopProofJtisTableName`、`OAuthClientAssertionJtisTableName`、`VerifierTransactionsTableName`
+- `IssuersTableName`、`AuthServersTableName`、`PreCodesTableName`、`NoncesTableName`、`VerifiersTableName`、`RequestObjectsTableName`、`AuthzOAuthClientsTableName`、`AuthzOAuthPoliciesTableName`、`AllowedCredentialConfigurationsTableName`、`DpopProofJtisTableName`、`OAuthClientAssertionJtisTableName`、`VerifierTransactionsTableName`、`VerifierStatesTableName`
 
 ## 前提条件
 
@@ -240,7 +241,7 @@ TX_CODE_PEPPER=<your-tx-code-pepper-here> pnpm run deploy -- --profile vc-knots
 | `--profile` | AWS プロファイル（任意；省略時は CLI の既定値を使用） |
 | `--stage` | API Gateway ステージ名（既定: `test`）。CDK synth 時の `API_STAGE` にも設定される |
 | `CORS_ALLOWED_ORIGINS` | API Gateway CORS 用のカンマ区切り HTTPS オリジン（**`API_STAGE=prod` 時は必須**） |
-| `TX_CODE_PEPPER` | `tx_code` HMAC ハッシュ化用の秘密 pepper。Issuer/Authz Lambda の環境変数に注入される（**常に必須**） |
+| `TX_CODE_PEPPER` | `tx_code` HMAC ハッシュ化用の秘密 pepper。Issuer/Authz/Verifier Lambda の環境変数に注入される（**常に必須**） |
 | `STACK_NAME` | CloudFormation スタック名（既定: `ResourcesStack`） |
 
 `scripts/.env` は存在する場合に読み込まれます。CLI フラグは `.env` より優先されます。

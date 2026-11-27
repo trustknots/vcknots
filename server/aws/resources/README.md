@@ -91,9 +91,9 @@ Physical names (log groups, REST API names) include the deployment stage from `A
 |---|---|---|---|
 | Issuer | `/vcknots/{stage}/issuer` | `vcknots-issuer-{stage}` | `ISSUERS_TABLE_NAME`, `NONCES_TABLE_NAME`, `PRE_CODES_TABLE_NAME`, `AUTHZ_BASE_URL`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`, `DPOP_PROOF_JTIS_TABLE_NAME`, `TX_CODE_PEPPER` |
 | Authz | `/vcknots/{stage}/authz` | `vcknots-authz-{stage}` | `AUTH_SERVERS_TABLE_NAME`, `PRE_CODES_TABLE_NAME`, `NONCES_TABLE_NAME`, `AUTHZ_OAUTH_CLIENTS_TABLE_NAME`, `AUTHZ_OAUTH_POLICIES_TABLE_NAME`, `ALLOWED_CREDENTIAL_CONFIGURATIONS_TABLE_NAME`, `DPOP_PROOF_JTIS_TABLE_NAME`, `OAUTH_CLIENT_ASSERTION_JTIS_TABLE_NAME`, `TX_CODE_PEPPER` |
-| Verifier | `/vcknots/{stage}/verifier` | `vcknots-verifier-{stage}` | `VERIFIERS_TABLE_NAME`, `REQUEST_OBJECTS_TABLE_NAME`, `NONCES_TABLE_NAME`, `VERIFIER_TRANSACTIONS_TABLE_NAME`, `VERIFIER_CERTIFICATE_SECRET_PREFIX` |
+| Verifier | `/vcknots/{stage}/verifier` | `vcknots-verifier-{stage}` | `VERIFIERS_TABLE_NAME`, `REQUEST_OBJECTS_TABLE_NAME`, `NONCES_TABLE_NAME`, `VERIFIER_TRANSACTIONS_TABLE_NAME`, `VERIFIER_STATES_TABLE_NAME`, `VERIFIER_CERTIFICATE_SECRET_PREFIX`, `TX_CODE_PEPPER` |
 
-`TX_CODE_PEPPER` is read from the deploy-time environment (see [Deploy](#deploy)) and injected into the Issuer/Authz Lambda environment; CDK synth fails fast if it is unset.
+`TX_CODE_PEPPER` is read from the deploy-time environment (see [Deploy](#deploy)) and injected into the Issuer/Authz/Verifier Lambda environment; CDK synth fails fast if it is unset. The Verifier never hashes `tx_code`, but `@trustknots/aws` checks the pepper at import time, so the Verifier Lambda needs it too.
 
 Role-specific constructs in `lib/construct/api/` wire DynamoDB tables, IAM, and environment variables.
 
@@ -117,8 +117,9 @@ Billing is on-demand (`PAY_PER_REQUEST`). Tables use `RETAIN` on stack deletion 
 | DpopProofJtisTable | SHA-256 (hex) of `jwkThumbprint:jti` | yes (`ttl`) | Used DPoP proof `jti` per proof key, for replay protection |
 | OAuthClientAssertionJtisTable | Hash of `[client_id, jti]` (SHA-256, hex) | yes (`ttl`) | Used `private_key_jwt` `client_assertion` jti values (replay protection) |
 | VerifierTransactionsTable | Transaction ID | yes (`ttl`) | VP request transaction (DCQL query, `client_id`, `nonce`, `state`) awaiting the wallet's response |
+| VerifierStatesTable | SHA-256 (hex) of `state` | yes (`ttl`) | `direct_post` `state` → transaction id binding, reserved and registered on request, then atomically moved to `processing` (once only) on the wallet's response |
 
-Attributes other than `id` (metadata body, `expires_at`, `ttl`, and so on) are written by the application. For the TTL-enabled tables (PreCodesTable / NoncesTable / RequestObjectsTable / AllowedCredentialConfigurationsTable / DpopProofJtisTable / OAuthClientAssertionJtisTable / VerifierTransactionsTable), `expires_at` is the application-level expiry in **epoch milliseconds** (used for expiry checks, matching the Firestore / in-memory providers) and `ttl` is a separate **epoch-seconds** attribute used only by DynamoDB TTL.
+Attributes other than `id` (metadata body, `expires_at`, `ttl`, and so on) are written by the application. For the TTL-enabled tables (PreCodesTable / NoncesTable / RequestObjectsTable / AllowedCredentialConfigurationsTable / DpopProofJtisTable / OAuthClientAssertionJtisTable / VerifierTransactionsTable / VerifierStatesTable), `expires_at` is the application-level expiry in **epoch milliseconds** (used for expiry checks, matching the Firestore / in-memory providers) and `ttl` is a separate **epoch-seconds** attribute used only by DynamoDB TTL.
 
 ### IAM
 
@@ -126,7 +127,7 @@ Attributes other than `id` (metadata body, `expires_at`, `ttl`, and so on) are w
 |---|---|
 | Issuer | IssuersTable, NoncesTable (read/write); PreCodesTable (write only); AuthzOAuthClientsTable, AuthzOAuthPoliciesTable (read only); AllowedCredentialConfigurationsTable (read + `DeleteItem` for expired entries); DpopProofJtisTable (`PutItem` only) |
 | Authz | AuthServersTable, PreCodesTable, NoncesTable, AuthzOAuthClientsTable, AuthzOAuthPoliciesTable, AllowedCredentialConfigurationsTable (read/write); DpopProofJtisTable, OAuthClientAssertionJtisTable (`PutItem` only) |
-| Verifier | VerifiersTable, RequestObjectsTable, NoncesTable, VerifierTransactionsTable (read/write) |
+| Verifier | VerifiersTable, RequestObjectsTable, NoncesTable, VerifierTransactionsTable, VerifierStatesTable (read/write) |
 
 The Issuer, Authz, and Verifier roles also have a scoped KMS policy for their signature key store, granted by `grantSignatureKeyStoreAccess()` (`lib/construct/security/signature-key-policy.ts`). Keys are created at runtime, so none of them can be referenced by ARN here; each statement is scoped by a condition instead:
 
@@ -154,7 +155,7 @@ The Verifier role also has a scoped Secrets Manager policy for `secretsManagerVe
 ### Stack Outputs
 
 - `IssuerApiUrl`, `AuthzApiUrl`, `VerifierApiUrl`
-- `IssuersTableName`, `AuthServersTableName`, `PreCodesTableName`, `NoncesTableName`, `VerifiersTableName`, `RequestObjectsTableName`, `AuthzOAuthClientsTableName`, `AuthzOAuthPoliciesTableName`, `AllowedCredentialConfigurationsTableName`, `DpopProofJtisTableName`, `OAuthClientAssertionJtisTableName`, `VerifierTransactionsTableName`
+- `IssuersTableName`, `AuthServersTableName`, `PreCodesTableName`, `NoncesTableName`, `VerifiersTableName`, `RequestObjectsTableName`, `AuthzOAuthClientsTableName`, `AuthzOAuthPoliciesTableName`, `AllowedCredentialConfigurationsTableName`, `DpopProofJtisTableName`, `OAuthClientAssertionJtisTableName`, `VerifierTransactionsTableName`, `VerifierStatesTableName`
 
 ## Prerequisites
 
@@ -240,7 +241,7 @@ Options:
 | `--profile` | AWS profile (optional; uses CLI default when omitted) |
 | `--stage` | API Gateway stage name (default: `test`). Also sets `API_STAGE` for CDK synth |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated HTTPS origins for API Gateway CORS (**required when `API_STAGE=prod`**) |
-| `TX_CODE_PEPPER` | Secret pepper for `tx_code` HMAC hashing, injected into the Issuer/Authz Lambda environment (**always required**) |
+| `TX_CODE_PEPPER` | Secret pepper for `tx_code` HMAC hashing, injected into the Issuer/Authz/Verifier Lambda environment (**always required**) |
 | `STACK_NAME` | CloudFormation stack name (default: `ResourcesStack`) |
 
 `scripts/.env` is loaded when present. CLI flags override `.env`.

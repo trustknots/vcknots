@@ -75,5 +75,9 @@ export class ResourcesStack extends cdk.Stack {
       value: dataStores.verifierTransactionsTable.tableName,
       description: 'Verifier transactions DynamoDB table name',
     });
+    new cdk.CfnOutput(this, 'VerifierStatesTableName', {
+      value: dataStores.verifierStatesTable.tableName,
+      description: 'Verifier states DynamoDB table name',
+    });
   }
 }
