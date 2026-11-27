@@ -384,13 +384,21 @@ func parseResponseURI(responseURI string) (*url.URL, error) {
 // wallet reads; the endpoint is derived from request input.
 const maxVerifierResponseBodySize = 1 << 20 // 1 MiB
 
+// verifierHTTPClient refuses to follow redirects. Following one would fetch the
+// request object, or send the vp_token, to an origin the request never named,
+// over http as well: a 307 or 308 replays a POST with its body, and a 301 to
+// 303 turns it into a GET whose 200 reads as success. Neither endpoint redirects.
+var verifierHTTPClient = &http.Client{
+	Timeout: 30 * time.Second,
+	CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+		return fmt.Errorf("redirected to %s: redirects are not followed", req.URL.Redacted())
+	},
+}
+
 // postAuthorizationResponse form-POSTs an authorization response (or error
 // response) to the verifier and returns the response body on HTTP 200.
 func postAuthorizationResponse(endpoint string, formData url.Values) ([]byte, error) {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	resp, err := client.Post(endpoint, "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
+	resp, err := verifierHTTPClient.Post(endpoint, "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -584,11 +592,11 @@ type requestBuilder struct {
 	errValidation          error
 	// errorResponseAllowed marks that the response_uri may receive an error
 	// authorization response, because whoever named it has been authenticated.
-	// Plain query parameters set it at once, the URI being user-initiated. A
-	// Request Object sets it only after its certificate chain, signature,
-	// client_id and response destination have all been checked; until then its
-	// response_uri is unauthenticated and posting there would be an
-	// unauthenticated outbound POST (an SSRF primitive).
+	// Plain query parameters set it only with the redirect_uri prefix (see
+	// WithQueryParams). A Request Object sets it only after its certificate
+	// chain, signature, client_id and response destination have all been
+	// checked; until then its response_uri is unauthenticated and posting there
+	// would be an unauthenticated outbound POST (an SSRF primitive).
 	errorResponseAllowed bool
 }
 
@@ -637,19 +645,6 @@ func (b *requestBuilder) validate() error {
 	return nil
 }
 
-// validateRedirectAndResponseURIExclusivity returns an error when the
-// redirect_uri and response_uri request parameters are both set. Per OID4VP
-// they are mutually exclusive on the wire: response_uri is used with
-// response_mode=direct_post (and its JWT variant), redirect_uri otherwise.
-// Section 8.2 requires the refusal to reach the Verifier as invalid_request, so it
-// carries the code rather than being a plain error.
-func validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam string) *AuthorizationRequestError {
-	if redirectURIFromParam != "" && responseURIFromParam != "" {
-		return newAuthorizationRequestError(InvalidRequestError, "redirect_uri and response_uri must not both be present in the same request")
-	}
-	return nil
-}
-
 // setParamsWithAnyMap sets the CredentialPresentationRequest fields from a map of any parameters,
 // tracking any missing required parameters.
 // Missing required parameters are recorded in b.errValidation and set as empty strings.
@@ -694,16 +689,18 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 
 	redirectURIFromParam := getParam("redirect_uri", false) // redirect_uri may be emitted
 	redirectURIFromClientID := ""
+	var prefix OID4VPClientIDPrefix
 	if cid := b.req.ClientID; cid != "" {
 		if parsedCID, err := parseOID4VPClientID(cid); err == nil {
+			prefix = parsedCID.prefix
 			switch parsedCID.prefix {
 			case OID4VPClientIDPrefixRedirectURI, OID4VPClientIDPrefixX509SanDNS:
 				redirectURIFromClientID = parsedCID.original
 			default: // unimplemented: other client_id prefixes
-				// Plain error on purpose, not an *AuthorizationRequestError: this also
-				// runs on the query parameter path, where errorResponseAllowed is set,
-				// so giving it a code would start POSTing an error response to a
-				// response_uri nothing has authenticated. That delivery is Section 8.5.
+				// Plain error on purpose, not an *AuthorizationRequestError: nothing has
+				// authenticated the response_uri of such a request, so no error response
+				// may go there. WithQueryParams refuses these prefixes outright, and a
+				// Request Object using one never sets errorResponseAllowed.
 				b.errValidation = fmt.Errorf("unsupported client_id prefix: %s", parsedCID.prefix)
 			}
 		} else {
@@ -718,27 +715,42 @@ func (b *requestBuilder) setParamsWithAnyMap(params map[string]any) {
 
 	b.req.ResponseMode = OAuthAuthzReqResponseMode(getParam("response_mode", true))
 
-	responseURIFromParam := getParam("response_uri", b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost)
+	// direct_post (Section 8.2) is the only Response Mode this wallet implements. Any other
+	// one would send the presentation where none of direct_post's checks apply: unencrypted,
+	// and to a redirect_uri that no https rule covers. An absent response_mode is left to
+	// the missing-parameter error below.
+	if _, exists := params["response_mode"]; exists && b.req.ResponseMode != OAuthAuthzReqResponseModeDirectPost {
+		b.errValidation = newAuthorizationRequestError(InvalidRequestError, "response_mode %q is not supported; use direct_post", b.req.ResponseMode)
+		return
+	}
 
+	// With the redirect_uri prefix the Client Identifier is the Response URI itself, so the
+	// Verifier may omit response_uri (Section 5.9.3), and a response_uri it does send has to
+	// be that URI (Section 8.2: "a value that the client would be permitted to use as
+	// redirect_uri"). A different one is a plain error, as nothing authenticates it as a
+	// destination for an error response. An empty one counts as omitted, as RFC 6749
+	// Section 3.1 requires of every parameter sent without a value.
+	responseURIFromParam := getParam("response_uri", b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost && prefix != OID4VPClientIDPrefixRedirectURI)
 	b.req.ResponseURI = responseURIFromParam
+	if prefix == OID4VPClientIDPrefixRedirectURI {
+		switch responseURIFromParam {
+		case "":
+			b.req.ResponseURI = redirectURIFromClientID
+		case redirectURIFromClientID:
+		default:
+			b.errValidation = fmt.Errorf("response_uri %q does not match the redirect_uri client_id %q", responseURIFromParam, redirectURIFromClientID)
+			return
+		}
+	}
 
 	// The checks below are performed after the response parameters
 	// (response_mode, response_uri, state) are populated, so that the
 	// resulting *AuthorizationRequestError can be delivered to the Verifier
 	// as an error authorization response when response_mode=direct_post.
 
-	// Section 8.2 makes this one a MUST, so it comes before the mismatch below: with
-	// x509_san_dns the client_id yields a bare DNS name, which no redirect_uri URL can
-	// equal, so the mismatch would otherwise always answer first and send nothing.
-	if authzErr := validateRedirectAndResponseURIExclusivity(redirectURIFromParam, responseURIFromParam); authzErr != nil {
-		b.errValidation = authzErr
-		return
-	}
-
-	// A redirect_uri contradicting the one the client_id names leaves no Verifier this
-	// could be answered to, so it stays a plain error that reaches nobody.
-	if redirectURIFromParam != "" && redirectURIFromClientID != "" && redirectURIFromParam != redirectURIFromClientID {
-		b.errValidation = fmt.Errorf("redirect_uri mismatch between parameter and one derived from client_id")
+	// Required by Section 8.2. An empty redirect_uri counts as omitted (RFC 6749 Section 3.1).
+	if redirectURIFromParam != "" && b.req.ResponseMode == OAuthAuthzReqResponseModeDirectPost {
+		b.errValidation = newAuthorizationRequestError(InvalidRequestError, "redirect_uri must not be present when response_mode is direct_post")
 		return
 	}
 
@@ -837,8 +849,6 @@ func (b *requestBuilder) WithQueryParams(params map[string][]string) *requestBui
 		return b
 	}
 
-	b.errorResponseAllowed = true
-
 	singleParams := make(map[string]any)
 	for key, values := range params {
 		if len(values) > 1 {
@@ -849,6 +859,19 @@ func (b *requestBuilder) WithQueryParams(params map[string][]string) *requestBui
 	}
 
 	b.setParamsWithAnyMap(singleParams)
+
+	// An unsigned request can only use redirect_uri, whose Client Identifier is the response
+	// destination itself. Every other prefix names a key the request would have to be signed
+	// with (Section 5.9.3: with x509_san_dns "The request MUST be signed"). Such a request
+	// gets a plain error, overriding any set above, since its unauthenticated response_uri
+	// must not receive an error response. Only a redirect_uri request (response_uri bound in
+	// setParamsWithAnyMap) may get one.
+	cid, err := parseOID4VPClientID(b.req.ClientID)
+	if err == nil && cid.prefix != OID4VPClientIDPrefixRedirectURI {
+		b.errValidation = fmt.Errorf("client_id prefix %s requires a signed request object", cid.prefix)
+		return b
+	}
+	b.errorResponseAllowed = err == nil
 
 	if err := b.validate(); err != nil {
 		b.errValidation = err
@@ -1139,11 +1162,8 @@ func (b *requestBuilder) WithRequestObjectURI(uri string, method RequestURIMetho
 		return b
 	}
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
 	req.Header.Set("User-Agent", "")
-	resp, err := client.Do(req)
+	resp, err := verifierHTTPClient.Do(req)
 	if err != nil {
 		b.errValidation = fmt.Errorf("failed to send %s request to %s: %w", method, uri, err)
 		return b
